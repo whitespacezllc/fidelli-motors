@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fidelli Motors — Estados vacíos, de carga y de error</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=Public+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --brand:#E01F26; --brand-deep:#B8161C; --brand-soft:#FDECEC;
+    --ink:#0A0A0A; --ink-60:#4A4A4A; --ink-40:#8A8A8A;
+    --line:#E4E4E4; --surface:#F5F5F5; --base:#FFFFFF;
+    --overdue:#B45309; --imminent:#D97706; --upcoming:#6B7280; --success:#15803D; --reward:#CA8A04;
+    --tn:#1E40AF; --tn-soft:#E8EDFB;
+    --fam-b:'Nunito',sans-serif; --fam-u:'Public Sans',sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:#EDEDED;font-family:var(--fam-u);font-size:14px;color:var(--ink);line-height:1.45}
+  .tnum{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+
+  .previewbar{position:sticky;top:0;z-index:50;background:var(--ink);color:#fff;display:flex;align-items:center;gap:20px;padding:12px 24px}
+  .previewbar .t{font-family:var(--fam-b);font-weight:700;font-size:15px}
+  .previewbar .t span{color:var(--brand)}
+  .previewbar nav{display:flex;gap:6px;margin-left:auto}
+  .previewbar a{color:rgba(255,255,255,.75);text-decoration:none;font-size:13px;font-weight:600;padding:6px 12px;border-radius:6px}
+  .previewbar a:hover{background:rgba(255,255,255,.12);color:#fff}
+  .stage{max-width:1240px;margin:0 auto;padding:44px 24px 90px}
+  .stage h2{font-family:var(--fam-b);font-size:25px;font-weight:700;letter-spacing:-.005em;margin:52px 0 4px}
+  .stage .cap{color:var(--ink-60);font-size:14px;margin-bottom:20px;max-width:80ch}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+
+  .btn{font-family:var(--fam-b);font-weight:700;border:1px solid transparent;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:.14s;white-space:nowrap;text-decoration:none}
+  .btn-lg{height:48px;padding:0 24px;font-size:16px}
+  .btn-md{height:40px;padding:0 18px;font-size:14px}
+  .btn-sm{height:32px;padding:0 13px;font-size:13px}
+  .btn-primary{background:var(--brand);color:#fff}
+  .btn-primary:hover{background:var(--brand-deep)}
+  .btn-secondary{background:var(--base);color:var(--ink);border-color:var(--ink)}
+  .btn-secondary:hover{background:var(--surface)}
+  .btn-ghost{background:transparent;color:var(--ink-60)}
+  .btn-ghost:hover{background:var(--surface);color:var(--ink)}
+  .btn-tenant{background:var(--tn);color:#fff}
+  .btn-block{width:100%}
+  .btn:disabled{opacity:.55;cursor:not-allowed}
+
+  .frame{background:var(--base);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 2px 10px rgba(10,10,10,.05)}
+  .frame-tag{font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-40);padding:10px 16px;border-bottom:1px solid var(--line);background:var(--surface)}
+  .frame-body{padding:22px}
+  .phone{width:390px}
+
+  /* ---- estado vacio ---- */
+  .empty{text-align:center;padding:34px 22px}
+  .empty .ic{width:52px;height:52px;border-radius:50%;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:22px;margin:0 auto 14px}
+  .empty .t{font-family:var(--fam-b);font-size:18px;font-weight:700}
+  .empty .d{font-size:14px;color:var(--ink-60);margin-top:6px;max-width:44ch;margin-left:auto;margin-right:auto;line-height:1.55}
+  .empty .act{margin-top:16px}
+  .empty.good .ic{background:#EFF9F2;border-color:var(--success);color:var(--success)}
+
+  /* ---- checklist dia 1 ---- */
+  .setup{border:1px solid var(--ink);border-radius:12px;overflow:hidden}
+  .setup-h{padding:16px 18px;border-bottom:1px solid var(--line)}
+  .setup-h .t{font-family:var(--fam-b);font-size:18px;font-weight:700}
+  .setup-h .d{font-size:14px;color:var(--ink-60);margin-top:3px}
+  .setup-bar{height:6px;background:var(--surface);border-radius:3px;margin-top:12px;overflow:hidden}
+  .setup-bar>div{height:100%;background:var(--ink);border-radius:3px}
+  .step{display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid var(--line)}
+  .step:last-child{border-bottom:none}
+  .step .n{width:26px;height:26px;border-radius:50%;border:1px solid var(--ink-40);color:var(--ink-40);font-family:var(--fam-b);font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;flex:none}
+  .step.done .n{background:var(--success);border-color:var(--success);color:#fff}
+  .step .tx{flex:1;min-width:0}
+  .step .tt{font-family:var(--fam-b);font-weight:700;font-size:15px}
+  .step.done .tt{color:var(--ink-40);text-decoration:line-through}
+  .step .td{font-size:13px;color:var(--ink-60);margin-top:1px}
+  .step.now{background:var(--brand-soft)}
+
+  /* ---- carga ---- */
+  .sk{background:linear-gradient(90deg,var(--surface) 25%,#EDEDED 50%,var(--surface) 75%);background-size:200% 100%;animation:sh 1.3s infinite;border-radius:4px;height:12px}
+  @keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
+  .sk-row{display:flex;gap:14px;align-items:center;padding:13px 0;border-bottom:1px solid var(--line)}
+  .spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;display:inline-block}
+  .spinner.dark{border-color:var(--line);border-top-color:var(--ink)}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .inline-load{display:flex;align-items:center;gap:10px;color:var(--ink-60);font-size:14px;padding:14px 0}
+
+  /* ---- error ---- */
+  .err{border:1px solid var(--overdue);background:#FEF6EC;border-radius:12px;padding:16px 18px}
+  .err .t{font-family:var(--fam-b);font-weight:700;font-size:16px;color:var(--overdue)}
+  .err .d{font-size:14px;color:var(--ink-60);margin-top:5px;line-height:1.55}
+  .err .d b{color:var(--ink)}
+  .err .act{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+  .warn{border:1px solid var(--imminent);background:#FEF8EE;border-radius:12px;padding:14px 16px}
+  .warn .t{font-family:var(--fam-b);font-weight:700;font-size:15px;color:var(--overdue)}
+  .warn .d{font-size:13px;color:var(--ink-60);margin-top:3px}
+  .field label{display:block;font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-60);margin-bottom:6px}
+  .input{width:100%;height:44px;border:1px solid var(--line);border-radius:8px;padding:0 14px;font-family:var(--fam-u);font-size:15px;outline:none}
+  .input.bad{border-color:var(--overdue)}
+  .help{font-size:13px;margin-top:6px;color:var(--ink-40)}
+  .help.bad{color:var(--overdue)}
+  .offline{display:flex;align-items:center;gap:10px;background:var(--ink);color:#fff;border-radius:8px;padding:11px 14px;font-size:14px;font-weight:600}
+  .offline .dot{width:8px;height:8px;border-radius:50%;background:var(--imminent);flex:none}
+
+  table{width:100%;border-collapse:collapse}
+  thead th{text-align:left;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-40);padding:0 12px 10px;border-bottom:1px solid var(--line)}
+  tbody td{padding:0 12px;height:44px;border-bottom:1px solid var(--line);font-size:14px}
+  .note{font-size:13px;color:var(--ink-40);margin-top:10px;line-height:1.5}
+  .kbd{font-family:var(--fam-u);font-size:12px;background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:1px 6px;font-weight:600}
+</style>
+</head>
+<body>
+
+<div class="previewbar">
+  <div class="t">FIDELLI <span>MOTORS</span> · Estados</div>
+  <nav>
+    <a href="#e1">Día 1</a>
+    <a href="#e2">Vacíos</a>
+    <a href="#e3">Carga</a>
+    <a href="#e4">Errores</a>
+  </nav>
+</div>
+
+<div class="stage">
+
+  <!-- ===== DIA 1 ===== -->
+  <h2 id="e1">El día 1 — el panel recién nacido</h2>
+  <p class="cap">Lo que ve Bruno la primera vez, con todo vacío. El checklist reemplaza al dashboard hasta que se completa, y está pensado para hacerlo juntos en la implementación: cada paso es una conversación de dos minutos.</p>
+
+  <div class="grid">
+    <div class="frame">
+      <div class="frame-tag">Inicio · día 1 — nada cargado</div>
+      <div class="frame-body">
+        <div class="setup">
+          <div class="setup-h">
+            <div class="t">Bienvenido a Fidelli Motors</div>
+            <div class="d">Cuatro pasos para dejar todo listo. Podés hacerlos ahora o cuando quieras.</div>
+            <div class="setup-bar"><div style="width:0%"></div></div>
+          </div>
+          <div class="step now">
+            <div class="n">1</div>
+            <div class="tx">
+              <div class="tt">Cargá tus sucursales</div>
+              <div class="td">Para saber en qué local se hizo cada service</div>
+            </div>
+            <button class="btn btn-sm btn-primary">Empezar</button>
+          </div>
+          <div class="step">
+            <div class="n">2</div>
+            <div class="tx">
+              <div class="tt">Sumá tus productos</div>
+              <div class="td">Aceites, filtros y líquidos que usás siempre</div>
+            </div>
+            <button class="btn btn-sm btn-ghost">Ir</button>
+          </div>
+          <div class="step">
+            <div class="n">3</div>
+            <div class="tx">
+              <div class="tt">Definí tu premio</div>
+              <div class="td">Cada cuántos services y qué beneficio das</div>
+            </div>
+            <button class="btn btn-sm btn-ghost">Ir</button>
+          </div>
+          <div class="step">
+            <div class="n">4</div>
+            <div class="tx">
+              <div class="tt">Cargá tu primer service</div>
+              <div class="td">Probalo con el próximo auto que entre</div>
+            </div>
+            <button class="btn btn-sm btn-ghost">Ir</button>
+          </div>
+        </div>
+        <div class="note">El checklist vive arriba del dashboard y desaparece solo cuando los cuatro pasos están hechos. No se puede cerrar antes — es la guía, no un aviso.</div>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-tag">Inicio · día 3 — en camino</div>
+      <div class="frame-body">
+        <div class="setup">
+          <div class="setup-h">
+            <div class="t">Te falta poco</div>
+            <div class="d">Dos pasos para terminar de configurar tu lubricentro.</div>
+            <div class="setup-bar"><div style="width:50%"></div></div>
+          </div>
+          <div class="step done">
+            <div class="n">✓</div>
+            <div class="tx"><div class="tt">Cargá tus sucursales</div><div class="td">2 sucursales activas</div></div>
+          </div>
+          <div class="step done">
+            <div class="n">✓</div>
+            <div class="tx"><div class="tt">Sumá tus productos</div><div class="td">14 productos en el catálogo</div></div>
+          </div>
+          <div class="step now">
+            <div class="n">3</div>
+            <div class="tx"><div class="tt">Definí tu premio</div><div class="td">Cada cuántos services y qué beneficio das</div></div>
+            <button class="btn btn-sm btn-primary">Empezar</button>
+          </div>
+          <div class="step">
+            <div class="n">4</div>
+            <div class="tx"><div class="tt">Cargá tu primer service</div><div class="td">Probalo con el próximo auto que entre</div></div>
+            <button class="btn btn-sm btn-ghost">Ir</button>
+          </div>
+        </div>
+        <div class="note">Cada paso completado muestra el dato real conseguido — no un tilde abstracto. Al terminar los cuatro, el bloque desaparece y aparece el dashboard normal.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== VACIOS ===== -->
+  <h2 id="e2">Los tres vacíos — no son lo mismo</h2>
+  <p class="cap">Vacío por sistema nuevo, vacío por filtro y vacío por buenas noticias. Cada uno con su mensaje: el tercero se celebra, no se lamenta.</p>
+
+  <div class="grid">
+    <div class="frame">
+      <div class="frame-tag">Próximos services · sin datos todavía</div>
+      <div class="frame-body">
+        <div class="empty">
+          <div class="ic">📋</div>
+          <div class="t">Todavía no hay services cargados</div>
+          <div class="d">Cuando cargues el primero, acá vas a ver qué autos están por volver y a quién conviene escribirle.</div>
+          <div class="act"><button class="btn btn-md btn-primary">+ Cargar primer service</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-tag">Próximos services · el filtro no encontró nada</div>
+      <div class="frame-body">
+        <div class="empty">
+          <div class="ic">🔍</div>
+          <div class="t">Ningún vehículo con esos filtros</div>
+          <div class="d">Probá con otra sucursal o mostrá todos los estados.</div>
+          <div class="act"><button class="btn btn-md btn-secondary">Limpiar filtros</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-tag">Próximos services · al día (buena noticia)</div>
+      <div class="frame-body">
+        <div class="empty good">
+          <div class="ic">✓</div>
+          <div class="t">Estás al día</div>
+          <div class="d">Ningún vehículo vencido ni por vencer esta semana. Los 23 próximos aparecen más adelante, cuando se acerque su fecha.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-tag">Clientes · búsqueda sin resultados</div>
+      <div class="frame-body">
+        <div class="empty">
+          <div class="ic">🔍</div>
+          <div class="t">No encontramos "Gonzalez"</div>
+          <div class="d">Probá con la patente, el teléfono o parte del nombre. Si es un cliente nuevo, se carga solo al hacerle el primer service.</div>
+          <div class="act"><button class="btn btn-md btn-secondary">+ Cargar cliente</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-tag">Productos · catálogo vacío</div>
+      <div class="frame-body">
+        <div class="empty">
+          <div class="ic">🛢️</div>
+          <div class="t">Tu catálogo está vacío</div>
+          <div class="d">Cargá los aceites y filtros que usás siempre para elegirlos con un toque en cada service. También podés sumarlos sobre la marcha.</div>
+          <div class="act">
+            <button class="btn btn-md btn-primary">+ Agregar producto</button>
+            <button class="btn btn-md btn-ghost">Importar desde Excel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-tag">Landing del cliente · vehículo sin historial</div>
+      <div class="frame-body">
+        <div class="empty">
+          <div class="ic">🚗</div>
+          <div class="t">Tu historial arranca hoy</div>
+          <div class="d">Este es tu primer service con nosotros. Acá vas a ver todo lo que le hacemos a tu auto y cuándo te toca volver.</div>
+        </div>
+        <div class="note">Este es el único vacío que ve el cliente final. Va con el color del lubricentro, cuerpo 16px, sin jerga.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== CARGA ===== -->
+  <h2 id="e3">Estados de carga</h2>
+  <p class="cap">Regla: menos de 300ms no muestra nada (parpadea peor que esperar). Entre 300ms y 2s, esqueleto o spinner. Más de 2s, mensaje con contexto.</p>
+
+  <div class="grid">
+    <div class="frame">
+      <div class="frame-tag">Tabla cargando · esqueleto</div>
+      <div class="frame-body">
+        <table>
+          <thead><tr><th>Cliente</th><th>Vehículo</th><th>Último service</th><th>Estado</th></tr></thead>
+        </table>
+        <div class="sk-row"><div class="sk" style="width:22%"></div><div class="sk" style="width:16%"></div><div class="sk" style="width:26%"></div><div class="sk" style="width:14%"></div></div>
+        <div class="sk-row"><div class="sk" style="width:18%"></div><div class="sk" style="width:19%"></div><div class="sk" style="width:22%"></div><div class="sk" style="width:16%"></div></div>
+        <div class="sk-row"><div class="sk" style="width:25%"></div><div class="sk" style="width:14%"></div><div class="sk" style="width:24%"></div><div class="sk" style="width:12%"></div></div>
+        <div class="note">El esqueleto respeta la estructura real de la tabla — el ojo ya sabe dónde va a estar cada dato.</div>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-tag">Botón guardando · bloqueado</div>
+      <div class="frame-body">
+        <button class="btn btn-lg btn-primary btn-block" disabled><span class="spinner"></span> Guardando service…</button>
+        <div class="note">El botón se deshabilita apenas se toca: es lo que evita el service duplicado cuando el mecánico aprieta dos veces. El ancho no cambia — el texto de carga ocupa lo mismo que el original.</div>
+        <div style="margin-top:18px" class="inline-load"><span class="spinner dark"></span> Buscando la patente…</div>
+        <div class="note">Búsqueda de patente: spinner inline, nunca pantalla completa. El resto del formulario sigue usable.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== ERRORES ===== -->
+  <h2 id="e4">Errores — qué pasó y qué hacer</h2>
+  <p class="cap">Sin códigos, sin disculpas, sin "error inesperado". Cada mensaje nombra la causa concreta y ofrece la salida. El de guardado avisa explícitamente que no cierre la pantalla.</p>
+
+  <div class="grid">
+    <div class="frame">
+      <div class="frame-tag">Falla al guardar el service · el crítico</div>
+      <div class="frame-body">
+        <div class="err">
+          <div class="t">No se pudo guardar el service</div>
+          <div class="d">Se cortó la conexión a internet. <b>No cierres ni recargues esta pantalla:</b> los datos que cargaste siguen acá. Cuando vuelva la señal, tocá Reintentar.</div>
+          <div class="act">
+            <button class="btn btn-md btn-primary">Reintentar</button>
+            <button class="btn btn-md btn-ghost">Volver al cartón</button>
+          </div>
+        </div>
+        <div class="note">El error más caro del producto: son 90 segundos de trabajo del mecánico. La instrucción de no cerrar la pantalla es lo que los salva.</div>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-tag">Sin conexión · aviso permanente</div>
+      <div class="frame-body">
+        <div class="offline"><span class="dot"></span> Sin conexión — no vas a poder guardar hasta que vuelva</div>
+        <div class="note">Barra fija arriba del panel mientras no haya red. Aparece antes de que el mecánico empiece a cargar, para que no arranque en falso.</div>
+        <div style="margin-top:20px" class="err">
+          <div class="t">No pudimos cargar los datos</div>
+          <div class="d">Revisá la conexión a internet y probá de nuevo.</div>
+          <div class="act"><button class="btn btn-md btn-secondary">Reintentar</button></div>
+        </div>
+        <div class="note">Error de lectura: más liviano que el de guardado, porque no hay trabajo en riesgo.</div>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-tag">Validaciones del formulario</div>
+      <div class="frame-body">
+        <div class="field">
+          <label>Kilómetros</label>
+          <input class="input bad tnum" value="72.000">
+          <div class="help bad">Son menos que el último service (88.200 km). Verificá el odómetro — si está bien, seguí igual.</div>
+        </div>
+        <div class="field" style="margin-top:18px">
+          <label>Teléfono</label>
+          <input class="input bad" value="351 555">
+          <div class="help bad">Faltan números. Escribilo completo con característica: 351 555 0442.</div>
+        </div>
+        <div class="field" style="margin-top:18px">
+          <label>Patente</label>
+          <input class="input bad" value="AB12">
+          <div class="help bad">Tiene que ser ABC 123 o AB 123 CD.</div>
+        </div>
+        <div class="note">El de kilómetros advierte pero no bloquea: un odómetro cambiado o mal leído es real, y el mecánico sabe más que el sistema.</div>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-tag">Conflictos y permisos</div>
+      <div class="frame-body">
+        <div class="warn">
+          <div class="t">Esta patente ya tiene un service hoy</div>
+          <div class="d">Se cargó a las 11:20 en Boulevares, con 98.450 km. ¿Es un service distinto o se cargó dos veces?</div>
+          <div class="act" style="display:flex;gap:10px;margin-top:12px">
+            <button class="btn btn-sm btn-secondary">Ver el service de hoy</button>
+            <button class="btn btn-sm btn-ghost">Cargar igual</button>
+          </div>
+        </div>
+        <div style="margin-top:18px" class="err">
+          <div class="t">Este service ya no se puede editar</div>
+          <div class="d">Pasaron más de 24 horas desde que se cargó, así que quedó fijado en el historial. Si hay un error grave, escribinos y lo resolvemos.</div>
+          <div class="act"><button class="btn btn-md btn-secondary">Escribir a Fidelli</button></div>
+        </div>
+        <div class="note">El bloqueo por 24 horas no es un error del usuario: se explica la regla y se ofrece la salida real, que es nuestro desbloqueo desde el panel de administración.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
