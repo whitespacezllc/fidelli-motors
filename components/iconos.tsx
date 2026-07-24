@@ -64,6 +64,15 @@ export function IconoMas(props: Props) {
   );
 }
 
+export function IconoCerrar(props: Props) {
+  return (
+    <svg {...base(props)}>
+      <path d="M6 6l12 12" />
+      <path d="M18 6 6 18" />
+    </svg>
+  );
+}
+
 export function IconoOjo(props: Props) {
   return (
     <svg {...base(props)}>
