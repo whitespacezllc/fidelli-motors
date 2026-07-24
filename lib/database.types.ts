@@ -806,6 +806,13 @@ export type Database = {
             foreignKeyName: "vehiculos_cliente_id_fkey"
             columns: ["cliente_id"]
             isOneToOne: false
+            referencedRelation: "vista_clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vehiculos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
             referencedRelation: "vista_proximos_service"
             referencedColumns: ["cliente_id"]
           },
@@ -820,6 +827,29 @@ export type Database = {
       }
     }
     Views: {
+      vista_clientes: {
+        Row: {
+          cantidad_vehiculos: number | null
+          created_at: string | null
+          email: string | null
+          id: string | null
+          lubricentro_id: string | null
+          nombre: string | null
+          nombre_busqueda: string | null
+          patentes: string | null
+          telefono: string | null
+          ultimo_service_fecha: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clientes_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       vista_proximos_service: {
         Row: {
           cantidad_services: number | null
