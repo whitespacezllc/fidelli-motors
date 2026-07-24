@@ -15,6 +15,51 @@ export function formatearFecha(iso: string): string {
   }).format(aFechaLocal(iso));
 }
 
+// "Lunes 21 de julio, 2026" — el encabezado del panel.
+export function formatearDiaLargo(iso: string): string {
+  const partes = new Intl.DateTimeFormat("es-AR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).formatToParts(aFechaLocal(iso));
+
+  const dato = (tipo: string) => partes.find((p) => p.type === tipo)?.value ?? "";
+  const dia = dato("weekday");
+  return `${dia.charAt(0).toUpperCase()}${dia.slice(1)} ${dato("day")} de ${dato("month")}, ${dato("year")}`;
+}
+
+// "julio" — para el contexto de las métricas del mes.
+export function nombreDelMes(iso: string): string {
+  return new Intl.DateTimeFormat("es-AR", { month: "long" }).format(
+    aFechaLocal(iso),
+  );
+}
+
+// "Hoy 17:42" para los del día, "21/07 17:42" para el resto — como en el
+// hi-fi. En 24 horas: el a. m./p. m. rompe la columna tabular.
+export function formatearFechaHora(iso: string): string {
+  const f = new Date(iso);
+  const hora = new Intl.DateTimeFormat("es-AR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(f);
+
+  const ahora = new Date();
+  const esHoy =
+    f.getFullYear() === ahora.getFullYear() &&
+    f.getMonth() === ahora.getMonth() &&
+    f.getDate() === ahora.getDate();
+  if (esHoy) return `Hoy ${hora}`;
+
+  const dia = new Intl.DateTimeFormat("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+  }).format(f);
+  return `${dia} ${hora}`;
+}
+
 // "may 2026" — para la antigüedad del cliente.
 export function formatearMesAnio(iso: string): string {
   return new Intl.DateTimeFormat("es-AR", {

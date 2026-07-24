@@ -1045,6 +1045,7 @@ export type Database = {
         Args: { p_desde?: string; p_lubricentro_id: string }
         Returns: number
       }
+      resumen_inicio: { Args: never; Returns: Json }
       seed_demo: { Args: { p_password?: string }; Returns: string }
       service_editable: { Args: { p_service_id: string }; Returns: boolean }
       soy_superadmin: { Args: never; Returns: boolean }
