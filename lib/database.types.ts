@@ -1014,6 +1014,21 @@ export type Database = {
       }
       fm_unaccent: { Args: { "": string }; Returns: string }
       get_carton: { Args: { p_patente: string; p_slug: string }; Returns: Json }
+      guardar_service: {
+        Args: {
+          p_aceite_nombre?: string
+          p_aceite_producto_id?: string
+          p_aceite_tipo: string
+          p_fecha: string
+          p_items?: Json
+          p_kilometros: number
+          p_observaciones?: string
+          p_prox_service_km: number
+          p_sucursal_id: string
+          p_vehiculo_id: string
+        }
+        Returns: string
+      }
       mi_lubricentro_id: { Args: never; Returns: string }
       normalizar_patente: { Args: { entrada: string }; Returns: string }
       premio_disponible: {

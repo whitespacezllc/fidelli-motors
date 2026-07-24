@@ -1,77 +1,126 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { obtenerSesion } from "@/lib/auth/session";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { clasesBoton } from "@/components/ui/boton";
+import { Carton } from "@/components/services/carton";
 
 export const metadata: Metadata = { title: "Cargar service — Fidelli Motors" };
 
-// Momento 1 — el contenedor del cartón. En esta tanda solo confirma que el
-// vehículo quedó identificado: el cartón (los 8 elementos del flow) se
-// construye en la tanda B.
-export default async function ContenedorCarton({
+// Momento 1 — el cartón. Espejo del papel, en una sola pantalla scrolleable.
+export default async function PaginaCarton({
   params,
 }: {
   params: Promise<{ vehiculoId: string }>;
 }) {
   const { vehiculoId } = await params;
   const supabase = await createClient();
+  const sesion = await obtenerSesion();
 
-  const { data: vehiculo } = await supabase
-    .from("vehiculos")
-    .select("id, patente, marca, modelo, clientes(nombre)")
-    .eq("id", vehiculoId)
-    .maybeSingle();
+  // Cinco conjuntos distintos, en paralelo. Ninguna consulta depende de otra
+  // y ninguna es N+1: el cartón necesita el vehículo, dónde se hace, con qué
+  // se hace, qué pasó antes y con qué color se le muestra al cliente.
+  const [vehiculoRes, sucursalesRes, productosRes, serviciosRes, configRes] =
+    await Promise.all([
+      supabase
+        .from("vehiculos")
+        .select("id, patente, marca, modelo, clientes(nombre)")
+        .eq("id", vehiculoId)
+        .maybeSingle(),
+      supabase
+        .from("sucursales")
+        .select("id, nombre")
+        .eq("activa", true)
+        .order("nombre"),
+      supabase
+        .from("productos")
+        .select("id, nombre, marca, categoria")
+        .eq("activo", true)
+        .order("nombre"),
+      supabase
+        .from("services")
+        .select("fecha, kilometros, created_at, sucursales(nombre)")
+        .eq("vehiculo_id", vehiculoId)
+        .eq("anulado", false)
+        .order("fecha", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(5),
+      supabase.from("config_experiencia").select("color_primario").maybeSingle(),
+    ]);
 
+  const vehiculo = vehiculoRes.data;
   if (!vehiculo) {
     return (
       <EstadoVacio
         titulo="No encontramos ese vehículo"
         descripcion="Puede que el enlace esté mal. Volvé a buscar la patente para cargar el service."
       >
-        <Link
-          href="/panel/services/nuevo"
-          className={clasesBoton("secundario", "md")}
-        >
+        <Link href="/panel/services/nuevo" className={clasesBoton("secundario", "md")}>
           Buscar la patente
         </Link>
       </EstadoVacio>
     );
   }
 
-  const nombre =
-    [vehiculo.marca, vehiculo.modelo].filter(Boolean).join(" ") || "Vehículo";
+  const sucursales = sucursalesRes.data ?? [];
+  if (sucursales.length === 0) {
+    return (
+      <EstadoVacio
+        titulo="Necesitás una sucursal activa"
+        descripcion="Cada service se etiqueta con la sucursal donde se hizo. Activá una y volvé a cargar."
+      >
+        <Link href="/panel/sucursales" className={clasesBoton("secundario", "md")}>
+          Ir a Sucursales
+        </Link>
+      </EstadoVacio>
+    );
+  }
+
+  const servicios = serviciosRes.data ?? [];
+  const ultimo = servicios[0] ?? null;
+
+  // La fecha se arma con las partes para no correrse de día por zona horaria.
+  const ahora = new Date();
+  const hoy = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, "0")}-${String(ahora.getDate()).padStart(2, "0")}`;
+
+  // Caso borde: ya hay un service de hoy para esta patente.
+  const deHoy = servicios.find((s) => s.fecha === hoy);
+  const serviceDeHoy = deHoy
+    ? {
+        hora: new Date(deHoy.created_at).toLocaleTimeString("es-AR", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        sucursal: deHoy.sucursales?.nombre ?? "otra sucursal",
+        kilometros: deHoy.kilometros,
+      }
+    : null;
 
   return (
     <div className="mx-auto max-w-md">
-      {/* Anticipo de la cabecera sticky del cartón: patente + vehículo +
-          cliente, que en la tanda B acompaña todo el scroll. */}
-      <header className="surface-card p-4">
-        <p className="plate text-body text-ink">
-          {vehiculo.patente.toUpperCase()}
-        </p>
-        <p className="mt-0.5 text-ui text-ink-60">
-          {nombre} · {vehiculo.clientes?.nombre}
-        </p>
-      </header>
-
-      <div className="surface-card mt-4 border-dashed px-6 py-9 text-center">
-        <p className="font-brand text-body font-bold text-ink">
-          Vehículo identificado
-        </p>
-        <p className="mx-auto mt-1.5 max-w-sm text-ui text-ink-60">
-          El cartón —fecha, kilómetros, aceite, los 11 renglones y el próximo
-          service— se carga en la próxima entrega.
-        </p>
-        <div className="mt-5 flex justify-center">
-          <Link
-            href="/panel/services/nuevo"
-            className={clasesBoton("secundario", "md")}
-          >
-            Cargar otro service
-          </Link>
-        </div>
-      </div>
+      <Carton
+        datos={{
+          vehiculoId: vehiculo.id,
+          patente: vehiculo.patente.toUpperCase(),
+          vehiculoNombre:
+            [vehiculo.marca, vehiculo.modelo].filter(Boolean).join(" ") || "Vehículo",
+          clienteNombre: vehiculo.clientes?.nombre ?? "",
+          lubricentroNombre: sesion?.lubricentroNombre ?? "Tu lubricentro",
+          colorTenant: configRes.data?.color_primario ?? "#0A0A0A",
+          sucursales,
+          productos: (productosRes.data ?? []).map((p) => ({
+            id: p.id,
+            nombre: [p.nombre, p.marca].filter(Boolean).join(" · "),
+            categoria: p.categoria,
+          })),
+          ultimoService: ultimo
+            ? { fecha: ultimo.fecha, kilometros: ultimo.kilometros }
+            : null,
+          serviceDeHoy,
+          hoy,
+        }}
+      />
     </div>
   );
 }
