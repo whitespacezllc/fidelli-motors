@@ -1,6 +1,8 @@
 # Supabase
 .branches
 .temp
+# Scratchpad de queries del SQL editor de Studio: no es parte del schema
+snippets
 
 # dotenvx
 .env.keys
