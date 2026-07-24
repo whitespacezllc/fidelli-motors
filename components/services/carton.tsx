@@ -13,6 +13,7 @@ import {
   VISCOSIDAD_FORMATO,
   type ItemTipo,
 } from "@/lib/renglones";
+import { recordarSucursal } from "@/lib/preferencias";
 import {
   guardarService,
   crearProductoRapido,
@@ -30,6 +31,7 @@ export type DatosCarton = {
   lubricentroNombre: string;
   colorTenant: string;
   sucursales: Sucursal[];
+  sucursalInicial: string;
   productos: Producto[];
   ultimoService: { fecha: string; kilometros: number } | null;
   serviceDeHoy: { hora: string; sucursal: string; kilometros: number } | null;
@@ -44,7 +46,7 @@ const CLASE_LABEL =
 export function Carton({ datos }: { datos: DatosCarton }) {
   const router = useRouter();
 
-  const [sucursalId, setSucursalId] = useState(datos.sucursales[0]?.id ?? "");
+  const [sucursalId, setSucursalId] = useState(datos.sucursalInicial);
   const [fecha, setFecha] = useState(datos.hoy);
   const [km, setKm] = useState("");
   const [aceiteTipo, setAceiteTipo] = useState("");
@@ -234,7 +236,11 @@ export function Carton({ datos }: { datos: DatosCarton }) {
         </div>
         <select
           value={sucursalId}
-          onChange={(e) => setSucursalId(e.target.value)}
+          onChange={(e) => {
+            setSucursalId(e.target.value);
+            // Queda recordada en este dispositivo para el próximo service.
+            recordarSucursal(e.target.value);
+          }}
           aria-label="Sucursal"
           className="h-11 max-w-[45%] rounded-md border border-line bg-base px-2 text-ui text-ink"
         >

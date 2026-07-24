@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { obtenerSesion } from "@/lib/auth/session";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { clasesBoton } from "@/components/ui/boton";
 import { Carton } from "@/components/services/carton";
+import { COOKIE_SUCURSAL } from "@/lib/preferencias";
 
 export const metadata: Metadata = { title: "Cargar service — Fidelli Motors" };
 
@@ -80,6 +82,14 @@ export default async function PaginaCarton({
   const servicios = serviciosRes.data ?? [];
   const ultimo = servicios[0] ?? null;
 
+  // La sucursal es del dispositivo, no del usuario: en el MVP es probable que
+  // el lubricentro comparta una sola cuenta entre sucursales, así que la
+  // última usada se recuerda en una cookie de este celular. Si la cookie
+  // trae una sucursal que ya no está activa, cae en la primera.
+  const recordada = (await cookies()).get(COOKIE_SUCURSAL)?.value;
+  const sucursalInicial =
+    sucursales.find((s) => s.id === recordada)?.id ?? sucursales[0].id;
+
   // La fecha se arma con las partes para no correrse de día por zona horaria.
   const ahora = new Date();
   const hoy = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, "0")}-${String(ahora.getDate()).padStart(2, "0")}`;
@@ -109,6 +119,7 @@ export default async function PaginaCarton({
           lubricentroNombre: sesion?.lubricentroNombre ?? "Tu lubricentro",
           colorTenant: configRes.data?.color_primario ?? "#0A0A0A",
           sucursales,
+          sucursalInicial,
           productos: (productosRes.data ?? []).map((p) => ({
             id: p.id,
             nombre: [p.nombre, p.marca].filter(Boolean).join(" · "),
