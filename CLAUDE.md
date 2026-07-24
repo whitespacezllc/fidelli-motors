@@ -159,6 +159,12 @@ de Next alcanza.
 suelto solo donde el comportamiento accesible es difícil (dialog, combobox).
 No usamos librerías de componentes con su propio design system.
 
+**Íconos: Phosphor** (`@phosphor-icons/react`), peso `thin` o `light` — stroke
+de 0.5 a 1px, nunca más grueso. NO usamos Lucide (lo usa todo sitio hecho con IA).
+
+**Todo lo clickeable lleva `cursor: pointer`.** Resuelto una vez en globals.css
+para botones, roles de botón, tabs y triggers de Radix — no pantalla por pantalla.
+
 **Gráficos con Visx**, para que hereden nuestros tokens en vez de traer su look.
 
 **Tipos generados desde el schema**, no escritos a mano:
