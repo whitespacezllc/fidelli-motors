@@ -95,6 +95,13 @@ export type Database = {
             referencedRelation: "vehiculos"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "canjes_vehiculo_id_fkey"
+            columns: ["vehiculo_id"]
+            isOneToOne: false
+            referencedRelation: "vista_vehiculos"
+            referencedColumns: ["id"]
+          },
         ]
       }
       clientes: {
@@ -215,6 +222,13 @@ export type Database = {
             columns: ["vehiculo_id"]
             isOneToOne: false
             referencedRelation: "vehiculos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contactos_vehiculo_id_fkey"
+            columns: ["vehiculo_id"]
+            isOneToOne: false
+            referencedRelation: "vista_vehiculos"
             referencedColumns: ["id"]
           },
         ]
@@ -634,6 +648,13 @@ export type Database = {
             referencedRelation: "vehiculos"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "services_vehiculo_id_fkey"
+            columns: ["vehiculo_id"]
+            isOneToOne: false
+            referencedRelation: "vista_vehiculos"
+            referencedColumns: ["id"]
+          },
         ]
       }
       sucursales: {
@@ -781,7 +802,7 @@ export type Database = {
           marca?: string | null
           modelo?: string | null
           patente: string
-          patente_normalizada: string
+          patente_normalizada?: string
         }
         Update: {
           anio?: number | null
@@ -896,6 +917,58 @@ export type Database = {
             columns: ["vehiculo_id"]
             isOneToOne: false
             referencedRelation: "vehiculos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "services_vehiculo_id_fkey"
+            columns: ["vehiculo_id"]
+            isOneToOne: false
+            referencedRelation: "vista_vehiculos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vista_vehiculos: {
+        Row: {
+          anio: number | null
+          cantidad_services: number | null
+          cliente_id: string | null
+          created_at: string | null
+          id: string | null
+          lubricentro_id: string | null
+          marca: string | null
+          modelo: string | null
+          patente: string | null
+          patente_normalizada: string | null
+          ultimo_service_fecha: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vehiculos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vehiculos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vehiculos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_service"
+            referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "vehiculos_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
             referencedColumns: ["id"]
           },
         ]

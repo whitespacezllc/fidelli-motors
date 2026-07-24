@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { clasesBoton } from "@/components/ui/boton";
 import { DialogCliente } from "@/components/clientes/dialog-cliente";
+import { SeccionVehiculos } from "@/components/vehiculos/seccion-vehiculos";
 import { formatearFecha, formatearMesAnio } from "@/lib/fechas";
 
 export const metadata: Metadata = { title: "Cliente — Fidelli Motors" };
@@ -16,9 +17,10 @@ export default async function FichaCliente({
   const { id } = await params;
   const supabase = await createClient();
 
-  // Una consulta: la vista ya trae los agregados que necesita la ficha.
-  // Si el id no existe, o es de otro lubricentro (RLS lo filtra), o ni
-  // siquiera es un uuid, se cae en el mismo estado "no encontrado".
+  // Dos consultas para dos conjuntos distintos, ninguna con N+1: los datos
+  // del cliente y sus vehículos, cada una con sus agregados ya resueltos en
+  // Postgres por su vista. Si el id no existe, o es de otro lubricentro (RLS
+  // lo filtra), o ni siquiera es un uuid, se cae en "no encontrado".
   const { data: cliente } = await supabase
     .from("vista_clientes")
     .select(
@@ -42,6 +44,30 @@ export default async function FichaCliente({
       </EstadoVacio>
     );
   }
+
+  const { data: filasVehiculos } = await supabase
+    .from("vista_vehiculos")
+    .select("id, patente, marca, modelo, anio, cantidad_services, ultimo_service_fecha")
+    .eq("cliente_id", cliente.id)
+    .order("created_at");
+
+  // Igual que con vista_clientes: las columnas de una vista llegan nullable
+  // y se acomodan acá, en el borde, en vez de repartir "!" por los componentes.
+  const vehiculos = (filasVehiculos ?? []).flatMap((v) =>
+    v.id && v.patente
+      ? [
+          {
+            id: v.id,
+            patente: v.patente,
+            marca: v.marca,
+            modelo: v.modelo,
+            anio: v.anio,
+            cantidad_services: v.cantidad_services ?? 0,
+            ultimo_service_fecha: v.ultimo_service_fecha,
+          },
+        ]
+      : [],
+  );
 
   const contacto = [
     cliente.telefono,
@@ -85,18 +111,7 @@ export default async function FichaCliente({
         />
       </header>
 
-      <section>
-        <h2 className="mb-2 px-1 text-label font-semibold tracking-[0.06em] text-ink-40 uppercase">
-          Vehículos
-        </h2>
-        {/* Reservado para la próxima entrega: el alta y el listado de
-            vehículos, con su cartón, son la tarea 5. */}
-        <div className="surface-card border-dashed px-6 py-9 text-center">
-          <p className="text-ui text-ink-40">
-            Los vehículos de este cliente se cargan en la próxima entrega.
-          </p>
-        </div>
-      </section>
+      <SeccionVehiculos clienteId={cliente.id} vehiculos={vehiculos} />
     </div>
   );
 }
