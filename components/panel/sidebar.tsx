@@ -1,0 +1,99 @@
+import Link from "next/link";
+import { Wordmark } from "@/components/marca/wordmark";
+import { NavLink } from "@/components/panel/nav-link";
+import { IconoPlus } from "@/components/iconos";
+import { cerrarSesion } from "@/lib/auth/actions";
+import { urlWhatsappSoporte } from "@/lib/config";
+
+// Los grupos y el orden vienen del hi-fi (pantalla 2 · Inicio — panel del lubri).
+const GRUPOS: { titulo: string; items: { href: string; nombre: string; exacto?: boolean }[] }[] = [
+  {
+    titulo: "Operación",
+    items: [
+      { href: "/panel", nombre: "Inicio", exacto: true },
+      { href: "/panel/proximos", nombre: "Próximos services" },
+      { href: "/panel/clientes", nombre: "Clientes" },
+      { href: "/panel/services", nombre: "Services" },
+    ],
+  },
+  {
+    titulo: "Negocio",
+    items: [
+      { href: "/panel/productos", nombre: "Productos" },
+      { href: "/panel/fidelizacion", nombre: "Fidelización" },
+    ],
+  },
+  {
+    titulo: "Configuración",
+    items: [
+      { href: "/panel/experiencia", nombre: "Diseño de experiencia" },
+      { href: "/panel/mensajes", nombre: "Mensajes" },
+      { href: "/panel/sucursales", nombre: "Sucursales" },
+      { href: "/panel/cuenta", nombre: "Mi cuenta" },
+    ],
+  },
+];
+
+const CLASE_ITEM =
+  "flex h-11 items-center rounded-md px-3 text-ui transition-colors";
+
+export function Sidebar({ lubricentroNombre }: { lubricentroNombre: string }) {
+  return (
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-line bg-base lg:flex">
+      <div className="px-5 pt-5 pb-4">
+        <Wordmark className="text-lg text-ink" />
+        <p className="mt-0.5 truncate text-ui text-ink-60">{lubricentroNombre}</p>
+      </div>
+
+      <div className="px-4">
+        <Link
+          href="/panel/services/nuevo"
+          className="flex h-11 w-full items-center justify-center gap-1.5 rounded-md bg-brand font-brand text-ui font-bold text-white transition-colors hover:bg-brand-deep"
+        >
+          <IconoPlus className="size-4" />
+          Nuevo service
+        </Link>
+      </div>
+
+      <nav className="mt-1 flex-1 overflow-y-auto px-4 pb-4">
+        {GRUPOS.map((grupo) => (
+          <div key={grupo.titulo}>
+            <p className="px-3 pt-4 pb-1 text-label font-semibold tracking-[0.06em] text-ink-40 uppercase">
+              {grupo.titulo}
+            </p>
+            {grupo.items.map((item) => (
+              <NavLink
+                key={item.href}
+                href={item.href}
+                exacto={item.exacto}
+                className={CLASE_ITEM}
+              >
+                {item.nombre}
+              </NavLink>
+            ))}
+          </div>
+        ))}
+      </nav>
+
+      {/* El pie del sidebar, como en el hi-fi: ayuda y salida. */}
+      <div className="border-t border-line px-4 py-2">
+        <a
+          href={urlWhatsappSoporte()}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`${CLASE_ITEM} text-ink-60 hover:bg-surface/60`}
+        >
+          Ayuda por WhatsApp
+        </a>
+        <form action={cerrarSesion}>
+          <button
+            type="submit"
+            className={`${CLASE_ITEM} w-full text-left text-ink-60 hover:bg-surface/60`}
+          >
+            Cerrar sesión
+          </button>
+        </form>
+      </div>
+    </aside>
+  );
+}
