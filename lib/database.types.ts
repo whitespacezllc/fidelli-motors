@@ -975,6 +975,39 @@ export type Database = {
       }
     }
     Functions: {
+      buscar_vehiculo_por_patente: {
+        Args: { p_patente: string }
+        Returns: {
+          anio: number
+          cantidad_services: number
+          cliente_id: string
+          cliente_nombre: string
+          cliente_telefono: string
+          marca: string
+          modelo: string
+          patente: string
+          premio_descripcion: string
+          premio_disponible: boolean
+          premio_meta: number
+          premio_services_ciclo: number
+          ultimo_service_fecha: string
+          ultimo_service_km: number
+          ultimo_service_sucursal: string
+          vehiculo_id: string
+        }[]
+      }
+      crear_cliente_con_vehiculo: {
+        Args: {
+          p_anio?: number
+          p_email: string
+          p_marca?: string
+          p_modelo?: string
+          p_nombre: string
+          p_patente: string
+          p_telefono: string
+        }
+        Returns: string
+      }
       crear_identidad_email: {
         Args: { p_email: string; p_user_id: string }
         Returns: undefined
