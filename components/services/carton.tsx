@@ -1,0 +1,553 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Boton } from "@/components/ui/boton";
+import { CartonPapel } from "@/components/services/carton-papel";
+import {
+  RENGLONES,
+  GRUPOS,
+  esViscosidadValida,
+  normalizarViscosidad,
+  formatearKm,
+  VISCOSIDAD_FORMATO,
+  type ItemTipo,
+} from "@/lib/renglones";
+import { recordarSucursal } from "@/lib/preferencias";
+import {
+  guardarService,
+  crearProductoRapido,
+  type ItemCargado,
+} from "@/app/panel/services/nuevo/[vehiculoId]/actions";
+
+type Producto = { id: string; nombre: string; categoria: string };
+type Sucursal = { id: string; nombre: string };
+
+export type DatosCarton = {
+  vehiculoId: string;
+  patente: string;
+  vehiculoNombre: string;
+  clienteNombre: string;
+  lubricentroNombre: string;
+  colorTenant: string;
+  sucursales: Sucursal[];
+  sucursalInicial: string;
+  productos: Producto[];
+  ultimoService: { fecha: string; kilometros: number } | null;
+  serviceDeHoy: { hora: string; sucursal: string; kilometros: number } | null;
+  hoy: string;
+};
+
+const CLASE_CAMPO =
+  "h-12 w-full rounded-md border border-line bg-base px-3.5 text-body text-ink placeholder:text-ink-40";
+const CLASE_LABEL =
+  "mb-1.5 block text-label font-semibold tracking-[0.06em] text-ink-60 uppercase";
+
+export function Carton({ datos }: { datos: DatosCarton }) {
+  const router = useRouter();
+
+  const [sucursalId, setSucursalId] = useState(datos.sucursalInicial);
+  const [fecha, setFecha] = useState(datos.hoy);
+  const [km, setKm] = useState("");
+  const [aceiteTipo, setAceiteTipo] = useState("");
+  const [aceiteProductoId, setAceiteProductoId] = useState("");
+  // tipo → detalle escrito (string vacío = marcado sin detalle)
+  const [marcados, setMarcados] = useState<Record<string, string>>({});
+  const [abiertos, setAbiertos] = useState<Record<string, boolean>>({});
+  const [proxModo, setProxModo] = useState<"10" | "15" | "otro">("10");
+  const [proxManual, setProxManual] = useState("");
+  const [observaciones, setObservaciones] = useState("");
+  const [mostrarObs, setMostrarObs] = useState(false);
+
+  const [paso, setPaso] = useState<"carton" | "preview">("carton");
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Alta rápida de producto, sin salir del cartón
+  const [productos, setProductos] = useState(datos.productos);
+  const [altaProducto, setAltaProducto] = useState(false);
+  const [nombreProducto, setNombreProducto] = useState("");
+  const [marcaProducto, setMarcaProducto] = useState("");
+  const [errorProducto, setErrorProducto] = useState<string | null>(null);
+
+  const kmNum = Number(km.replace(/\D/g, ""));
+  const kmCargado = km.trim() !== "" && Number.isFinite(kmNum);
+  // El typo más probable y el que más ensucia la predicción de retorno.
+  // Advierte, nunca bloquea: un odómetro cambiado es real.
+  const kmMenor =
+    kmCargado && datos.ultimoService !== null && kmNum < datos.ultimoService.kilometros;
+
+  const viscosidadRara =
+    aceiteTipo.trim().length > 0 && !esViscosidadValida(aceiteTipo);
+
+  const proxKm = useMemo(() => {
+    if (proxModo === "otro") return Number(proxManual.replace(/\D/g, "")) || 0;
+    return kmCargado ? kmNum + (proxModo === "10" ? 10000 : 15000) : 0;
+  }, [proxModo, proxManual, kmCargado, kmNum]);
+
+  const aceitesDelCatalogo = productos.filter((p) => p.categoria === "aceite");
+  const nombreAceite =
+    productos.find((p) => p.id === aceiteProductoId)?.nombre ?? null;
+
+  function alternarRenglon(tipo: ItemTipo) {
+    setMarcados((previo) => {
+      const copia = { ...previo };
+      if (tipo in copia) delete copia[tipo];
+      else copia[tipo] = "";
+      return copia;
+    });
+  }
+
+  async function agregarProducto() {
+    setErrorProducto(null);
+    const resultado = await crearProductoRapido("aceite", nombreProducto, marcaProducto);
+    if (resultado.error) return setErrorProducto(resultado.error);
+    if (resultado.id && resultado.nombre) {
+      setProductos((p) => [
+        ...p,
+        { id: resultado.id!, nombre: resultado.nombre!, categoria: "aceite" },
+      ]);
+      setAceiteProductoId(resultado.id);
+      setAltaProducto(false);
+      setNombreProducto("");
+      setMarcaProducto("");
+    }
+  }
+
+  async function confirmar() {
+    setGuardando(true);
+    setError(null);
+
+    // El detalle escrito que coincide con un producto del catálogo se guarda
+    // como producto; el resto queda como texto libre del renglón.
+    const items: ItemCargado[] = Object.entries(marcados).map(([tipo, detalle]) => {
+      const limpio = detalle.trim();
+      const producto = productos.find((p) => p.nombre === limpio);
+      return {
+        tipo,
+        producto_id: producto?.id ?? null,
+        detalle: producto ? null : limpio || null,
+      };
+    });
+
+    const resultado = await guardarService({
+      vehiculoId: datos.vehiculoId,
+      sucursalId,
+      fecha,
+      kilometros: kmNum,
+      aceiteTipo: normalizarViscosidad(aceiteTipo),
+      aceiteProductoId: aceiteProductoId || null,
+      aceiteNombre: nombreAceite,
+      proxServiceKm: proxKm,
+      observaciones: observaciones.trim() || null,
+      items,
+    });
+
+    if (resultado.error) {
+      setError(resultado.error);
+      setGuardando(false);
+      return;
+    }
+    router.push(`/panel/services/${resultado.serviceId}/guardado`);
+  }
+
+  const datosPreview = {
+    lubricentroNombre: datos.lubricentroNombre,
+    colorTenant: datos.colorTenant,
+    fecha,
+    kilometros: kmNum || 0,
+    aceiteTipo: normalizarViscosidad(aceiteTipo),
+    proxServiceKm: proxKm,
+    marcados: Object.fromEntries(
+      Object.entries(marcados).map(([tipo, detalle]) => [
+        tipo,
+        detalle.trim() || null,
+      ]),
+    ),
+  };
+
+  const listoParaRevisar = kmCargado && aceiteTipo.trim().length >= 2 && proxKm > kmNum;
+
+  // ---------- Momento 2 ----------
+  if (paso === "preview") {
+    return (
+      <div className="pb-4">
+        <h1 className="font-brand text-h3 font-bold text-ink">Revisá el service</h1>
+        <p className="mt-0.5 mb-4 text-ui text-ink-60">
+          Así lo va a ver {datos.clienteNombre.split(" ")[0]} en su celular
+        </p>
+
+        <CartonPapel datos={datosPreview} />
+
+        <div className="mt-4 rounded-md border border-line bg-surface px-4 py-3.5">
+          <p className="font-brand text-ui font-bold text-ink">
+            Editable por 24 horas
+          </p>
+          <p className="mt-0.5 text-ui text-ink-60">
+            Este service podrá editarse solo durante las 24 horas posteriores.
+            Después queda fijado en el historial y no se puede modificar.
+          </p>
+        </div>
+
+        {error && (
+          <p
+            role="alert"
+            className="mt-4 rounded-md bg-overdue-soft px-3.5 py-3 text-ui text-overdue"
+          >
+            {error}
+          </p>
+        )}
+
+        <div className="mt-4 flex gap-2.5">
+          <Boton
+            variante="secundario"
+            tam="lg"
+            className="flex-1"
+            onClick={() => setPaso("carton")}
+            disabled={guardando}
+          >
+            Volver a editar
+          </Boton>
+          {/* Se deshabilita apenas se toca: es lo que evita el service
+              duplicado por doble tap. Ancho fijo para que no salte. */}
+          <Boton
+            tam="lg"
+            className="flex-1"
+            onClick={confirmar}
+            disabled={guardando}
+          >
+            {guardando ? "Guardando…" : "Confirmar service"}
+          </Boton>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------- Momento 1 ----------
+  return (
+    <div>
+      {/* 1. Cabecera sticky: acompaña todo el scroll */}
+      <div className="sticky top-0 z-20 -mx-4 mb-4 flex items-center gap-3 border-b border-line bg-base px-4 py-3 lg:-mx-8 lg:px-8">
+        <div className="min-w-0 flex-1">
+          <p className="plate truncate text-body text-ink">{datos.patente}</p>
+          <p className="truncate text-label text-ink-60">
+            {datos.vehiculoNombre} · {datos.clienteNombre}
+          </p>
+        </div>
+        <select
+          value={sucursalId}
+          onChange={(e) => {
+            setSucursalId(e.target.value);
+            // Queda recordada en este dispositivo para el próximo service.
+            recordarSucursal(e.target.value);
+          }}
+          aria-label="Sucursal"
+          className="h-11 max-w-[45%] rounded-md border border-line bg-base px-2 text-ui text-ink"
+        >
+          {datos.sucursales.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.nombre}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Caso borde: ya se cargó un service hoy para esta patente */}
+      {datos.serviceDeHoy && (
+        <p className="mb-4 rounded-md bg-urgente-soft px-3.5 py-3 text-ui text-urgente">
+          Ya hay un service de hoy para esta patente: {datos.serviceDeHoy.hora} en{" "}
+          {datos.serviceDeHoy.sucursal}, a los{" "}
+          {formatearKm(datos.serviceDeHoy.kilometros)} km. Si igual corresponde
+          cargar otro, seguí.
+        </p>
+      )}
+
+      <div className="flex flex-col gap-4">
+        {/* 2. Fecha */}
+        <div>
+          <label htmlFor="fecha" className={CLASE_LABEL}>
+            Fecha
+          </label>
+          <input
+            id="fecha"
+            type="date"
+            value={fecha}
+            onChange={(e) => setFecha(e.target.value)}
+            className={`${CLASE_CAMPO} tabular-nums`}
+          />
+        </div>
+
+        {/* 3. Kilómetros */}
+        <div>
+          <label htmlFor="km" className={CLASE_LABEL}>
+            Kilómetros
+          </label>
+          <input
+            id="km"
+            inputMode="numeric"
+            value={km}
+            onChange={(e) => setKm(e.target.value)}
+            placeholder="98450"
+            className={`${CLASE_CAMPO} h-14 text-h3 tabular-nums`}
+          />
+          {datos.ultimoService && (
+            <p className="mt-1.5 text-label text-ink-60 tabular-nums">
+              Último service: {formatearKm(datos.ultimoService.kilometros)} km
+            </p>
+          )}
+          {kmMenor && datos.ultimoService && (
+            <p className="mt-2 rounded-md bg-urgente-soft px-3.5 py-3 text-ui text-urgente">
+              Son menos que el último service (
+              {formatearKm(datos.ultimoService.kilometros)} km). Verificá el
+              odómetro — si está bien, seguí igual.
+            </p>
+          )}
+        </div>
+
+        {/* 4. Aceite de motor — bloque destacado, siempre en blanco */}
+        <div className="rounded-lg border border-line bg-surface/60 p-4">
+          <p className="mb-3 font-brand text-body font-bold text-ink">
+            Aceite de motor
+          </p>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="sm:flex-1">
+              <label htmlFor="viscosidad" className={CLASE_LABEL}>
+                Viscosidad
+              </label>
+              <input
+                id="viscosidad"
+                value={aceiteTipo}
+                onChange={(e) => setAceiteTipo(e.target.value.toUpperCase())}
+                placeholder="15W40"
+                autoCapitalize="characters"
+                autoComplete="off"
+                className={`${CLASE_CAMPO} tabular-nums`}
+              />
+            </div>
+            <div className="sm:flex-[1.4]">
+              <label htmlFor="aceite-producto" className={CLASE_LABEL}>
+                Producto <span className="text-ink-40 normal-case">(opcional)</span>
+              </label>
+              <select
+                id="aceite-producto"
+                value={aceiteProductoId}
+                onChange={(e) => {
+                  if (e.target.value === "__nuevo") {
+                    setAltaProducto(true);
+                    return;
+                  }
+                  setAceiteProductoId(e.target.value);
+                }}
+                className={CLASE_CAMPO}
+              >
+                <option value="">Sin producto</option>
+                {aceitesDelCatalogo.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.nombre}
+                  </option>
+                ))}
+                <option value="__nuevo">+ Agregar producto…</option>
+              </select>
+            </div>
+          </div>
+
+          {viscosidadRara && (
+            <p className="mt-2 text-ui text-urgente">{VISCOSIDAD_FORMATO}</p>
+          )}
+
+          {altaProducto && (
+            <div className="mt-3 rounded-md border border-line bg-base p-3">
+              <p className="mb-2 text-label font-semibold tracking-[0.06em] text-ink-60 uppercase">
+                Producto nuevo
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  value={nombreProducto}
+                  onChange={(e) => setNombreProducto(e.target.value)}
+                  placeholder="Helix HX7 10W40"
+                  className={`${CLASE_CAMPO} sm:flex-1`}
+                />
+                <input
+                  value={marcaProducto}
+                  onChange={(e) => setMarcaProducto(e.target.value)}
+                  placeholder="Shell"
+                  className={`${CLASE_CAMPO} sm:w-32`}
+                />
+              </div>
+              {errorProducto && (
+                <p className="mt-2 text-ui text-overdue">{errorProducto}</p>
+              )}
+              <div className="mt-2 flex gap-2">
+                <Boton onClick={agregarProducto} className="flex-1">
+                  Agregar al catálogo
+                </Boton>
+                <Boton
+                  variante="secundario"
+                  onClick={() => setAltaProducto(false)}
+                >
+                  Cancelar
+                </Boton>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 5. Los 11 renglones, agrupados como el papel */}
+        <datalist id="catalogo-productos">
+          {productos.map((p) => (
+            <option key={p.id} value={p.nombre} />
+          ))}
+        </datalist>
+
+        {GRUPOS.map((grupo) => (
+          <div key={grupo} className="overflow-hidden rounded-lg border border-line">
+            <p className="border-b border-line bg-surface px-3.5 py-2 text-label font-semibold tracking-[0.12em] text-ink-60 uppercase">
+              {grupo}
+            </p>
+            {RENGLONES.filter((r) => r.grupo === grupo).map((r) => {
+              const encendido = r.tipo in marcados;
+              return (
+                <div key={r.tipo} className="border-b border-line last:border-b-0">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={encendido}
+                    onClick={() => alternarRenglon(r.tipo)}
+                    className="flex min-h-13 w-full items-center justify-between gap-3 px-3.5 py-2 text-left"
+                  >
+                    <span
+                      className={`text-body ${
+                        encendido ? "font-semibold text-ink" : "text-ink-60"
+                      }`}
+                    >
+                      {r.corto}
+                    </span>
+                    <span
+                      className={`flex h-6 w-10 shrink-0 items-center rounded-full p-0.5 transition-colors ${
+                        encendido ? "bg-ink" : "bg-line"
+                      }`}
+                    >
+                      <span
+                        className={`size-5 rounded-full bg-base shadow-sm transition-transform ${
+                          encendido ? "translate-x-4" : "translate-x-0"
+                        }`}
+                      />
+                    </span>
+                  </button>
+
+                  {encendido && (
+                    <div className="px-3.5 pb-3">
+                      {abiertos[r.tipo] || marcados[r.tipo] ? (
+                        <input
+                          list="catalogo-productos"
+                          value={marcados[r.tipo]}
+                          onChange={(e) =>
+                            setMarcados((p) => ({ ...p, [r.tipo]: e.target.value }))
+                          }
+                          placeholder="Producto o detalle"
+                          className={`${CLASE_CAMPO} h-11`}
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setAbiertos((p) => ({ ...p, [r.tipo]: true }))
+                          }
+                          className="min-h-11 text-ui font-semibold text-brand"
+                        >
+                          + detalle
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+
+        {/* 6. Próximo service */}
+        <div>
+          <span className={CLASE_LABEL}>Próximo service</span>
+          <div className="flex flex-wrap gap-2">
+            {(["10", "15", "otro"] as const).map((modo) => (
+              <button
+                key={modo}
+                type="button"
+                onClick={() => setProxModo(modo)}
+                aria-pressed={proxModo === modo}
+                className={`flex h-11 items-center rounded-md border px-3.5 text-ui tabular-nums transition-colors ${
+                  proxModo === modo
+                    ? "border-ink bg-ink font-semibold text-white"
+                    : "border-line bg-base text-ink-60 hover:bg-surface"
+                }`}
+              >
+                {modo === "otro" ? "Otro" : `+${formatearKm(Number(modo) * 1000)} km`}
+              </button>
+            ))}
+          </div>
+          {proxModo === "otro" && (
+            <input
+              inputMode="numeric"
+              value={proxManual}
+              onChange={(e) => setProxManual(e.target.value)}
+              placeholder="108450"
+              className={`${CLASE_CAMPO} mt-2 tabular-nums`}
+            />
+          )}
+          {proxKm > 0 && (
+            <p className="mt-1.5 text-label text-ink-60 tabular-nums">
+              Próximo service: {formatearKm(proxKm)} km
+            </p>
+          )}
+        </div>
+
+        {/* 7. Observaciones — colapsado, el margen del cartón */}
+        {mostrarObs ? (
+          <div>
+            <label htmlFor="obs" className={CLASE_LABEL}>
+              Observaciones
+            </label>
+            <textarea
+              id="obs"
+              value={observaciones}
+              onChange={(e) => setObservaciones(e.target.value)}
+              rows={3}
+              className="w-full rounded-md border border-line bg-base px-3.5 py-3 text-body text-ink"
+            />
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setMostrarObs(true)}
+            className="min-h-11 self-start text-ui font-semibold text-ink-60"
+          >
+            + Agregar observaciones
+          </button>
+        )}
+      </div>
+
+      {/* 8. Botón fijo inferior — nunca guardado directo.
+          Va en una banda opaca: el cartón scrollea por detrás, no por
+          encima. El offset lo deja despejado de la barra de navegación
+          de mobile. */}
+      <div className="sticky bottom-[calc(45px+env(safe-area-inset-bottom))] z-20 -mx-4 mt-6 border-t border-line bg-base px-4 py-3 lg:bottom-6 lg:-mx-8 lg:px-8">
+        <Boton
+          tam="lg"
+          className="w-full"
+          disabled={!listoParaRevisar}
+          onClick={() => setPaso("preview")}
+        >
+          Revisar y confirmar
+        </Boton>
+        {!listoParaRevisar && (
+          <p className="mt-1.5 text-center text-label text-ink-60">
+            Faltan los kilómetros y la viscosidad del aceite.
+          </p>
+        )}
+      </div>
+      {/* Aire para que el último renglón pueda subir por encima de la banda */}
+      <div className="h-4" />
+    </div>
+  );
+}

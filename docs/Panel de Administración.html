@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fidelli Motors — Panel de Administración</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=Public+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --brand:#E01F26; --brand-deep:#B8161C; --brand-soft:#FDECEC;
+    --ink:#0A0A0A; --ink-60:#4A4A4A; --ink-40:#8A8A8A;
+    --line:#E4E4E4; --surface:#F5F5F5; --base:#FFFFFF;
+    --overdue:#B45309; --imminent:#D97706; --upcoming:#6B7280; --success:#15803D; --reward:#CA8A04;
+    --fam-b:'Nunito',sans-serif; --fam-u:'Public Sans',sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:#EDEDED;font-family:var(--fam-u);font-size:13px;color:var(--ink);line-height:1.45}
+  .tnum{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+
+  .previewbar{position:sticky;top:0;z-index:50;background:var(--ink);color:#fff;display:flex;align-items:center;gap:20px;padding:12px 24px}
+  .previewbar .t{font-family:var(--fam-b);font-weight:700;font-size:15px}
+  .previewbar .t span{color:var(--brand)}
+  .previewbar nav{display:flex;gap:6px;margin-left:auto}
+  .previewbar a{color:rgba(255,255,255,.75);text-decoration:none;font-size:13px;font-weight:600;padding:6px 12px;border-radius:6px}
+  .previewbar a:hover{background:rgba(255,255,255,.12);color:#fff}
+  .stage{max-width:1240px;margin:0 auto;padding:44px 24px 90px}
+  .stage h2{font-family:var(--fam-b);font-size:25px;font-weight:700;margin:52px 0 4px}
+  .stage .cap{color:var(--ink-60);font-size:14px;margin-bottom:20px;max-width:82ch}
+
+  .btn{font-family:var(--fam-b);font-weight:700;border:1px solid transparent;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:.14s;white-space:nowrap;text-decoration:none}
+  .btn-md{height:38px;padding:0 16px;font-size:13px}
+  .btn-sm{height:30px;padding:0 12px;font-size:12px}
+  .btn-primary{background:var(--brand);color:#fff}
+  .btn-primary:hover{background:var(--brand-deep)}
+  .btn-secondary{background:var(--base);color:var(--ink);border-color:var(--ink)}
+  .btn-secondary:hover{background:var(--surface)}
+  .btn-ghost{background:transparent;color:var(--ink-60)}
+  .btn-ghost:hover{background:var(--surface);color:var(--ink)}
+
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;letter-spacing:.04em;padding:3px 8px;border-radius:4px;border:1px solid;white-space:nowrap}
+  .b-active{color:var(--success);border-color:var(--success);background:#EFF9F2}
+  .b-trial{color:var(--upcoming);border-color:var(--line);background:var(--surface)}
+  .b-expired{color:var(--overdue);border-color:var(--overdue);background:#FEF6EC}
+  .b-founding{color:var(--reward);border-color:var(--reward);background:#FDF8E7}
+
+  /* ------- shell del panel admin: barra superior ------- */
+  .admin{background:var(--base);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 2px 10px rgba(10,10,10,.05)}
+  .abar{height:54px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:22px;padding:0 22px}
+  .abar .mark{font-family:var(--fam-b);font-weight:700;font-size:14px}
+  .abar .mark span{color:var(--brand)}
+  .abar .mark em{font-style:normal;color:var(--ink-40);font-weight:600;font-size:12px;margin-left:8px}
+  .abar nav{display:flex;gap:4px}
+  .abar nav a{font-size:13px;font-weight:600;color:var(--ink-60);text-decoration:none;padding:6px 12px;border-radius:6px}
+  .abar nav a:hover{background:var(--surface);color:var(--ink)}
+  .abar nav a.on{background:var(--surface);color:var(--ink)}
+  .abar .who{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:12px;color:var(--ink-60)}
+  .abar .who b{color:var(--ink)}
+  .acontent{padding:20px 22px 26px}
+  .ahead{display:flex;align-items:center;gap:14px;margin-bottom:16px}
+  .ahead .t{font-family:var(--fam-b);font-size:22px;font-weight:700}
+  .ahead .btn{margin-left:auto}
+
+  /* franja de totales */
+  .totals{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+  .tot{border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+  .tot .k{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-40)}
+  .tot .v{font-family:var(--fam-u);font-size:22px;font-weight:700;margin-top:4px;letter-spacing:-.01em}
+  .tot .d{font-size:11px;color:var(--ink-40);margin-top:1px}
+
+  table{width:100%;border-collapse:collapse}
+  thead th{text-align:left;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-40);padding:0 10px 8px;border-bottom:1px solid var(--line)}
+  tbody td{padding:0 10px;height:40px;border-bottom:1px solid var(--line);font-size:13px}
+  tbody tr:hover{background:var(--surface);cursor:pointer}
+  .tname{font-weight:600}
+  .tslug{font-size:11px;color:var(--ink-40)}
+  .tn-c{color:var(--ink-60)}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:7px;vertical-align:middle}
+  .dot.ok{background:var(--success)}
+  .dot.warn{background:var(--imminent)}
+  .dot.bad{background:var(--overdue)}
+  .salud{font-size:12px;font-weight:600;color:var(--ink-60);white-space:nowrap}
+
+  /* ficha */
+  .crumb{font-size:12px;color:var(--ink-40);margin-bottom:12px}
+  .crumb b{color:var(--ink);font-weight:600}
+  .fhead{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+  .fhead .t{font-family:var(--fam-b);font-size:22px;font-weight:700}
+  .fhead .s{font-size:12px;color:var(--ink-40)}
+  .tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:18px}
+  .tab{font-size:13px;font-weight:600;color:var(--ink-40);padding:9px 14px;border-bottom:2px solid transparent;cursor:pointer}
+  .tab:hover{color:var(--ink)}
+  .tab.on{color:var(--ink);border-bottom-color:var(--ink)}
+  .cols{display:grid;grid-template-columns:1.1fr .9fr;gap:18px;align-items:start}
+  .panelbox{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .pb-h{padding:10px 14px;background:var(--surface);border-bottom:1px solid var(--line);font-family:var(--fam-b);font-weight:700;font-size:13px}
+  .kv{display:flex;justify-content:space-between;gap:12px;padding:9px 14px;border-bottom:1px solid var(--line);font-size:13px}
+  .kv:last-child{border-bottom:none}
+  .kv .k{color:var(--ink-60)}
+  .kv .v{font-weight:600;text-align:right}
+  .mini{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .ms{border:1px solid var(--line);border-radius:8px;padding:11px 13px}
+  .ms .k{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-40)}
+  .ms .v{font-size:19px;font-weight:700;margin-top:3px}
+
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-60);margin-bottom:5px}
+  .input{width:100%;height:38px;border:1px solid var(--line);border-radius:8px;padding:0 12px;font-family:var(--fam-u);font-size:13px;outline:none}
+  .input:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+  .help{font-size:12px;margin-top:5px;color:var(--ink-40)}
+  .help.ok{color:var(--success);font-weight:600}
+  .warncard{border:1px solid var(--imminent);background:#FEF8EE;border-radius:8px;padding:11px 13px;margin:14px 0}
+  .warncard .t{font-family:var(--fam-b);font-weight:700;font-size:13px;color:var(--overdue)}
+  .warncard .d{font-size:12px;color:var(--ink-60);margin-top:2px;line-height:1.5}
+
+  /* wizard */
+  .stepper{display:flex;gap:8px;margin-bottom:20px}
+  .stp{flex:1;display:flex;align-items:center;gap:9px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;font-size:12px;color:var(--ink-40)}
+  .stp .n{width:22px;height:22px;border-radius:50%;border:1px solid var(--ink-40);font-family:var(--fam-b);font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center;flex:none}
+  .stp.on{border-color:var(--ink);color:var(--ink);font-weight:600}
+  .stp.on .n{background:var(--ink);border-color:var(--ink);color:#fff}
+
+  /* plan y precios */
+  .pricegrid{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+  .derived .kv .v{font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+
+<div class="previewbar">
+  <div class="t">FIDELLI <span>MOTORS</span> · Panel de Administración — /fidelli</div>
+  <nav>
+    <a href="#a1">Lubricentros</a>
+    <a href="#a2">Ficha · Resumen</a>
+    <a href="#a3">Ficha · Suscripción</a>
+    <a href="#a4">Alta · Wizard</a>
+    <a href="#a5">Plan y precios</a>
+  </nav>
+</div>
+
+<div class="stage">
+
+  <!-- ===== LUBRICENTROS ===== -->
+  <h2 id="a1">Lubricentros — la tabla que es el dashboard</h2>
+  <p class="cap">El inicio del CRM: franja de totales con el MRR normalizado y sin trials, y la columna salud ordenando el trabajo del día. Barra superior en vez de sidebar — dos módulos no justifican uno.</p>
+
+  <div class="admin">
+    <div class="abar">
+      <div class="mark">FIDELLI <span>MOTORS</span><em>Administración</em></div>
+      <nav><a class="on">Lubricentros</a><a>Plan y precios</a></nav>
+      <div class="who"><span>Sesión: <b>Santi</b></span><a class="btn btn-sm btn-ghost">Salir</a></div>
+    </div>
+    <div class="acontent">
+      <div class="ahead">
+        <div class="t">Lubricentros</div>
+        <button class="btn btn-md btn-primary">+ Nuevo lubricentro</button>
+      </div>
+      <div class="totals">
+        <div class="tot"><div class="k">Activos</div><div class="v tnum">2</div><div class="d">con suscripción vigente</div></div>
+        <div class="tot"><div class="k">MRR</div><div class="v tnum">ARS 63.000</div><div class="d tnum">normalizado · sin trials</div></div>
+        <div class="tot"><div class="k">Services del mes</div><div class="v tnum">260</div><div class="d">toda la plataforma</div></div>
+        <div class="tot"><div class="k">Trials en curso</div><div class="v tnum">2</div><div class="d tnum">vencen 28/07 y 09/08</div></div>
+      </div>
+      <table>
+        <thead><tr><th>Lubricentro</th><th>Suscripción</th><th>Vencimiento</th><th>Services mes</th><th>Último service</th><th>Salud</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><div class="tname">Brothers Oil</div><div class="tslug">/brothers-oil</div></td>
+            <td><span class="badge b-active">ACTIVA · MENSUAL</span> <span class="badge b-founding">FOUNDING −50%</span></td>
+            <td class="tn-c tnum">15/08/2026</td>
+            <td class="tn-c tnum">118</td>
+            <td class="tn-c">hoy</td>
+            <td class="salud"><span class="dot ok"></span>Al día</td>
+          </tr>
+          <tr>
+            <td><div class="tname">Rapilub</div><div class="tslug">/rapilub</div></td>
+            <td><span class="badge b-active">ACTIVA · SEMESTRAL</span></td>
+            <td class="tn-c tnum">03/01/2027</td>
+            <td class="tn-c tnum">84</td>
+            <td class="tn-c">hace 5 días</td>
+            <td class="salud"><span class="dot warn"></span>Actividad baja</td>
+          </tr>
+          <tr>
+            <td><div class="tname">Lubricentro San Martín</div><div class="tslug">/lubricentro-san-martin</div></td>
+            <td><span class="badge b-trial">TRIAL · 18 DÍAS</span></td>
+            <td class="tn-c tnum">09/08/2026</td>
+            <td class="tn-c tnum">37</td>
+            <td class="tn-c">ayer</td>
+            <td class="salud"><span class="dot ok"></span>Al día</td>
+          </tr>
+          <tr>
+            <td><div class="tname">Motor Sur</div><div class="tslug">/motor-sur</div></td>
+            <td><span class="badge b-trial">TRIAL · 6 DÍAS</span></td>
+            <td class="tn-c tnum">28/07/2026</td>
+            <td class="tn-c tnum">9</td>
+            <td class="tn-c">hace 8 días</td>
+            <td class="salud"><span class="dot bad"></span>Sin actividad</td>
+          </tr>
+          <tr>
+            <td><div class="tname">Lubri Express</div><div class="tslug">/lubri-express</div></td>
+            <td><span class="badge b-expired">VENCIDA</span></td>
+            <td class="tn-c tnum">30/06/2026</td>
+            <td class="tn-c tnum">12</td>
+            <td class="tn-c">hace 3 días</td>
+            <td class="salud"><span class="dot bad"></span>Cobro vencido</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===== FICHA RESUMEN ===== -->
+  <h2 id="a2">Ficha del tenant — pestaña Resumen</h2>
+  <p class="cap">Toda la relación con Brothers Oil en una pantalla: datos, plan y las métricas que alimentan el case study.</p>
+
+  <div class="admin">
+    <div class="abar">
+      <div class="mark">FIDELLI <span>MOTORS</span><em>Administración</em></div>
+      <nav><a class="on">Lubricentros</a><a>Plan y precios</a></nav>
+      <div class="who"><span>Sesión: <b>Santi</b></span><a class="btn btn-sm btn-ghost">Salir</a></div>
+    </div>
+    <div class="acontent">
+      <div class="crumb">Lubricentros <span style="margin:0 4px">/</span> <b>Brothers Oil</b></div>
+      <div class="fhead">
+        <div class="t">Brothers Oil</div>
+        <span class="badge b-active">ACTIVA · MENSUAL</span>
+        <span class="badge b-founding">FOUNDING −50%</span>
+        <div class="s" style="margin-left:auto">alta: 01/07/2026 · <span class="tnum">/brothers-oil</span></div>
+      </div>
+      <div class="tabs">
+        <div class="tab on">Resumen</div><div class="tab">Suscripción</div><div class="tab">Datos</div><div class="tab">Configuración</div>
+      </div>
+      <div class="cols">
+        <div>
+          <div class="panelbox">
+            <div class="pb-h">Datos de la marca</div>
+            <div class="kv"><span class="k">Owner</span><span class="v">Bruno · bruno@brothersoil.com.ar</span></div>
+            <div class="kv"><span class="k">Teléfono</span><span class="v tnum">351 555 8800</span></div>
+            <div class="kv"><span class="k">Sucursales</span><span class="v">Recta Martinolli · Boulevares</span></div>
+            <div class="kv"><span class="k">Calcos entregadas</span><span class="v tnum">50 · kit founding</span></div>
+          </div>
+          <div class="panelbox" style="margin-top:14px">
+            <div class="pb-h">Plan vigente</div>
+            <div class="kv"><span class="k">Abono</span><span class="v tnum">ARS 22.500/mes — 50% sobre lista (45.000)</span></div>
+            <div class="kv"><span class="k">Próximo vencimiento</span><span class="v tnum">15/08/2026</span></div>
+            <div class="kv"><span class="k">Condición founding</span><span class="v">case study + testimonio + referidos</span></div>
+          </div>
+        </div>
+        <div>
+          <div class="mini">
+            <div class="ms"><div class="k">Services / mes</div><div class="v tnum">118</div></div>
+            <div class="ms"><div class="k">Clientes</div><div class="v tnum">210</div></div>
+            <div class="ms"><div class="k">Escaneo de landing</div><div class="v tnum">34%</div></div>
+            <div class="ms"><div class="k">Recuperados / mes</div><div class="v tnum">7</div></div>
+          </div>
+          <div class="panelbox" style="margin-top:14px">
+            <div class="pb-h">Actividad</div>
+            <div class="kv"><span class="k">Último service cargado</span><span class="v">hoy 17:42 · Recta Martinolli</span></div>
+            <div class="kv"><span class="k">Salud</span><span class="v"><span class="dot ok"></span>Al día</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== FICHA SUSCRIPCION ===== -->
+  <h2 id="a3">Ficha del tenant — pestaña Suscripción</h2>
+  <p class="cap">El cobro por transferencia, firmado: quién registró cada pago y cuándo. El aviso de vencimiento sale por wa.me con el mensaje pre-armado.</p>
+
+  <div class="admin">
+    <div class="acontent" style="padding-top:20px">
+      <div class="crumb">Lubricentros <span style="margin:0 4px">/</span> <b>Brothers Oil</b> <span style="margin:0 4px">/</span> Suscripción</div>
+      <div class="tabs">
+        <div class="tab">Resumen</div><div class="tab on">Suscripción</div><div class="tab">Datos</div><div class="tab">Configuración</div>
+      </div>
+      <div class="cols">
+        <div class="panelbox">
+          <div class="pb-h">Historial de pagos</div>
+          <table>
+            <thead><tr><th style="padding-left:14px">Período</th><th>Monto</th><th>Pagado</th><th>Registró</th></tr></thead>
+            <tbody>
+              <tr><td style="padding-left:14px" class="tnum">16/07 → 15/08/2026</td><td class="tn-c tnum">ARS 22.500</td><td class="tn-c tnum">14/07/2026</td><td class="tn-c">Santi</td></tr>
+              <tr><td style="padding-left:14px" class="tnum">01/06 → 30/06/2026</td><td class="tn-c tnum">Trial founding</td><td class="tn-c">—</td><td class="tn-c">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <div class="panelbox">
+            <div class="pb-h">Registrar pago</div>
+            <div style="padding:14px">
+              <div class="field"><label>Período</label><input class="input tnum" value="16/08 → 15/09/2026"></div>
+              <div class="field"><label>Monto</label><input class="input tnum" value="ARS 22.500"></div>
+              <div class="field"><label>Fecha de transferencia</label><input class="input tnum" placeholder="dd/mm/aaaa"></div>
+              <button class="btn btn-md btn-primary" style="width:100%">Registrar pago</button>
+              <div class="help" style="text-align:center;margin-top:8px">Queda firmado como <b>Santi</b> con fecha y hora</div>
+            </div>
+          </div>
+          <button class="btn btn-md btn-secondary" style="width:100%;margin-top:12px">Aviso de vencimiento por WhatsApp</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== WIZARD ===== -->
+  <h2 id="a4">Alta de lubricentro — wizard, paso 1 de 3</h2>
+  <p class="cap">La operación ceremonial: cada alta es un cliente. Transaccional todo-o-nada — ningún lubri nace a medias.</p>
+
+  <div class="admin">
+    <div class="acontent" style="padding-top:20px;max-width:640px">
+      <div class="ahead"><div class="t">Nuevo lubricentro</div></div>
+      <div class="stepper">
+        <div class="stp on"><span class="n">1</span>Marca y slug</div>
+        <div class="stp"><span class="n">2</span>Sucursales y owner</div>
+        <div class="stp"><span class="n">3</span>Plan y trial</div>
+      </div>
+      <div class="field"><label>Nombre de la marca</label><input class="input" value="Lubricentro Norte"></div>
+      <div class="field">
+        <label>Slug público</label>
+        <input class="input tnum" value="lubricentro-norte">
+        <div class="help ok">✓ Disponible — la landing será fidellimotors.app/lubricentro-norte</div>
+      </div>
+      <div class="warncard">
+        <div class="t">El slug queda inmutable al imprimir las calcos</div>
+        <div class="d">Una vez impresas, cambiarlo rompería los QR pegados en los parasoles. Elegilo pensando que es para siempre.</div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn btn-md btn-ghost">Cancelar</button>
+        <button class="btn btn-md btn-primary">Continuar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== PLAN Y PRECIOS ===== -->
+  <h2 id="a5">Plan y precios — un número, un lugar</h2>
+  <p class="cap">El ajuste trimestral se ejecuta acá. Los descuentos son porcentajes sobre la lista: se toca el precio y todo se recalcula — incluido el founding.</p>
+
+  <div class="admin">
+    <div class="acontent" style="padding-top:20px">
+      <div class="ahead"><div class="t">Plan y precios</div></div>
+      <div class="pricegrid">
+        <div class="panelbox">
+          <div class="pb-h">Precio de lista</div>
+          <div style="padding:14px">
+            <div class="field"><label>Abono mensual · ARS</label><input class="input tnum" value="45.000" style="font-size:19px;font-weight:700;height:46px"></div>
+            <div class="help tnum">Última actualización: 01/07/2026 · próximo ajuste trimestral: octubre 2026</div>
+            <button class="btn btn-md btn-primary" style="margin-top:12px">Guardar nuevo precio</button>
+          </div>
+        </div>
+        <div class="panelbox derived">
+          <div class="pb-h">Derivados — se recalculan solos</div>
+          <div class="kv"><span class="k">Semestral · −10%</span><span class="v tnum">ARS 243.000 (≈ 40.500/mes)</span></div>
+          <div class="kv"><span class="k">Anual · −15%</span><span class="v tnum">ARS 459.000 (≈ 38.250/mes)</span></div>
+          <div class="kv"><span class="k">Founding Brothers Oil · −50%</span><span class="v tnum">ARS 22.500/mes</span></div>
+          <div class="kv"><span class="k">Prepagos vigentes</span><span class="v">congelan su precio hasta renovar</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

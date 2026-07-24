@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fidelli Motors — Design System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=Public+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --brand:#E01F26; --brand-deep:#B8161C; --brand-soft:#FDECEC;
+    --ink:#0A0A0A; --ink-60:#4A4A4A; --ink-40:#8A8A8A;
+    --line:#E4E4E4; --surface:#F5F5F5; --base:#FFFFFF;
+    --overdue:#B45309; --imminent:#D97706; --upcoming:#6B7280; --success:#15803D; --reward:#CA8A04;
+    --r-sm:4px; --r-md:8px; --r-lg:12px;
+    --brand-fam:'Nunito',sans-serif; --ui-fam:'Public Sans',sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--base);color:var(--ink);font-family:var(--ui-fam);font-size:14px;line-height:1.45;padding:40px 32px 80px}
+  .wrap{max-width:1080px;margin:0 auto}
+  h1{font-family:var(--brand-fam);font-size:39px;font-weight:700;letter-spacing:-.015em;line-height:1.1}
+  .sub{font-family:var(--brand-fam);font-size:20px;color:var(--ink-60);margin-top:6px}
+  h2{font-family:var(--brand-fam);font-size:25px;font-weight:600;margin:44px 0 4px;letter-spacing:-.005em}
+  .note{font-size:14px;color:var(--ink-60);margin-bottom:18px;max-width:70ch}
+  .sec{border-top:1px solid var(--line);padding-top:28px;margin-top:36px}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+  .lbl{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-40);width:100%;margin-bottom:2px}
+
+  /* botones */
+  .btn{font-family:var(--brand-fam);font-weight:700;border:1px solid transparent;border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:.14s;white-space:nowrap}
+  .btn-lg{height:48px;padding:0 24px;font-size:16px}
+  .btn-md{height:40px;padding:0 18px;font-size:14px}
+  .btn-sm{height:32px;padding:0 13px;font-size:13px}
+  .btn-primary{background:var(--brand);color:#fff}
+  .btn-primary:hover{background:var(--brand-deep)}
+  .btn-secondary{background:var(--base);color:var(--ink);border-color:var(--ink)}
+  .btn-secondary:hover{background:var(--surface)}
+  .btn-ghost{background:transparent;color:var(--ink-60)}
+  .btn-ghost:hover{background:var(--surface);color:var(--ink)}
+  .btn-danger{background:var(--base);color:var(--brand);border-color:var(--brand)}
+  .btn-danger:hover{background:var(--brand-soft)}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn-block{width:100%}
+
+  /* inputs */
+  .field{max-width:340px;margin-bottom:16px}
+  .field label{display:block;font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-60);margin-bottom:6px}
+  .input{width:100%;height:44px;border:1px solid var(--line);border-radius:var(--r-md);padding:0 14px;font-family:var(--ui-fam);font-size:14px;color:var(--ink);background:var(--base);outline:none;transition:.14s}
+  .input::placeholder{color:var(--ink-40)}
+  .input:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+  .input.err{border-color:var(--overdue)}
+  .help{font-size:12px;color:var(--ink-40);margin-top:5px}
+  .help.err{color:var(--overdue)}
+  .input-num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+
+  /* buscador de patente */
+  .plate-search{max-width:420px}
+  .plate-input{width:100%;height:64px;border:2px solid var(--ink);border-radius:var(--r-md);padding:0 18px;font-family:var(--ui-fam);font-size:24px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;text-align:center;color:var(--ink);outline:none;font-feature-settings:"tnum"}
+  .plate-input::placeholder{color:var(--ink-40);font-weight:400;letter-spacing:.04em}
+  .plate-input:focus{border-color:var(--brand)}
+
+  /* badges */
+  .badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--ui-fam);font-size:12px;font-weight:600;letter-spacing:.04em;padding:4px 10px;border-radius:var(--r-sm);border:1px solid}
+  .b-overdue{color:var(--overdue);border-color:var(--overdue);background:#FEF6EC}
+  .b-imminent{color:var(--imminent);border-color:var(--imminent);background:#FEF8EE}
+  .b-upcoming{color:var(--upcoming);border-color:var(--line);background:var(--surface)}
+  .b-success{color:var(--success);border-color:var(--success);background:#EFF9F2}
+  .b-reward{color:var(--reward);border-color:var(--reward);background:#FDF8E7}
+  .b-fixed{color:var(--ink-40);border-color:var(--line);background:var(--base)}
+
+  /* chips */
+  .chip{font-family:var(--ui-fam);font-size:13px;font-weight:600;padding:7px 14px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--base);color:var(--ink-60);cursor:pointer;transition:.14s;font-feature-settings:"tnum"}
+  .chip:hover{border-color:var(--ink-40);color:var(--ink)}
+  .chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
+
+  /* card */
+  .card{border:1px solid var(--line);border-radius:var(--r-lg);padding:20px;background:var(--base)}
+  .card-h{font-family:var(--brand-fam);font-size:20px;font-weight:700;margin-bottom:4px}
+  .card-s{font-size:14px;color:var(--ink-60)}
+
+  /* toggle de renglon */
+  .item-list{border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;max-width:520px}
+  .item-group{font-family:var(--ui-fam);font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-40);background:var(--surface);padding:7px 16px}
+  .item{display:flex;align-items:center;gap:12px;padding:0 16px;height:52px;border-bottom:1px solid var(--line)}
+  .item:last-child{border-bottom:none}
+  .item-name{flex:1;font-size:15px;color:var(--ink-40)}
+  .item.on .item-name{color:var(--ink);font-weight:600}
+  .sw{width:44px;height:26px;border-radius:13px;border:1px solid var(--line);background:var(--surface);position:relative;cursor:pointer;transition:.16s;flex:none}
+  .sw::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;border:1px solid var(--line);transition:.16s}
+  .sw.on{background:var(--ink);border-color:var(--ink)}
+  .sw.on::after{left:20px;border-color:var(--ink)}
+  .item-detail{font-size:13px;color:var(--brand);font-weight:600;cursor:pointer}
+
+  /* tabla */
+  table{width:100%;border-collapse:collapse;font-family:var(--ui-fam)}
+  thead th{text-align:left;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-40);padding:0 12px 10px;border-bottom:1px solid var(--line)}
+  tbody td{padding:0 12px;height:44px;border-bottom:1px solid var(--line);font-size:14px;color:var(--ink)}
+  tbody tr:hover{background:var(--surface)}
+  .td-num{font-feature-settings:"tnum";color:var(--ink-60)}
+  .td-plate{font-weight:600;letter-spacing:.08em;font-feature-settings:"tnum"}
+  .check{width:20px;height:20px;border:1px solid var(--ink-40);border-radius:var(--r-sm);display:inline-block;cursor:pointer;position:relative}
+  .check.on{background:var(--ink);border-color:var(--ink)}
+  .check.on::after{content:'';position:absolute;left:6px;top:2px;width:5px;height:10px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+
+  /* progreso */
+  .prog-wrap{max-width:420px}
+  .prog-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+  .prog-l{font-family:var(--brand-fam);font-size:16px;font-weight:600}
+  .prog-r{font-size:14px;color:var(--ink-60)}
+  .prog{height:8px;border-radius:4px;background:var(--surface);border:1px solid var(--line);overflow:hidden}
+  .prog>div{height:100%;background:var(--ink);border-radius:4px}
+  .prog.done>div{background:var(--reward)}
+
+  /* display del carton */
+  .display-km{font-family:var(--brand-fam);font-size:52px;font-weight:700;letter-spacing:-.02em;line-height:1;font-feature-settings:"tnum"}
+  .display-cap{font-family:var(--ui-fam);font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-40);margin-bottom:6px}
+
+  /* modal */
+  .modal{max-width:420px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--base);box-shadow:0 12px 32px rgba(10,10,10,.14);padding:24px}
+  .modal-h{font-family:var(--brand-fam);font-size:20px;font-weight:700;margin-bottom:8px}
+  .modal-b{font-size:14px;color:var(--ink-60);margin-bottom:20px}
+  .modal-f{display:flex;gap:10px;justify-content:flex-end}
+
+  /* toast */
+  .toast{display:inline-flex;align-items:center;gap:10px;border:1px solid var(--success);background:#EFF9F2;color:var(--success);border-radius:var(--r-md);padding:12px 16px;font-size:14px;font-weight:600;box-shadow:0 6px 20px rgba(10,10,10,.1)}
+
+  /* alerta */
+  .alert{border:1px solid var(--imminent);background:#FEF8EE;border-radius:var(--r-md);padding:14px 16px;max-width:560px}
+  .alert-t{font-family:var(--brand-fam);font-weight:700;font-size:15px;color:var(--overdue);margin-bottom:3px}
+  .alert-b{font-size:13px;color:var(--ink-60)}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Design System</h1>
+  <div class="sub">Fidelli Motors — componentes base · light mode</div>
+
+  <!-- BOTONES -->
+  <div class="sec">
+    <h2>Botones</h2>
+    <p class="note">Nunito 700. Un solo primario por pantalla. Radio 8px. Alturas 48 / 40 / 32 según jerarquía y contexto — el de 48 es para CTAs de mobile y landing.</p>
+    <div class="row"><span class="lbl">Variantes · tamaño md</span>
+      <button class="btn btn-md btn-primary">Confirmar service</button>
+      <button class="btn btn-md btn-secondary">Volver a editar</button>
+      <button class="btn btn-md btn-ghost">Cancelar</button>
+      <button class="btn btn-md btn-danger">Anular service</button>
+      <button class="btn btn-md btn-primary" disabled>Deshabilitado</button>
+    </div>
+    <div class="row"><span class="lbl">Tamaños</span>
+      <button class="btn btn-lg btn-primary">Ver mi historial</button>
+      <button class="btn btn-md btn-primary">Nuevo service</button>
+      <button class="btn btn-sm btn-secondary">Editar</button>
+    </div>
+    <div class="row" style="max-width:340px"><span class="lbl">Block — mobile</span>
+      <button class="btn btn-lg btn-primary btn-block">Revisar y confirmar</button>
+    </div>
+  </div>
+
+  <!-- INPUTS -->
+  <div class="sec">
+    <h2>Campos</h2>
+    <p class="note">Public Sans 14px, altura 44px, borde 1px. Focus con anillo de brand-soft. Las cifras siempre en tabular.</p>
+    <div class="grid2">
+      <div>
+        <div class="field">
+          <label>Nombre y apellido</label>
+          <input class="input" placeholder="Pedro Gómez">
+        </div>
+        <div class="field">
+          <label>Kilómetros</label>
+          <input class="input input-num" value="98450">
+          <div class="help">El último service fue a 88.200 km</div>
+        </div>
+        <div class="field">
+          <label>Kilómetros</label>
+          <input class="input input-num err" value="72000">
+          <div class="help err">Es menor al último service registrado (88.200 km). ¿Continuar igual?</div>
+        </div>
+      </div>
+      <div>
+        <div class="field">
+          <label>Viscosidad del aceite</label>
+          <input class="input" placeholder="15W40">
+          <div class="help">Dato crítico — verificá antes de confirmar</div>
+        </div>
+        <div class="field">
+          <label>Buscador de patente</label>
+          <div class="plate-search"><input class="plate-input" placeholder="AB 123 CD"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BADGES Y CHIPS -->
+  <div class="sec">
+    <h2>Badges y chips</h2>
+    <p class="note">Los estados nunca usan rojo — el rojo es acción. Badge para comunicar estado, chip para seleccionar.</p>
+    <div class="row"><span class="lbl">Estados</span>
+      <span class="badge b-overdue">VENCIDO</span>
+      <span class="badge b-imminent">INMINENTE</span>
+      <span class="badge b-upcoming">PRÓXIMO</span>
+      <span class="badge b-success">AL DÍA</span>
+      <span class="badge b-reward">PREMIO DISPONIBLE</span>
+      <span class="badge b-fixed">REGISTRO FIJADO</span>
+    </div>
+    <div class="row"><span class="lbl">Chips — próximo service</span>
+      <button class="chip on">+10.000 km</button>
+      <button class="chip">+15.000 km</button>
+      <button class="chip">Otro</button>
+    </div>
+    <div class="row"><span class="lbl">Chips — filtros</span>
+      <button class="chip">Todas las sucursales</button>
+      <button class="chip on">Recta Martinolli</button>
+      <button class="chip">Boulevares</button>
+    </div>
+  </div>
+
+  <!-- TOGGLE DE RENGLON -->
+  <div class="sec">
+    <h2>Renglones del cartón</h2>
+    <p class="note">La pieza más usada del producto: once por cartón. Apagado = gris, prendido = negro y semibold. Al prender aparece "+ detalle".</p>
+    <div class="item-list">
+      <div class="item-group">Filtros</div>
+      <div class="item on"><span class="item-name">Filtro de aceite</span><span class="item-detail">+ detalle</span><span class="sw on"></span></div>
+      <div class="item on"><span class="item-name">Filtro de aire</span><span class="item-detail">Mann C24</span><span class="sw on"></span></div>
+      <div class="item"><span class="item-name">Filtro de combustible</span><span class="sw"></span></div>
+      <div class="item"><span class="item-name">Filtro de habitáculo</span><span class="sw"></span></div>
+      <div class="item-group">Aceites</div>
+      <div class="item"><span class="item-name">Aceite de caja</span><span class="sw"></span></div>
+      <div class="item"><span class="item-name">Aceite diferencial</span><span class="sw"></span></div>
+    </div>
+  </div>
+
+  <!-- TABLA -->
+  <div class="sec">
+    <h2>Tabla</h2>
+    <p class="note">Filas de 44px, solo divisores horizontales, cero bordes verticales, sin fondos alternados. El aire lo da la ausencia de ruido, no la altura.</p>
+    <table>
+      <thead><tr><th>Cliente</th><th>Vehículo</th><th>Último service</th><th>Próximo</th><th>Retorno est.</th><th>Estado</th><th>Contactado</th><th></th></tr></thead>
+      <tbody>
+        <tr><td>Pedro Gómez</td><td class="td-plate">ABC 123</td><td class="td-num">12/05/2026 · 88.200</td><td class="td-num">98.200</td><td class="td-num">18/07/2026</td><td><span class="badge b-overdue">VENCIDO</span></td><td><span class="check"></span></td><td><button class="btn btn-sm btn-primary">WhatsApp</button></td></tr>
+        <tr><td>Lucía Fernández</td><td class="td-plate">AB 456 CD</td><td class="td-num">02/06/2026 · 45.100</td><td class="td-num">55.100</td><td class="td-num">26/07/2026</td><td><span class="badge b-imminent">INMINENTE</span></td><td><span class="check on"></span></td><td><button class="btn btn-sm btn-secondary">WhatsApp</button></td></tr>
+        <tr><td>Marcelo Ruiz</td><td class="td-plate">XYZ 789</td><td class="td-num">28/06/2026 · 12.400</td><td class="td-num">22.400</td><td class="td-num">14/08/2026</td><td><span class="badge b-upcoming">PRÓXIMO</span></td><td><span class="check"></span></td><td><button class="btn btn-sm btn-primary">WhatsApp</button></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- CARDS Y PROGRESO -->
+  <div class="sec">
+    <h2>Cards, progreso y display</h2>
+    <div class="grid2">
+      <div class="card">
+        <div class="display-cap">Próximo service</div>
+        <div class="display-km">98.000 km</div>
+        <p class="card-s" style="margin-top:10px">El único elemento que rompe la escala tipográfica: es la respuesta a la pregunta que trajo al cliente.</p>
+      </div>
+      <div class="card">
+        <div class="card-h">Chevrolet Corsa</div>
+        <div class="card-s">ABC 123 · Pedro Gómez</div>
+        <div class="prog-wrap" style="margin-top:18px">
+          <div class="prog-top"><span class="prog-l">Vas 2 de 3 services</span><span class="prog-r">25% off</span></div>
+          <div class="prog"><div style="width:66%"></div></div>
+        </div>
+        <div class="prog-wrap" style="margin-top:16px">
+          <div class="prog-top"><span class="prog-l">Premio disponible</span><span class="prog-r">3 de 3</span></div>
+          <div class="prog done"><div style="width:100%"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FEEDBACK -->
+  <div class="sec">
+    <h2>Feedback</h2>
+    <div class="grid2">
+      <div class="modal">
+        <div class="modal-h">Confirmar service</div>
+        <div class="modal-b">Revisá los datos antes de guardar. Este service podrá editarse solo durante las próximas 24 horas; después queda fijado.</div>
+        <div class="modal-f"><button class="btn btn-md btn-ghost">Volver a editar</button><button class="btn btn-md btn-primary">Confirmar</button></div>
+      </div>
+      <div>
+        <div class="row"><span class="toast">✓ Service guardado — entregá la calco</span></div>
+        <div class="alert" style="margin-top:14px">
+          <div class="alert-t">Antes de cambiar las metas</div>
+          <div class="alert-b">Los cambios se aplican de inmediato para todos los vehículos, incluidos los que están en progreso y los que ya tienen un premio disponible sin canjear.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

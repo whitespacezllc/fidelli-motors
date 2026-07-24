@@ -1,26 +1,180 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ============================================================
+   Fidelli Motors · Design tokens
+   Fuente de verdad: Design_System.pdf + Paleta_y_Color_System.pdf
+   ============================================================ */
+
+@theme {
+  /* ---------- Marca — SOLO acción, nunca estado ---------- */
+  --color-brand: #E01F26;
+  --color-brand-deep: #B8161C;
+  --color-brand-soft: #FDECEC;
+
+  /* ---------- Neutros ---------- */
+  --color-ink: #0A0A0A;
+  --color-ink-60: #4A4A4A;
+  --color-ink-40: #8A8A8A;
+  --color-line: #E4E4E4;
+  --color-surface: #F5F5F5;
+  --color-base: #FFFFFF;
+
+  /* ---------- Estados — el rojo no participa ---------- */
+  --color-overdue: #B45309;   /* vencido */
+  --color-urgente: #D97706;   /* llega esta semana */
+  --color-upcoming: #6B7280;  /* próximo */
+  --color-success: #15803D;   /* confirmación · "estás al día" */
+  --color-reward: #CA8A04;    /* premio — único amarillo del sistema */
+
+  /* Fondos suaves de estado */
+  --color-overdue-soft: #FEF6EC;
+  --color-urgente-soft: #FEF8EE;
+  --color-success-soft: #EFF9F2;
+  --color-reward-soft: #FDF8E7;
+
+  /* ---------- Color del tenant ----------
+     Se inyecta en runtime desde config_experiencia.color_primario.
+     El default es neutro a propósito: la landing es un shell. */
+  --color-tenant: var(--tenant-primary, #0A0A0A);
+  --color-tenant-soft: var(--tenant-soft, #F5F5F5);
+
+  /* ---------- Tipografía ---------- */
+  --font-brand: var(--font-nunito), ui-sans-serif, system-ui, sans-serif;
+  --font-ui: var(--font-public-sans), ui-sans-serif, system-ui, sans-serif;
+
+  /* Escala 1.25 — nada por debajo de 12px */
+  --text-display: 3.25rem;   /* 52 — solo el km del próximo service */
+  --text-h1: 2.4375rem;      /* 39 */
+  --text-h2: 1.9375rem;      /* 31 */
+  --text-h3: 1.5625rem;      /* 25 */
+  --text-lead: 1.25rem;      /* 20 */
+  --text-body: 1rem;         /* 16 — mínimo para el cliente final */
+  --text-ui: 0.875rem;       /* 14 — dato operativo del panel */
+  --text-label: 0.75rem;     /* 12 — piso absoluto */
+
+  /* ---------- Radios ---------- */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* ---------- Alturas de fila ---------- */
+  --spacing-row: 44px;        /* panel del lubricentro · también touch mínimo */
+  --spacing-row-dense: 40px;  /* panel Fidelli — densidad alta */
+
+  /* ---------- Movimiento ---------- */
+  --default-transition-duration: 140ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+/* ============================================================
+   Base
+   ============================================================ */
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--color-base);
+    color: var(--color-ink);
+    font-family: var(--font-ui);
+    font-size: var(--text-ui);
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Números tabulares en todo el producto, sin excepción:
+     kilómetros, patentes, fechas, precios. */
+  body {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  /* Cero itálicas. */
+  i, em {
+    font-style: normal;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-brand);
+    font-weight: 700;
+    letter-spacing: -0.005em;
+    line-height: 1.15;
+  }
+
+  /* Foco visible con el rojo de marca — es acción, corresponde. */
+  :focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+
+  /* Áreas táctiles: el mecánico tiene los dedos con aceite. */
+  button, a[role="button"], [role="tab"] {
+    min-height: var(--spacing-row);
+  }
+
+  /* Todo lo clickeable lleva la manito. Va acá y no pantalla por pantalla.
+     Tailwind v4 pone cursor: default en los botones desde su preflight,
+     así que esto lo revierte a propósito. Los triggers de Radix (dialog,
+     tabs, select) renderizan <button>, con lo que entran por la primera regla. */
+  button,
+  [role="button"],
+  [role="tab"],
+  [role="switch"],
+  [role="option"],
+  label[for],
+  summary {
+    cursor: pointer;
+  }
+
+  /* Deshabilitado no invita a tocar. */
+  button:disabled,
+  [aria-disabled="true"],
+  [data-disabled] {
+    cursor: not-allowed;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ============================================================
+   Utilidades del sistema
+   ============================================================ */
+
+@utility plate {
+  /* Patentes: Public Sans 600 con tracking abierto */
+  font-family: var(--font-ui);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+}
+
+@utility surface-card {
+  background: var(--color-base);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+}
+
+/* Esqueleto de carga — respeta la estructura real del contenido */
+@utility skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-surface) 25%,
+    #EDEDED 50%,
+    var(--color-surface) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-sweep 1.3s infinite;
+  border-radius: var(--radius-sm);
+}
+
+@keyframes skeleton-sweep {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
