@@ -6,9 +6,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "types": "supabase gen types typescript --local > lib/database.types.ts"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.3",
+    "@supabase/supabase-js": "^2.110.8",
+    "@visx/visx": "^4.0.0",
     "next": "16.2.10",
     "react": "19.2.4",
     "react-dom": "19.2.4"
