@@ -114,6 +114,27 @@
     min-height: var(--spacing-row);
   }
 
+  /* Todo lo clickeable lleva la manito. Va acá y no pantalla por pantalla.
+     Tailwind v4 pone cursor: default en los botones desde su preflight,
+     así que esto lo revierte a propósito. Los triggers de Radix (dialog,
+     tabs, select) renderizan <button>, con lo que entran por la primera regla. */
+  button,
+  [role="button"],
+  [role="tab"],
+  [role="switch"],
+  [role="option"],
+  label[for],
+  summary {
+    cursor: pointer;
+  }
+
+  /* Deshabilitado no invita a tocar. */
+  button:disabled,
+  [aria-disabled="true"],
+  [data-disabled] {
+    cursor: not-allowed;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
       animation-duration: 0.01ms !important;

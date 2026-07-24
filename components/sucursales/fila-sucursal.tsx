@@ -1,6 +1,7 @@
 import { FilaListado } from "@/components/ui/fila-listado";
+import { ToggleEstado } from "@/components/ui/toggle-estado";
 import { DialogSucursal } from "@/components/sucursales/dialog-sucursal";
-import { ToggleActiva } from "@/components/sucursales/toggle-activa";
+import { toggleSucursal } from "@/app/panel/sucursales/actions";
 
 type Sucursal = {
   id: string;
@@ -20,10 +21,12 @@ export function FilaSucursal({ sucursal }: { sucursal: Sucursal }) {
       acciones={
         <>
           <DialogSucursal sucursal={sucursal} />
-          <ToggleActiva
+          <ToggleEstado
             id={sucursal.id}
-            nombre={sucursal.nombre}
-            activa={sucursal.activa}
+            activo={sucursal.activa}
+            etiqueta={sucursal.nombre}
+            palabras={{ activo: "activa", inactivo: "inactiva" }}
+            accion={toggleSucursal}
           />
         </>
       }
