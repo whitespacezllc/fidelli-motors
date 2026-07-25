@@ -1,47 +1,141 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { obtenerLanding } from "@/lib/cliente/landing";
+import { obtenerCarton, marcadosDe } from "@/lib/cliente/carton";
 import { paletaTenant, variablesTenant } from "@/lib/cliente/color";
 import { formatearPatente, normalizarPatente } from "@/lib/texto";
+import { CabeceraVehiculo } from "@/components/cliente/cabecera-vehiculo";
+import { ProximoService } from "@/components/cliente/proximo-service";
+import { ProgresoFidelizacion } from "@/components/cliente/progreso-fidelizacion";
+import { HistorialCartones } from "@/components/cliente/historial-cartones";
+import { BotonTurno } from "@/components/cliente/boton-turno";
+import { SinHistorial } from "@/components/cliente/sin-historial";
+import { PatenteNoEncontrada } from "@/components/cliente/patente-no-encontrada";
+import { PieConfianza } from "@/components/cliente/pie-confianza";
+import { CartonPapel } from "@/components/services/carton-papel";
 
 type Props = { params: Promise<{ slug: string; patente: string }> };
 
-export const metadata: Metadata = { title: "Tu auto" };
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { patente } = await params;
+  return { title: `${formatearPatente(patente)} — Tu historial` };
+}
 
-// PLACEHOLDER — el cartón digital del vehículo es la tarea siguiente del
-// sprint. Por ahora esta ruta solo confirma que la búsqueda encontró la
-// patente y la muestra; toda la pieza (próximo service, último cartón,
-// progreso de fidelización, historial) se construye después con get_carton.
+// El cartón digital del vehículo: la pieza estrella. Es lo que Pedro abre
+// dos veces al año con una sola pregunta —¿cuándo me toca?— y lo que Bruno
+// le muestra a un colega para explicar qué compró.
+//
+// Todo sale de una sola llamada a get_carton, que ya aplica campos_visibles
+// del tenant. Nada de consultas adicionales.
 export default async function PaginaVehiculo({ params }: Props) {
   const { slug, patente } = await params;
+  const resultado = await obtenerCarton(slug, patente);
 
-  const lubricentro = await obtenerLanding(slug);
-  if (!lubricentro) notFound();
+  if (resultado.estado === "lubricentro_no_encontrado") notFound();
 
+  // La patente que no aparece es un lead, no un error: mismo mensaje que en
+  // la landing, con el WhatsApp del lubri. Nunca un 404 pelado.
+  if (resultado.estado === "patente_no_encontrada") {
+    const paleta = paletaTenant(resultado.lubricentro.colorPrimario);
+    return (
+      <div style={variablesTenant(paleta)} className="flex min-h-full flex-1 flex-col">
+        <main className="flex flex-1 flex-col px-5 py-8 sm:px-8 sm:py-12">
+          <div className="m-auto w-full max-w-md sm:max-w-xl">
+            <PatenteNoEncontrada
+              patente={normalizarPatente(patente)}
+              lubricentro={resultado.lubricentro}
+            />
+          </div>
+        </main>
+        <PieConfianza lubricentro={resultado.lubricentro} />
+      </div>
+    );
+  }
+
+  const { lubricentro, vehiculo, fidelizacion, services } = resultado.carton;
   const paleta = paletaTenant(lubricentro.colorPrimario);
+  const ultimo = services[0] ?? null;
+  const anteriores = services.slice(1);
 
   return (
     <div style={variablesTenant(paleta)} className="flex min-h-full flex-1 flex-col">
-      <main className="flex flex-1 flex-col px-5 py-12 sm:px-8">
-        <div className="m-auto w-full max-w-md text-center sm:max-w-lg">
-          <p className="text-c-body text-ink-60">{lubricentro.nombre}</p>
-          <p className="plate mt-2 text-c-plate sm:text-h2">
-            {formatearPatente(normalizarPatente(patente))}
-          </p>
+      <main className="flex-1 px-4 py-6 sm:px-8 sm:py-10">
+        <div className="mx-auto w-full max-w-md sm:max-w-xl lg:max-w-5xl">
+          <CabeceraVehiculo lubricentro={lubricentro} vehiculo={vehiculo} />
 
-          <p className="mt-6 rounded-lg border border-tenant bg-tenant-soft p-5 text-c-body text-ink-60">
-            Acá va el cartón digital de tu auto. Todavía lo estamos armando.
-          </p>
+          {!ultimo ? (
+            <div className="mt-6 flex flex-col gap-6 sm:mt-8 sm:gap-8">
+              <SinHistorial />
+              <BotonTurno lubricentro={lubricentro} patente={vehiculo.patente} />
+            </div>
+          ) : (
+            // En desktop el cartón no se estira: es un objeto de papel de
+            // ancho fijo, y agrandarlo mentiría sobre lo que Pedro ve en el
+            // celular. Lo que hace el ancho de más es poner a su lado la
+            // respuesta y el resto, en vez de obligar a scrollear. Mismo
+            // criterio que la previsualización del panel.
+            //
+            // El orden del DOM es el de mobile, que es el que manda: primero
+            // la respuesta, después el cartón. En desktop la grilla reubica
+            // el cartón a la izquierda con col-start/row-start, sin tocar el
+            // orden de lectura ni el de tabulación.
+            <div className="mt-6 grid gap-6 sm:mt-8 sm:gap-8 lg:grid-cols-[minmax(0,26rem)_1fr] lg:items-start">
+              {/* 1. La única pregunta que Pedro trae, arriba de todo */}
+              <div className="lg:col-start-2 lg:row-start-1">
+                <ProximoService
+                  proxServiceKm={ultimo.proxServiceKm}
+                  kmUltimoService={ultimo.kilometros}
+                />
+              </div>
 
-          <Link
-            href={`/${slug}`}
-            className="mt-6 flex min-h-16 w-full items-center justify-center rounded-md border-2 border-tenant bg-base px-4 py-3 text-c-lead font-bold text-tenant transition-colors hover:bg-tenant-soft"
-          >
-            Buscar otra patente
-          </Link>
+              {/* 2. El cartón, tal cual el papel del parasol. Se topa el
+                  ancho desde tablet: estirado a 576px dejaría de parecerse
+                  a lo que cuelga del parasol y a lo que ve Pedro en la mano. */}
+              <div className="sm:mx-auto sm:w-full sm:max-w-[26rem] lg:sticky lg:top-8 lg:col-start-1 lg:row-start-1 lg:row-span-2 lg:mx-0 lg:max-w-none">
+                <CartonPapel
+                  escala="cliente"
+                  datos={{
+                    lubricentroNombre: lubricentro.nombre,
+                    colorTenant: paleta.primary,
+                    fecha: ultimo.fecha,
+                    kilometros: ultimo.kilometros,
+                    aceiteTipo: ultimo.aceiteTipo,
+                    proxServiceKm: ultimo.proxServiceKm,
+                    marcados: marcadosDe(ultimo),
+                  }}
+                />
+                {/* El producto va afuera de la grilla del papel: en el cartón
+                    físico tampoco tiene renglón, y si el lubri apagó
+                    "mostrar productos" no viene y no se muestra. */}
+                {ultimo.aceiteNombre && (
+                  <p className="mt-3 text-center text-c-body text-ink-60">
+                    Aceite: <span className="text-ink">{ultimo.aceiteNombre}</span>
+                  </p>
+                )}
+              </div>
+
+              {/* 3. Fidelización, historial y el único CTA */}
+              <div className="flex flex-col gap-6 sm:gap-8 lg:col-start-2 lg:row-start-2">
+                {fidelizacion && (
+                  <ProgresoFidelizacion fidelizacion={fidelizacion} />
+                )}
+
+                <HistorialCartones
+                  services={anteriores}
+                  lubricentroNombre={lubricentro.nombre}
+                  colorTenant={paleta.primary}
+                />
+
+                <BotonTurno
+                  lubricentro={lubricentro}
+                  patente={vehiculo.patente}
+                />
+              </div>
+            </div>
+          )}
         </div>
       </main>
+
+      <PieConfianza lubricentro={lubricentro} />
     </div>
   );
 }
