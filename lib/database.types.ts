@@ -1014,6 +1014,7 @@ export type Database = {
       }
       fm_unaccent: { Args: { "": string }; Returns: string }
       get_carton: { Args: { p_patente: string; p_slug: string }; Returns: Json }
+      get_landing: { Args: { p_slug: string }; Returns: Json }
       guardar_service: {
         Args: {
           p_aceite_nombre?: string

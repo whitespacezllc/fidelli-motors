@@ -33,10 +33,21 @@
   --color-reward-soft: #FDF8E7;
 
   /* ---------- Color del tenant ----------
-     Se inyecta en runtime desde config_experiencia.color_primario.
-     El default es neutro a propósito: la landing es un shell. */
-  --color-tenant: var(--tenant-primary, #0A0A0A);
-  --color-tenant-soft: var(--tenant-soft, #F5F5F5);
+     Estos cuatro valores son el default neutro: la landing es un shell y
+     así se ve si el lubri nunca eligió color. En runtime, `/[slug]` los
+     pisa en su propio nodo con lo que sale de config_experiencia.
+     `tenant-ink` es la tinta que se lee ARRIBA del color —blanca o negra
+     según su luminancia—, porque el lubri puede elegir un amarillo.
+
+     OJO: van con el valor puesto, no como `var(--tenant-primary, #0A0A0A)`.
+     Una custom property que contiene var() se sustituye en el elemento
+     donde se declara: acá, en :root, donde --tenant-primary no existe. Lo
+     que hereda hacia abajo es el default ya resuelto, así que definirla
+     más adentro no cambiaba nada. Se pisa --color-tenant directamente. */
+  --color-tenant: #0A0A0A;
+  --color-tenant-soft: #F5F5F5;
+  --color-tenant-deep: #000000;
+  --color-tenant-ink: #FFFFFF;
 
   /* ---------- Tipografía ---------- */
   --font-brand: var(--font-nunito), ui-sans-serif, system-ui, sans-serif;
@@ -51,6 +62,15 @@
   --text-body: 1rem;         /* 16 — mínimo para el cliente final */
   --text-ui: 0.875rem;       /* 14 — dato operativo del panel */
   --text-label: 0.75rem;     /* 12 — piso absoluto */
+
+  /* Escala de la superficie del cliente (`/[slug]`). El Flow del Cliente
+     pide 18px de piso acá, no 16: Pedro tiene 60 años, está al sol en el
+     estacionamiento y con anteojos de lejos. No hereda la escala del
+     panel — el panel lo usa un mecánico de 30 con la pantalla a 25 cm. */
+  --text-c-body: 1.125rem;   /* 18 — piso de esta superficie */
+  --text-c-lead: 1.375rem;   /* 22 */
+  --text-c-titulo: 1.75rem;  /* 28 */
+  --text-c-plate: 2rem;      /* 32 — el input de patente, el protagonista */
 
   /* ---------- Radios ---------- */
   --radius-sm: 4px;
@@ -107,6 +127,13 @@
   :focus-visible {
     outline: 2px solid var(--color-brand);
     outline-offset: 2px;
+  }
+
+  /* …salvo en la superficie del cliente, donde el rojo Motors no aparece
+     ni un píxel: ahí el foco también se pinta con el color del lubri.
+     Va acá y no pantalla por pantalla, como el cursor. */
+  [data-superficie="cliente"] :focus-visible {
+    outline-color: var(--color-tenant);
   }
 
   /* Áreas táctiles: el mecánico tiene los dedos con aceite. */
