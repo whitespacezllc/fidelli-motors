@@ -662,6 +662,7 @@ export type Database = {
           activa: boolean
           created_at: string
           direccion: string | null
+          horarios: string | null
           id: string
           lubricentro_id: string
           nombre: string
@@ -671,6 +672,7 @@ export type Database = {
           activa?: boolean
           created_at?: string
           direccion?: string | null
+          horarios?: string | null
           id?: string
           lubricentro_id: string
           nombre: string
@@ -680,6 +682,7 @@ export type Database = {
           activa?: boolean
           created_at?: string
           direccion?: string | null
+          horarios?: string | null
           id?: string
           lubricentro_id?: string
           nombre?: string

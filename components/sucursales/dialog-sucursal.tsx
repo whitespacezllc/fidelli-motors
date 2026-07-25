@@ -14,6 +14,7 @@ type Sucursal = {
   nombre: string;
   direccion: string | null;
   telefono: string | null;
+  horarios: string | null;
 };
 
 const ESTADO_INICIAL: EstadoSucursal = {};
@@ -109,6 +110,22 @@ function FormularioSucursal({
           placeholder="351 555 4120"
           className={CLASE_CAMPO}
         />
+      </div>
+
+      <div>
+        <label htmlFor="horarios" className={CLASE_LABEL}>
+          Horarios <span className="normal-case text-ink-40">(opcional)</span>
+        </label>
+        <input
+          id="horarios"
+          name="horarios"
+          defaultValue={sucursal?.horarios ?? ""}
+          placeholder="Lun a Vie 8:00–18:30 · Sáb 8:00–13:00"
+          className={CLASE_CAMPO}
+        />
+        <p className="mt-1.5 text-label text-ink-60">
+          Se muestran en tu página pública, al pie, junto a la dirección.
+        </p>
       </div>
 
       {/* Ancho completo = ancho fijo: el texto puede cambiar sin mover nada. */}

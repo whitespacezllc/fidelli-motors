@@ -1,5 +1,6 @@
 import { IconoWhatsapp } from "@/components/iconos";
 import { formatearPatente } from "@/lib/texto";
+import { telefonoWhatsapp } from "@/lib/contacto";
 import type { Lubricentro } from "@/lib/cliente/landing";
 
 // El único llamado a la acción de la pantalla, y el que cierra el círculo:
@@ -13,7 +14,11 @@ export function BotonTurno({
   lubricentro: Lubricentro;
   patente: string;
 }) {
-  const whatsapp = lubricentro.contacto.whatsapp?.replace(/\D/g, "");
+  // El lubri puede cargar el número como lo dicta: "351 555 4120". El
+  // normalizador le pone el 54 9 y saca el 0 y el 15 si vinieran.
+  const whatsapp = lubricentro.contacto.whatsapp
+    ? telefonoWhatsapp(lubricentro.contacto.whatsapp)
+    : null;
   if (!whatsapp) return null;
 
   const mensaje = encodeURIComponent(

@@ -13,7 +13,7 @@ export default async function PaginaSucursales() {
   // RLS filtra por tenant solo. Activas primero, después por nombre.
   const { data } = await supabase
     .from("sucursales")
-    .select("id, nombre, direccion, telefono, activa")
+    .select("id, nombre, direccion, telefono, horarios, activa")
     .order("activa", { ascending: false })
     .order("nombre");
 
