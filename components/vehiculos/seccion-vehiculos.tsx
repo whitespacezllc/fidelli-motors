@@ -1,5 +1,18 @@
+import Link from "next/link";
 import { DialogVehiculo } from "@/components/vehiculos/dialog-vehiculo";
+import { BadgeEstado } from "@/components/services/badge-estado";
 import { formatearFecha } from "@/lib/fechas";
+import { formatearKm } from "@/lib/renglones";
+import type { EstadoService } from "@/lib/servicios";
+
+type ServiceDelVehiculo = {
+  id: string;
+  fecha: string;
+  kilometros: number;
+  aceite: string;
+  sucursal: string;
+  estado: EstadoService;
+};
 
 type Vehiculo = {
   id: string;
@@ -9,6 +22,7 @@ type Vehiculo = {
   anio: number | null;
   cantidad_services: number;
   ultimo_service_fecha: string | null;
+  services?: ServiceDelVehiculo[];
 };
 
 // Tarjeta del hi-fi (pantalla 4): marca y modelo arriba, la patente con la
@@ -44,20 +58,55 @@ function TarjetaVehiculo({
         }`;
 
   return (
-    <li className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 rounded-lg border border-line bg-base px-5 py-4">
-      <div className="min-w-0">
-        <p className="truncate font-brand text-body font-bold text-ink">
-          {nombre}
-        </p>
-        <p className="plate mt-0.5 truncate text-ui text-ink-60">
-          {identificacion}
-        </p>
+    <li className="rounded-lg border border-line bg-base px-5 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <div className="min-w-0">
+          <p className="truncate font-brand text-body font-bold text-ink">
+            {nombre}
+          </p>
+          <p className="plate mt-0.5 truncate text-ui text-ink-60">
+            {identificacion}
+          </p>
+        </div>
+
+        <div className="ml-auto flex items-center gap-4">
+          <span className="text-ui text-ink-60 tabular-nums">{services}</span>
+          <DialogVehiculo clienteId={clienteId} vehiculo={vehiculo} />
+        </div>
       </div>
 
-      <div className="ml-auto flex items-center gap-4">
-        <span className="text-ui text-ink-60 tabular-nums">{services}</span>
-        <DialogVehiculo clienteId={clienteId} vehiculo={vehiculo} />
-      </div>
+      {/* El historial del hi-fi (pantalla 4): cada service con su estado,
+          y la fila entera lleva al cartón. */}
+      {(vehiculo.services?.length ?? 0) > 0 && (
+        <ul className="mt-3 border-t border-line">
+          {vehiculo.services!.map((s) => (
+            <li key={s.id} className="border-b border-line last:border-b-0">
+              <Link
+                href={`/panel/services/${s.id}`}
+                className={`flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5 hover:bg-surface/60 lg:grid lg:grid-cols-[6.5rem_6rem_1fr_9rem_auto] ${
+                  s.estado.tipo === "anulado" ? "opacity-55" : ""
+                }`}
+              >
+                <span className="text-ui font-semibold text-ink tabular-nums">
+                  {formatearFecha(s.fecha)}
+                </span>
+                <span className="text-ui text-ink-60 tabular-nums">
+                  {formatearKm(s.kilometros)} km
+                </span>
+                <span className="hidden truncate text-ui text-ink-60 sm:inline">
+                  {s.aceite}
+                </span>
+                <span className="text-label text-ink-60 lg:text-ui">
+                  {s.sucursal}
+                </span>
+                <span className="ml-auto lg:ml-0 lg:justify-self-end">
+                  <BadgeEstado estado={s.estado} />
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
     </li>
   );
 }

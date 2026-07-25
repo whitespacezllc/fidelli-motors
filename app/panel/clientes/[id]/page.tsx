@@ -5,6 +5,7 @@ import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { clasesBoton } from "@/components/ui/boton";
 import { DialogCliente } from "@/components/clientes/dialog-cliente";
 import { SeccionVehiculos } from "@/components/vehiculos/seccion-vehiculos";
+import { estadoService } from "@/lib/servicios";
 import { formatearFecha, formatearMesAnio } from "@/lib/fechas";
 
 export const metadata: Metadata = { title: "Cliente — Fidelli Motors" };
@@ -69,6 +70,28 @@ export default async function FichaCliente({
       : [],
   );
 
+  // El historial de todos los vehículos del cliente en UNA consulta (sin
+  // N+1); se agrupa por vehículo en memoria. Un cliente tiene pocos autos
+  // y pocos services — esto no necesita paginado.
+  const { data: filasServices } = await supabase
+    .from("services")
+    .select(
+      "id, fecha, created_at, kilometros, aceite_tipo, aceite_nombre, anulado, desbloqueado_hasta, vehiculo_id, sucursales(nombre)",
+    )
+    .in(
+      "vehiculo_id",
+      vehiculos.map((v) => v.id),
+    )
+    .order("fecha", { ascending: false })
+    .order("created_at", { ascending: false });
+
+  const servicesPorVehiculo = new Map<string, typeof filasServices>();
+  for (const s of filasServices ?? []) {
+    const lista = servicesPorVehiculo.get(s.vehiculo_id) ?? [];
+    lista.push(s);
+    servicesPorVehiculo.set(s.vehiculo_id, lista);
+  }
+
   const contacto = [
     cliente.telefono,
     cliente.email,
@@ -111,7 +134,20 @@ export default async function FichaCliente({
         />
       </header>
 
-      <SeccionVehiculos clienteId={cliente.id} vehiculos={vehiculos} />
+      <SeccionVehiculos
+        clienteId={cliente.id}
+        vehiculos={vehiculos.map((v) => ({
+          ...v,
+          services: (servicesPorVehiculo.get(v.id) ?? []).map((s) => ({
+            id: s.id,
+            fecha: s.fecha,
+            kilometros: s.kilometros,
+            aceite: [s.aceite_tipo, s.aceite_nombre].filter(Boolean).join(" · "),
+            sucursal: s.sucursales?.nombre ?? "",
+            estado: estadoService(s),
+          })),
+        }))}
+      />
     </div>
   );
 }

@@ -19,6 +19,7 @@ import {
   crearProductoRapido,
   type ItemCargado,
 } from "@/app/panel/services/nuevo/[vehiculoId]/actions";
+import { actualizarService } from "@/app/panel/services/[serviceId]/editar/actions";
 
 type Producto = { id: string; nombre: string; categoria: string };
 type Sucursal = { id: string; nombre: string };
@@ -38,26 +39,70 @@ export type DatosCarton = {
   hoy: string;
 };
 
+// El mismo cartón sirve para cargar y para editar: si fueran dos
+// formularios se desincronizan, y el mecánico ya conoce esta pantalla.
+// En edición llega el service precargado; el vehículo no se puede cambiar
+// (nunca fue un campo del formulario, y así debe seguir: un service
+// cargado en el auto equivocado se anula y se recarga).
+export type ServiceEnEdicion = {
+  serviceId: string;
+  fecha: string;
+  kilometros: number;
+  aceiteTipo: string;
+  aceiteProductoId: string | null;
+  proxServiceKm: number;
+  observaciones: string | null;
+  // tipo → detalle escrito ("" = marcado sin detalle)
+  marcados: Record<string, string>;
+};
+
 const CLASE_CAMPO =
   "h-12 w-full rounded-md border border-line bg-base px-3.5 text-body text-ink placeholder:text-ink-40";
 const CLASE_LABEL =
   "mb-1.5 block text-label font-semibold tracking-[0.06em] text-ink-60 uppercase";
 
-export function Carton({ datos }: { datos: DatosCarton }) {
+// El próximo service guardado pudo salir de los atajos o de un número a
+// mano: al reabrir, se vuelve al atajo si la cuenta coincide.
+function proxInicial(edicion: ServiceEnEdicion | undefined) {
+  if (!edicion) return { modo: "10" as const, manual: "" };
+  if (edicion.proxServiceKm === edicion.kilometros + 10000)
+    return { modo: "10" as const, manual: "" };
+  if (edicion.proxServiceKm === edicion.kilometros + 15000)
+    return { modo: "15" as const, manual: "" };
+  return { modo: "otro" as const, manual: String(edicion.proxServiceKm) };
+}
+
+export function Carton({
+  datos,
+  edicion,
+}: {
+  datos: DatosCarton;
+  edicion?: ServiceEnEdicion;
+}) {
   const router = useRouter();
 
   const [sucursalId, setSucursalId] = useState(datos.sucursalInicial);
-  const [fecha, setFecha] = useState(datos.hoy);
-  const [km, setKm] = useState("");
-  const [aceiteTipo, setAceiteTipo] = useState("");
-  const [aceiteProductoId, setAceiteProductoId] = useState("");
+  const [fecha, setFecha] = useState(edicion?.fecha ?? datos.hoy);
+  const [km, setKm] = useState(edicion ? String(edicion.kilometros) : "");
+  const [aceiteTipo, setAceiteTipo] = useState(edicion?.aceiteTipo ?? "");
+  const [aceiteProductoId, setAceiteProductoId] = useState(
+    edicion?.aceiteProductoId ?? "",
+  );
   // tipo → detalle escrito (string vacío = marcado sin detalle)
-  const [marcados, setMarcados] = useState<Record<string, string>>({});
+  const [marcados, setMarcados] = useState<Record<string, string>>(
+    edicion?.marcados ?? {},
+  );
   const [abiertos, setAbiertos] = useState<Record<string, boolean>>({});
-  const [proxModo, setProxModo] = useState<"10" | "15" | "otro">("10");
-  const [proxManual, setProxManual] = useState("");
-  const [observaciones, setObservaciones] = useState("");
-  const [mostrarObs, setMostrarObs] = useState(false);
+  const [proxModo, setProxModo] = useState<"10" | "15" | "otro">(
+    proxInicial(edicion).modo,
+  );
+  const [proxManual, setProxManual] = useState(proxInicial(edicion).manual);
+  const [observaciones, setObservaciones] = useState(
+    edicion?.observaciones ?? "",
+  );
+  const [mostrarObs, setMostrarObs] = useState(
+    Boolean(edicion?.observaciones),
+  );
 
   const [paso, setPaso] = useState<"carton" | "preview">("carton");
   const [guardando, setGuardando] = useState(false);
@@ -130,7 +175,7 @@ export function Carton({ datos }: { datos: DatosCarton }) {
       };
     });
 
-    const resultado = await guardarService({
+    const payload = {
       vehiculoId: datos.vehiculoId,
       sucursalId,
       fecha,
@@ -141,8 +186,21 @@ export function Carton({ datos }: { datos: DatosCarton }) {
       proxServiceKm: proxKm,
       observaciones: observaciones.trim() || null,
       items,
-    });
+    };
 
+    if (edicion) {
+      const resultado = await actualizarService(edicion.serviceId, payload);
+      if (resultado.error) {
+        setError(resultado.error);
+        setGuardando(false);
+        return;
+      }
+      router.push(`/panel/services/${edicion.serviceId}`);
+      router.refresh();
+      return;
+    }
+
+    const resultado = await guardarService(payload);
     if (resultado.error) {
       setError(resultado.error);
       setGuardando(false);
@@ -232,7 +290,11 @@ export function Carton({ datos }: { datos: DatosCarton }) {
             onClick={confirmar}
             disabled={guardando}
           >
-            {guardando ? "Guardando…" : "Confirmar service"}
+            {guardando
+              ? "Guardando…"
+              : edicion
+                ? "Guardar cambios"
+                : "Confirmar service"}
           </Boton>
         </div>
           </div>

@@ -975,6 +975,21 @@ export type Database = {
       }
     }
     Functions: {
+      actualizar_service: {
+        Args: {
+          p_aceite_nombre?: string
+          p_aceite_producto_id?: string
+          p_aceite_tipo: string
+          p_fecha: string
+          p_items?: Json
+          p_kilometros: number
+          p_observaciones?: string
+          p_prox_service_km: number
+          p_service_id: string
+          p_sucursal_id: string
+        }
+        Returns: undefined
+      }
       buscar_vehiculo_por_patente: {
         Args: { p_patente: string }
         Returns: {

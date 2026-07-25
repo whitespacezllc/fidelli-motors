@@ -185,27 +185,27 @@ export function Dashboard({
         ) : (
           <ul className="surface-card px-4 sm:px-5">
             {ultimos.map((s) => (
-              // Sin link: la pantalla del cartón de un service todavía no
-              // existe (es del Sprint 2). Cuando exista, la fila lleva ahí.
-              <li
-                key={s.id}
-                className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line py-3 last:border-b-0 lg:grid lg:grid-cols-[8rem_7rem_1fr_10rem_6rem]"
-              >
-                <span className="order-2 text-label text-ink-60 tabular-nums lg:order-none">
-                  {formatearFechaHora(s.creado)}
-                </span>
-                <span className="plate order-1 text-ui text-ink lg:order-none">
-                  {s.patente.toUpperCase()}
-                </span>
-                <span className="order-3 w-full truncate text-ui text-ink-60 lg:order-none lg:w-auto">
-                  {s.vehiculo ?? "Vehículo"}
-                </span>
-                <span className="order-4 text-label text-ink-60 lg:order-none lg:text-ui">
-                  {s.sucursal}
-                </span>
-                <span className="order-5 ml-auto text-ui text-ink-60 tabular-nums lg:order-none lg:ml-0 lg:text-right">
-                  {formatearKm(s.km)} km
-                </span>
+              <li key={s.id} className="border-b border-line last:border-b-0">
+                <Link
+                  href={`/panel/services/${s.id}`}
+                  className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3 hover:bg-surface/60 lg:grid lg:grid-cols-[8rem_7rem_1fr_10rem_6rem]"
+                >
+                  <span className="order-2 text-label text-ink-60 tabular-nums lg:order-none">
+                    {formatearFechaHora(s.creado)}
+                  </span>
+                  <span className="plate order-1 text-ui text-ink lg:order-none">
+                    {s.patente.toUpperCase()}
+                  </span>
+                  <span className="order-3 w-full truncate text-ui text-ink-60 lg:order-none lg:w-auto">
+                    {s.vehiculo ?? "Vehículo"}
+                  </span>
+                  <span className="order-4 text-label text-ink-60 lg:order-none lg:text-ui">
+                    {s.sucursal}
+                  </span>
+                  <span className="order-5 ml-auto text-ui text-ink-60 tabular-nums lg:order-none lg:ml-0 lg:text-right">
+                    {formatearKm(s.km)} km
+                  </span>
+                </Link>
               </li>
             ))}
           </ul>
