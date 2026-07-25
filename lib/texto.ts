@@ -36,3 +36,12 @@ export function esPatenteValida(texto: string): boolean {
   const normalizada = normalizarPatente(texto);
   return PATENTE_VIEJA.test(normalizada) || PATENTE_MERCOSUR.test(normalizada);
 }
+
+// Cómo se lee en la chapa: "ABC123" → "ABC 123", "AB123CD" → "AB 123 CD".
+// Lo que no entra en ninguno de los dos formatos se devuelve tal cual.
+export function formatearPatente(texto: string): string {
+  const n = normalizarPatente(texto);
+  if (PATENTE_VIEJA.test(n)) return `${n.slice(0, 3)} ${n.slice(3)}`;
+  if (PATENTE_MERCOSUR.test(n)) return `${n.slice(0, 2)} ${n.slice(2, 5)} ${n.slice(5)}`;
+  return n;
+}

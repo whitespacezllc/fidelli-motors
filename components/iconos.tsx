@@ -9,6 +9,14 @@ import {
   XIcon,
   MagnifyingGlassIcon,
   PackageIcon,
+  QrCodeIcon,
+  ClockCounterClockwiseIcon,
+  WhatsappLogoIcon,
+  MapPinIcon,
+  PhoneIcon,
+  TrophyIcon,
+  CaretDownIcon,
+  LockSimpleIcon,
 } from "@phosphor-icons/react/dist/ssr";
 // Solo tipos: se borran al compilar, así que traerlos del entry principal
 // (que sí lleva "use client") no arrastra nada al bundle.
@@ -36,3 +44,13 @@ export const IconoOjoCerrado = delSistema(EyeSlashIcon);
 export const IconoCerrar = delSistema(XIcon);
 export const IconoBuscar = delSistema(MagnifyingGlassIcon);
 export const IconoCaja = delSistema(PackageIcon);
+
+// Superficie del cliente final
+export const IconoQR = delSistema(QrCodeIcon);
+export const IconoHistorial = delSistema(ClockCounterClockwiseIcon);
+export const IconoWhatsapp = delSistema(WhatsappLogoIcon);
+export const IconoUbicacion = delSistema(MapPinIcon);
+export const IconoTelefono = delSistema(PhoneIcon);
+export const IconoPremio = delSistema(TrophyIcon);
+export const IconoChevron = delSistema(CaretDownIcon);
+export const IconoCandado = delSistema(LockSimpleIcon);
