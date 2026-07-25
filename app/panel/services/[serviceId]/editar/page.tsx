@@ -137,6 +137,9 @@ export default async function PaginaEditarService({ params }: Props) {
           // está editando justamente ese service.
           serviceDeHoy: null,
           hoy: service.fecha,
+          // Editar no toca el canje: si el service se guardó con premio,
+          // el canje ya está registrado y atado a él.
+          premioDisponible: null,
         }}
         edicion={{
           serviceId: service.id,

@@ -23,8 +23,14 @@ export default async function PaginaCarton({
   // Cinco conjuntos distintos, en paralelo. Ninguna consulta depende de otra
   // y ninguna es N+1: el cartón necesita el vehículo, dónde se hace, con qué
   // se hace, qué pasó antes y con qué color se le muestra al cliente.
-  const [vehiculoRes, sucursalesRes, productosRes, serviciosRes, configRes] =
-    await Promise.all([
+  const [
+    vehiculoRes,
+    sucursalesRes,
+    productosRes,
+    serviciosRes,
+    configRes,
+    premioRes,
+  ] = await Promise.all([
       supabase
         .from("vehiculos")
         .select("id, patente, marca, modelo, clientes(nombre)")
@@ -49,6 +55,8 @@ export default async function PaginaCarton({
         .order("created_at", { ascending: false })
         .limit(5),
       supabase.from("config_experiencia").select("color_primario").maybeSingle(),
+      // El ciclo con reset, calculado en vivo contra la meta vigente.
+      supabase.rpc("premio_disponible", { p_vehiculo_id: vehiculoId }),
     ]);
 
   const vehiculo = vehiculoRes.data;
@@ -81,6 +89,7 @@ export default async function PaginaCarton({
 
   const servicios = serviciosRes.data ?? [];
   const ultimo = servicios[0] ?? null;
+  const premio = premioRes.data?.[0] ?? null;
 
   // La sucursal es del dispositivo, no del usuario: en el MVP es probable que
   // el lubricentro comparta una sola cuenta entre sucursales, así que la
@@ -134,6 +143,9 @@ export default async function PaginaCarton({
             : null,
           serviceDeHoy,
           hoy,
+          premioDisponible: premio?.disponible
+            ? { descripcion: premio.descripcion ?? "Premio del programa" }
+            : null,
         }}
       />
     </div>

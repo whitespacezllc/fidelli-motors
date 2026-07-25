@@ -3,7 +3,6 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { clasesBoton } from "@/components/ui/boton";
-import { BotonCanje } from "@/components/services/boton-canje";
 import { formatearKm } from "@/lib/renglones";
 
 export const metadata: Metadata = { title: "Service guardado — Fidelli Motors" };
@@ -92,7 +91,23 @@ export default async function PaginaGuardado({
         </div>
       )}
 
-      {/* Premio disponible → aviso de canje en el mostrador */}
+      {/* Acá NO hay acción de canje. El canje se decide en el cartón y se
+          registra al confirmar el service, en la misma transacción: si
+          estuviera acá, un mecánico distraído dejaba al cliente con el
+          descuento aplicado y el canje sin registrar. Lo que queda es la
+          confirmación de lo que ya pasó, y el aviso para la próxima. */}
+      {yaCanjeado && (
+        <div className="mt-4 rounded-lg border border-reward bg-reward-soft p-4">
+          <p className="font-brand text-body font-bold text-ink">
+            Premio aplicado
+          </p>
+          <p className="mt-1.5 text-ui text-ink-60">
+            Quedó registrado el canje de {primerNombre}. El contador arranca de
+            nuevo desde el próximo service.
+          </p>
+        </div>
+      )}
+
       {premio?.disponible && !yaCanjeado && (
         <div className="mt-4 rounded-lg border border-reward bg-reward-soft p-4">
           <p className="font-brand text-body font-bold text-ink">
@@ -100,20 +115,10 @@ export default async function PaginaGuardado({
           </p>
           <p className="mt-1.5 text-ui text-ink-60 tabular-nums">
             {premio.services_ciclo} de {premio.meta_services} services — le
-            corresponde {premio.descripcion?.toLowerCase()}.
+            corresponde {premio.descripcion?.toLowerCase()}. Aplicalo en el
+            próximo service, activando “Aplicar premio” en el cartón.
           </p>
-          <BotonCanje
-            vehiculoId={service.vehiculo_id}
-            premioId={premio.premio_id ?? ""}
-            serviceId={serviceId}
-          />
         </div>
-      )}
-
-      {yaCanjeado && (
-        <p className="mt-4 rounded-md bg-reward-soft px-3.5 py-3 text-ui text-ink-60">
-          El premio de este service ya quedó registrado como canjeado.
-        </p>
       )}
 
       {/* Salidas: el loop para el auto que sigue en el pozo, el cartón, el panel */}

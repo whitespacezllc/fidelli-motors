@@ -37,6 +37,8 @@ export type DatosCarton = {
   ultimoService: { fecha: string; kilometros: number } | null;
   serviceDeHoy: { hora: string; sucursal: string; kilometros: number } | null;
   hoy: string;
+  /** Solo si el vehículo llegó a la meta y el premio está sin canjear. */
+  premioDisponible: { descripcion: string } | null;
 };
 
 // El mismo cartón sirve para cargar y para editar: si fueran dos
@@ -103,6 +105,9 @@ export function Carton({
   const [mostrarObs, setMostrarObs] = useState(
     Boolean(edicion?.observaciones),
   );
+  // Apagado por defecto: aplicar el premio es una decisión del mostrador,
+  // no algo que pase solo. Si el service no se confirma, no queda nada.
+  const [canjear, setCanjear] = useState(false);
 
   const [paso, setPaso] = useState<"carton" | "preview">("carton");
   const [guardando, setGuardando] = useState(false);
@@ -186,6 +191,9 @@ export function Carton({
       proxServiceKm: proxKm,
       observaciones: observaciones.trim() || null,
       items,
+      // El canje va con el service, en la misma transacción. Al editar no
+      // viaja: un canje ya registrado no se toca desde acá.
+      canjearPremio: Boolean(datos.premioDisponible) && canjear,
     };
 
     if (edicion) {
@@ -249,6 +257,19 @@ export function Carton({
           </div>
 
           <div className="flex w-full flex-col sm:mx-auto sm:max-w-sm md:mx-0 md:sticky md:top-4 md:max-w-none">
+        {/* Lo que se está por registrar además del cartón */}
+        {datos.premioDisponible && canjear && (
+          <div className="mb-4 rounded-md border border-reward bg-reward-soft px-4 py-3.5">
+            <p className="font-brand text-ui font-bold text-ink">
+              Se aplica el premio
+            </p>
+            <p className="mt-0.5 text-ui text-ink-60">
+              {datos.premioDisponible.descripcion}. Al confirmar queda
+              registrado el canje y el contador del cliente vuelve a cero.
+            </p>
+          </div>
+        )}
+
         <div className="rounded-md border border-line bg-surface px-4 py-3.5">
           <p className="font-brand text-ui font-bold text-ink">
             Editable por 24 horas
@@ -561,6 +582,50 @@ export function Carton({
           </div>
         ))}
         </div>
+
+        {/* 5-bis. El premio, como un renglón más del cartón. Va acá y no
+            en el post-guardado: si el canje se marcara después de
+            confirmar, un mecánico distraído dejaba al cliente con el
+            descuento aplicado y el canje sin registrar — el contador no se
+            reseteaba y en el service siguiente le volvía a corresponder.
+            Acá el canje es parte de la confirmación y no se puede perder. */}
+        {datos.premioDisponible && !edicion && (
+          <div className="overflow-hidden rounded-lg border border-reward bg-reward-soft">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={canjear}
+              onClick={() => setCanjear((v) => !v)}
+              className="flex min-h-14 w-full items-center justify-between gap-3 px-4 py-2.5 text-left"
+            >
+              <span className="min-w-0">
+                <span className="block font-brand text-body font-bold text-ink">
+                  Aplicar premio
+                </span>
+                <span className="block text-ui text-ink-60">
+                  {datos.premioDisponible.descripcion}
+                </span>
+              </span>
+              <span
+                className={`flex h-6 w-10 shrink-0 items-center rounded-full p-0.5 transition-colors ${
+                  canjear ? "bg-reward" : "bg-line"
+                }`}
+              >
+                <span
+                  className={`size-5 rounded-full bg-base shadow-sm transition-transform ${
+                    canjear ? "translate-x-4" : "translate-x-0"
+                  }`}
+                />
+              </span>
+            </button>
+            {canjear && (
+              <p className="border-t border-reward/40 px-4 py-2.5 text-ui text-ink-60">
+                Se registra al confirmar el service. El descuento lo aplicás
+                vos en la caja.
+              </p>
+            )}
+          </div>
+        )}
 
         {/* 6 y 7. Próximo service y observaciones, también en pares desde
             desktop: son el cierre del cartón y ninguno necesita todo el ancho. */}

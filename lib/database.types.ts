@@ -1011,6 +1011,13 @@ export type Database = {
           vehiculo_id: string
         }[]
       }
+      ciclos_fidelizacion: {
+        Args: never
+        Returns: {
+          services_ciclo: number
+          vehiculo_id: string
+        }[]
+      }
       crear_cliente_con_vehiculo: {
         Args: {
           p_anio?: number
@@ -1035,6 +1042,7 @@ export type Database = {
           p_aceite_nombre?: string
           p_aceite_producto_id?: string
           p_aceite_tipo: string
+          p_canjear_premio?: boolean
           p_fecha: string
           p_items?: Json
           p_kilometros: number

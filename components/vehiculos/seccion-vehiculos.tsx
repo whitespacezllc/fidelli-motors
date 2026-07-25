@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { DialogVehiculo } from "@/components/vehiculos/dialog-vehiculo";
 import { BadgeEstado } from "@/components/services/badge-estado";
+import { IconoPremio } from "@/components/iconos";
 import { formatearFecha } from "@/lib/fechas";
 import { formatearKm } from "@/lib/renglones";
 import type { EstadoService } from "@/lib/servicios";
@@ -14,6 +15,20 @@ type ServiceDelVehiculo = {
   estado: EstadoService;
 };
 
+type Fidelizacion = {
+  disponible: boolean;
+  servicesCiclo: number;
+  metaServices: number;
+  descripcion: string;
+};
+
+type Canje = {
+  id: string;
+  fecha: string;
+  serviceId: string | null;
+  descripcion: string;
+};
+
 type Vehiculo = {
   id: string;
   patente: string;
@@ -23,7 +38,68 @@ type Vehiculo = {
   cantidad_services: number;
   ultimo_service_fecha: string | null;
   services?: ServiceDelVehiculo[];
+  fidelizacion?: Fidelizacion | null;
+  canjes?: Canje[];
 };
+
+// El progreso del ciclo y los canjes ya hechos. El dorado es el único
+// amarillo del sistema y significa premio en todo el producto.
+function Fidelizacion({ vehiculo }: { vehiculo: Vehiculo }) {
+  const f = vehiculo.fidelizacion;
+  if (!f) return null;
+
+  const porcentaje = Math.min(
+    100,
+    Math.round((f.servicesCiclo / Math.max(1, f.metaServices)) * 100),
+  );
+
+  return (
+    <div className="mt-3 border-t border-line pt-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <span className="text-ui font-semibold text-ink tabular-nums">
+          {f.disponible
+            ? `${f.servicesCiclo} de ${f.metaServices} services`
+            : `Vas ${f.servicesCiclo} de ${f.metaServices} services`}
+        </span>
+        <span className="h-2 min-w-24 flex-1 overflow-hidden rounded-sm border border-line bg-surface">
+          <span
+            className={`block h-full rounded-sm ${f.disponible ? "bg-reward" : "bg-ink"}`}
+            style={{ width: `${porcentaje}%` }}
+          />
+        </span>
+        {f.disponible ? (
+          <span className="inline-flex items-center gap-1.5 rounded-sm border border-reward bg-reward-soft px-2.5 py-1 text-label font-semibold text-reward">
+            <IconoPremio aria-hidden className="size-4 shrink-0" />
+            PREMIO DISPONIBLE
+          </span>
+        ) : (
+          <span className="text-ui text-ink-60">{f.descripcion}</span>
+        )}
+      </div>
+
+      {(vehiculo.canjes?.length ?? 0) > 0 && (
+        <ul className="mt-2.5 flex flex-col gap-1">
+          {vehiculo.canjes!.map((c) => (
+            <li key={c.id} className="text-ui text-ink-60 tabular-nums">
+              Canjeado {formatearFecha(c.fecha)} — {c.descripcion}
+              {c.serviceId && (
+                <>
+                  {" · "}
+                  <Link
+                    href={`/panel/services/${c.serviceId}`}
+                    className="underline underline-offset-4 hover:text-ink"
+                  >
+                    ver el service
+                  </Link>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 // Tarjeta del hi-fi (pantalla 4): marca y modelo arriba, la patente con la
 // utilidad .plate y el año al lado, y a la derecha el resumen de services.
@@ -74,6 +150,8 @@ function TarjetaVehiculo({
           <DialogVehiculo clienteId={clienteId} vehiculo={vehiculo} />
         </div>
       </div>
+
+      <Fidelizacion vehiculo={vehiculo} />
 
       {/* El historial del hi-fi (pantalla 4): cada service con su estado,
           y la fila entera lleva al cartón. */}

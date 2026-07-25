@@ -23,6 +23,8 @@ export type PayloadService = {
   proxServiceKm: number;
   observaciones: string | null;
   items: ItemCargado[];
+  /** El toggle del cartón. El canje se registra al confirmar, no después. */
+  canjearPremio?: boolean;
 };
 
 export type ResultadoGuardado = { error?: string; serviceId?: string };
@@ -32,7 +34,15 @@ export type ResultadoGuardado = { error?: string; serviceId?: string };
 const SIN_CONEXION =
   "Se cortó la conexión a internet. No cierres ni recargues esta pantalla: los datos que cargaste siguen acá. Cuando vuelva la señal, tocá Confirmar de nuevo.";
 
+// Entre que se pintó el cartón y se confirmó pudo cambiar la meta del
+// programa (las reglas aplican a todos al instante) o entrar otro service
+// del mismo auto. El service no se guarda a medias: la transacción vuelve
+// entera y el mecánico decide de nuevo.
+const PREMIO_YA_NO =
+  "Este vehículo ya no tiene un premio disponible: puede que haya cambiado la meta del programa. Destildá “Aplicar premio” y confirmá de nuevo.";
+
 function traducirError(error: { code?: string; message?: string }): string {
+  if (/premio_no_disponible/.test(error.message ?? "")) return PREMIO_YA_NO;
   if (/fetch|network|conexión/i.test(error.message ?? "")) return SIN_CONEXION;
   if (error.code === "23514") {
     return "Algún dato quedó fuera de rango. Revisá los kilómetros y el próximo service.";
@@ -73,11 +83,13 @@ export async function guardarService(
     p_aceite_producto_id: payload.aceiteProductoId ?? undefined,
     p_aceite_nombre: payload.aceiteNombre ?? undefined,
     p_observaciones: payload.observaciones ?? undefined,
+    p_canjear_premio: payload.canjearPremio ?? false,
   });
 
   if (error) return { error: traducirError(error) };
 
   revalidatePath(`/panel/clientes`);
+  revalidatePath("/panel/fidelizacion");
   return { serviceId: data as string };
 }
 
