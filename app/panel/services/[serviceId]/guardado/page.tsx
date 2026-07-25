@@ -64,7 +64,7 @@ export default async function PaginaGuardado({
     [vehiculo?.marca, vehiculo?.modelo].filter(Boolean).join(" ") || "el vehículo";
 
   return (
-    <div className="mx-auto max-w-md">
+    <div className="mx-auto max-w-md lg:max-w-xl lg:pt-4">
       <p className="rounded-md bg-success-soft px-3.5 py-3 font-brand text-body font-bold text-success">
         ✓ Service guardado
       </p>

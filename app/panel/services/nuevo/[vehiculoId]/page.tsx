@@ -108,7 +108,11 @@ export default async function PaginaCarton({
     : null;
 
   return (
-    <div className="mx-auto max-w-md">
+    // El cartón crece en dos saltos: en tablet ya entra en dos columnas de
+    // renglones, y en desktop toma su ancho definitivo. El tope es 3xl —
+    // más que eso estira los campos sin ganar nada y rompe la medida de
+    // lectura. En mobile queda igual que siempre.
+    <div className="mx-auto max-w-md sm:max-w-2xl lg:max-w-3xl">
       <Carton
         datos={{
           vehiculoId: vehiculo.id,

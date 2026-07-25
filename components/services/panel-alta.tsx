@@ -38,7 +38,10 @@ function CamposVehiculo({ patente }: { patente: string }) {
           <input id="modelo" name="modelo" placeholder="Corsa" className={CLASE_CAMPO} />
         </div>
       </div>
-      <div>
+      {/* En mobile el año ocupa todo el ancho, como siempre. Desde tablet se
+          recorta a media fila —el mismo ancho que marca y modelo— para que no
+          quede un campo largo suelto debajo del par. */}
+      <div className="sm:w-1/2 sm:pr-1.5">
         <label htmlFor="anio" className={CLASE_LABEL}>
           Año <span className="text-ink-40 normal-case">(opcional)</span>
         </label>
@@ -123,48 +126,54 @@ function CasoC({ patente, alVolver }: { patente: string; alVolver: () => void })
     <form action={accion} className="flex flex-col gap-4">
       {estado.error && <Aviso mensaje={estado.error} />}
 
-      <div>
-        <label htmlFor="nombre" className={CLASE_LABEL}>
-          Nombre del cliente
-        </label>
-        <input
-          id="nombre"
-          name="nombre"
-          required
-          minLength={2}
-          autoFocus
-          placeholder="Pedro Gómez"
-          className={CLASE_CAMPO}
-        />
-      </div>
+      {/* Desde tablet, los dos obligatorios en una fila y el email debajo: se
+          lee como un solo bloque de contacto sin perder la jerarquía. El gap
+          de mobile es el mismo de siempre (16px); recién en la grilla baja a
+          12px, que es el ritmo de los campos apareados. */}
+      <div className="grid gap-4 sm:grid-cols-2 sm:gap-3">
+        <div>
+          <label htmlFor="nombre" className={CLASE_LABEL}>
+            Nombre del cliente
+          </label>
+          <input
+            id="nombre"
+            name="nombre"
+            required
+            minLength={2}
+            autoFocus
+            placeholder="Pedro Gómez"
+            className={CLASE_CAMPO}
+          />
+        </div>
 
-      <div>
-        <label htmlFor="telefono" className={CLASE_LABEL}>
-          Teléfono
-        </label>
-        <input
-          id="telefono"
-          name="telefono"
-          type="tel"
-          inputMode="tel"
-          required
-          placeholder="351 555 0442"
-          className={CLASE_CAMPO}
-        />
-      </div>
+        <div>
+          <label htmlFor="telefono" className={CLASE_LABEL}>
+            Teléfono
+          </label>
+          <input
+            id="telefono"
+            name="telefono"
+            type="tel"
+            inputMode="tel"
+            required
+            placeholder="351 555 0442"
+            className={CLASE_CAMPO}
+          />
+        </div>
 
-      <div>
-        <label htmlFor="email" className={CLASE_LABEL}>
-          Email <span className="text-ink-40 normal-case">(si lo da)</span>
-        </label>
-        <input
-          id="email"
-          name="email"
-          type="email"
-          inputMode="email"
-          placeholder="pedro@mail.com"
-          className={CLASE_CAMPO}
-        />
+        <div className="sm:col-span-2">
+          <label htmlFor="email" className={CLASE_LABEL}>
+            Email <span className="text-ink-40 normal-case">(si lo da)</span>
+          </label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            inputMode="email"
+            placeholder="pedro@mail.com"
+            className={CLASE_CAMPO}
+          />
+        </div>
       </div>
 
       <CamposVehiculo patente={patente} />

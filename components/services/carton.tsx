@@ -177,9 +177,21 @@ export function Carton({ datos }: { datos: DatosCarton }) {
           Así lo va a ver {datos.clienteNombre.split(" ")[0]} en su celular
         </p>
 
-        <CartonPapel datos={datosPreview} />
+        {/* El cartón es la vista de un celular: se mantiene angosto siempre,
+            porque estirarlo sería mentir sobre lo que ve el cliente. Apenas
+            hay ancho, en vez de crecer se le pone al lado el aviso y las
+            acciones — así el mecánico ve el cartón entero y Confirmar queda
+            arriba del fold, sin scrollear. Recién desde 768px: más abajo la
+            columna de acciones no da para los dos botones en una fila. */}
+        <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,20rem)_1fr] md:items-start lg:grid-cols-[minmax(0,23rem)_1fr] lg:gap-5">
+          {/* Ancho de celular siempre: estirarlo sería mentir sobre lo que
+              el cliente va a ver. */}
+          <div className="w-full sm:mx-auto sm:max-w-sm md:mx-0 md:max-w-none">
+            <CartonPapel datos={datosPreview} />
+          </div>
 
-        <div className="mt-4 rounded-md border border-line bg-surface px-4 py-3.5">
+          <div className="flex w-full flex-col sm:mx-auto sm:max-w-sm md:mx-0 md:sticky md:top-4 md:max-w-none">
+        <div className="rounded-md border border-line bg-surface px-4 py-3.5">
           <p className="font-brand text-ui font-bold text-ink">
             Editable por 24 horas
           </p>
@@ -198,11 +210,15 @@ export function Carton({ datos }: { datos: DatosCarton }) {
           </p>
         )}
 
-        <div className="mt-4 flex gap-2.5">
+        {/* En la franja de tablet la columna de acciones es angosta y los dos
+            botones en fila parten "Confirmar service" en dos renglones. Ahí se
+            apilan —con el primario arriba, como en el resto del panel— y en
+            desktop, con ancho de sobra, vuelven a la fila. */}
+        <div className="mt-4 flex gap-2.5 md:flex-col-reverse lg:flex-row">
           <Boton
             variante="secundario"
             tam="lg"
-            className="flex-1"
+            className="flex-1 md:flex-none lg:flex-1"
             onClick={() => setPaso("carton")}
             disabled={guardando}
           >
@@ -212,12 +228,14 @@ export function Carton({ datos }: { datos: DatosCarton }) {
               duplicado por doble tap. Ancho fijo para que no salte. */}
           <Boton
             tam="lg"
-            className="flex-1"
+            className="flex-1 md:flex-none lg:flex-1"
             onClick={confirmar}
             disabled={guardando}
           >
             {guardando ? "Guardando…" : "Confirmar service"}
           </Boton>
+        </div>
+          </div>
         </div>
       </div>
     );
@@ -226,8 +244,11 @@ export function Carton({ datos }: { datos: DatosCarton }) {
   // ---------- Momento 1 ----------
   return (
     <div>
-      {/* 1. Cabecera sticky: acompaña todo el scroll */}
-      <div className="sticky top-0 z-20 -mx-4 mb-4 flex items-center gap-3 border-b border-line bg-base px-4 py-3 lg:-mx-8 lg:px-8">
+      {/* 1. Cabecera sticky: acompaña todo el scroll.
+          En mobile va a sangre, como una barra del sistema. En desktop se
+          contiene al ancho del cartón y flota como tarjeta: una banda que
+          sobresale del formulario se lee como un error de maquetado. */}
+      <div className="sticky top-0 z-20 -mx-4 mb-4 flex items-center gap-3 border-b border-line bg-base px-4 py-3 sm:mx-0 sm:rounded-lg sm:border sm:px-5 sm:shadow-md">
         <div className="min-w-0 flex-1">
           <p className="plate truncate text-body text-ink">{datos.patente}</p>
           <p className="truncate text-label text-ink-60">
@@ -263,22 +284,26 @@ export function Carton({ datos }: { datos: DatosCarton }) {
       )}
 
       <div className="flex flex-col gap-4">
-        {/* 2. Fecha */}
-        <div>
-          <label htmlFor="fecha" className={CLASE_LABEL}>
-            Fecha
-          </label>
-          <input
-            id="fecha"
-            type="date"
-            value={fecha}
-            onChange={(e) => setFecha(e.target.value)}
-            className={`${CLASE_CAMPO} tabular-nums`}
-          />
-        </div>
+        {/* 2 y 3. Fecha y kilómetros. Desde tablet van en pares: son dos
+            campos cortos y uno debajo del otro desperdicia el ancho. El de
+            kilómetros conserva su altura grande, que es lo que importa. */}
+        <div className="grid gap-4 sm:grid-cols-2 sm:items-start">
+          <div>
+            <label htmlFor="fecha" className={CLASE_LABEL}>
+              Fecha
+            </label>
+            <input
+              id="fecha"
+              type="date"
+              value={fecha}
+              onChange={(e) => setFecha(e.target.value)}
+              // Iguala la altura del campo de kilómetros solo cuando van en
+              // pares; en mobile conserva su alto de siempre.
+              className={`${CLASE_CAMPO} tabular-nums sm:h-14`}
+            />
+          </div>
 
-        {/* 3. Kilómetros */}
-        <div>
+          <div>
           <label htmlFor="km" className={CLASE_LABEL}>
             Kilómetros
           </label>
@@ -302,6 +327,7 @@ export function Carton({ datos }: { datos: DatosCarton }) {
               odómetro — si está bien, seguí igual.
             </p>
           )}
+          </div>
         </div>
 
         {/* 4. Aceite de motor — bloque destacado, siempre en blanco */}
@@ -399,6 +425,13 @@ export function Carton({ datos }: { datos: DatosCarton }) {
           ))}
         </datalist>
 
+        {/* Los cuatro grupos son listas independientes: en desktop van en dos
+            columnas y el cartón entra casi entero en una pantalla. El orden
+            de lectura no se rompe — se leen igual de arriba a abajo y de
+            izquierda a derecha, en el orden del papel.
+            items-start evita que un grupo con un detalle abierto estire al
+            de al lado. */}
+        <div className="grid gap-4 sm:grid-cols-2 sm:items-start">
         {GRUPOS.map((grupo) => (
           <div key={grupo} className="overflow-hidden rounded-lg border border-line">
             <p className="border-b border-line bg-surface px-3.5 py-2 text-label font-semibold tracking-[0.12em] text-ink-60 uppercase">
@@ -465,8 +498,11 @@ export function Carton({ datos }: { datos: DatosCarton }) {
             })}
           </div>
         ))}
+        </div>
 
-        {/* 6. Próximo service */}
+        {/* 6 y 7. Próximo service y observaciones, también en pares desde
+            desktop: son el cierre del cartón y ninguno necesita todo el ancho. */}
+        <div className="grid gap-4 sm:grid-cols-2 sm:items-start">
         <div>
           <span className={CLASE_LABEL}>Próximo service</span>
           <div className="flex flex-wrap gap-2">
@@ -520,18 +556,19 @@ export function Carton({ datos }: { datos: DatosCarton }) {
           <button
             type="button"
             onClick={() => setMostrarObs(true)}
-            className="min-h-11 self-start text-ui font-semibold text-ink-60"
+            className="min-h-11 self-start justify-self-start text-ui font-semibold text-ink-60"
           >
             + Agregar observaciones
           </button>
         )}
+        </div>
       </div>
 
       {/* 8. Botón fijo inferior — nunca guardado directo.
           Va en una banda opaca: el cartón scrollea por detrás, no por
           encima. El offset lo deja despejado de la barra de navegación
           de mobile. */}
-      <div className="sticky bottom-[calc(45px+env(safe-area-inset-bottom))] z-20 -mx-4 mt-6 border-t border-line bg-base px-4 py-3 lg:bottom-6 lg:-mx-8 lg:px-8">
+      <div className="sticky bottom-[calc(45px+env(safe-area-inset-bottom))] z-20 -mx-4 mt-6 border-t border-line bg-base px-4 py-3 sm:mx-0 sm:rounded-lg sm:border sm:px-5 sm:shadow-lg lg:bottom-6">
         <Boton
           tam="lg"
           className="w-full"
