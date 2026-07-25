@@ -103,13 +103,23 @@ export default async function PaginaVehiculo({ params }: Props) {
                     marcados: marcadosDe(ultimo),
                   }}
                 />
-                {/* El producto va afuera de la grilla del papel: en el cartón
-                    físico tampoco tiene renglón, y si el lubri apagó
-                    "mostrar productos" no viene y no se muestra. */}
-                {ultimo.aceiteNombre && (
-                  <p className="mt-3 text-center text-c-body text-ink-60">
-                    Aceite: <span className="text-ink">{ultimo.aceiteNombre}</span>
-                  </p>
+                {/* La sucursal y el producto van afuera de la grilla del
+                    papel: en el cartón físico ninguno tiene renglón. La
+                    sucursal se muestra para que el último service no quede
+                    asimétrico con el historial, que la indica en cada fila.
+                    Los dos respetan campos_visibles sin lógica propia: si
+                    el lubri apagó mostrar_sucursal o mostrar_productos,
+                    get_carton los manda en null y acá no se renderizan. */}
+                {(ultimo.sucursal || ultimo.aceiteNombre) && (
+                  <div className="mt-3 flex flex-col gap-1 text-center text-c-body text-ink-60">
+                    {ultimo.sucursal && <p>Hecho en {ultimo.sucursal}</p>}
+                    {ultimo.aceiteNombre && (
+                      <p>
+                        Aceite:{" "}
+                        <span className="text-ink">{ultimo.aceiteNombre}</span>
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
 
