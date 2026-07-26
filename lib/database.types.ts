@@ -1072,14 +1072,26 @@ export type Database = {
         }[]
       }
       recuperados_del_mes: {
-        Args: { p_desde?: string; p_lubricentro_id: string }
+        Args: {
+          p_desde?: string
+          p_lubricentro_id: string
+          p_sucursal_id?: string
+        }
         Returns: number
       }
-      resumen_inicio: { Args: never; Returns: Json }
+      resumen_inicio: { Args: { p_sucursal_id?: string }; Returns: Json }
       seed_demo: { Args: { p_password?: string }; Returns: string }
       service_editable: { Args: { p_service_id: string }; Returns: boolean }
       soy_superadmin: { Args: never; Returns: boolean }
       unaccent: { Args: { "": string }; Returns: string }
+      verificar_seguridad_vistas: {
+        Args: never
+        Returns: {
+          arreglo: string
+          motivo: string
+          vista: string
+        }[]
+      }
     }
     Enums: {
       canal_contacto: "whatsapp" | "manual"
