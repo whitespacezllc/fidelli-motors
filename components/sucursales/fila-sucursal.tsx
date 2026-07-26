@@ -8,6 +8,7 @@ type Sucursal = {
   nombre: string;
   direccion: string | null;
   telefono: string | null;
+  horarios: string | null;
   activa: boolean;
 };
 

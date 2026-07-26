@@ -41,8 +41,9 @@ function aHex(r: number, g: number, b: number): string {
   return `#${parte(r)}${parte(g)}${parte(b)}`;
 }
 
-// Luminancia relativa de WCAG 2.1.
-function luminancia(hex: string): number {
+// Luminancia relativa de WCAG 2.1. Exportada porque la pantalla de
+// diseño de experiencia la usa para avisar el contraste antes de guardar.
+export function luminancia(hex: string): number {
   const canal = (v: number) => {
     const s = v / 255;
     return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;

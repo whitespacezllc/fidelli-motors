@@ -1,6 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
 import { normalizarPatente } from "@/lib/texto";
-import type { DatosContacto, Lubricentro } from "@/lib/cliente/landing";
+import type {
+  DatosContacto,
+  Lubricentro,
+  SucursalPublica,
+} from "@/lib/cliente/landing";
 
 // Toda la pantalla del vehículo sale de una sola llamada a get_carton.
 // La función ya respeta campos_visibles del tenant: si el lubri apagó
@@ -52,6 +56,7 @@ type LubricentroJson = {
   logo_url?: string | null;
   color_primario?: string;
   datos_contacto?: DatosContacto;
+  sucursales?: SucursalPublica[];
 };
 
 type CartonJson = {
@@ -91,6 +96,7 @@ function aLubricentro(json: LubricentroJson | undefined): Lubricentro {
     logoUrl: json?.logo_url ?? null,
     colorPrimario: json?.color_primario ?? "#0A0A0A",
     contacto: json?.datos_contacto ?? {},
+    sucursales: json?.sucursales ?? [],
     premio: null,
   };
 }

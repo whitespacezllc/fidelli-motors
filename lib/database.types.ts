@@ -662,6 +662,7 @@ export type Database = {
           activa: boolean
           created_at: string
           direccion: string | null
+          horarios: string | null
           id: string
           lubricentro_id: string
           nombre: string
@@ -671,6 +672,7 @@ export type Database = {
           activa?: boolean
           created_at?: string
           direccion?: string | null
+          horarios?: string | null
           id?: string
           lubricentro_id: string
           nombre: string
@@ -680,6 +682,7 @@ export type Database = {
           activa?: boolean
           created_at?: string
           direccion?: string | null
+          horarios?: string | null
           id?: string
           lubricentro_id?: string
           nombre?: string
@@ -858,8 +861,11 @@ export type Database = {
           nombre: string | null
           nombre_busqueda: string | null
           patentes: string | null
+          patentes_lista: string | null
           telefono: string | null
+          ultimo_prox_service_km: number | null
           ultimo_service_fecha: string | null
+          ultimo_service_km: number | null
         }
         Relationships: [
           {
@@ -975,6 +981,21 @@ export type Database = {
       }
     }
     Functions: {
+      actualizar_service: {
+        Args: {
+          p_aceite_nombre?: string
+          p_aceite_producto_id?: string
+          p_aceite_tipo: string
+          p_fecha: string
+          p_items?: Json
+          p_kilometros: number
+          p_observaciones?: string
+          p_prox_service_km: number
+          p_service_id: string
+          p_sucursal_id: string
+        }
+        Returns: undefined
+      }
       buscar_vehiculo_por_patente: {
         Args: { p_patente: string }
         Returns: {
@@ -993,6 +1014,13 @@ export type Database = {
           ultimo_service_fecha: string
           ultimo_service_km: number
           ultimo_service_sucursal: string
+          vehiculo_id: string
+        }[]
+      }
+      ciclos_fidelizacion: {
+        Args: never
+        Returns: {
+          services_ciclo: number
           vehiculo_id: string
         }[]
       }
@@ -1020,6 +1048,7 @@ export type Database = {
           p_aceite_nombre?: string
           p_aceite_producto_id?: string
           p_aceite_tipo: string
+          p_canjear_premio?: boolean
           p_fecha: string
           p_items?: Json
           p_kilometros: number
@@ -1043,14 +1072,26 @@ export type Database = {
         }[]
       }
       recuperados_del_mes: {
-        Args: { p_desde?: string; p_lubricentro_id: string }
+        Args: {
+          p_desde?: string
+          p_lubricentro_id: string
+          p_sucursal_id?: string
+        }
         Returns: number
       }
-      resumen_inicio: { Args: never; Returns: Json }
+      resumen_inicio: { Args: { p_sucursal_id?: string }; Returns: Json }
       seed_demo: { Args: { p_password?: string }; Returns: string }
       service_editable: { Args: { p_service_id: string }; Returns: boolean }
       soy_superadmin: { Args: never; Returns: boolean }
       unaccent: { Args: { "": string }; Returns: string }
+      verificar_seguridad_vistas: {
+        Args: never
+        Returns: {
+          arreglo: string
+          motivo: string
+          vista: string
+        }[]
+      }
     }
     Enums: {
       canal_contacto: "whatsapp" | "manual"

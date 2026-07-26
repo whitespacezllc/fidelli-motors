@@ -13,12 +13,22 @@ import { normalizarPatente } from "@/lib/texto";
 // Por eso el shell no se pide con get_carton y una patente vacía: dejaría
 // una fila basura por cada visita.
 
+// La división de responsabilidades, decidida: datos_contacto es el
+// contacto de la MARCA (el WhatsApp al que escribe el cliente, las
+// redes); las direcciones, teléfonos y horarios son de cada SUCURSAL.
+// Los campos viejos (telefono/direccion/horarios) pueden seguir viniendo
+// en el jsonb de tenants anteriores, pero la landing ya no los muestra.
 export type DatosContacto = {
-  telefono?: string;
   whatsapp?: string;
-  direccion?: string;
-  horarios?: string;
   instagram?: string;
+  facebook?: string;
+};
+
+export type SucursalPublica = {
+  nombre: string;
+  direccion: string | null;
+  telefono: string | null;
+  horarios: string | null;
 };
 
 export type PremioVigente = {
@@ -31,6 +41,7 @@ export type Lubricentro = {
   logoUrl: string | null;
   colorPrimario: string;
   contacto: DatosContacto;
+  sucursales: SucursalPublica[];
   premio: PremioVigente | null;
 };
 
@@ -39,6 +50,7 @@ type LandingJson = {
   logo_url?: string | null;
   color_primario?: string;
   datos_contacto?: DatosContacto;
+  sucursales?: SucursalPublica[];
   premio?: { meta_services: number; descripcion: string } | null;
 };
 
@@ -55,6 +67,7 @@ export async function obtenerLanding(slug: string): Promise<Lubricentro | null> 
     logoUrl: json.logo_url ?? null,
     colorPrimario: json.color_primario ?? "#0A0A0A",
     contacto: json.datos_contacto ?? {},
+    sucursales: json.sucursales ?? [],
     premio: json.premio
       ? {
           metaServices: json.premio.meta_services,

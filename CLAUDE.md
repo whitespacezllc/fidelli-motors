@@ -184,6 +184,37 @@ para botones, roles de botón, tabs y triggers de Radix — no pantalla por pant
 **Las migraciones ya mergeadas a `develop` no se editan.** Un cambio de schema es
 siempre una migración nueva.
 
+### El ritual antes de cada `db push`
+
+```
+supabase db reset     # aplica todo desde cero Y corre las verificaciones
+supabase db push      # solo si el reset terminó en verde
+```
+
+**Si el reset falla, no se pushea.** `supabase/verificaciones.sql` corre al final
+de cada reset (declarado en `config.toml` → `db.seed.sql_paths`) y hace fallar el
+comando con exit 1 si encuentra un problema de aislamiento.
+
+Para consultarlo a mano en cualquier momento:
+
+```sql
+select * from verificar_seguridad_vistas();
+```
+
+Sin filas = está bien. Con filas = hay un agujero, y cada fila trae el SQL exacto
+para taparlo.
+
+**`create or replace view` RESETEA las `reloptions` de la vista** — incluido el
+`security_invoker`. Una vista sin esa opción corre con los permisos de su dueño y
+**no evalúa las policies**: un owner ve los datos de todos los lubricentros. Ya
+pasó dos veces (`vista_proximos_service` nació sin ella; `vista_clientes` la
+perdió al agregarle columnas, con un diff que se veía inofensivo). Toda migración
+que reemplace una vista tiene que terminar con:
+
+```sql
+alter view <la_vista> set (security_invoker = on);
+```
+
 **Si insertás a mano en `auth.users`**, fijá en `''` (no `NULL`) las columnas
 `confirmation_token`, `recovery_token`, `email_change_token_new` y `email_change`.
 GoTrue las escanea como `string` no-nullable y un `NULL` rompe todo login de ese

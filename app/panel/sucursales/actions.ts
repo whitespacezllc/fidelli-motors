@@ -22,6 +22,7 @@ function leerCampos(formData: FormData) {
     nombre: String(formData.get("nombre") ?? "").trim(),
     direccion: String(formData.get("direccion") ?? "").trim() || null,
     telefono: String(formData.get("telefono") ?? "").trim() || null,
+    horarios: String(formData.get("horarios") ?? "").trim() || null,
   };
 }
 

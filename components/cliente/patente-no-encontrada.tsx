@@ -1,5 +1,6 @@
 import { IconoWhatsapp } from "@/components/iconos";
 import { formatearPatente } from "@/lib/texto";
+import { telefonoWhatsapp } from "@/lib/contacto";
 import type { Lubricentro } from "@/lib/cliente/landing";
 
 // Que la patente no aparezca NO es un error: es un lead. El vacío se
@@ -16,7 +17,9 @@ export function PatenteNoEncontrada({
   lubricentro: Lubricentro;
 }) {
   const formateada = formatearPatente(patente);
-  const whatsapp = lubricentro.contacto.whatsapp?.replace(/\D/g, "");
+  const whatsapp = lubricentro.contacto.whatsapp
+    ? telefonoWhatsapp(lubricentro.contacto.whatsapp)
+    : null;
 
   const mensaje = encodeURIComponent(
     `Hola! Escaneé el QR y busqué la patente ${formateada}, pero no la encontré. ¿Me ayudan?`,

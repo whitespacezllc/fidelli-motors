@@ -19,6 +19,7 @@ import {
   crearProductoRapido,
   type ItemCargado,
 } from "@/app/panel/services/nuevo/[vehiculoId]/actions";
+import { actualizarService } from "@/app/panel/services/[serviceId]/editar/actions";
 
 type Producto = { id: string; nombre: string; categoria: string };
 type Sucursal = { id: string; nombre: string };
@@ -36,6 +37,25 @@ export type DatosCarton = {
   ultimoService: { fecha: string; kilometros: number } | null;
   serviceDeHoy: { hora: string; sucursal: string; kilometros: number } | null;
   hoy: string;
+  /** Solo si el vehículo llegó a la meta y el premio está sin canjear. */
+  premioDisponible: { descripcion: string } | null;
+};
+
+// El mismo cartón sirve para cargar y para editar: si fueran dos
+// formularios se desincronizan, y el mecánico ya conoce esta pantalla.
+// En edición llega el service precargado; el vehículo no se puede cambiar
+// (nunca fue un campo del formulario, y así debe seguir: un service
+// cargado en el auto equivocado se anula y se recarga).
+export type ServiceEnEdicion = {
+  serviceId: string;
+  fecha: string;
+  kilometros: number;
+  aceiteTipo: string;
+  aceiteProductoId: string | null;
+  proxServiceKm: number;
+  observaciones: string | null;
+  // tipo → detalle escrito ("" = marcado sin detalle)
+  marcados: Record<string, string>;
 };
 
 const CLASE_CAMPO =
@@ -43,21 +63,51 @@ const CLASE_CAMPO =
 const CLASE_LABEL =
   "mb-1.5 block text-label font-semibold tracking-[0.06em] text-ink-60 uppercase";
 
-export function Carton({ datos }: { datos: DatosCarton }) {
+// El próximo service guardado pudo salir de los atajos o de un número a
+// mano: al reabrir, se vuelve al atajo si la cuenta coincide.
+function proxInicial(edicion: ServiceEnEdicion | undefined) {
+  if (!edicion) return { modo: "10" as const, manual: "" };
+  if (edicion.proxServiceKm === edicion.kilometros + 10000)
+    return { modo: "10" as const, manual: "" };
+  if (edicion.proxServiceKm === edicion.kilometros + 15000)
+    return { modo: "15" as const, manual: "" };
+  return { modo: "otro" as const, manual: String(edicion.proxServiceKm) };
+}
+
+export function Carton({
+  datos,
+  edicion,
+}: {
+  datos: DatosCarton;
+  edicion?: ServiceEnEdicion;
+}) {
   const router = useRouter();
 
   const [sucursalId, setSucursalId] = useState(datos.sucursalInicial);
-  const [fecha, setFecha] = useState(datos.hoy);
-  const [km, setKm] = useState("");
-  const [aceiteTipo, setAceiteTipo] = useState("");
-  const [aceiteProductoId, setAceiteProductoId] = useState("");
+  const [fecha, setFecha] = useState(edicion?.fecha ?? datos.hoy);
+  const [km, setKm] = useState(edicion ? String(edicion.kilometros) : "");
+  const [aceiteTipo, setAceiteTipo] = useState(edicion?.aceiteTipo ?? "");
+  const [aceiteProductoId, setAceiteProductoId] = useState(
+    edicion?.aceiteProductoId ?? "",
+  );
   // tipo → detalle escrito (string vacío = marcado sin detalle)
-  const [marcados, setMarcados] = useState<Record<string, string>>({});
+  const [marcados, setMarcados] = useState<Record<string, string>>(
+    edicion?.marcados ?? {},
+  );
   const [abiertos, setAbiertos] = useState<Record<string, boolean>>({});
-  const [proxModo, setProxModo] = useState<"10" | "15" | "otro">("10");
-  const [proxManual, setProxManual] = useState("");
-  const [observaciones, setObservaciones] = useState("");
-  const [mostrarObs, setMostrarObs] = useState(false);
+  const [proxModo, setProxModo] = useState<"10" | "15" | "otro">(
+    proxInicial(edicion).modo,
+  );
+  const [proxManual, setProxManual] = useState(proxInicial(edicion).manual);
+  const [observaciones, setObservaciones] = useState(
+    edicion?.observaciones ?? "",
+  );
+  const [mostrarObs, setMostrarObs] = useState(
+    Boolean(edicion?.observaciones),
+  );
+  // Apagado por defecto: aplicar el premio es una decisión del mostrador,
+  // no algo que pase solo. Si el service no se confirma, no queda nada.
+  const [canjear, setCanjear] = useState(false);
 
   const [paso, setPaso] = useState<"carton" | "preview">("carton");
   const [guardando, setGuardando] = useState(false);
@@ -130,7 +180,7 @@ export function Carton({ datos }: { datos: DatosCarton }) {
       };
     });
 
-    const resultado = await guardarService({
+    const payload = {
       vehiculoId: datos.vehiculoId,
       sucursalId,
       fecha,
@@ -141,8 +191,24 @@ export function Carton({ datos }: { datos: DatosCarton }) {
       proxServiceKm: proxKm,
       observaciones: observaciones.trim() || null,
       items,
-    });
+      // El canje va con el service, en la misma transacción. Al editar no
+      // viaja: un canje ya registrado no se toca desde acá.
+      canjearPremio: Boolean(datos.premioDisponible) && canjear,
+    };
 
+    if (edicion) {
+      const resultado = await actualizarService(edicion.serviceId, payload);
+      if (resultado.error) {
+        setError(resultado.error);
+        setGuardando(false);
+        return;
+      }
+      router.push(`/panel/services/${edicion.serviceId}`);
+      router.refresh();
+      return;
+    }
+
+    const resultado = await guardarService(payload);
     if (resultado.error) {
       setError(resultado.error);
       setGuardando(false);
@@ -191,6 +257,19 @@ export function Carton({ datos }: { datos: DatosCarton }) {
           </div>
 
           <div className="flex w-full flex-col sm:mx-auto sm:max-w-sm md:mx-0 md:sticky md:top-4 md:max-w-none">
+        {/* Lo que se está por registrar además del cartón */}
+        {datos.premioDisponible && canjear && (
+          <div className="mb-4 rounded-md border border-reward bg-reward-soft px-4 py-3.5">
+            <p className="font-brand text-ui font-bold text-ink">
+              Se aplica el premio
+            </p>
+            <p className="mt-0.5 text-ui text-ink-60">
+              {datos.premioDisponible.descripcion}. Al confirmar queda
+              registrado el canje y el contador del cliente vuelve a cero.
+            </p>
+          </div>
+        )}
+
         <div className="rounded-md border border-line bg-surface px-4 py-3.5">
           <p className="font-brand text-ui font-bold text-ink">
             Editable por 24 horas
@@ -232,7 +311,11 @@ export function Carton({ datos }: { datos: DatosCarton }) {
             onClick={confirmar}
             disabled={guardando}
           >
-            {guardando ? "Guardando…" : "Confirmar service"}
+            {guardando
+              ? "Guardando…"
+              : edicion
+                ? "Guardar cambios"
+                : "Confirmar service"}
           </Boton>
         </div>
           </div>
@@ -499,6 +582,50 @@ export function Carton({ datos }: { datos: DatosCarton }) {
           </div>
         ))}
         </div>
+
+        {/* 5-bis. El premio, como un renglón más del cartón. Va acá y no
+            en el post-guardado: si el canje se marcara después de
+            confirmar, un mecánico distraído dejaba al cliente con el
+            descuento aplicado y el canje sin registrar — el contador no se
+            reseteaba y en el service siguiente le volvía a corresponder.
+            Acá el canje es parte de la confirmación y no se puede perder. */}
+        {datos.premioDisponible && !edicion && (
+          <div className="overflow-hidden rounded-lg border border-reward bg-reward-soft">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={canjear}
+              onClick={() => setCanjear((v) => !v)}
+              className="flex min-h-14 w-full items-center justify-between gap-3 px-4 py-2.5 text-left"
+            >
+              <span className="min-w-0">
+                <span className="block font-brand text-body font-bold text-ink">
+                  Aplicar premio
+                </span>
+                <span className="block text-ui text-ink-60">
+                  {datos.premioDisponible.descripcion}
+                </span>
+              </span>
+              <span
+                className={`flex h-6 w-10 shrink-0 items-center rounded-full p-0.5 transition-colors ${
+                  canjear ? "bg-reward" : "bg-line"
+                }`}
+              >
+                <span
+                  className={`size-5 rounded-full bg-base shadow-sm transition-transform ${
+                    canjear ? "translate-x-4" : "translate-x-0"
+                  }`}
+                />
+              </span>
+            </button>
+            {canjear && (
+              <p className="border-t border-reward/40 px-4 py-2.5 text-ui text-ink-60">
+                Se registra al confirmar el service. El descuento lo aplicás
+                vos en la caja.
+              </p>
+            )}
+          </div>
+        )}
 
         {/* 6 y 7. Próximo service y observaciones, también en pares desde
             desktop: son el cierre del cartón y ninguno necesita todo el ancho. */}
