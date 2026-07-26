@@ -52,7 +52,9 @@ export default async function LayoutFidelli({
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-5 py-6">{children}</main>
+      {/* Más ancho que el panel del lubri: la tabla de tenants tiene ocho
+          columnas y la de atención necesita lugar para su acción. */}
+      <main className="mx-auto max-w-[1400px] px-5 py-6">{children}</main>
     </div>
   );
 }

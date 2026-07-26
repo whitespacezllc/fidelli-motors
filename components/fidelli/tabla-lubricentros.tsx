@@ -7,6 +7,7 @@ import {
   BadgeSinSuscripcion,
 } from "@/components/fidelli/badges";
 import { CeldaOwner } from "@/components/fidelli/celda-owner";
+import { CeldaAtencion } from "@/components/fidelli/celda-atencion";
 import { AccionesTenant } from "@/components/fidelli/acciones-tenant";
 import type { FilaLubricentro, PlanCompleto, EstadoOwner } from "@/components/fidelli/tipos";
 
@@ -36,7 +37,7 @@ export function TablaLubricentros({
     // su caja en lugar de apretarse: el caso principal de esta superficie es
     // desktop, y una tabla de 7 columnas plegada a 375px no se lee mejor.
     <div className="surface-card overflow-x-auto">
-      <table className="w-full min-w-[900px] border-collapse text-ui">
+      <table className="w-full min-w-[1120px] border-collapse text-ui">
         <thead>
           <tr className="border-b border-line">
             {/* w-full en la identidad: el sobrante de ancho se lo queda esta
@@ -45,6 +46,9 @@ export function TablaLubricentros({
             <th scope="col" className={`${TH} w-full`}>Lubricentro</th>
             <th scope="col" className={TH}>Suscripción</th>
             <th scope="col" className={TH}>Vencimiento</th>
+            {/* La columna del ritual: qué le pasa a este lubricentro y el tap
+                para resolverlo, uno al lado del otro. */}
+            <th scope="col" className={TH}>Atención</th>
             <th scope="col" className={`${TH} text-right`}>Services mes</th>
             <th scope="col" className={TH}>Último service</th>
             <th scope="col" className={TH}>Owner</th>
@@ -110,6 +114,31 @@ export function TablaLubricentros({
                   ) : (
                     <span className="text-ink-40">—</span>
                   )}
+                </td>
+
+                <td className={TD}>
+                  <CeldaAtencion
+                    lubricentroId={l.id}
+                    nombre={l.nombre}
+                    atencion={l.atencion}
+                    contactado={l.contactado}
+                    telefono={l.telefono}
+                    ownerNombre={l.owner_nombre}
+                    vencimiento={l.sub_vencimiento}
+                    periodo={l.sub_periodo}
+                    descuentoPct={Number(l.sub_descuento_pct ?? 0)}
+                    plan={
+                      l.plan_id
+                        ? {
+                            id: l.plan_id,
+                            nombre: l.plan_nombre ?? "",
+                            precio_mensual: Number(l.plan_precio ?? 0),
+                            descuento_semestral_pct: Number(l.plan_desc_sem ?? 0),
+                            descuento_anual_pct: Number(l.plan_desc_anual ?? 0),
+                          }
+                        : null
+                    }
+                  />
                 </td>
 
                 <td className={`${TD} text-right font-semibold`}>

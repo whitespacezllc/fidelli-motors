@@ -9,6 +9,14 @@ import {
 } from "@/lib/fidelli/plan";
 import { obtenerSesion } from "@/lib/auth/session";
 import { FormPago } from "./form-pago";
+import { BotonAviso } from "@/components/fidelli/boton-aviso";
+import {
+  ESTILO_ATENCION,
+  esAtencion,
+  linkDeAviso,
+  motivoDe,
+  textoDeVencimiento,
+} from "@/lib/fidelli/atencion";
 import type { SuscripcionVigente, Tenant } from "./tipos";
 
 const TH =
@@ -26,7 +34,7 @@ export async function TabSuscripcion({
 
   // El filtro por tenant es lo único que aísla: pagos no tiene RLS que
   // recorte a un superadmin.
-  const [pagosRes, sesion] = await Promise.all([
+  const [pagosRes, atencionRes, sesion] = await Promise.all([
     supabase
       .from("pagos")
       .select(
@@ -34,8 +42,18 @@ export async function TabSuscripcion({
       )
       .eq("lubricentro_id", tenant.id)
       .order("periodo_hasta", { ascending: false }),
+    // Las mismas funciones que usa el listado, para una sola fila: la ficha
+    // y la tabla no pueden decir cosas distintas del mismo lubricentro.
+    supabase.rpc("atencion_tenant", { p_lubricentro_id: tenant.id }),
     obtenerSesion(),
   ]);
+
+  const aviso = (atencionRes.data ?? {}) as {
+    atencion?: string | null;
+    contactado?: boolean;
+    telefono?: string | null;
+    owner_nombre?: string | null;
+  };
 
   const pagos = pagosRes.data ?? [];
 
@@ -127,11 +145,19 @@ export async function TabSuscripcion({
           </div>
         )}
 
-        {/*
-          Debajo del historial va el aviso de vencimiento por WhatsApp, con
-          el mensaje pre-armado. Es la tarea siguiente: el espacio queda
-          reservado acá, al pie de la tabla que da el contexto.
-        */}
+        {/* El aviso de vencimiento va al pie de la tabla que le da el
+            contexto: recién habiendo visto qué pagó y hasta cuándo tiene
+            sentido el botón que le escribe. */}
+        {suscripcion && (
+          <BloqueAviso
+            tenant={tenant}
+            suscripcion={suscripcion}
+            atencion={aviso.atencion ?? null}
+            contactado={aviso.contactado ?? false}
+            telefono={aviso.telefono ?? null}
+            ownerNombre={aviso.owner_nombre ?? null}
+          />
+        )}
       </section>
 
       <section className="surface-card w-full overflow-hidden lg:w-[380px] lg:shrink-0">
@@ -158,6 +184,83 @@ export async function TabSuscripcion({
           )}
         </div>
       </section>
+    </div>
+  );
+}
+
+// ============================================================
+// El aviso de vencimiento, en la ficha
+//
+// Mismo botón y misma regla anti-spam que el listado —comparten
+// BotonAviso— pero acá hay lugar para decir POR QUÉ hay que escribirle.
+// En la tabla eso no entra; en la ficha, que es donde se prepara la
+// conversación, es lo que más ayuda.
+// ============================================================
+function BloqueAviso({
+  tenant,
+  suscripcion,
+  atencion,
+  contactado,
+  telefono,
+  ownerNombre,
+}: {
+  tenant: Tenant;
+  suscripcion: SuscripcionVigente;
+  atencion: string | null;
+  contactado: boolean;
+  telefono: string | null;
+  ownerNombre: string | null;
+}) {
+  if (!esAtencion(atencion)) {
+    return (
+      <div className="border-t border-line px-4.5 py-4">
+        <p className="text-ui text-success">
+          Al día: no hay ningún vencimiento cerca.
+        </p>
+        <p className="mt-0.5 text-label text-ink-60">
+          El aviso aparece acá cuando falten {""}
+          menos de una semana para el vencimiento, o cuando ya haya pasado.
+        </p>
+      </div>
+    );
+  }
+
+  const estilo = ESTILO_ATENCION[atencion];
+
+  return (
+    <div className="border-t border-line px-4.5 py-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <span
+          className={`inline-flex items-center rounded-sm border px-2 py-0.5 text-label font-semibold tracking-[0.04em] uppercase ${estilo.clase}`}
+        >
+          {estilo.etiqueta}
+        </span>
+        <span className="text-ui text-ink-60">
+          {textoDeVencimiento(suscripcion.vencimiento)} ·{" "}
+          {formatearFecha(suscripcion.vencimiento)}
+        </span>
+      </div>
+
+      <p className="mt-1.5 text-ui text-ink-60">{estilo.explicacion}</p>
+
+      <div className="mt-3">
+        <BotonAviso
+          lubricentroId={tenant.id}
+          motivo={motivoDe(atencion)}
+          contactado={contactado}
+          nombre={tenant.nombre}
+          link={linkDeAviso({
+            atencion,
+            telefono,
+            ownerNombre,
+            lubricentroNombre: tenant.nombre,
+            vencimiento: suscripcion.vencimiento,
+            periodo: suscripcion.periodo,
+            descuentoPct: suscripcion.descuento_pct,
+            plan: suscripcion.plan,
+          })}
+        />
+      </div>
     </div>
   );
 }

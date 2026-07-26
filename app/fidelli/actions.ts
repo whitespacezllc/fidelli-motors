@@ -7,6 +7,7 @@ import { crearClienteAdmin } from "@/lib/supabase/admin";
 import { obtenerSesion } from "@/lib/auth/session";
 import { origenDelSitio } from "@/lib/origen";
 import type { Periodo } from "@/lib/fidelli/plan";
+import type { MotivoAviso } from "@/lib/config";
 
 // Toda acción de esta superficie es de Fidelli. La base lo exige igual
 // (RLS + el guard de cada función), así que esto no es la única defensa:
@@ -381,4 +382,94 @@ export async function cambiarEstadoLubricentro(
   revalidatePath("/fidelli");
   revalidatePath("/panel", "layout");
   return { ok: true };
+}
+
+// ============================================================
+// El aviso de vencimiento
+//
+// Se registra al ABRIR WhatsApp, no al enviar: es la única parte
+// verificable del flujo — si el mensaje llegó o no pasa en una app que no
+// controlamos. Mismo criterio que el contacto del panel del lubri.
+//
+// No hace falta borrar nada al cerrarse el ciclo: contactado_fidelli()
+// compara contra el último pago, así que registrar un pago apaga el check
+// solo y los avisos viejos quedan como historial.
+// ============================================================
+
+export type ResultadoAviso = { error?: string };
+
+export async function registrarAviso(
+  lubricentroId: string,
+  motivo: MotivoAviso,
+  canal: "whatsapp" | "manual" = "whatsapp",
+): Promise<ResultadoAviso> {
+  const sesion = await exigirSuperadmin();
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("contactos_fidelli").insert({
+    lubricentro_id: lubricentroId,
+    usuario_id: sesion.usuarioId,
+    motivo,
+    canal,
+  });
+
+  if (error) {
+    return {
+      error: "No se pudo registrar el aviso. El mensaje se abrió igual.",
+    };
+  }
+
+  revalidatePath("/fidelli");
+  revalidatePath(`/fidelli/${lubricentroId}`);
+  return {};
+}
+
+// Destildar borra los avisos del ciclo actual, que son exactamente los que
+// mira contactado_fidelli(). Los de ciclos anteriores son historial y no se
+// tocan. Marcar a mano registra canal 'manual': el llamado telefónico hecho
+// por afuera del sistema.
+export async function alternarAviso(
+  lubricentroId: string,
+  motivo: MotivoAviso,
+  contactado: boolean,
+): Promise<ResultadoAviso> {
+  await exigirSuperadmin();
+
+  if (!contactado) return registrarAviso(lubricentroId, motivo, "manual");
+
+  const supabase = await createClient();
+
+  // El ancla del ciclo, con el mismo criterio que la función de la base:
+  // el último pago registrado, o el alta si nunca pagó.
+  const [{ data: pago }, { data: lubricentro }] = await Promise.all([
+    supabase
+      .from("pagos")
+      .select("created_at")
+      .eq("lubricentro_id", lubricentroId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("lubricentros")
+      .select("created_at")
+      .eq("id", lubricentroId)
+      .maybeSingle(),
+  ]);
+
+  const ancla = pago?.created_at ?? lubricentro?.created_at;
+  if (!ancla) return { error: "No se pudo destildar el aviso. Probá de nuevo." };
+
+  const { error } = await supabase
+    .from("contactos_fidelli")
+    .delete()
+    .eq("lubricentro_id", lubricentroId)
+    .gt("created_at", ancla);
+
+  if (error) {
+    return { error: "No se pudo destildar el aviso. Probá de nuevo." };
+  }
+
+  revalidatePath("/fidelli");
+  revalidatePath(`/fidelli/${lubricentroId}`);
+  return {};
 }

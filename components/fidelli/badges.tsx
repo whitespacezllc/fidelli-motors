@@ -34,8 +34,9 @@ export function BadgeSuscripcion({
 
   if (estado === "trial") {
     const dias = diasHasta(vencimiento);
-    sufijo =
-      dias > 1 ? `${dias} días` : dias === 1 ? "último día" : "trial terminado";
+    // "terminado" y no "trial terminado": el badge ya empieza con la palabra
+    // trial, y "TRIAL · TRIAL TERMINADO" se lee como un error.
+    sufijo = dias > 1 ? `${dias} días` : dias === 1 ? "último día" : "terminado";
   }
 
   return (
