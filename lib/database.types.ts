@@ -1176,6 +1176,7 @@ export type Database = {
           ultimo_service: string
         }[]
       }
+      metricas_plataforma: { Args: { p_granularidad?: string }; Returns: Json }
       metricas_tenant: { Args: { p_lubricentro_id: string }; Returns: Json }
       mi_lubricentro_id: { Args: never; Returns: string }
       normalizar_patente: { Args: { entrada: string }; Returns: string }

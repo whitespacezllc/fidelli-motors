@@ -9,6 +9,7 @@ import {
 import { CeldaOwner } from "@/components/fidelli/celda-owner";
 import { CeldaAtencion } from "@/components/fidelli/celda-atencion";
 import { AccionesTenant } from "@/components/fidelli/acciones-tenant";
+import { CeldaSalud } from "@/components/fidelli/celda-salud";
 import type { FilaLubricentro, PlanCompleto, EstadoOwner } from "@/components/fidelli/tipos";
 
 const TH =
@@ -37,7 +38,7 @@ export function TablaLubricentros({
     // su caja en lugar de apretarse: el caso principal de esta superficie es
     // desktop, y una tabla de 7 columnas plegada a 375px no se lee mejor.
     <div className="surface-card overflow-x-auto">
-      <table className="w-full min-w-[1120px] border-collapse text-ui">
+      <table className="w-full min-w-[1240px] border-collapse text-ui">
         <thead>
           <tr className="border-b border-line">
             {/* w-full en la identidad: el sobrante de ancho se lo queda esta
@@ -52,11 +53,7 @@ export function TablaLubricentros({
             <th scope="col" className={`${TH} text-right`}>Services mes</th>
             <th scope="col" className={TH}>Último service</th>
             <th scope="col" className={TH}>Owner</th>
-            {/*
-              Entre Owner y las acciones va la columna Salud, que sale de las
-              métricas generales (otra tarea). El espacio está: agregarla es
-              un <th> y un <td>, sin tocar el resto de la tabla.
-            */}
+            <th scope="col" className={TH}>Salud</th>
             <th scope="col" className={TH}>
               <span className="sr-only">Acciones</span>
             </th>
@@ -162,6 +159,14 @@ export function TablaLubricentros({
                     lubricentroId={l.id}
                     nombre={l.nombre}
                     estado={l.owner_estado as EstadoOwner}
+                  />
+                </td>
+
+                <td className={TD}>
+                  <CeldaSalud
+                    estado={l.sub_estado}
+                    vencimiento={l.sub_vencimiento}
+                    ultimoService={l.ultimo_service}
                   />
                 </td>
 

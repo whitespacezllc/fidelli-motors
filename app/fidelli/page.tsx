@@ -6,6 +6,14 @@ import { IconoLubricentro } from "@/components/iconos";
 import { TablaLubricentros } from "@/components/fidelli/tabla-lubricentros";
 import { BotonAlta } from "@/components/fidelli/boton-alta";
 import { esAtencion } from "@/lib/fidelli/atencion";
+import { calcularTotales } from "@/lib/fidelli/totales";
+import { FranjaTotales } from "@/components/fidelli/franja-totales";
+import {
+  Pulso,
+  esGranularidad,
+  type Granularidad,
+  type PuntoPulso,
+} from "@/components/fidelli/pulso";
 import type { PlanCompleto } from "@/components/fidelli/tipos";
 
 export const metadata: Metadata = { title: "Lubricentros — Fidelli Motors" };
@@ -13,10 +21,13 @@ export const metadata: Metadata = { title: "Lubricentros — Fidelli Motors" };
 export default async function PaginaLubricentros({
   searchParams,
 }: {
-  searchParams: Promise<{ atencion?: string }>;
+  searchParams: Promise<{ atencion?: string; pulso?: string }>;
 }) {
-  const { atencion } = await searchParams;
+  const { atencion, pulso } = await searchParams;
   const soloAtencion = atencion === "1";
+  // Semanal por defecto: con pocos datos es el que mejor se lee —bastantes
+  // puntos para ser una curva, sin el diente de sierra de los domingos.
+  const granularidad: Granularidad = esGranularidad(pulso) ? pulso : "semana";
 
   const supabase = await createClient();
 
@@ -25,17 +36,30 @@ export default async function PaginaLubricentros({
   // vencimiento— qué atención necesita cada tenant, si ya se le avisó en
   // este ciclo y a qué número escribirle. Viene ordenada con lo urgente
   // arriba: el ORDER BY no puede depender de algo que se calcule acá.
-  const [{ data: filas }, { data: planes }] = await Promise.all([
+  const [{ data: filas }, { data: planes }, { data: plataforma }] = await Promise.all([
     supabase.rpc("listado_lubricentros"),
     supabase
       .from("planes")
       .select("id, nombre, precio_mensual, descuento_semestral_pct, descuento_anual_pct")
       .eq("activo", true)
       .order("nombre"),
+    // Lo único de toda esta superficie que NO se filtra por tenant: son
+    // los números de la plataforma entera y sumarlos es el punto.
+    supabase.rpc("metricas_plataforma", { p_granularidad: granularidad }),
   ]);
 
   const lubricentros = filas ?? [];
   const catalogo = (planes ?? []) as PlanCompleto[];
+
+  const metricas = (plataforma ?? {}) as {
+    services_mes?: number;
+    acumulado?: number;
+    serie?: PuntoPulso[];
+  };
+  // La franja sale de las filas que ya trajimos: el MRR necesita el precio
+  // del plan y los dos descuentos, y listado_lubricentros() los devuelve.
+  // Una consulta menos y una sola versión de la cadena de descuentos.
+  const totales = calcularTotales(lubricentros);
 
   const necesitanAtencion = lubricentros.filter((l) => esAtencion(l.atencion));
   const sinAvisar = necesitanAtencion.filter((l) => !l.contactado).length;
@@ -48,13 +72,6 @@ export default async function PaginaLubricentros({
         {lubricentros.length > 0 && <BotonAlta />}
       </div>
 
-      {/*
-        Acá va la franja de totales —activos, MRR normalizado, services del
-        mes, trials en curso— que es de la tarea de métricas generales.
-        El espacio queda reservado a propósito: entra entre el título y la
-        tabla, sin mover nada de lo que ya está.
-      */}
-
       {lubricentros.length === 0 ? (
         <EstadoVacio
           icono={<IconoLubricentro className="size-6" />}
@@ -65,8 +82,21 @@ export default async function PaginaLubricentros({
         </EstadoVacio>
       ) : (
         <>
+          <FranjaTotales
+            totales={totales}
+            servicesMes={metricas.services_mes ?? 0}
+          />
+
+          <Pulso
+            serie={metricas.serie ?? []}
+            acumulado={metricas.acumulado ?? 0}
+            granularidad={granularidad}
+            soloAtencion={soloAtencion}
+          />
+
           <Filtro
             soloAtencion={soloAtencion}
+            granularidad={granularidad}
             cuantos={necesitanAtencion.length}
             sinAvisar={sinAvisar}
           />
@@ -95,20 +125,26 @@ export default async function PaginaLubricentros({
 // puede compartir y sobrevive al refresh que hace cada aviso registrado.
 function Filtro({
   soloAtencion,
+  granularidad,
   cuantos,
   sinAvisar,
 }: {
   soloAtencion: boolean;
+  granularidad: Granularidad;
   cuantos: number;
   sinAvisar: number;
 }) {
   const base =
     "flex h-9 items-center gap-2 rounded-md px-3 text-ui transition-colors";
 
+  // Los dos filtros de la pantalla viven en la misma URL: cambiar uno no
+  // puede pisar el otro. Semanal es el default, así que no se escribe.
+  const sufijoPulso = granularidad === "semana" ? "" : `&pulso=${granularidad}`;
+
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2">
       <Link
-        href="/fidelli"
+        href={`/fidelli${sufijoPulso ? `?${sufijoPulso.slice(1)}` : ""}`}
         aria-current={!soloAtencion ? "page" : undefined}
         className={
           soloAtencion
@@ -120,7 +156,7 @@ function Filtro({
       </Link>
 
       <Link
-        href="/fidelli?atencion=1"
+        href={`/fidelli?atencion=1${sufijoPulso}`}
         aria-current={soloAtencion ? "page" : undefined}
         className={
           soloAtencion
