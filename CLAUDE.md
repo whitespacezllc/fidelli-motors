@@ -85,6 +85,11 @@ la resuelve.
   `if` en React. El front muestra el estado; la base lo hace cumplir.
 - **Aislamiento multi-tenant.** RLS filtra por `lubricentro_id` automáticamente.
   **No agregues `where lubricentro_id = ...` en las consultas del panel:** ya está.
+  **En `/fidelli` es al revés:** `soy_superadmin()` abre todos los tenants, el RLS
+  deja de recortar y cada consulta tiene que filtrar por el lubricentro de la
+  ficha. Las vistas tampoco ayudan —tienen `security_invoker`, así que a un
+  superadmin le devuelven la plataforma entera. Un filtro olvidado no da error:
+  mezcla dos lubricentros en la misma pantalla.
 - **`premio_disponible(vehiculo_id)`** calcula el ciclo con reset (services desde
   el último canje contra la meta vigente). No hay contadores guardados.
 - **`vista_proximos_service`** devuelve el estado (`vencido` / `urgente` /

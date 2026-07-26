@@ -1,49 +1,105 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { CabeceraTenant } from "@/components/fidelli/ficha/cabecera-tenant";
+import { TabResumen } from "@/components/fidelli/ficha/tab-resumen";
+import { TabSuscripcion } from "@/components/fidelli/ficha/tab-suscripcion";
+import { TabDatos } from "@/components/fidelli/ficha/tab-datos";
+import { TabConfiguracion } from "@/components/fidelli/ficha/tab-configuracion";
+import {
+  esPestana,
+  type SuscripcionVigente,
+  type Tenant,
+} from "@/components/fidelli/ficha/tipos";
+import type { PlanCompleto } from "@/components/fidelli/tipos";
 
 export const metadata: Metadata = { title: "Ficha del lubricentro — Fidelli Motors" };
 
-// La ficha completa —resumen, suscripción, datos y configuración— es su
-// propia tarea. Esto existe para que la fila del listado no enlace a la nada:
-// confirma que el tenant existe y dice qué va a haber acá.
+export type ParamsFicha = {
+  tab?: string;
+  ver?: string;
+  q?: string;
+  pagina?: string;
+  sucursal?: string;
+  desde?: string;
+  hasta?: string;
+};
+
+// ============================================================
+// La ficha del tenant.
+//
+// TODA consulta de esta pantalla y de sus pestañas filtra por el id de la
+// ficha. En /panel eso sería redundante —RLS filtra por el tenant de la
+// sesión— pero acá el que mira es un superadmin y sus policies no recortan
+// nada: el filtro explícito es lo único que separa a un lubricentro del
+// de al lado. Las vistas tampoco ayudan: tienen security_invoker, así que
+// para un superadmin devuelven la plataforma entera.
+// ============================================================
 export default async function PaginaFicha({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<ParamsFicha>;
 }) {
   const { id } = await params;
+  const busqueda = await searchParams;
+  const pestana = esPestana(busqueda.tab) ? busqueda.tab : "resumen";
 
   const supabase = await createClient();
-  const { data: lubricentro } = await supabase
-    .from("lubricentros")
-    .select("nombre, slug")
-    .eq("id", id)
-    .maybeSingle();
 
-  if (!lubricentro) notFound();
+  const [tenantRes, suscripcionRes] = await Promise.all([
+    supabase
+      .from("lubricentros")
+      .select("id, nombre, slug, activo, calcos_entregadas, created_at")
+      .eq("id", id)
+      .maybeSingle(),
+    // La vigente es la última que arrancó, el mismo criterio que el listado.
+    supabase
+      .from("suscripciones")
+      .select(
+        `id, estado, periodo, descuento_pct, inicio, vencimiento,
+         planes(id, nombre, precio_mensual, descuento_semestral_pct, descuento_anual_pct)`,
+      )
+      .eq("lubricentro_id", id)
+      .order("inicio", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  if (!tenantRes.data) notFound();
+
+  const tenant = tenantRes.data as Tenant;
+  const fila = suscripcionRes.data;
+  const suscripcion: SuscripcionVigente | null = fila
+    ? {
+        id: fila.id,
+        estado: fila.estado,
+        periodo: fila.periodo,
+        descuento_pct: Number(fila.descuento_pct),
+        inicio: fila.inicio,
+        vencimiento: fila.vencimiento,
+        plan: (fila.planes as PlanCompleto | null) ?? null,
+      }
+    : null;
 
   return (
     <div>
-      <Link
-        href="/fidelli"
-        className="mb-4 inline-flex min-h-8 items-center text-label font-semibold text-ink-60 hover:text-ink"
-      >
-        ← Lubricentros
-      </Link>
+      <CabeceraTenant
+        tenant={tenant}
+        suscripcion={suscripcion}
+        pestana={pestana}
+      />
 
-      <h1 className="font-brand text-h2 font-bold text-ink">
-        {lubricentro.nombre}
-      </h1>
-      <p className="text-ui text-ink-40">/{lubricentro.slug}</p>
-
-      <p className="mt-4 max-w-lg text-ui text-ink-60">
-        Acá va a aparecer la ficha del tenant: el resumen con sus métricas, el
-        historial de pagos de la suscripción, sus datos y su configuración.
-        Mientras tanto, todo lo que se puede editar está en el botón{" "}
-        <span className="font-semibold text-ink">Editar</span> del listado.
-      </p>
+      {pestana === "resumen" && (
+        <TabResumen tenant={tenant} suscripcion={suscripcion} />
+      )}
+      {pestana === "suscripcion" && (
+        <TabSuscripcion tenant={tenant} suscripcion={suscripcion} />
+      )}
+      {pestana === "datos" && <TabDatos tenant={tenant} params={busqueda} />}
+      {pestana === "configuracion" && <TabConfiguracion tenant={tenant} />}
     </div>
   );
 }

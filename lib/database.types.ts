@@ -1065,6 +1065,7 @@ export type Database = {
         }
         Returns: string
       }
+      desbloquear_service: { Args: { p_service_id: string }; Returns: string }
       estados_owner: {
         Args: never
         Returns: {
@@ -1113,6 +1114,7 @@ export type Database = {
           ultimo_service: string
         }[]
       }
+      metricas_tenant: { Args: { p_lubricentro_id: string }; Returns: Json }
       mi_lubricentro_id: { Args: never; Returns: string }
       normalizar_patente: { Args: { entrada: string }; Returns: string }
       premio_disponible: {
@@ -1132,6 +1134,16 @@ export type Database = {
           p_sucursal_id?: string
         }
         Returns: number
+      }
+      registrar_pago: {
+        Args: {
+          p_fecha_pago: string
+          p_lubricentro_id: string
+          p_monto: number
+          p_periodo_desde: string
+          p_periodo_hasta: string
+        }
+        Returns: string
       }
       resumen_inicio: { Args: { p_sucursal_id?: string }; Returns: Json }
       seed_demo: { Args: { p_password?: string }; Returns: string }

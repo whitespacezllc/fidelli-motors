@@ -100,6 +100,31 @@ export const ETIQUETA_ESTADO: Record<EstadoSuscripcion, string> = {
   cancelada: "Cancelada",
 };
 
+function aPartes(iso: string): [number, number, number] {
+  const [a, m, d] = iso.slice(0, 10).split("-").map(Number);
+  return [a, m, d];
+}
+
+function aIso(f: Date): string {
+  return `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, "0")}-${String(f.getDate()).padStart(2, "0")}`;
+}
+
+export function sumarDias(iso: string, dias: number): string {
+  const [a, m, d] = aPartes(iso);
+  return aIso(new Date(a, m - 1, d + dias));
+}
+
+// Sumar meses de calendario, no de 30 días: el período de una suscripción
+// va del 16 al 15, y eso no es un múltiplo de nada.
+export function sumarMeses(iso: string, meses: number): string {
+  const [a, m, d] = aPartes(iso);
+  const f = new Date(a, m - 1 + meses, d);
+  // El 31 de enero + 1 mes desborda a marzo. Cuando pasa, se retrocede al
+  // último día del mes que corresponde.
+  if (f.getDate() !== d) f.setDate(0);
+  return aIso(f);
+}
+
 // Días que faltan para el vencimiento. Negativo = ya venció.
 export function diasHasta(iso: string): number {
   const [a, m, d] = iso.slice(0, 10).split("-").map(Number);
