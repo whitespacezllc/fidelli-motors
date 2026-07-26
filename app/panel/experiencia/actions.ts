@@ -1,9 +1,8 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { obtenerSesion } from "@/lib/auth/session";
+import { sesionParaEscribir } from "@/lib/auth/session";
 
 export type EstadoExperiencia = { error?: string; ok?: boolean };
 
@@ -25,8 +24,7 @@ export async function guardarExperiencia(
   _previo: EstadoExperiencia,
   formData: FormData,
 ): Promise<EstadoExperiencia> {
-  const sesion = await obtenerSesion();
-  if (!sesion?.lubricentroId) redirect("/login");
+  const sesion = await sesionParaEscribir();
 
   const color = String(formData.get("color") ?? "").trim().toUpperCase();
   if (!HEX.test(color)) {
@@ -130,8 +128,7 @@ export async function subirLogo(
   _previo: EstadoLogo,
   formData: FormData,
 ): Promise<EstadoLogo> {
-  const sesion = await obtenerSesion();
-  if (!sesion?.lubricentroId) redirect("/login");
+  const sesion = await sesionParaEscribir();
 
   const archivo = formData.get("logo");
   if (!(archivo instanceof File) || archivo.size === 0) {
@@ -187,8 +184,7 @@ export async function subirLogo(
 }
 
 export async function quitarLogo(): Promise<EstadoLogo> {
-  const sesion = await obtenerSesion();
-  if (!sesion?.lubricentroId) redirect("/login");
+  const sesion = await sesionParaEscribir();
 
   const supabase = await createClient();
   await supabase.storage

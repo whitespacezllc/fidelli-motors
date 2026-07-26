@@ -1,9 +1,8 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { obtenerSesion } from "@/lib/auth/session";
+import { sesionParaEscribir } from "@/lib/auth/session";
 
 export type ResultadoAnulado = { error?: string };
 
@@ -13,8 +12,7 @@ export type ResultadoAnulado = { error?: string };
 export async function anularService(
   serviceId: string,
 ): Promise<ResultadoAnulado> {
-  const sesion = await obtenerSesion();
-  if (!sesion?.lubricentroId) redirect("/login");
+  await sesionParaEscribir();
 
   const supabase = await createClient();
 

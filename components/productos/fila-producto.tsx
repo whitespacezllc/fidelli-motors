@@ -1,6 +1,7 @@
 import { FilaListado } from "@/components/ui/fila-listado";
 import { ToggleEstado } from "@/components/ui/toggle-estado";
 import { DialogProducto } from "@/components/productos/dialog-producto";
+import { AccionBloqueada } from "@/components/panel/bloqueo-suspension";
 import { toggleProducto } from "@/app/panel/productos/actions";
 import type { CategoriaProducto } from "@/lib/categorias";
 
@@ -12,19 +13,31 @@ type Producto = {
   activo: boolean;
 };
 
-export function FilaProducto({ producto }: { producto: Producto }) {
+export function FilaProducto({
+  producto,
+  suspendido = false,
+}: {
+  producto: Producto;
+  suspendido?: boolean;
+}) {
   return (
     <FilaListado
       acciones={
-        <>
-          <DialogProducto producto={producto} />
-          <ToggleEstado
-            id={producto.id}
-            activo={producto.activo}
-            etiqueta={producto.nombre}
-            accion={toggleProducto}
-          />
-        </>
+        // Ver el comentario de FilaSucursal: apagado y con el motivo, no dos
+        // controles que rebotan.
+        suspendido ? (
+          <AccionBloqueada etiqueta="Editar" />
+        ) : (
+          <>
+            <DialogProducto producto={producto} />
+            <ToggleEstado
+              id={producto.id}
+              activo={producto.activo}
+              etiqueta={producto.nombre}
+              accion={toggleProducto}
+            />
+          </>
+        )
       }
     >
       <p

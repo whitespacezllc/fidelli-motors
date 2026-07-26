@@ -1,9 +1,8 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { obtenerSesion } from "@/lib/auth/session";
+import { sesionParaEscribir } from "@/lib/auth/session";
 import { META_MINIMA, META_MAXIMA } from "@/lib/fidelizacion";
 
 export type EstadoPremio = { error?: string; ok?: boolean };
@@ -17,8 +16,7 @@ export async function guardarPremio(
   _previo: EstadoPremio,
   formData: FormData,
 ): Promise<EstadoPremio> {
-  const sesion = await obtenerSesion();
-  if (!sesion?.lubricentroId) redirect("/login");
+  const sesion = await sesionParaEscribir();
 
   const meta = Number(formData.get("meta"));
   const descripcion = String(formData.get("descripcion") ?? "").trim();

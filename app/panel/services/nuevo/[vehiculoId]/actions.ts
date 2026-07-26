@@ -1,9 +1,8 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { obtenerSesion } from "@/lib/auth/session";
+import { sesionParaEscribir } from "@/lib/auth/session";
 import type { CategoriaProducto } from "@/lib/categorias";
 
 export type ItemCargado = {
@@ -53,8 +52,7 @@ function traducirError(error: { code?: string; message?: string }): string {
 export async function guardarService(
   payload: PayloadService,
 ): Promise<ResultadoGuardado> {
-  const sesion = await obtenerSesion();
-  if (!sesion?.lubricentroId) redirect("/login");
+  await sesionParaEscribir();
 
   if (!payload.sucursalId) return { error: "Elegí la sucursal donde se hizo." };
   if (!Number.isFinite(payload.kilometros) || payload.kilometros < 0) {
@@ -102,8 +100,7 @@ export async function crearProductoRapido(
   nombre: string,
   marca: string,
 ): Promise<ProductoNuevo> {
-  const sesion = await obtenerSesion();
-  if (!sesion?.lubricentroId) redirect("/login");
+  const sesion = await sesionParaEscribir();
 
   const limpio = nombre.trim();
   if (limpio.length < 2) {

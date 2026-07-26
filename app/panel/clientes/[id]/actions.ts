@@ -1,9 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { obtenerSesion } from "@/lib/auth/session";
+import { sesionParaEscribir } from "@/lib/auth/session";
 import { esPatenteValida, PATENTE_FORMATO } from "@/lib/texto";
 
 export type EstadoVehiculo = { error?: string; ok?: boolean };
@@ -71,8 +70,7 @@ export async function crearVehiculo(
   _prev: EstadoVehiculo,
   formData: FormData,
 ): Promise<EstadoVehiculo> {
-  const sesion = await obtenerSesion();
-  if (!sesion?.lubricentroId) redirect("/login");
+  const sesion = await sesionParaEscribir();
 
   const clienteId = String(formData.get("cliente_id") ?? "");
   if (!clienteId) return { error: "Falta el cliente al que pertenece el auto." };
@@ -103,8 +101,7 @@ export async function editarVehiculo(
   _prev: EstadoVehiculo,
   formData: FormData,
 ): Promise<EstadoVehiculo> {
-  const sesion = await obtenerSesion();
-  if (!sesion) redirect("/login");
+  await sesionParaEscribir();
 
   const id = String(formData.get("id") ?? "");
   const clienteId = String(formData.get("cliente_id") ?? "");

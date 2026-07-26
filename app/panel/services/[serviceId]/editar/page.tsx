@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { obtenerSesion } from "@/lib/auth/session";
+import { obtenerSesion, panelSuspendido } from "@/lib/auth/session";
+import { BloqueoSuspension } from "@/components/panel/bloqueo-suspension";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { clasesBoton } from "@/components/ui/boton";
 import { Carton } from "@/components/services/carton";
@@ -18,6 +19,16 @@ type Props = { params: Promise<{ serviceId: string }> };
 // el guardado falla limpio con su mensaje.
 export default async function PaginaEditarService({ params }: Props) {
   const { serviceId } = await params;
+
+  if (await panelSuspendido()) {
+    return (
+      <BloqueoSuspension
+        titulo="No podés editar services mientras la cuenta está suspendida"
+        descripcion="El service quedó guardado tal cual está y se sigue viendo. Para poder corregirlo, escribinos y reactivamos la cuenta."
+      />
+    );
+  }
+
   const supabase = await createClient();
   const sesion = await obtenerSesion();
 

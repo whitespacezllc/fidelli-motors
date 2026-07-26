@@ -85,6 +85,11 @@ la resuelve.
   `if` en React. El front muestra el estado; la base lo hace cumplir.
 - **Aislamiento multi-tenant.** RLS filtra por `lubricentro_id` automáticamente.
   **No agregues `where lubricentro_id = ...` en las consultas del panel:** ya está.
+  **En `/fidelli` es al revés:** `soy_superadmin()` abre todos los tenants, el RLS
+  deja de recortar y cada consulta tiene que filtrar por el lubricentro de la
+  ficha. Las vistas tampoco ayudan —tienen `security_invoker`, así que a un
+  superadmin le devuelven la plataforma entera. Un filtro olvidado no da error:
+  mezcla dos lubricentros en la misma pantalla.
 - **`premio_disponible(vehiculo_id)`** calcula el ciclo con reset (services desde
   el último canje contra la meta vigente). No hay contadores guardados.
 - **`vista_proximos_service`** devuelve el estado (`vencido` / `urgente` /
@@ -176,6 +181,10 @@ para botones, roles de botón, tabs y triggers de Radix — no pantalla por pant
 
 - Desarrollo local: `supabase start` (Docker) + `supabase db reset`
 - El seed crea el lubricentro demo: slug `demo`, login `demo@fidellimotors.app`
+- Y un superadmin para poder abrir `/fidelli`: `santi@fidellimotors.app`. No hay
+  registro público y el alta de un superadmin es interna, así que sin esta fila
+  la superficie de administración no se puede ni mirar en local. Vive en
+  `supabase/seed.sql`, que solo corre en el `db reset` local.
 - Mailpit para ver los mails: `http://127.0.0.1:54324`
 - Studio local: `http://127.0.0.1:54323`
 - Proyecto en la nube linkeado: **solo dev.** Producción NO está linkeada a
@@ -219,6 +228,64 @@ alter view <la_vista> set (security_invoker = on);
 `confirmation_token`, `recovery_token`, `email_change_token_new` y `email_change`.
 GoTrue las escanea como `string` no-nullable y un `NULL` rompe todo login de ese
 usuario con un 500 genérico.
+
+**Los enlaces de los mails NO usan `{{ .ConfirmationURL }}`.** Esa variable
+apunta a `/auth/v1/verify`, que devuelve la sesión en el **fragmento** de la URL
+(`#access_token=…`). El fragmento no viaja al servidor: `/auth/callback` es un
+Route Handler y recibe una URL sin código, con lo que el enlace terminaba en
+`/login?aviso=enlace` y el invitado nunca podía activar su cuenta. Los templates
+arman el enlace así:
+
+```
+{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=invite
+```
+
+`.RedirectTo` es el `redirectTo` que mandó la llamada, así que el enlace vuelve
+al mismo origen del que salió (local, preview o producción). **Este cambio es de
+los templates: en la nube hay que replicarlo en los templates del proyecto.**
+
+### La clave `service_role`
+
+Va **solo en el servidor**, nunca con prefijo `NEXT_PUBLIC_`. Se usa por una sola
+puerta, `lib/supabase/admin.ts`, que lleva `import "server-only"`: si alguien la
+importa desde un componente de cliente, el build falla. Su único uso es la API de
+administración de Auth (invitar al owner de un lubricentro), porque esa API no
+acepta la clave anónima. Todo lo demás va por `lib/supabase/server.ts` con la
+sesión del usuario y su RLS — si una consulta "necesita" `service_role`, casi
+siempre lo que falta es una policy.
+
+**El alta de un tenant son dos fases y el orden no es negociable:** primero el
+lubricentro (una transacción en Postgres, `crear_lubricentro()`), después la
+invitación (una llamada HTTP). No se pueden hacer atómicas. Si falla la segunda
+queda un lubricentro "Sin owner", que se arregla con un botón; al revés quedaría
+un usuario en `auth.users` sin tenant, que no se arregla desde el panel.
+
+### Un lubricentro suspendido lee, pero no escribe
+
+`activo = false` no le corta el acceso: entra con sus credenciales de siempre y
+ve todos sus datos. Lo que no puede es escribir. Por eso hay **dos helpers de
+sesión y no uno**:
+
+| Helper | Quién lo usa | Qué hace |
+|---|---|---|
+| `obtenerSesion()` | pantallas | la sesión, sin más |
+| `sesionParaEscribir()` | Server Actions del panel | sesión + tenant + **no suspendido**; si no, redirige |
+
+La guarda no puede vivir dentro de `obtenerSesion()` porque las pantallas
+también la llaman y tienen que seguir funcionando. Para meterla ahí habría que
+saber en tiempo de ejecución si se está renderizando o ejecutando una acción, y
+Next no expone eso de forma estable: lo único que hay es la cabecera interna
+`next-action`. Una guarda apoyada en un detalle interno deja de funcionar **en
+silencio** el día que ese detalle cambie.
+
+Como la separación es explícita, lo que garantiza que nadie se la saltee es el
+lint: `eslint.config.mjs` prohíbe importar `obtenerSesion` desde
+`app/panel/**/actions.ts`. Una acción nueva no pasa `npm run lint` hasta que use
+`sesionParaEscribir()` o declare por escrito —con un `eslint-disable-next-line` y
+un comentario— que solo lee.
+
+**La suspensión sigue sin tocar RLS**: a nivel base el owner puede operar, y así
+tiene que quedar. Bloquearlo ahí complicaría el desbloqueo y el histórico.
 
 ---
 

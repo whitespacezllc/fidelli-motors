@@ -17,6 +17,9 @@ import {
   TrophyIcon,
   CaretDownIcon,
   LockSimpleIcon,
+  BuildingsIcon,
+  EnvelopeSimpleIcon,
+  WarningIcon,
 } from "@phosphor-icons/react/dist/ssr";
 // Solo tipos: se borran al compilar, así que traerlos del entry principal
 // (que sí lleva "use client") no arrastra nada al bundle.
@@ -54,3 +57,8 @@ export const IconoTelefono = delSistema(PhoneIcon);
 export const IconoPremio = delSistema(TrophyIcon);
 export const IconoChevron = delSistema(CaretDownIcon);
 export const IconoCandado = delSistema(LockSimpleIcon);
+
+// Panel de administración de Fidelli
+export const IconoLubricentro = delSistema(BuildingsIcon);
+export const IconoMail = delSistema(EnvelopeSimpleIcon);
+export const IconoAviso = delSistema(WarningIcon);
