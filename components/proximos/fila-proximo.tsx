@@ -111,18 +111,19 @@ export function FilaProximo({ fila }: { fila: ProximoServicio }) {
         />
       </div>
 
-      {/* 8. La acción: el único CTA de la fila. En mobile ocupa todo el
-          ancho y es táctil de verdad — el ritual se hace con el pulgar. */}
-      <div className="mt-3 lg:mt-0 lg:justify-self-end">
+      {/* 8. La acción de la fila: compacta, del ancho de su contenido.
+          El conjunto manda — diez botones estirados eran una columna de
+          bloques; ahora la tabla respira y el deshabilitado marca solo
+          lo que ya está hecho. */}
+      <div className="mt-2.5 lg:mt-0 lg:justify-self-end">
         {fila.linkWhatsapp ? (
-          <span className="block [&>span]:w-full lg:[&>span]:w-auto">
-            <BotonWhatsapp
-              vehiculoId={fila.vehiculoId}
-              estado={fila.estado}
-              link={fila.linkWhatsapp}
-              contactado={fila.contactado}
-            />
-          </span>
+          <BotonWhatsapp
+            vehiculoId={fila.vehiculoId}
+            estado={fila.estado}
+            link={fila.linkWhatsapp}
+            contactado={fila.contactado}
+            cliente={fila.clienteNombre}
+          />
         ) : !fila.telefonoValido ? (
           // El único caso que es culpa del dato de esta fila. Cuando falta
           // el template activo, el aviso de arriba ya lo explica y acá no

@@ -6,7 +6,8 @@ import { Buscador } from "@/components/ui/buscador";
 import { IconoClientes } from "@/components/iconos";
 import { DialogCliente } from "@/components/clientes/dialog-cliente";
 import { FilaCliente } from "@/components/clientes/fila-cliente";
-import { normalizar, normalizarPatente, sanitizarBusqueda } from "@/lib/texto";
+import { BotonExportar } from "@/components/clientes/boton-exportar";
+import { filtroClientes } from "@/lib/clientes";
 
 export const metadata: Metadata = { title: "Clientes — Fidelli Motors" };
 
@@ -18,7 +19,9 @@ export default async function PaginaClientes({
   const { q } = await searchParams;
   const supabase = await createClient();
 
-  const termino = sanitizarBusqueda(q ?? "");
+  // El filtro es compartido con el export a Excel: lo que se ve filtrado
+  // es exactamente lo que se exporta.
+  const { termino, filtros } = filtroClientes(q);
   const buscando = termino.length > 0;
 
   // Una consulta contra vista_clientes, que ya trae los agregados (cantidad de
@@ -28,19 +31,7 @@ export default async function PaginaClientes({
     .select("id, nombre, telefono, cantidad_vehiculos, ultimo_service_fecha")
     .order("nombre");
 
-  if (buscando) {
-    // Un solo buscador contra los tres campos. El más usado es la patente: el
-    // mecánico tiene el auto adelante, no al dueño.
-    const texto = normalizar(termino);
-    const soloDigitos = termino.replace(/\D/g, "");
-    const patente = normalizarPatente(termino);
-
-    const filtros = [`nombre_busqueda.like.*${texto}*`];
-    if (soloDigitos) filtros.push(`telefono.like.*${soloDigitos}*`);
-    if (patente) filtros.push(`patentes.like.*${patente}*`);
-
-    consulta = consulta.or(filtros.join(","));
-  }
+  if (filtros) consulta = consulta.or(filtros);
 
   const { data } = await consulta;
 
@@ -64,7 +55,10 @@ export default async function PaginaClientes({
   return (
     <div>
       <CabeceraSeccion titulo="Clientes">
-        <DialogCliente />
+        <div className="flex items-center gap-2.5">
+          <BotonExportar q={q} hayResultados={clientes.length > 0} />
+          <DialogCliente />
+        </div>
       </CabeceraSeccion>
 
       <div className="mb-5">

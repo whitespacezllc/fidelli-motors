@@ -861,8 +861,11 @@ export type Database = {
           nombre: string | null
           nombre_busqueda: string | null
           patentes: string | null
+          patentes_lista: string | null
           telefono: string | null
+          ultimo_prox_service_km: number | null
           ultimo_service_fecha: string | null
+          ultimo_service_km: number | null
         }
         Relationships: [
           {
