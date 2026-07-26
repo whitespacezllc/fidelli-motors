@@ -60,6 +60,25 @@ export function formatearFechaHora(iso: string): string {
   return `${dia} ${hora}`;
 }
 
+// "hoy" / "ayer" / "hace 5 días" — la columna de último service del panel
+// de administración, donde lo que importa es si el lubri está trabajando,
+// no la fecha exacta. Devuelve null si nunca cargó ninguno.
+export function haceCuanto(iso: string | null): string | null {
+  if (!iso) return null;
+
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const dias = Math.round(
+    (hoy.getTime() - aFechaLocal(iso).getTime()) / 86_400_000,
+  );
+
+  if (dias <= 0) return "hoy";
+  if (dias === 1) return "ayer";
+  if (dias < 30) return `hace ${dias} días`;
+  if (dias < 60) return "hace un mes";
+  return `hace ${Math.floor(dias / 30)} meses`;
+}
+
 // "may 2026" — para la antigüedad del cliente.
 export function formatearMesAnio(iso: string): string {
   return new Intl.DateTimeFormat("es-AR", {

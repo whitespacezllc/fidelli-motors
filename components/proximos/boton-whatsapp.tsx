@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { IconoWhatsapp } from "@/components/iconos";
 import { registrarContacto } from "@/app/panel/proximos/actions";
 import type { EstadoContacto } from "@/lib/contacto";
+import { MOTIVO_SUSPENSION } from "@/components/panel/aviso-suspension";
 
 // El contacto en un tap. Es un <a> de verdad, no un botón que abre la
 // ventana después de esperar al servidor: si el link se abriera desde el
@@ -33,26 +34,36 @@ export function BotonWhatsapp({
   link,
   contactado,
   cliente,
+  suspendido = false,
 }: {
   vehiculoId: string;
   estado: EstadoContacto;
   link: string;
   contactado: boolean;
   cliente: string;
+  suspendido?: boolean;
 }) {
   const router = useRouter();
   const [pendiente, iniciar] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [motivo, setMotivo] = useState(false);
 
-  if (contactado) {
+  // Dos motivos distintos para el mismo botón apagado, y no se confunden:
+  // uno es del cliente (ya lo contactaste), el otro es de la cuenta.
+  const bloqueo = suspendido
+    ? MOTIVO_SUSPENSION
+    : contactado
+      ? MOTIVO_BLOQUEO
+      : null;
+
+  if (bloqueo) {
     return (
       <span className="inline-flex flex-col items-end gap-1">
         <button
           type="button"
           aria-disabled="true"
-          aria-label={`WhatsApp a ${cliente} — ya contactado en este estado`}
-          title={MOTIVO_BLOQUEO}
+          aria-label={`WhatsApp a ${cliente} — ${bloqueo}`}
+          title={bloqueo}
           // El motivo también al tocarlo: el title no existe en el táctil.
           onClick={() => setMotivo((v) => !v)}
           className="inline-flex min-h-11 cursor-not-allowed items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-ui font-semibold text-ink-40 lg:min-w-11 lg:px-2.5"
@@ -62,7 +73,7 @@ export function BotonWhatsapp({
         </button>
         {motivo && (
           <span role="status" className="max-w-52 text-right text-label text-ink-60">
-            {MOTIVO_BLOQUEO}
+            {bloqueo}
           </span>
         )}
       </span>

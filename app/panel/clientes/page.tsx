@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
+import { panelSuspendido } from "@/lib/auth/session";
 import { CabeceraSeccion } from "@/components/panel/cabecera-seccion";
+import { AccionBloqueada } from "@/components/panel/bloqueo-suspension";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { Buscador } from "@/components/ui/buscador";
 import { IconoClientes } from "@/components/iconos";
@@ -18,6 +20,7 @@ export default async function PaginaClientes({
 }) {
   const { q } = await searchParams;
   const supabase = await createClient();
+  const suspendido = await panelSuspendido();
 
   // El filtro es compartido con el export a Excel: lo que se ve filtrado
   // es exactamente lo que se exporta.
@@ -57,7 +60,11 @@ export default async function PaginaClientes({
       <CabeceraSeccion titulo="Clientes">
         <div className="flex items-center gap-2.5">
           <BotonExportar q={q} hayResultados={clientes.length > 0} />
-          <DialogCliente />
+          {suspendido ? (
+            <AccionBloqueada etiqueta="+ Nuevo cliente" />
+          ) : (
+            <DialogCliente />
+          )}
         </div>
       </CabeceraSeccion>
 
@@ -87,7 +94,11 @@ export default async function PaginaClientes({
           titulo="Todavía no tenés clientes cargados"
           descripcion="Acá vas a ver a quién le hacés los services, con sus autos y cuándo vino por última vez."
         >
-          <DialogCliente etiquetaTrigger="+ Cargar el primer cliente" />
+          {suspendido ? (
+            <AccionBloqueada etiqueta="+ Cargar el primer cliente" />
+          ) : (
+            <DialogCliente etiquetaTrigger="+ Cargar el primer cliente" />
+          )}
         </EstadoVacio>
       )}
     </div>

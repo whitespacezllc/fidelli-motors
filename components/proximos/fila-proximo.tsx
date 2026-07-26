@@ -29,7 +29,13 @@ export type ProximoServicio = {
 
 const CLASE_DATO = "text-ui text-ink-60 tabular-nums";
 
-export function FilaProximo({ fila }: { fila: ProximoServicio }) {
+export function FilaProximo({
+  fila,
+  suspendido = false,
+}: {
+  fila: ProximoServicio;
+  suspendido?: boolean;
+}) {
   return (
     <li
       className={`border-b border-line px-4 py-4 last:border-b-0 sm:px-5 lg:grid lg:grid-cols-[minmax(9rem,1fr)_7.5rem_11rem_6rem_9.5rem_6.5rem_5rem_auto] lg:items-center lg:gap-x-4 lg:py-3 ${
@@ -123,6 +129,7 @@ export function FilaProximo({ fila }: { fila: ProximoServicio }) {
             link={fila.linkWhatsapp}
             contactado={fila.contactado}
             cliente={fila.clienteNombre}
+            suspendido={suspendido}
           />
         ) : !fila.telefonoValido ? (
           // El único caso que es culpa del dato de esta fila. Cuando falta

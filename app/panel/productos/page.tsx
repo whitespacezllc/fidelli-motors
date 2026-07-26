@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { panelSuspendido } from "@/lib/auth/session";
 import { CabeceraSeccion } from "@/components/panel/cabecera-seccion";
+import { AccionBloqueada } from "@/components/panel/bloqueo-suspension";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { clasesBoton } from "@/components/ui/boton";
 import { IconoCaja } from "@/components/iconos";
@@ -20,6 +22,7 @@ export default async function PaginaProductos({
 }) {
   const { q, categoria } = await searchParams;
   const supabase = await createClient();
+  const suspendido = await panelSuspendido();
 
   // Una sola consulta, sin filtros: el catálogo de un lubricentro son decenas
   // de filas. Filtrar en memoria evita una ida y vuelta por cada chip y deja
@@ -56,7 +59,12 @@ export default async function PaginaProductos({
   return (
     <div>
       <CabeceraSeccion titulo="Productos">
-        {todos.length > 0 && <DialogProducto />}
+        {todos.length > 0 &&
+          (suspendido ? (
+            <AccionBloqueada etiqueta="+ Nuevo producto" />
+          ) : (
+            <DialogProducto />
+          ))}
       </CabeceraSeccion>
 
       {todos.length === 0 ? (
@@ -65,7 +73,11 @@ export default async function PaginaProductos({
           titulo="Tu catálogo está vacío"
           descripcion="Cargá los aceites, filtros y líquidos que usás siempre para elegirlos con un toque en cada service."
         >
-          <DialogProducto etiquetaTrigger="+ Cargar el primer producto" />
+          {suspendido ? (
+            <AccionBloqueada etiqueta="+ Cargar el primer producto" />
+          ) : (
+            <DialogProducto etiquetaTrigger="+ Cargar el primer producto" />
+          )}
         </EstadoVacio>
       ) : (
         <>

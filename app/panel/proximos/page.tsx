@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { obtenerSesion } from "@/lib/auth/session";
+import { obtenerSesion, panelSuspendido } from "@/lib/auth/session";
 import { CabeceraSeccion } from "@/components/panel/cabecera-seccion";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { clasesBoton } from "@/components/ui/boton";
@@ -36,6 +36,7 @@ export default async function PaginaProximos({
 }) {
   const params = await searchParams;
   const supabase = await createClient();
+  const suspendido = await panelSuspendido();
   const sesion = await obtenerSesion();
 
   const filtros = {
@@ -193,7 +194,7 @@ export default async function PaginaProximos({
           </div>
           <ul>
             {filas.map((f) => (
-              <FilaProximo key={f.vehiculoId} fila={f} />
+              <FilaProximo key={f.vehiculoId} fila={f} suspendido={suspendido} />
             ))}
           </ul>
         </div>

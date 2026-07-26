@@ -981,6 +981,19 @@ export type Database = {
       }
     }
     Functions: {
+      actualizar_lubricentro: {
+        Args: {
+          p_calcos: number
+          p_descuento_pct: number
+          p_id: string
+          p_nombre: string
+          p_periodo: Database["public"]["Enums"]["periodo_suscripcion"]
+          p_plan_id: string
+          p_slug: string
+          p_vencimiento: string
+        }
+        Returns: undefined
+      }
       actualizar_service: {
         Args: {
           p_aceite_nombre?: string
@@ -1040,6 +1053,25 @@ export type Database = {
         Args: { p_email: string; p_user_id: string }
         Returns: undefined
       }
+      crear_lubricentro: {
+        Args: {
+          p_descuento_pct: number
+          p_dias_trial: number
+          p_nombre: string
+          p_periodo: Database["public"]["Enums"]["periodo_suscripcion"]
+          p_plan_id: string
+          p_slug: string
+          p_sucursales: Json
+        }
+        Returns: string
+      }
+      estados_owner: {
+        Args: never
+        Returns: {
+          estado: string
+          lubricentro_id: string
+        }[]
+      }
       fm_unaccent: { Args: { "": string }; Returns: string }
       get_carton: { Args: { p_patente: string; p_slug: string }; Returns: Json }
       get_landing: { Args: { p_slug: string }; Returns: Json }
@@ -1058,6 +1090,28 @@ export type Database = {
           p_vehiculo_id: string
         }
         Returns: string
+      }
+      listado_lubricentros: {
+        Args: never
+        Returns: {
+          activo: boolean
+          calcos_entregadas: number
+          creado: string
+          id: string
+          nombre: string
+          owner_estado: string
+          plan_id: string
+          plan_nombre: string
+          plan_precio: number
+          services_mes: number
+          slug: string
+          sub_descuento_pct: number
+          sub_estado: Database["public"]["Enums"]["estado_suscripcion"]
+          sub_periodo: Database["public"]["Enums"]["periodo_suscripcion"]
+          sub_vencimiento: string
+          suscripcion_id: string
+          ultimo_service: string
+        }[]
       }
       mi_lubricentro_id: { Args: never; Returns: string }
       normalizar_patente: { Args: { entrada: string }; Returns: string }
@@ -1082,6 +1136,8 @@ export type Database = {
       resumen_inicio: { Args: { p_sucursal_id?: string }; Returns: Json }
       seed_demo: { Args: { p_password?: string }; Returns: string }
       service_editable: { Args: { p_service_id: string }; Returns: boolean }
+      slug_estado: { Args: { p_slug: string }; Returns: string }
+      slug_reservado: { Args: { p_slug: string }; Returns: boolean }
       soy_superadmin: { Args: never; Returns: boolean }
       unaccent: { Args: { "": string }; Returns: string }
       verificar_seguridad_vistas: {

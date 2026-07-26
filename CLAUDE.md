@@ -176,6 +176,10 @@ para botones, roles de botón, tabs y triggers de Radix — no pantalla por pant
 
 - Desarrollo local: `supabase start` (Docker) + `supabase db reset`
 - El seed crea el lubricentro demo: slug `demo`, login `demo@fidellimotors.app`
+- Y un superadmin para poder abrir `/fidelli`: `santi@fidellimotors.app`. No hay
+  registro público y el alta de un superadmin es interna, así que sin esta fila
+  la superficie de administración no se puede ni mirar en local. Vive en
+  `supabase/seed.sql`, que solo corre en el `db reset` local.
 - Mailpit para ver los mails: `http://127.0.0.1:54324`
 - Studio local: `http://127.0.0.1:54323`
 - Proyecto en la nube linkeado: **solo dev.** Producción NO está linkeada a
@@ -219,6 +223,37 @@ alter view <la_vista> set (security_invoker = on);
 `confirmation_token`, `recovery_token`, `email_change_token_new` y `email_change`.
 GoTrue las escanea como `string` no-nullable y un `NULL` rompe todo login de ese
 usuario con un 500 genérico.
+
+**Los enlaces de los mails NO usan `{{ .ConfirmationURL }}`.** Esa variable
+apunta a `/auth/v1/verify`, que devuelve la sesión en el **fragmento** de la URL
+(`#access_token=…`). El fragmento no viaja al servidor: `/auth/callback` es un
+Route Handler y recibe una URL sin código, con lo que el enlace terminaba en
+`/login?aviso=enlace` y el invitado nunca podía activar su cuenta. Los templates
+arman el enlace así:
+
+```
+{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=invite
+```
+
+`.RedirectTo` es el `redirectTo` que mandó la llamada, así que el enlace vuelve
+al mismo origen del que salió (local, preview o producción). **Este cambio es de
+los templates: en la nube hay que replicarlo en los templates del proyecto.**
+
+### La clave `service_role`
+
+Va **solo en el servidor**, nunca con prefijo `NEXT_PUBLIC_`. Se usa por una sola
+puerta, `lib/supabase/admin.ts`, que lleva `import "server-only"`: si alguien la
+importa desde un componente de cliente, el build falla. Su único uso es la API de
+administración de Auth (invitar al owner de un lubricentro), porque esa API no
+acepta la clave anónima. Todo lo demás va por `lib/supabase/server.ts` con la
+sesión del usuario y su RLS — si una consulta "necesita" `service_role`, casi
+siempre lo que falta es una policy.
+
+**El alta de un tenant son dos fases y el orden no es negociable:** primero el
+lubricentro (una transacción en Postgres, `crear_lubricentro()`), después la
+invitación (una llamada HTTP). No se pueden hacer atómicas. Si falla la segunda
+queda un lubricentro "Sin owner", que se arregla con un botón; al revés quedaría
+un usuario en `auth.users` sin tenant, que no se arregla desde el panel.
 
 ---
 

@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { obtenerSesion } from "@/lib/auth/session";
+import { obtenerSesion, panelSuspendido } from "@/lib/auth/session";
+import { BloqueoSuspension } from "@/components/panel/bloqueo-suspension";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { clasesBoton } from "@/components/ui/boton";
 import { Carton } from "@/components/services/carton";
@@ -17,6 +18,18 @@ export default async function PaginaCarton({
   params: Promise<{ vehiculoId: string }>;
 }) {
   const { vehiculoId } = await params;
+
+  // Se chequea antes de consultar nada: si no puede cargar el service, no
+  // tiene sentido armarle el cartón.
+  if (await panelSuspendido()) {
+    return (
+      <BloqueoSuspension
+        titulo="No podés cargar services mientras la cuenta está suspendida"
+        descripcion="Todo lo que ya cargaste sigue acá y lo podés seguir consultando. Para volver a cargar services, escribinos y reactivamos la cuenta."
+      />
+    );
+  }
+
   const supabase = await createClient();
   const sesion = await obtenerSesion();
 

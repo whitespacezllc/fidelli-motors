@@ -8,6 +8,16 @@ export function normalizar(texto: string): string {
     .trim();
 }
 
+// "Brothers Oil" → "brothers-oil". El mismo formato que exige el CHECK
+// slug_formato de lubricentros: minúsculas, números y guiones simples.
+// Es una sugerencia mientras se escribe el nombre, no una garantía: quien da
+// de alta puede cambiarla, y la base valida igual.
+export function slugificar(texto: string): string {
+  return normalizar(texto)
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 // Deja solo letras, números y espacios. Los filtros de PostgREST se arman
 // como texto ("campo.like.*algo*,otro.like.*algo*"), así que la coma, el
 // punto, el paréntesis y el asterisco tienen significado: si el término del

@@ -9,8 +9,10 @@ import {
   IconoClientes,
   IconoPlus,
   IconoMas,
+  IconoCandado,
 } from "@/components/iconos";
 import { urlWhatsappSoporte } from "@/lib/config";
+import { MOTIVO_SUSPENSION } from "@/components/panel/aviso-suspension";
 
 // Secciones que no entran en la barra: viven en la hoja "Más".
 const SECCIONES_MAS = [
@@ -48,7 +50,13 @@ function ItemBarra({
   );
 }
 
-export function BarraMobile({ cerrarSesion }: { cerrarSesion: () => Promise<void> }) {
+export function BarraMobile({
+  cerrarSesion,
+  suspendido = false,
+}: {
+  cerrarSesion: () => Promise<void>;
+  suspendido?: boolean;
+}) {
   const pathname = usePathname();
   const [abierta, setAbierta] = useState(false);
 
@@ -86,16 +94,30 @@ export function BarraMobile({ cerrarSesion }: { cerrarSesion: () => Promise<void
           activo={pathname.startsWith("/panel/clientes")}
           icono={<IconoClientes className="size-5" />}
         />
-        {/* La acción primaria del mecánico, destacada: rojo = acción. */}
-        <Link
-          href="/panel/services/nuevo"
-          className="flex min-h-11 flex-col items-center justify-center gap-0.5 text-ink-60"
-        >
-          <span className="flex size-9 -mt-4 items-center justify-center rounded-full bg-brand text-white shadow-md">
-            <IconoPlus className="size-5" />
+        {/* La acción primaria del mecánico, destacada: rojo = acción.
+            Suspendido deja de ser un enlace: se apaga y dice por qué. */}
+        {suspendido ? (
+          <span
+            aria-disabled="true"
+            title={MOTIVO_SUSPENSION}
+            className="flex min-h-11 flex-col items-center justify-center gap-0.5 text-ink-40"
+          >
+            <span className="flex size-9 -mt-4 items-center justify-center rounded-full bg-line text-ink-40 shadow-md">
+              <IconoCandado className="size-5" />
+            </span>
+            <span className="text-label">Service</span>
           </span>
-          <span className="text-label">Service</span>
-        </Link>
+        ) : (
+          <Link
+            href="/panel/services/nuevo"
+            className="flex min-h-11 flex-col items-center justify-center gap-0.5 text-ink-60"
+          >
+            <span className="flex size-9 -mt-4 items-center justify-center rounded-full bg-brand text-white shadow-md">
+              <IconoPlus className="size-5" />
+            </span>
+            <span className="text-label">Service</span>
+          </Link>
+        )}
         <button
           type="button"
           onClick={() => setAbierta(true)}

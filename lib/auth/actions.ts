@@ -1,8 +1,8 @@
 "use server";
 
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { origenDelSitio } from "@/lib/origen";
 
 export type EstadoAccion = {
   error?: string;
@@ -17,13 +17,6 @@ const SIN_CONEXION =
 
 function esErrorDeRed(error: { name?: string; status?: number }): boolean {
   return error.name === "AuthRetryableFetchError" || error.status === 0;
-}
-
-async function origenActual(): Promise<string> {
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  return `${proto}://${host}`;
 }
 
 export async function iniciarSesion(
@@ -87,7 +80,7 @@ export async function enviarRecuperacion(
   if (!email) return { error: "Escribí tu email para mandarte el enlace." };
 
   const supabase = await createClient();
-  const origen = await origenActual();
+  const origen = await origenDelSitio();
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
     redirectTo: `${origen}/auth/callback`,
   });

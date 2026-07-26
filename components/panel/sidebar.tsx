@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { Wordmark } from "@/components/marca/wordmark";
 import { NavLink } from "@/components/panel/nav-link";
-import { IconoPlus } from "@/components/iconos";
+import { IconoPlus, IconoCandado } from "@/components/iconos";
 import { cerrarSesion } from "@/lib/auth/actions";
 import { urlWhatsappSoporte } from "@/lib/config";
+import { MOTIVO_SUSPENSION } from "@/components/panel/aviso-suspension";
 
 // Los grupos y el orden vienen del hi-fi (pantalla 2 · Inicio — panel del lubri).
 const GRUPOS: { titulo: string; items: { href: string; nombre: string; exacto?: boolean }[] }[] = [
@@ -37,7 +38,13 @@ const GRUPOS: { titulo: string; items: { href: string; nombre: string; exacto?: 
 const CLASE_ITEM =
   "flex h-11 items-center rounded-md px-3 text-ui transition-colors";
 
-export function Sidebar({ lubricentroNombre }: { lubricentroNombre: string }) {
+export function Sidebar({
+  lubricentroNombre,
+  suspendido = false,
+}: {
+  lubricentroNombre: string;
+  suspendido?: boolean;
+}) {
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-line bg-base lg:flex">
       <div className="px-5 pt-5 pb-4">
@@ -46,13 +53,26 @@ export function Sidebar({ lubricentroNombre }: { lubricentroNombre: string }) {
       </div>
 
       <div className="px-4">
-        <Link
-          href="/panel/services/nuevo"
-          className="flex h-11 w-full items-center justify-center gap-1.5 rounded-md bg-brand font-brand text-ui font-bold text-white transition-colors hover:bg-brand-deep"
-        >
-          <IconoPlus className="size-4" />
-          Nuevo service
-        </Link>
+        {suspendido ? (
+          // Apagado, en su lugar y con el motivo: el botón no desaparece
+          // —eso haría pensar que se rompió algo— pero tampoco engaña.
+          <span
+            aria-disabled="true"
+            title={MOTIVO_SUSPENSION}
+            className="flex h-11 w-full cursor-not-allowed items-center justify-center gap-1.5 rounded-md bg-surface font-brand text-ui font-bold text-ink-40"
+          >
+            <IconoCandado className="size-4" />
+            Nuevo service
+          </span>
+        ) : (
+          <Link
+            href="/panel/services/nuevo"
+            className="flex h-11 w-full items-center justify-center gap-1.5 rounded-md bg-brand font-brand text-ui font-bold text-white transition-colors hover:bg-brand-deep"
+          >
+            <IconoPlus className="size-4" />
+            Nuevo service
+          </Link>
+        )}
       </div>
 
       <nav className="mt-1 flex-1 overflow-y-auto px-4 pb-4">
