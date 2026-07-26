@@ -1,9 +1,8 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { obtenerSesion } from "@/lib/auth/session";
+import { sesionParaEscribir } from "@/lib/auth/session";
 import type { EstadoContacto } from "@/lib/contacto";
 
 export type ResultadoContacto = { error?: string };
@@ -20,8 +19,7 @@ export async function registrarContacto(
   estado: EstadoContacto,
   canal: "whatsapp" | "manual" = "whatsapp",
 ): Promise<ResultadoContacto> {
-  const sesion = await obtenerSesion();
-  if (!sesion?.lubricentroId || !sesion.usuarioId) redirect("/login");
+  const sesion = await sesionParaEscribir();
 
   const supabase = await createClient();
   const { error } = await supabase.from("contactos").insert({
@@ -53,8 +51,7 @@ export async function alternarContacto(
   estado: EstadoContacto,
   contactado: boolean,
 ): Promise<ResultadoContacto> {
-  const sesion = await obtenerSesion();
-  if (!sesion?.lubricentroId || !sesion.usuarioId) redirect("/login");
+  await sesionParaEscribir();
 
   if (!contactado) return registrarContacto(vehiculoId, estado, "manual");
 

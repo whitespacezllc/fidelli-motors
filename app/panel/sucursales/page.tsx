@@ -48,7 +48,7 @@ export default async function PaginaSucursales() {
       ) : (
         <ul className="surface-card px-4 sm:px-5">
           {sucursales.map((s) => (
-            <FilaSucursal key={s.id} sucursal={s} />
+            <FilaSucursal key={s.id} sucursal={s} suspendido={suspendido} />
           ))}
         </ul>
       )}

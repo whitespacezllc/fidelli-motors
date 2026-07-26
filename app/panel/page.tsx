@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { panelSuspendido } from "@/lib/auth/session";
 import { clasesBoton } from "@/components/ui/boton";
 import { CabeceraSeccion } from "@/components/panel/cabecera-seccion";
 import {
@@ -58,7 +59,12 @@ export default async function PaginaInicio({
   // lugar del dashboard. Cuando los cuatro pasos están hechos desaparece
   // solo, sin celebración: simplemente ya no está.
   if (!estaCompleto(resumen.checklist)) {
-    return <Checklist estado={resumen.checklist} />;
+    return (
+      <Checklist
+        estado={resumen.checklist}
+        suspendido={await panelSuspendido()}
+      />
+    );
   }
 
   const nombreSucursal = sucursales.find((s) => s.id === sucursal)?.nombre;

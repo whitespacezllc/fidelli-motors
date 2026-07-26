@@ -1,9 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { obtenerSesion } from "@/lib/auth/session";
+import { sesionParaEscribir } from "@/lib/auth/session";
 
 export type EstadoSucursal = { error?: string; ok?: boolean };
 
@@ -30,8 +29,7 @@ export async function crearSucursal(
   _prev: EstadoSucursal,
   formData: FormData,
 ): Promise<EstadoSucursal> {
-  const sesion = await obtenerSesion();
-  if (!sesion?.lubricentroId) redirect("/login");
+  const sesion = await sesionParaEscribir();
 
   const campos = leerCampos(formData);
   if (campos.nombre.length < 2) {
@@ -58,8 +56,7 @@ export async function editarSucursal(
   _prev: EstadoSucursal,
   formData: FormData,
 ): Promise<EstadoSucursal> {
-  const sesion = await obtenerSesion();
-  if (!sesion) redirect("/login");
+  await sesionParaEscribir();
 
   const id = String(formData.get("id") ?? "");
   const campos = leerCampos(formData);
@@ -86,8 +83,7 @@ export async function toggleSucursal(
   _prev: EstadoSucursal,
   formData: FormData,
 ): Promise<EstadoSucursal> {
-  const sesion = await obtenerSesion();
-  if (!sesion) redirect("/login");
+  await sesionParaEscribir();
 
   const id = String(formData.get("id") ?? "");
   const activar = formData.get("activar") === "true";

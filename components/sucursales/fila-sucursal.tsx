@@ -1,6 +1,7 @@
 import { FilaListado } from "@/components/ui/fila-listado";
 import { ToggleEstado } from "@/components/ui/toggle-estado";
 import { DialogSucursal } from "@/components/sucursales/dialog-sucursal";
+import { AccionBloqueada } from "@/components/panel/bloqueo-suspension";
 import { toggleSucursal } from "@/app/panel/sucursales/actions";
 
 type Sucursal = {
@@ -12,7 +13,13 @@ type Sucursal = {
   activa: boolean;
 };
 
-export function FilaSucursal({ sucursal }: { sucursal: Sucursal }) {
+export function FilaSucursal({
+  sucursal,
+  suspendido = false,
+}: {
+  sucursal: Sucursal;
+  suspendido?: boolean;
+}) {
   const detalle = [sucursal.direccion, sucursal.telefono]
     .filter(Boolean)
     .join(" · ");
@@ -20,16 +27,23 @@ export function FilaSucursal({ sucursal }: { sucursal: Sucursal }) {
   return (
     <FilaListado
       acciones={
-        <>
-          <DialogSucursal sucursal={sucursal} />
-          <ToggleEstado
-            id={sucursal.id}
-            activo={sucursal.activa}
-            etiqueta={sucursal.nombre}
-            palabras={{ activo: "activa", inactivo: "inactiva" }}
-            accion={toggleSucursal}
-          />
-        </>
+        // Suspendido: un solo control apagado con el motivo, en vez de dos
+        // que llevan a nada. El estado de la sucursal no se pierde — lo dice
+        // el badge del renglón.
+        suspendido ? (
+          <AccionBloqueada etiqueta="Editar" />
+        ) : (
+          <>
+            <DialogSucursal sucursal={sucursal} />
+            <ToggleEstado
+              id={sucursal.id}
+              activo={sucursal.activa}
+              etiqueta={sucursal.nombre}
+              palabras={{ activo: "activa", inactivo: "inactiva" }}
+              accion={toggleSucursal}
+            />
+          </>
+        )
       }
     >
       <p

@@ -255,6 +255,33 @@ invitación (una llamada HTTP). No se pueden hacer atómicas. Si falla la segund
 queda un lubricentro "Sin owner", que se arregla con un botón; al revés quedaría
 un usuario en `auth.users` sin tenant, que no se arregla desde el panel.
 
+### Un lubricentro suspendido lee, pero no escribe
+
+`activo = false` no le corta el acceso: entra con sus credenciales de siempre y
+ve todos sus datos. Lo que no puede es escribir. Por eso hay **dos helpers de
+sesión y no uno**:
+
+| Helper | Quién lo usa | Qué hace |
+|---|---|---|
+| `obtenerSesion()` | pantallas | la sesión, sin más |
+| `sesionParaEscribir()` | Server Actions del panel | sesión + tenant + **no suspendido**; si no, redirige |
+
+La guarda no puede vivir dentro de `obtenerSesion()` porque las pantallas
+también la llaman y tienen que seguir funcionando. Para meterla ahí habría que
+saber en tiempo de ejecución si se está renderizando o ejecutando una acción, y
+Next no expone eso de forma estable: lo único que hay es la cabecera interna
+`next-action`. Una guarda apoyada en un detalle interno deja de funcionar **en
+silencio** el día que ese detalle cambie.
+
+Como la separación es explícita, lo que garantiza que nadie se la saltee es el
+lint: `eslint.config.mjs` prohíbe importar `obtenerSesion` desde
+`app/panel/**/actions.ts`. Una acción nueva no pasa `npm run lint` hasta que use
+`sesionParaEscribir()` o declare por escrito —con un `eslint-disable-next-line` y
+un comentario— que solo lee.
+
+**La suspensión sigue sin tocar RLS**: a nivel base el owner puede operar, y así
+tiene que quedar. Bloquearlo ahí complicaría el desbloqueo y el histórico.
+
 ---
 
 ## Git

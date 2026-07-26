@@ -20,7 +20,21 @@ export function estaCompleto(c: EstadoChecklist): boolean {
 
 // El checklist de puesta en marcha. Reemplaza al dashboard hasta que los
 // cuatro pasos están hechos, y no se puede cerrar: es la guía, no un aviso.
-export function Checklist({ estado }: { estado: EstadoChecklist }) {
+//
+// Con la cuenta suspendida sigue mostrándose —el progreso conseguido es del
+// lubricentro y no se le esconde— pero deja de empujar: los cuatro pasos
+// terminan en pantallas de carga que están bloqueadas, así que ofrecer
+// "Empezar" sería mandarlo a chocarse contra una puerta cerrada. Se cae el
+// botón, se cae la fila destacada en rojo y el encabezado dice dónde quedó
+// todo en vez de cuánto falta. El aviso con el WhatsApp ya está arriba, en
+// el layout: acá no se repite.
+export function Checklist({
+  estado,
+  suspendido = false,
+}: {
+  estado: EstadoChecklist;
+  suspendido?: boolean;
+}) {
   const pasos = [
     {
       titulo: "Cargá tus sucursales",
@@ -55,19 +69,30 @@ export function Checklist({ estado }: { estado: EstadoChecklist }) {
 
   const hechos = pasos.filter((p) => p.hecho).length;
   const faltan = pasos.length - hechos;
-  const proximo = pasos.findIndex((p) => !p.hecho);
+  // Sin acciones disponibles no hay "paso actual" que destacar.
+  const proximo = suspendido ? -1 : pasos.findIndex((p) => !p.hecho);
+
+  const titulo = suspendido
+    ? "Tu puesta en marcha queda donde la dejaste"
+    : hechos === 0
+      ? "Bienvenido a Fidelli Motors"
+      : "Te falta poco";
+
+  const bajada = suspendido
+    ? `${plural(hechos, "paso hecho", "pasos hechos")} de ${pasos.length}. Los que faltan te esperan: los vas a poder terminar apenas se reactive la cuenta.`
+    : hechos === 0
+      ? "Cuatro pasos para dejar todo listo. Podés hacerlos ahora o cuando quieras."
+      : `${plural(faltan, "paso", "pasos")} para terminar de configurar tu lubricentro.`;
 
   return (
-    <div className="overflow-hidden rounded-lg border border-ink">
+    <div
+      className={`overflow-hidden rounded-lg border ${
+        suspendido ? "border-line" : "border-ink"
+      }`}
+    >
       <div className="border-b border-line px-4.5 py-4">
-        <h1 className="font-brand text-lead font-bold text-ink">
-          {hechos === 0 ? "Bienvenido a Fidelli Motors" : "Te falta poco"}
-        </h1>
-        <p className="mt-0.5 text-ui text-ink-60">
-          {hechos === 0
-            ? "Cuatro pasos para dejar todo listo. Podés hacerlos ahora o cuando quieras."
-            : `${plural(faltan, "paso", "pasos")} para terminar de configurar tu lubricentro.`}
-        </p>
+        <h1 className="font-brand text-lead font-bold text-ink">{titulo}</h1>
+        <p className="mt-0.5 text-ui text-ink-60">{bajada}</p>
         <div
           className="mt-3 h-1.5 overflow-hidden rounded-sm bg-surface"
           role="progressbar"
@@ -115,7 +140,7 @@ export function Checklist({ estado }: { estado: EstadoChecklist }) {
               </p>
             </div>
 
-            {!paso.hecho && (
+            {!paso.hecho && !suspendido && (
               <Link
                 href={paso.destino}
                 className={
@@ -126,6 +151,10 @@ export function Checklist({ estado }: { estado: EstadoChecklist }) {
               >
                 {esElActual ? "Empezar" : "Ir"}
               </Link>
+            )}
+
+            {!paso.hecho && suspendido && (
+              <span className="shrink-0 text-label text-ink-40">En pausa</span>
             )}
           </div>
         );

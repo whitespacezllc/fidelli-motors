@@ -3,7 +3,13 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { obtenerSesion } from "@/lib/auth/session";
+// buscarPorPatente y buscarClientes SOLO LEEN: son las dos búsquedas del
+// momento 0 de la carga. Un lubricentro suspendido tiene que poder
+// consultarlas —ver sus datos es justamente lo que la suspensión no le
+// quita— así que estas dos usan obtenerSesion a propósito. Las otras dos
+// acciones de este archivo escriben y van por sesionParaEscribir().
+// eslint-disable-next-line no-restricted-imports
+import { sesionParaEscribir, obtenerSesion } from "@/lib/auth/session";
 import {
   esPatenteValida,
   normalizar,
@@ -153,8 +159,7 @@ export async function crearVehiculoParaCliente(
   _prev: EstadoAlta,
   formData: FormData,
 ): Promise<EstadoAlta> {
-  const sesion = await obtenerSesion();
-  if (!sesion?.lubricentroId) redirect("/login");
+  const sesion = await sesionParaEscribir();
 
   const clienteId = String(formData.get("cliente_id") ?? "");
   if (!clienteId) return { error: "Elegí de quién es el auto." };
@@ -191,8 +196,7 @@ export async function crearClienteYVehiculo(
   _prev: EstadoAlta,
   formData: FormData,
 ): Promise<EstadoAlta> {
-  const sesion = await obtenerSesion();
-  if (!sesion?.lubricentroId) redirect("/login");
+  await sesionParaEscribir();
 
   const nombre = String(formData.get("nombre") ?? "").trim();
   const telefono = String(formData.get("telefono") ?? "").trim();

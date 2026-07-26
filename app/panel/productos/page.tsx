@@ -104,7 +104,7 @@ export default async function PaginaProductos({
                   </h2>
                   <ul className="surface-card px-4 sm:px-5">
                     {g.productos.map((p) => (
-                      <FilaProducto key={p.id} producto={p} />
+                      <FilaProducto key={p.id} producto={p} suspendido={suspendido} />
                     ))}
                   </ul>
                 </section>
