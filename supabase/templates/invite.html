@@ -14,6 +14,14 @@
 
   .RedirectTo es el redirectTo que mandó inviteUserByEmail, así que el enlace
   vuelve al mismo origen del que salió (local, preview o producción).
+
+  OJO: .RedirectTo NO viene vacío cuando no se manda uno — GoTrue lo
+  completa con el Site URL, que es el origen pelado y no incluye
+  /auth/callback. Es decir: quien dispare uno de estos mails TIENE que pasar
+  el redirectTo explícito, como hacen inviteUserByEmail() y
+  resetPasswordForEmail() en este repo. Un mail disparado desde el dashboard
+  de Supabase o por la API sin ese parámetro genera un enlace que cae en la
+  home con el token en la query, y ahí nadie lo canjea.
 -->
 <html lang="es">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>

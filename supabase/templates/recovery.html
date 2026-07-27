@@ -1,4 +1,16 @@
 <!DOCTYPE html>
+<!--
+  El enlace NO usa {{ .ConfirmationURL }} — ver el comentario largo de
+  invite.html. En resumen: ConfirmationURL apunta a /auth/v1/verify, que
+  devuelve los tokens en el FRAGMENTO de la URL, y el fragmento no viaja al
+  servidor. Nuestro /auth/callback es un Route Handler y vería una URL sin
+  código, así que el enlace terminaría en el login.
+
+  Con .RedirectTo + .TokenHash el token llega como parámetro de consulta y
+  lo canjea verifyOtp() del lado del servidor.
+
+  Este sí está en uso: es el enlace de "¿olvidaste tu contraseña?".
+-->
 <html lang="es">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#F5F5F5;">
