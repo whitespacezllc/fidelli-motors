@@ -35,6 +35,12 @@ export default async function LayoutFidelli({
           >
             Plan y precios
           </NavLink>
+          <NavLink
+            href="/fidelli/cuenta"
+            className="flex h-10 items-center rounded-md px-3 text-ui transition-colors"
+          >
+            Mi cuenta
+          </NavLink>
         </nav>
 
         <div className="ml-auto flex shrink-0 items-center gap-4">
