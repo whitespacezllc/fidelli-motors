@@ -108,7 +108,6 @@ export function FormularioPremio({
             required
             minLength={3}
             defaultValue={premio?.descripcion ?? ""}
-            placeholder="25% de descuento en el próximo service"
             className={CLASE_CAMPO}
           />
           <p className="mt-1.5 text-label text-ink-60">

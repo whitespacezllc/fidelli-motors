@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Boton } from "@/components/ui/boton";
+import { Combobox } from "@/components/ui/combobox";
 import { CartonPapel } from "@/components/services/carton-papel";
 import {
   RENGLONES,
@@ -138,6 +139,9 @@ export function Carton({
   const aceitesDelCatalogo = productos.filter((p) => p.categoria === "aceite");
   const nombreAceite =
     productos.find((p) => p.id === aceiteProductoId)?.nombre ?? null;
+  // El detalle de cada renglón sugiere todo el catálogo; el mecánico escribe
+  // libre si el producto no está cargado.
+  const nombresProductos = productos.map((p) => p.nombre);
 
   function alternarRenglon(tipo: ItemTipo) {
     setMarcados((previo) => {
@@ -395,7 +399,6 @@ export function Carton({
             inputMode="numeric"
             value={km}
             onChange={(e) => setKm(e.target.value)}
-            placeholder="98450"
             className={`${CLASE_CAMPO} h-14 text-h3 tabular-nums`}
           />
           {datos.ultimoService && (
@@ -427,7 +430,6 @@ export function Carton({
                 id="viscosidad"
                 value={aceiteTipo}
                 onChange={(e) => setAceiteTipo(e.target.value.toUpperCase())}
-                placeholder="15W40"
                 autoCapitalize="characters"
                 autoComplete="off"
                 className={`${CLASE_CAMPO} tabular-nums`}
@@ -473,13 +475,11 @@ export function Carton({
                 <input
                   value={nombreProducto}
                   onChange={(e) => setNombreProducto(e.target.value)}
-                  placeholder="Helix HX7 10W40"
                   className={`${CLASE_CAMPO} sm:flex-1`}
                 />
                 <input
                   value={marcaProducto}
                   onChange={(e) => setMarcaProducto(e.target.value)}
-                  placeholder="Shell"
                   className={`${CLASE_CAMPO} sm:w-32`}
                 />
               </div>
@@ -501,14 +501,8 @@ export function Carton({
           )}
         </div>
 
-        {/* 5. Los 11 renglones, agrupados como el papel */}
-        <datalist id="catalogo-productos">
-          {productos.map((p) => (
-            <option key={p.id} value={p.nombre} />
-          ))}
-        </datalist>
-
-        {/* Los cuatro grupos son listas independientes: en desktop van en dos
+        {/* 5. Los 11 renglones, agrupados como el papel.
+            Los cuatro grupos son listas independientes: en desktop van en dos
             columnas y el cartón entra casi entero en una pantalla. El orden
             de lectura no se rompe — se leen igual de arriba a abajo y de
             izquierda a derecha, en el orden del papel.
@@ -516,8 +510,11 @@ export function Carton({
             de al lado. */}
         <div className="grid gap-4 sm:grid-cols-2 sm:items-start">
         {GRUPOS.map((grupo) => (
-          <div key={grupo} className="overflow-hidden rounded-lg border border-line">
-            <p className="border-b border-line bg-surface px-3.5 py-2 text-label font-semibold tracking-[0.12em] text-ink-60 uppercase">
+          // SIN overflow-hidden: recortaba el panel del combobox de detalle,
+          // que se despliega por debajo del borde de la tarjeta. El redondeo
+          // del encabezado se resuelve en su propia clase.
+          <div key={grupo} className="rounded-lg border border-line">
+            <p className="rounded-t-[11px] border-b border-line bg-surface px-3.5 py-2 text-label font-semibold tracking-[0.12em] text-ink-60 uppercase">
               {grupo}
             </p>
             {RENGLONES.filter((r) => r.grupo === grupo).map((r) => {
@@ -554,14 +551,13 @@ export function Carton({
                   {encendido && (
                     <div className="px-3.5 pb-3">
                       {abiertos[r.tipo] || marcados[r.tipo] ? (
-                        <input
-                          list="catalogo-productos"
+                        <Combobox
                           value={marcados[r.tipo]}
-                          onChange={(e) =>
-                            setMarcados((p) => ({ ...p, [r.tipo]: e.target.value }))
+                          onChange={(v) =>
+                            setMarcados((p) => ({ ...p, [r.tipo]: v }))
                           }
-                          placeholder="Producto o detalle"
-                          className={`${CLASE_CAMPO} h-11`}
+                          opciones={nombresProductos}
+                          ariaLabel={`Detalle de ${r.corto}`}
                         />
                       ) : (
                         <button
@@ -654,7 +650,6 @@ export function Carton({
               inputMode="numeric"
               value={proxManual}
               onChange={(e) => setProxManual(e.target.value)}
-              placeholder="108450"
               className={`${CLASE_CAMPO} mt-2 tabular-nums`}
             />
           )}

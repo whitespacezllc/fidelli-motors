@@ -53,6 +53,31 @@ export type VariablesMensaje = {
   proximo_km: string;
 };
 
+// El catálogo de variables, para el editor de mensajes: qué existe y qué
+// significa cada una. Es la fuente única — el resolvedor y la advertencia
+// de typos comparan contra estas cuatro claves.
+export const VARIABLES_MENSAJE: {
+  clave: keyof VariablesMensaje;
+  descripcion: string;
+}[] = [
+  { clave: "nombre", descripcion: "el nombre del cliente" },
+  { clave: "vehiculo", descripcion: "marca y modelo del auto" },
+  { clave: "patente", descripcion: "la patente" },
+  { clave: "proximo_km", descripcion: "los km del próximo service" },
+];
+
+// Los {algo} del texto que NO son ninguna de las cuatro variables. Un typo
+// tipo {nombre_cliente} sale literal en el WhatsApp del cliente y queda
+// pésimo: el editor lo advierte antes de guardar.
+export function variablesDesconocidas(contenido: string): string[] {
+  const conocidas = new Set<string>(VARIABLES_MENSAJE.map((v) => v.clave));
+  const vistas = new Set<string>();
+  for (const [, clave] of contenido.matchAll(/\{(\w+)\}/g)) {
+    if (!conocidas.has(clave)) vistas.add(clave);
+  }
+  return [...vistas];
+}
+
 // Las cuatro variables del template. Lo que no reconoce queda tal cual:
 // si el lubri escribió {telefono} por error, se ve el error y lo corrige,
 // que es mejor que un hueco silencioso en el mensaje.

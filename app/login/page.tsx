@@ -4,7 +4,7 @@ import { obtenerSesion } from "@/lib/auth/session";
 import { urlWhatsappSoporte } from "@/lib/config";
 import { PanelVisual } from "@/components/auth/panel-visual";
 import { FormularioLogin } from "@/components/auth/formulario-login";
-import { Wordmark } from "@/components/marca/wordmark";
+import { Logo } from "@/components/marca/logo";
 
 export const metadata: Metadata = { title: "Entrá a tu panel — Fidelli Motors" };
 
@@ -25,8 +25,8 @@ export default async function PaginaLogin({
 
       <main className="flex flex-1 items-center justify-center px-6 py-10">
         <div className="w-full max-w-[380px]">
-          {/* En mobile no está el panel visual: el wordmark va acá. */}
-          <Wordmark className="mb-8 block text-xl text-ink lg:hidden" />
+          {/* En mobile no está el panel visual: el logo va acá. */}
+          <Logo className="mb-8 h-6 w-auto lg:hidden" priority />
 
           <h1 className="mb-6 font-brand text-h3 font-bold text-ink">
             Entrá a tu panel

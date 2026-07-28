@@ -29,13 +29,13 @@ function CamposVehiculo({ patente }: { patente: string }) {
           <label htmlFor="marca" className={CLASE_LABEL}>
             Marca <span className="text-ink-40 normal-case">(opcional)</span>
           </label>
-          <input id="marca" name="marca" placeholder="Chevrolet" className={CLASE_CAMPO} />
+          <input id="marca" name="marca" className={CLASE_CAMPO} />
         </div>
         <div className="flex-1">
           <label htmlFor="modelo" className={CLASE_LABEL}>
             Modelo <span className="text-ink-40 normal-case">(opcional)</span>
           </label>
-          <input id="modelo" name="modelo" placeholder="Corsa" className={CLASE_CAMPO} />
+          <input id="modelo" name="modelo" className={CLASE_CAMPO} />
         </div>
       </div>
       {/* En mobile el año ocupa todo el ancho, como siempre. Desde tablet se
@@ -52,7 +52,6 @@ function CamposVehiculo({ patente }: { patente: string }) {
           inputMode="numeric"
           min={1900}
           max={new Date().getFullYear() + 1}
-          placeholder="2011"
           className={`${CLASE_CAMPO} tabular-nums`}
         />
       </div>
@@ -141,7 +140,6 @@ function CasoC({ patente, alVolver }: { patente: string; alVolver: () => void })
             required
             minLength={2}
             autoFocus
-            placeholder="Pedro Gómez"
             className={CLASE_CAMPO}
           />
         </div>
@@ -156,7 +154,6 @@ function CasoC({ patente, alVolver }: { patente: string; alVolver: () => void })
             type="tel"
             inputMode="tel"
             required
-            placeholder="351 555 0442"
             className={CLASE_CAMPO}
           />
         </div>
@@ -170,7 +167,6 @@ function CasoC({ patente, alVolver }: { patente: string; alVolver: () => void })
             name="email"
             type="email"
             inputMode="email"
-            placeholder="pedro@mail.com"
             className={CLASE_CAMPO}
           />
         </div>

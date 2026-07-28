@@ -1023,6 +1023,7 @@ export type Database = {
       }
     }
     Functions: {
+      activar_template: { Args: { p_template_id: string }; Returns: undefined }
       actualizar_lubricentro: {
         Args: {
           p_calcos: number
@@ -1034,6 +1035,11 @@ export type Database = {
           p_slug: string
           p_vencimiento: string
         }
+        Returns: undefined
+      }
+      actualizar_mi_nombre: { Args: { p_nombre: string }; Returns: undefined }
+      actualizar_nombre_lubricentro: {
+        Args: { p_nombre: string }
         Returns: undefined
       }
       actualizar_service: {
@@ -1211,6 +1217,10 @@ export type Database = {
       }
       resumen_inicio: { Args: { p_sucursal_id?: string }; Returns: Json }
       seed_demo: { Args: { p_password?: string }; Returns: string }
+      sembrar_templates: {
+        Args: { p_lubricentro_id: string; p_nombre: string }
+        Returns: undefined
+      }
       service_editable: { Args: { p_service_id: string }; Returns: boolean }
       slug_estado: { Args: { p_slug: string }; Returns: string }
       slug_reservado: { Args: { p_slug: string }; Returns: boolean }
