@@ -510,8 +510,11 @@ export function Carton({
             de al lado. */}
         <div className="grid gap-4 sm:grid-cols-2 sm:items-start">
         {GRUPOS.map((grupo) => (
-          <div key={grupo} className="overflow-hidden rounded-lg border border-line">
-            <p className="border-b border-line bg-surface px-3.5 py-2 text-label font-semibold tracking-[0.12em] text-ink-60 uppercase">
+          // SIN overflow-hidden: recortaba el panel del combobox de detalle,
+          // que se despliega por debajo del borde de la tarjeta. El redondeo
+          // del encabezado se resuelve en su propia clase.
+          <div key={grupo} className="rounded-lg border border-line">
+            <p className="rounded-t-[11px] border-b border-line bg-surface px-3.5 py-2 text-label font-semibold tracking-[0.12em] text-ink-60 uppercase">
               {grupo}
             </p>
             {RENGLONES.filter((r) => r.grupo === grupo).map((r) => {
