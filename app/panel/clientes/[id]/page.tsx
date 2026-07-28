@@ -189,6 +189,12 @@ export default async function FichaCliente({
             sucursal: s.sucursales?.nombre ?? "",
             estado: estadoService(s),
           })),
+          // La patente se congela en cuanto el vehículo tiene un service no
+          // anulado (regla anti-fraude, la impone la base). El dialog lo usa
+          // para mostrar el campo en solo lectura con el motivo.
+          patenteBloqueada: (servicesPorVehiculo.get(v.id) ?? []).some(
+            (s) => !s.anulado,
+          ),
         }))}
       />
     </div>

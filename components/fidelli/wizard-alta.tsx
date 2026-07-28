@@ -180,7 +180,6 @@ export function WizardAlta({ planes }: { planes: PlanCompleto[] }) {
                 id="marca"
                 value={nombre}
                 onChange={(e) => setNombre(e.target.value)}
-                placeholder="Brothers Oil"
                 autoFocus
                 className={CLASE_CAMPO}
               />
@@ -198,7 +197,6 @@ export function WizardAlta({ planes }: { planes: PlanCompleto[] }) {
                   id="slug"
                   value={slug}
                   onChange={(e) => setSlugEscrito(e.target.value.toLowerCase())}
-                  placeholder="brothers-oil"
                   className={CLASE_CAMPO}
                 />
               </div>
@@ -397,7 +395,6 @@ function PasoSucursales({
                   id={`suc-nombre-${i}`}
                   value={s.nombre}
                   onChange={(e) => editar(i, "nombre", e.target.value)}
-                  placeholder="Recta Martinolli"
                   className={CLASE_CAMPO}
                 />
               </div>
@@ -414,7 +411,6 @@ function PasoSucursales({
                     id={`suc-dir-${i}`}
                     value={s.direccion}
                     onChange={(e) => editar(i, "direccion", e.target.value)}
-                    placeholder="Av. Recta Martinolli 8420"
                     className={CLASE_CAMPO}
                   />
                 </div>
@@ -429,7 +425,6 @@ function PasoSucursales({
                     type="tel"
                     value={s.telefono}
                     onChange={(e) => editar(i, "telefono", e.target.value)}
-                    placeholder="351 555 8800"
                     className={CLASE_CAMPO}
                   />
                 </div>
@@ -444,7 +439,6 @@ function PasoSucursales({
                   id={`suc-hor-${i}`}
                   value={s.horarios}
                   onChange={(e) => editar(i, "horarios", e.target.value)}
-                  placeholder="Lun a Vie 8:00–18:30 · Sáb 8:00–13:00"
                   className={CLASE_CAMPO}
                 />
               </div>
@@ -485,7 +479,6 @@ function PasoSucursales({
               id="owner-nombre"
               value={ownerNombre}
               onChange={(e) => setOwnerNombre(e.target.value)}
-              placeholder="Bruno Fidelli"
               className={CLASE_CAMPO}
             />
           </div>
@@ -499,7 +492,6 @@ function PasoSucursales({
               type="email"
               value={ownerEmail}
               onChange={(e) => setOwnerEmail(e.target.value)}
-              placeholder="bruno@brothersoil.com.ar"
               className={CLASE_CAMPO}
             />
             <p className={CLASE_AYUDA}>

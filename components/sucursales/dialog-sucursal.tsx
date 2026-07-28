@@ -80,7 +80,6 @@ function FormularioSucursal({
           required
           minLength={2}
           defaultValue={sucursal?.nombre}
-          placeholder="Casa Central"
           className={CLASE_CAMPO}
         />
       </div>
@@ -93,7 +92,6 @@ function FormularioSucursal({
           id="direccion"
           name="direccion"
           defaultValue={sucursal?.direccion ?? ""}
-          placeholder="Av. San Martín 2450"
           className={CLASE_CAMPO}
         />
       </div>
@@ -107,7 +105,6 @@ function FormularioSucursal({
           name="telefono"
           type="tel"
           defaultValue={sucursal?.telefono ?? ""}
-          placeholder="351 555 4120"
           className={CLASE_CAMPO}
         />
       </div>
@@ -120,7 +117,6 @@ function FormularioSucursal({
           id="horarios"
           name="horarios"
           defaultValue={sucursal?.horarios ?? ""}
-          placeholder="Lun a Vie 8:00–18:30 · Sáb 8:00–13:00"
           className={CLASE_CAMPO}
         />
         <p className="mt-1.5 text-label text-ink-60">

@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useState } from "react";
 import { Dialog, DialogTrigger, DialogContenido } from "@/components/ui/dialog";
 import { Boton, clasesBoton } from "@/components/ui/boton";
+import { IconoCandado } from "@/components/iconos";
 import { esPatenteValida, PATENTE_FORMATO } from "@/lib/texto";
 import {
   crearVehiculo,
@@ -16,6 +17,8 @@ type Vehiculo = {
   marca: string | null;
   modelo: string | null;
   anio: number | null;
+  // true = el vehículo ya tiene un service no anulado, la patente se congela.
+  patenteBloqueada?: boolean;
 };
 
 const ESTADO_INICIAL: EstadoVehiculo = {};
@@ -50,6 +53,11 @@ function FormularioVehiculo({
     : (errorPatente ?? estado.error);
 
   const anioMaximo = new Date().getFullYear() + 1;
+
+  // La patente se congela en cuanto el auto tiene un service. Es solo lectura,
+  // no deshabilitada: así el valor sigue viajando en el submit y la base lo ve
+  // igual (no cambió). Marca, modelo y año se siguen pudiendo editar.
+  const patenteBloqueada = Boolean(vehiculo?.patenteBloqueada);
 
   return (
     <form
@@ -98,22 +106,44 @@ function FormularioVehiculo({
           name="patente"
           required
           defaultValue={vehiculo?.patente}
-          placeholder="AB 123 CD"
+          readOnly={patenteBloqueada}
+          aria-describedby={patenteBloqueada ? "patente-motivo" : undefined}
           autoCapitalize="characters"
           autoComplete="off"
           // Mayúsculas mientras escribe (también al pegar), pero sin máscara
           // de espaciado: las máscaras pelean con pegar y con autocompletar.
-          onChange={(e) => {
-            const cursor = e.target.selectionStart;
-            e.target.value = e.target.value.toUpperCase();
-            e.target.setSelectionRange(cursor, cursor);
-            if (errorPatente) setErrorPatente(null);
-          }}
-          className={`${CLASE_CAMPO} plate uppercase`}
+          onChange={
+            patenteBloqueada
+              ? undefined
+              : (e) => {
+                  const cursor = e.target.selectionStart;
+                  e.target.value = e.target.value.toUpperCase();
+                  e.target.setSelectionRange(cursor, cursor);
+                  if (errorPatente) setErrorPatente(null);
+                }
+          }
+          className={`${CLASE_CAMPO} plate uppercase ${
+            patenteBloqueada ? "bg-surface text-ink-40" : ""
+          }`}
         />
-        <p className="mt-1.5 text-label text-ink-40">
-          Vieja (ABC 123) o Mercosur (AB 123 CD).
-        </p>
+        {patenteBloqueada ? (
+          <p
+            id="patente-motivo"
+            className="mt-1.5 flex items-start gap-1.5 rounded-md bg-surface px-3 py-2 text-label text-ink-60"
+          >
+            <IconoCandado className="mt-px size-3.5 shrink-0" />
+            <span>
+              Este auto ya tiene services cargados, así que la patente queda
+              fija para siempre — es lo que hace confiable el historial que ve
+              tu cliente. Si te equivocaste, anulá el service dentro de las 24
+              horas y volvé a cargarlo con la patente correcta.
+            </span>
+          </p>
+        ) : (
+          <p className="mt-1.5 text-label text-ink-40">
+            Vieja (ABC 123) o Mercosur (AB 123 CD).
+          </p>
+        )}
       </div>
 
       <div className="flex gap-3">
@@ -125,7 +155,6 @@ function FormularioVehiculo({
             id="marca"
             name="marca"
             defaultValue={vehiculo?.marca ?? ""}
-            placeholder="Chevrolet"
             className={CLASE_CAMPO}
           />
         </div>
@@ -137,7 +166,6 @@ function FormularioVehiculo({
             id="modelo"
             name="modelo"
             defaultValue={vehiculo?.modelo ?? ""}
-            placeholder="Corsa"
             className={CLASE_CAMPO}
           />
         </div>
@@ -156,7 +184,6 @@ function FormularioVehiculo({
           max={anioMaximo}
           step={1}
           defaultValue={vehiculo?.anio ?? ""}
-          placeholder="2011"
           className={`${CLASE_CAMPO} tabular-nums`}
         />
       </div>
