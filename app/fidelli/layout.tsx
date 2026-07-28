@@ -1,6 +1,6 @@
 import { exigirRol } from "@/lib/auth/session";
 import { cerrarSesion } from "@/lib/auth/actions";
-import { Wordmark } from "@/components/marca/wordmark";
+import { Logo } from "@/components/marca/logo";
 import { NavLink } from "@/components/panel/nav-link";
 
 // El panel de administración de Fidelli: barra superior en vez de sidebar —
@@ -17,7 +17,7 @@ export default async function LayoutFidelli({
     <div className="min-h-dvh bg-surface/40">
       <header className="flex h-[54px] items-center gap-5 overflow-x-auto border-b border-line bg-base px-5">
         <div className="flex shrink-0 items-baseline gap-2">
-          <Wordmark className="text-base text-ink" />
+          <Logo className="h-5 w-auto" priority />
           <span className="text-ui text-ink-60">Administración</span>
         </div>
 

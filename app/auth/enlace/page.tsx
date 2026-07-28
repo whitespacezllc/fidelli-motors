@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Wordmark } from "@/components/marca/wordmark";
+import { Logo } from "@/components/marca/logo";
 import { clasesBoton } from "@/components/ui/boton";
 import { urlWhatsappSoporte } from "@/lib/config";
 
@@ -61,7 +61,7 @@ export default async function PaginaEnlace({
   return (
     <main className="flex min-h-dvh items-center justify-center px-6 py-10">
       <div className="w-full max-w-[420px]">
-        <Wordmark className="mb-8 block text-xl text-ink" />
+        <Logo className="mb-8 h-6 w-auto" priority />
 
         <h1 className="mb-2 font-brand text-h3 font-bold text-ink">
           {caso.titulo}

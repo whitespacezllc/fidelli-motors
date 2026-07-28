@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Wordmark } from "@/components/marca/wordmark";
+import { Logo } from "@/components/marca/logo";
 import { NavLink } from "@/components/panel/nav-link";
 import { IconoPlus, IconoCandado } from "@/components/iconos";
 import { cerrarSesion } from "@/lib/auth/actions";
@@ -48,7 +48,7 @@ export function Sidebar({
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-line bg-base lg:flex">
       <div className="px-5 pt-5 pb-4">
-        <Wordmark className="text-lg text-ink" />
+        <Logo className="h-5 w-auto" priority />
         <p className="mt-0.5 truncate text-ui text-ink-60">{lubricentroNombre}</p>
       </div>
 

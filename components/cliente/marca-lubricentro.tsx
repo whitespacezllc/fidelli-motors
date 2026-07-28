@@ -21,7 +21,10 @@ export function MarcaLubricentro({ lubricentro }: { lubricentro: Lubricentro }) 
         <img
           src={lubricentro.logoUrl}
           alt={lubricentro.nombre}
-          className="mx-auto h-16 w-auto object-contain sm:h-24"
+          // rounded-lg: muchos lubris suben un logo cuadrado con fondo, y el
+          // canto vivo se pelea con el resto de la superficie. El redondeo lo
+          // ablanda sin recortar el logo (object-contain no lo estira).
+          className="mx-auto h-16 w-auto rounded-lg object-contain sm:h-24"
         />
       ) : (
         <span
