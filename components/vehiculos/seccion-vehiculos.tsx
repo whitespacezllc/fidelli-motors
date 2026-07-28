@@ -40,6 +40,7 @@ type Vehiculo = {
   services?: ServiceDelVehiculo[];
   fidelizacion?: Fidelizacion | null;
   canjes?: Canje[];
+  patenteBloqueada?: boolean;
 };
 
 // El progreso del ciclo y los canjes ya hechos. El dorado es el único

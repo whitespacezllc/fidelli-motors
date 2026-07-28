@@ -32,7 +32,7 @@ export function CabeceraVehiculo({
           <img
             src={lubricentro.logoUrl}
             alt=""
-            className="h-11 w-auto shrink-0 object-contain"
+            className="h-11 w-auto shrink-0 rounded-md object-contain"
           />
         ) : (
           <span

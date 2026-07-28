@@ -1,27 +1,33 @@
 <!DOCTYPE html>
 <!--
-  El enlace NO usa {{ .ConfirmationURL }}.
+  CÓMO SE ARMA EL ENLACE, Y POR QUÉ ASÍ
 
-  ConfirmationURL apunta a /auth/v1/verify, que responde con los tokens en el
-  FRAGMENTO de la URL (#access_token=…). El fragmento no se manda al servidor:
-  nuestro /auth/callback es un Route Handler y ve una URL sin código, así que
-  el enlace terminaba en /login?aviso=enlace y el owner nunca podía activar
-  su cuenta.
+  1. NO usa {{ .ConfirmationURL }}.
+     Apunta a /auth/v1/verify, que responde con los tokens en el FRAGMENTO
+     de la URL (#access_token=…). El fragmento no se manda al servidor:
+     nuestro /auth/callback es un Route Handler y ve una URL sin código, así
+     que el enlace terminaba en el login y nadie podía activar su cuenta.
 
-  Con .RedirectTo + .TokenHash el mail apunta directo a nuestro callback con
-  el token como parámetro de consulta, que sí llega al servidor: ahí lo canjea
-  verifyOtp() y la sesión queda escrita en cookies.
+  2. NO usa {{ .RedirectTo }} tampoco, aunque la app SÍ manda un redirectTo
+     correcto en cada llamada.
+     Motivo: GoTrue valida ese redirectTo contra la lista de Redirect URLs
+     del proyecto y, si no está permitida, LA DESCARTA EN SILENCIO —HTTP
+     200, sin error, sin warning— y arma el enlace contra el Site URL
+     pelado, sin /auth/callback. Eso fue exactamente el bug de producción:
+     el mail llegaba a https://fidellimotors.app?token_hash=… y el token
+     nunca se canjeaba. Lo mismo pasa si alguien dispara el mail sin
+     redirectTo (desde el dashboard, o una llamada nueva que se olvide).
 
-  .RedirectTo es el redirectTo que mandó inviteUserByEmail, así que el enlace
-  vuelve al mismo origen del que salió (local, preview o producción).
+  3. Usa {{ .SiteURL }} + la ruta escrita a mano.
+     Site URL es configuración del proyecto, no un parámetro de quien llama:
+     no hay ningún camino por el que este enlace caiga en la raíz. Y como
+     cada proyecto de Supabase tiene su Site URL apuntando a SU app, el
+     token —que sólo vale contra el proyecto que lo emitió— aterriza siempre
+     en el entorno que corresponde.
 
-  OJO: .RedirectTo NO viene vacío cuando no se manda uno — GoTrue lo
-  completa con el Site URL, que es el origen pelado y no incluye
-  /auth/callback. Es decir: quien dispare uno de estos mails TIENE que pasar
-  el redirectTo explícito, como hacen inviteUserByEmail() y
-  resetPasswordForEmail() en este repo. Un mail disparado desde el dashboard
-  de Supabase o por la API sin ese parámetro genera un enlace que cae en la
-  home con el token en la query, y ahí nadie lo canjea.
+     Condición: el Site URL de cada proyecto tiene que ser la URL de su app.
+     local → http://localhost:3000 · dev → la app de dev · prod →
+     https://fidellimotors.app
 -->
 <html lang="es">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -52,7 +58,7 @@
     <tr><td style="padding:28px 32px 0;">
       <table role="presentation" cellpadding="0" cellspacing="0"><tr>
         <td style="background:#E01F26;border-radius:8px;">
-          <a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=invite" style="display:inline-block;padding:15px 30px;font-family:Helvetica,Arial,sans-serif;font-size:16px;font-weight:700;color:#FFFFFF;text-decoration:none;">
+          <a href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=invite" style="display:inline-block;padding:15px 30px;font-family:Helvetica,Arial,sans-serif;font-size:16px;font-weight:700;color:#FFFFFF;text-decoration:none;">
             Activar mi cuenta
           </a>
         </td>
@@ -66,7 +72,7 @@
     <tr><td style="padding:24px 32px 32px;border-top:1px solid #E4E4E4;margin-top:24px;">
       <p style="margin:24px 0 0;font-family:Helvetica,Arial,sans-serif;font-size:13px;line-height:1.6;color:#8A8A8A;">
         Si el botón no funciona, copiá y pegá esta dirección en tu navegador:<br>
-        <span style="color:#4A4A4A;word-break:break-all;">{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=invite</span>
+        <span style="color:#4A4A4A;word-break:break-all;">{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=invite</span>
       </p>
     </td></tr>
   </table>

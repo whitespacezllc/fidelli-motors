@@ -126,7 +126,6 @@ export function FormExperiencia({ config }: { config: ConfigExperiencia }) {
                 const v = e.target.value.trim();
                 setColor(v.startsWith("#") || v === "" ? v.toUpperCase() : `#${v.toUpperCase()}`);
               }}
-              placeholder="#15803D"
               aria-label="Código hex del color"
               className={`${CLASE_CAMPO} plate text-center`}
             />
@@ -195,7 +194,6 @@ export function FormExperiencia({ config }: { config: ConfigExperiencia }) {
               type="tel"
               inputMode="tel"
               defaultValue={config.whatsapp}
-              placeholder="351 555 4120"
               className={`${CLASE_CAMPO} tabular-nums`}
             />
           </div>
@@ -208,7 +206,6 @@ export function FormExperiencia({ config }: { config: ConfigExperiencia }) {
                 id="instagram"
                 name="instagram"
                 defaultValue={config.instagram}
-                placeholder="@lubricentrosanmartin"
                 className={CLASE_CAMPO}
               />
             </div>
@@ -220,7 +217,6 @@ export function FormExperiencia({ config }: { config: ConfigExperiencia }) {
                 id="facebook"
                 name="facebook"
                 defaultValue={config.facebook}
-                placeholder="lubricentrosanmartin"
                 className={CLASE_CAMPO}
               />
             </div>

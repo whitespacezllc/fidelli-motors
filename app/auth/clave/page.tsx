@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { Wordmark } from "@/components/marca/wordmark";
+import { Logo } from "@/components/marca/logo";
 import { FormularioClave } from "@/components/auth/formulario-clave";
 
 export const metadata: Metadata = { title: "Creá tu contraseña — Fidelli Motors" };
@@ -19,7 +19,7 @@ export default async function PaginaClave() {
   return (
     <main className="flex min-h-dvh items-center justify-center px-6 py-10">
       <div className="w-full max-w-[380px]">
-        <Wordmark className="mb-8 block text-xl text-ink" />
+        <Logo className="mb-8 h-6 w-auto" priority />
         <h1 className="mb-2 font-brand text-h3 font-bold text-ink">
           Creá tu contraseña
         </h1>

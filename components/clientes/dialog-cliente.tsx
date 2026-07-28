@@ -78,7 +78,6 @@ function FormularioCliente({
           required
           minLength={2}
           defaultValue={cliente?.nombre}
-          placeholder="Pedro Gómez"
           className={CLASE_CAMPO}
         />
       </div>
@@ -94,7 +93,6 @@ function FormularioCliente({
           required
           inputMode="tel"
           defaultValue={cliente?.telefono}
-          placeholder="351 555 0442"
           className={CLASE_CAMPO}
         />
       </div>
@@ -109,7 +107,6 @@ function FormularioCliente({
           type="email"
           inputMode="email"
           defaultValue={cliente?.email ?? ""}
-          placeholder="pedro.gomez@gmail.com"
           className={CLASE_CAMPO}
         />
       </div>

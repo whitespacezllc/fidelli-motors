@@ -137,7 +137,6 @@ function DialogInvitar({
               id={`owner-nombre-${lubricentroId}`}
               name="nombre"
               required
-              placeholder="Bruno Fidelli"
               className={CLASE_CAMPO}
             />
           </div>
@@ -151,7 +150,6 @@ function DialogInvitar({
               name="email"
               type="email"
               required
-              placeholder="bruno@brothersoil.com.ar"
               className={CLASE_CAMPO}
             />
             <p className="mt-1.5 text-label text-ink-60">

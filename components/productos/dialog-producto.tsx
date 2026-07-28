@@ -105,7 +105,6 @@ function FormularioProducto({
           required
           minLength={2}
           defaultValue={producto?.nombre}
-          placeholder="Helix HX7 10W40"
           className={CLASE_CAMPO}
         />
       </div>
@@ -118,7 +117,6 @@ function FormularioProducto({
           id="marca"
           name="marca"
           defaultValue={producto?.marca ?? ""}
-          placeholder="Shell"
           className={CLASE_CAMPO}
         />
       </div>
