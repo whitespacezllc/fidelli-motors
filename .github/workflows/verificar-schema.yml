@@ -1,0 +1,61 @@
+# Corre el mismo `supabase db reset` que corre el desarrollador en su
+# máquina. El reset aplica todas las migraciones desde cero y termina
+# ejecutando supabase/verificaciones.sql, que lanza excepción si alguna
+# vista de public quedó sin security_invoker.
+#
+# Por eso este workflow no sabe nada del chequeo: si el aislamiento se
+# rompe, el reset devuelve exit 1 y el PR se marca en rojo solo. Cuando
+# se agreguen más verificaciones al archivo, el CI las hereda sin tocar
+# este yaml.
+name: Verificar el schema
+
+on:
+  pull_request:
+    # Solo cuando cambia la base. Un PR que toca únicamente el front no
+    # puede romper el schema, y levantar Docker para nada son minutos
+    # tirados. Se incluye este mismo archivo: si alguien lo edita, que
+    # se pruebe en el PR que lo edita.
+    paths:
+      - "supabase/**"
+      - ".github/workflows/verificar-schema.yml"
+
+# Un push nuevo cancela la corrida anterior del mismo PR: nadie necesita
+# el resultado de un commit que ya quedó atrás.
+concurrency:
+  group: verificar-schema-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reset:
+    name: supabase db reset
+    runs-on: ubuntu-latest
+    # En frío se va casi todo en bajar las imágenes de Docker; el reset
+    # en sí tarda menos de un minuto. 15 deja margen para un runner
+    # lento sin que uno colgado se coma la cuota (el default son 6 hs).
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar la CLI de Supabase
+        uses: supabase/setup-cli@v1
+        with:
+          # Fijada a propósito: una CLI que se actualiza sola puede
+          # cambiar el comportamiento del reset sin que nadie toque el
+          # repo. Subirla es una decisión, no un accidente.
+          version: 2.109.1
+
+      - name: Levantar Supabase
+        # Se excluye todo lo que no participa del schema: el panel web,
+        # las funciones edge, el proxy de imágenes, los logs y el mail
+        # catcher. Auth y Storage NO se excluyen — el seed escribe en
+        # auth.users y hay una migración que crea el bucket de logos.
+        # Verificado: con esta lista el reset aplica todo igual.
+        run: supabase start -x studio,imgproxy,edge-runtime,functions,analytics,vector,inbucket,realtime
+
+      - name: Aplicar migraciones y verificaciones
+        run: supabase db reset
+
+      - name: Mostrar los logs de Postgres si algo falló
+        if: failure()
+        run: supabase logs db || true
