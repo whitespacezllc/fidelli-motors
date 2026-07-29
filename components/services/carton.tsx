@@ -57,6 +57,8 @@ export type ServiceEnEdicion = {
   observaciones: string | null;
   // tipo → detalle escrito ("" = marcado sin detalle)
   marcados: Record<string, string>;
+  // tipo → true si fue cambio (vs. revisado OK)
+  cambiados: Record<string, boolean>;
 };
 
 const CLASE_CAMPO =
@@ -102,6 +104,11 @@ export function Carton({
   // tipo → detalle escrito (string vacío = marcado sin detalle)
   const [marcados, setMarcados] = useState<Record<string, string>>(
     edicion?.marcados ?? {},
+  );
+  // tipo → fue cambio. Un renglón recién prendido arranca como "OK,
+  // revisado": el cambio es la decisión extra, con su propio toggle.
+  const [cambiados, setCambiados] = useState<Record<string, boolean>>(
+    edicion?.cambiados ?? {},
   );
   const [abiertos, setAbiertos] = useState<Record<string, boolean>>({});
   const [proxModo, setProxModo] = useState<Salto | "legado">(
@@ -159,6 +166,17 @@ export function Carton({
       else copia[tipo] = "";
       return copia;
     });
+    // Apagar el renglón resetea también su estado de cambio: si se vuelve
+    // a prender, arranca de nuevo como "OK, revisado".
+    setCambiados((previo) => {
+      const copia = { ...previo };
+      delete copia[tipo];
+      return copia;
+    });
+  }
+
+  function alternarCambiado(tipo: ItemTipo) {
+    setCambiados((previo) => ({ ...previo, [tipo]: !previo[tipo] }));
   }
 
   async function agregarProducto() {
@@ -190,6 +208,7 @@ export function Carton({
         tipo,
         producto_id: producto?.id ?? null,
         detalle: producto ? null : limpio || null,
+        cambiado: Boolean(cambiados[tipo]),
       };
     });
 
@@ -240,7 +259,7 @@ export function Carton({
     marcados: Object.fromEntries(
       Object.entries(marcados).map(([tipo, detalle]) => [
         tipo,
-        detalle.trim() || null,
+        { detalle: detalle.trim() || null, cambiado: Boolean(cambiados[tipo]) },
       ]),
     ),
   };
@@ -558,7 +577,39 @@ export function Carton({
                   </button>
 
                   {encendido && (
-                    <div className="px-3.5 pb-3">
+                    <div className="flex flex-col gap-1 px-3.5 pb-3">
+                      {/* Prendido = revisado y OK. El segundo toggle dice
+                          que además se cambió — dos estados del papel:
+                          tilde de cambio u "OK" de revisión. */}
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={Boolean(cambiados[r.tipo])}
+                        onClick={() => alternarCambiado(r.tipo)}
+                        className="flex min-h-11 w-full items-center justify-between gap-3 text-left"
+                      >
+                        <span
+                          className={`text-ui ${
+                            cambiados[r.tipo]
+                              ? "font-semibold text-ink"
+                              : "text-ink-60"
+                          }`}
+                        >
+                          {cambiados[r.tipo] ? "Se cambió" : "Revisado, OK — ¿se cambió?"}
+                        </span>
+                        <span
+                          className={`flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors ${
+                            cambiados[r.tipo] ? "bg-ink" : "bg-line"
+                          }`}
+                        >
+                          <span
+                            className={`size-4 rounded-full bg-base shadow-sm transition-transform ${
+                              cambiados[r.tipo] ? "translate-x-4" : "translate-x-0"
+                            }`}
+                          />
+                        </span>
+                      </button>
+
                       {abiertos[r.tipo] || marcados[r.tipo] ? (
                         <Combobox
                           value={marcados[r.tipo]}
@@ -574,7 +625,7 @@ export function Carton({
                           onClick={() =>
                             setAbiertos((p) => ({ ...p, [r.tipo]: true }))
                           }
-                          className="min-h-11 text-ui font-semibold text-brand"
+                          className="min-h-11 self-start text-ui font-semibold text-brand"
                         >
                           + detalle
                         </button>

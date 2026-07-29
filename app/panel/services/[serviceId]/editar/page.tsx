@@ -41,7 +41,7 @@ export default async function PaginaEditarService({ params }: Props) {
            prox_service_km, observaciones, anulado, desbloqueado_hasta,
            sucursal_id, vehiculo_id,
            vehiculos(patente, marca, modelo, clientes(nombre)),
-           service_items(item_tipo, detalle, productos(nombre, marca))`,
+           service_items(item_tipo, detalle, cambiado, productos(nombre, marca))`,
         )
         .eq("id", serviceId)
         .maybeSingle(),
@@ -105,6 +105,10 @@ export default async function PaginaEditarService({ params }: Props) {
     ]),
   );
 
+  const cambiados = Object.fromEntries(
+    service.service_items.map((i) => [i.item_tipo as string, i.cambiado]),
+  );
+
   return (
     <div className="mx-auto max-w-md sm:max-w-2xl lg:max-w-3xl">
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -161,6 +165,7 @@ export default async function PaginaEditarService({ params }: Props) {
           proxServiceKm: service.prox_service_km,
           observaciones: service.observaciones,
           marcados,
+          cambiados,
         }}
       />
     </div>

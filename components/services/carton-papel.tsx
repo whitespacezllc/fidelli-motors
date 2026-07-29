@@ -7,6 +7,11 @@ import {
 import { formatearFecha } from "@/lib/fechas";
 import { paletaTenant } from "@/lib/cliente/color";
 
+// Un renglón atendido: cambiado (el tilde de siempre) o revisado y en
+// buen estado ("OK"). El detalle puede venir en null por cargarse sin
+// producto o porque el lubri apagó "mostrar productos".
+export type RenglonMarcado = { detalle: string | null; cambiado: boolean };
+
 export type CartonDatos = {
   lubricentroNombre: string;
   colorTenant: string;
@@ -14,8 +19,8 @@ export type CartonDatos = {
   kilometros: number;
   aceiteTipo: string;
   proxServiceKm: number;
-  // tipo → detalle (o null si está marcado sin detalle)
-  marcados: Record<string, string | null>;
+  // tipo → estado del renglón (ausente = no se atendió)
+  marcados: Record<string, RenglonMarcado>;
 };
 
 // El mismo cartón se dibuja en dos lugares con dos públicos distintos: el
@@ -74,13 +79,11 @@ const ESCALAS: Record<
 function Renglon({
   papel,
   marcado,
-  detalle,
   e,
   sinBorde = false,
 }: {
   papel: string;
-  marcado: boolean;
-  detalle: string | null;
+  marcado: RenglonMarcado | undefined;
   e: (typeof ESCALAS)[Escala];
   // Dentro de un grupo con etiqueta, el último renglón no lleva borde: lo
   // pone el propio grupo. Los renglones sueltos lo llevan siempre.
@@ -97,15 +100,27 @@ function Renglon({
       >
         {papel}
       </span>
-      <span
-        className={`flex ${e.tilde} items-center justify-center border-l border-ink font-bold text-[var(--tn)]`}
-      >
-        {marcado ? "✓" : ""}
-      </span>
+      {/* La celda del medio es el estado: el tilde de siempre para lo
+          cambiado, "OK" para lo revisado que estaba bien. Como en el
+          papel, donde el mecánico tilda lo que cambió y escribe OK en lo
+          que solo miró. */}
+      {!marcado || marcado.cambiado ? (
+        <span
+          className={`flex ${e.tilde} items-center justify-center border-l border-ink font-bold text-[var(--tn)]`}
+        >
+          {marcado ? "✓" : ""}
+        </span>
+      ) : (
+        <span
+          className={`flex ${e.tilde} items-center justify-center border-l border-ink ${e.detalle} font-bold text-ink`}
+        >
+          OK
+        </span>
+      )}
       <span
         className={`flex flex-1 items-center justify-end border-l border-ink ${e.celda} py-2 text-right ${e.detalle} text-ink-60`}
       >
-        {detalle ?? ""}
+        {marcado?.detalle ?? ""}
       </span>
     </div>
   );
@@ -123,6 +138,10 @@ export function CartonPapel({
   escala?: Escala;
 }) {
   const e = ESCALAS[escala];
+
+  // La letra chica del papel: solo aparece cuando hay algún "OK" que
+  // explicar — un cartón todo de tildes se lee solo, como siempre.
+  const hayRevisados = Object.values(datos.marcados).some((m) => !m.cambiado);
 
   // La tinta de la etiqueta vertical no puede ser blanca fija: el lubri
   // elige su color y podría ser un amarillo, donde el blanco no se lee.
@@ -179,8 +198,7 @@ export function CartonPapel({
             <Renglon
               key={r.tipo}
               papel={r.papel}
-              marcado={r.tipo in datos.marcados}
-              detalle={datos.marcados[r.tipo] ?? null}
+              marcado={datos.marcados[r.tipo]}
               e={e}
               sinBorde={conEtiqueta && i === delGrupo.length - 1}
             />
@@ -215,6 +233,13 @@ export function CartonPapel({
           </span>
         </div>
       </div>
+
+      {hayRevisados && (
+        <p className={`mt-2 text-center ${e.detalle} text-ink-60`}>
+          <span className="font-bold text-[var(--tn)]">✓</span> se cambió ·{" "}
+          <span className="font-bold text-ink">OK</span> se revisó y estaba bien
+        </p>
+      )}
     </div>
   );
 }

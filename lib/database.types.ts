@@ -535,6 +535,7 @@ export type Database = {
       }
       service_items: {
         Row: {
+          cambiado: boolean
           created_at: string
           detalle: string | null
           id: string
@@ -544,6 +545,7 @@ export type Database = {
           service_id: string
         }
         Insert: {
+          cambiado?: boolean
           created_at?: string
           detalle?: string | null
           id?: string
@@ -553,6 +555,7 @@ export type Database = {
           service_id: string
         }
         Update: {
+          cambiado?: boolean
           created_at?: string
           detalle?: string | null
           id?: string

@@ -12,7 +12,12 @@ import type {
 // viene null; si apagó la fidelización, el bloque entero viene null. Acá
 // no se reimplementa nada de eso — se consume lo que llega.
 
-export type ItemCarton = { tipo: string; detalle: string | null };
+export type ItemCarton = {
+  tipo: string;
+  detalle: string | null;
+  /** true = se cambió; false = se revisó y estaba bien ("OK"). */
+  cambiado: boolean;
+};
 
 export type ServiceCarton = {
   fecha: string;
@@ -162,6 +167,15 @@ export async function obtenerCarton(
 // Un service marcado es la existencia de la fila; el detalle puede venir
 // en null porque se cargó sin producto o porque el lubri apagó "mostrar
 // productos". Para el cartón las dos cosas se ven igual, y está bien.
-export function marcadosDe(service: ServiceCarton): Record<string, string | null> {
-  return Object.fromEntries(service.items.map((i) => [i.tipo, i.detalle]));
+// El ?? true cubre un JSON viejo sin la clave: el sentido histórico del
+// tilde era "se cambió".
+export function marcadosDe(
+  service: ServiceCarton,
+): Record<string, { detalle: string | null; cambiado: boolean }> {
+  return Object.fromEntries(
+    service.items.map((i) => [
+      i.tipo,
+      { detalle: i.detalle, cambiado: i.cambiado ?? true },
+    ]),
+  );
 }
