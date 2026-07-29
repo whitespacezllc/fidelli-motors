@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { normalizarPatente } from "@/lib/texto";
+import { hexONull } from "@/lib/cliente/color";
 
 // La superficie del cliente no tiene sesión: `anon` no tiene permiso sobre
 // ninguna tabla del schema y así debe seguir. Sus dos únicas puertas son
@@ -40,6 +41,10 @@ export type Lubricentro = {
   nombre: string;
   logoUrl: string | null;
   colorPrimario: string;
+  /** Fondo de la página pública. null = el blanco de siempre. */
+  colorFondo: string | null;
+  /** El papel del cartón. null = blanco. */
+  colorCarton: string | null;
   contacto: DatosContacto;
   sucursales: SucursalPublica[];
   premio: PremioVigente | null;
@@ -49,6 +54,8 @@ type LandingJson = {
   nombre?: string;
   logo_url?: string | null;
   color_primario?: string;
+  color_fondo?: string | null;
+  color_carton?: string | null;
   datos_contacto?: DatosContacto;
   sucursales?: SucursalPublica[];
   premio?: { meta_services: number; descripcion: string } | null;
@@ -66,6 +73,9 @@ export async function obtenerLanding(slug: string): Promise<Lubricentro | null> 
     nombre: json.nombre,
     logoUrl: json.logo_url ?? null,
     colorPrimario: json.color_primario ?? "#0A0A0A",
+    // Saneados acá, en la única puerta: lo que sigue viaja a un style.
+    colorFondo: hexONull(json.color_fondo),
+    colorCarton: hexONull(json.color_carton),
     contacto: json.datos_contacto ?? {},
     sucursales: json.sucursales ?? [],
     premio: json.premio

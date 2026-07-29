@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { sesionParaEscribir } from "@/lib/auth/session";
+import { esTonoClaro } from "@/lib/cliente/color";
 
 export type EstadoExperiencia = { error?: string; ok?: boolean };
 
@@ -29,6 +30,30 @@ export async function guardarExperiencia(
   const color = String(formData.get("color") ?? "").trim().toUpperCase();
   if (!HEX.test(color)) {
     return { error: "El color tiene que ser un hex de 6 dígitos, como #15803D." };
+  }
+
+  // Fondo y papel del cartón: "" = el blanco de siempre (null). La regla
+  // de los tonos CLAROS se impone acá, no solo en el form: el texto de la
+  // landing es tinta oscura fija y el cliente la lee al sol — un fondo
+  // oscuro la vuelve ilegible, y ningún camino puede guardarlo.
+  const colorFondo =
+    String(formData.get("color_fondo") ?? "").trim().toUpperCase() || null;
+  const colorCarton =
+    String(formData.get("color_carton") ?? "").trim().toUpperCase() || null;
+
+  for (const [etiqueta, valor] of [
+    ["fondo de la página", colorFondo],
+    ["papel del cartón", colorCarton],
+  ] as const) {
+    if (valor === null) continue;
+    if (!HEX.test(valor)) {
+      return { error: `El ${etiqueta} tiene que ser un color hex de 6 dígitos.` };
+    }
+    if (!esTonoClaro(valor)) {
+      return {
+        error: `Ese tono es muy oscuro para el ${etiqueta}: el texto es oscuro y tu cliente lo lee al sol. Elegí un tono claro.`,
+      };
+    }
   }
 
   const whatsapp = String(formData.get("whatsapp") ?? "").trim();
@@ -75,6 +100,8 @@ export async function guardarExperiencia(
     .from("config_experiencia")
     .update({
       color_primario: color,
+      color_fondo: colorFondo,
+      color_carton: colorCarton,
       datos_contacto: contacto,
       campos_visibles: visibles,
       updated_at: new Date().toISOString(),

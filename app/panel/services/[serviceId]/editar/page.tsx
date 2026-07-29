@@ -41,7 +41,7 @@ export default async function PaginaEditarService({ params }: Props) {
            prox_service_km, observaciones, anulado, desbloqueado_hasta,
            sucursal_id, vehiculo_id,
            vehiculos(patente, marca, modelo, clientes(nombre)),
-           service_items(item_tipo, detalle, productos(nombre, marca))`,
+           service_items(item_tipo, detalle, cambiado, productos(nombre, marca))`,
         )
         .eq("id", serviceId)
         .maybeSingle(),
@@ -55,7 +55,7 @@ export default async function PaginaEditarService({ params }: Props) {
         .select("id, nombre, marca, categoria")
         .eq("activo", true)
         .order("nombre"),
-      supabase.from("config_experiencia").select("color_primario").maybeSingle(),
+      supabase.from("config_experiencia").select("color_primario, color_carton").maybeSingle(),
     ]);
 
   const service = serviceRes.data;
@@ -105,6 +105,10 @@ export default async function PaginaEditarService({ params }: Props) {
     ]),
   );
 
+  const cambiados = Object.fromEntries(
+    service.service_items.map((i) => [i.item_tipo as string, i.cambiado]),
+  );
+
   return (
     <div className="mx-auto max-w-md sm:max-w-2xl lg:max-w-3xl">
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -134,6 +138,7 @@ export default async function PaginaEditarService({ params }: Props) {
           clienteNombre: service.vehiculos?.clientes?.nombre ?? "",
           lubricentroNombre: sesion?.lubricentroNombre ?? "Tu lubricentro",
           colorTenant: configRes.data?.color_primario ?? "#0A0A0A",
+          colorPapel: configRes.data?.color_carton ?? null,
           sucursales: sucursalesRes.data ?? [],
           sucursalInicial: service.sucursal_id,
           productos: (productosRes.data ?? []).map((p) => ({
@@ -161,6 +166,7 @@ export default async function PaginaEditarService({ params }: Props) {
           proxServiceKm: service.prox_service_km,
           observaciones: service.observaciones,
           marcados,
+          cambiados,
         }}
       />
     </div>

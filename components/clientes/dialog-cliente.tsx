@@ -8,12 +8,18 @@ import {
   editarCliente,
   type EstadoCliente,
 } from "@/app/panel/clientes/actions";
+import {
+  formatearCuit,
+  normalizarCuit,
+  verificadorCuitCierra,
+} from "@/lib/cuit";
 
 type Cliente = {
   id: string;
   nombre: string;
   telefono: string;
   email: string | null;
+  cuit: string | null;
 };
 
 const ESTADO_INICIAL: EstadoCliente = {};
@@ -35,6 +41,14 @@ function FormularioCliente({
     ESTADO_INICIAL,
   );
   const [sinConexion, setSinConexion] = useState(false);
+  const [cuit, setCuit] = useState(formatearCuit(cliente?.cuit ?? null));
+
+  // Advierte, nunca bloquea: 11 dígitos con verificador que no cierra es
+  // casi seguro un número mal copiado — mejor enterarse ahora que en la
+  // factura. Menos dígitos ni se evalúa: puede estar a mitad de tipeo.
+  const cuitDigitos = normalizarCuit(cuit);
+  const cuitDudoso =
+    cuitDigitos.length === 11 && !verificadorCuitCierra(cuitDigitos);
 
   useEffect(() => {
     if (estado.ok) alGuardar();
@@ -109,6 +123,29 @@ function FormularioCliente({
           defaultValue={cliente?.email ?? ""}
           className={CLASE_CAMPO}
         />
+      </div>
+
+      <div>
+        <label htmlFor="cuit" className={CLASE_LABEL}>
+          CUIL/CUIT <span className="text-ink-40 normal-case">(opcional)</span>
+        </label>
+        <input
+          id="cuit"
+          name="cuit"
+          inputMode="numeric"
+          value={cuit}
+          onChange={(e) => setCuit(e.target.value)}
+          className={`${CLASE_CAMPO} tabular-nums`}
+        />
+        <p className="mt-1.5 text-label text-ink-60">
+          Para tenerlo listo cuando haya que facturarle.
+        </p>
+        {cuitDudoso && (
+          <p className="mt-2 rounded-md bg-urgente-soft px-3.5 py-3 text-ui text-urgente">
+            Ese número no parece un CUIL/CUIT: el dígito verificador no
+            cierra. Revisalo — si es el que te dieron, guardá igual.
+          </p>
+        )}
       </div>
 
       <Boton type="submit" tam="lg" disabled={pendiente} className="mt-1 w-full">

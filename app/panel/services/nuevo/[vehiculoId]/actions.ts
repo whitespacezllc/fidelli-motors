@@ -9,6 +9,8 @@ export type ItemCargado = {
   tipo: string;
   producto_id: string | null;
   detalle: string | null;
+  /** true = se cambió; false = se revisó y estaba bien ("OK"). */
+  cambiado: boolean;
 };
 
 export type PayloadService = {

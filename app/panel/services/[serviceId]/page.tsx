@@ -33,11 +33,11 @@ export default async function PaginaService({ params }: Props) {
          vehiculos(patente, marca, modelo, cliente_id, clientes(nombre)),
          sucursales(nombre),
          usuarios!usuario_id(nombre),
-         service_items(item_tipo, detalle, productos(nombre, marca))`,
+         service_items(item_tipo, detalle, cambiado, productos(nombre, marca))`,
       )
       .eq("id", serviceId)
       .maybeSingle(),
-    supabase.from("config_experiencia").select("color_primario").maybeSingle(),
+    supabase.from("config_experiencia").select("color_primario, color_carton").maybeSingle(),
   ]);
 
   const service = serviceRes.data;
@@ -68,10 +68,14 @@ export default async function PaginaService({ params }: Props) {
   const marcados = Object.fromEntries(
     service.service_items.map((i) => [
       i.item_tipo,
-      i.detalle ??
-        (i.productos
-          ? [i.productos.nombre, i.productos.marca].filter(Boolean).join(" ")
-          : null),
+      {
+        detalle:
+          i.detalle ??
+          (i.productos
+            ? [i.productos.nombre, i.productos.marca].filter(Boolean).join(" ")
+            : null),
+        cambiado: i.cambiado,
+      },
     ]),
   );
 
@@ -193,9 +197,11 @@ export default async function PaginaService({ params }: Props) {
             datos={{
               lubricentroNombre: sesion?.lubricentroNombre ?? "Tu lubricentro",
               colorTenant: configRes.data?.color_primario ?? "#0A0A0A",
+              colorPapel: configRes.data?.color_carton ?? null,
               fecha: service.fecha,
               kilometros: service.kilometros,
               aceiteTipo: service.aceite_tipo,
+              aceiteNombre: service.aceite_nombre,
               proxServiceKm: service.prox_service_km,
               marcados,
             }}

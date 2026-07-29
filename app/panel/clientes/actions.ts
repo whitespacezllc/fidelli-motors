@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { sesionParaEscribir } from "@/lib/auth/session";
+import { CUIT_FORMATO, normalizarCuit } from "@/lib/cuit";
 
 export type EstadoCliente = { error?: string; ok?: boolean };
 
@@ -16,13 +17,20 @@ function esErrorDeRed(error: { message?: string }): boolean {
 }
 
 type Campos =
-  | { ok: true; nombre: string; telefono: string; email: string | null }
+  | {
+      ok: true;
+      nombre: string;
+      telefono: string;
+      email: string | null;
+      cuit: string | null;
+    }
   | { ok: false; error: string };
 
 function leerCampos(formData: FormData): Campos {
   const nombre = String(formData.get("nombre") ?? "").trim();
   const telefono = String(formData.get("telefono") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim() || null;
+  const cuit = normalizarCuit(String(formData.get("cuit") ?? "")) || null;
 
   if (nombre.length < 2) {
     return { ok: false, error: "El nombre necesita al menos 2 caracteres." };
@@ -33,9 +41,15 @@ function leerCampos(formData: FormData): Campos {
       error: "Falta el teléfono. Es con lo que después vas a poder avisarle.",
     };
   }
+  // El CUIT es opcional, pero a medias no sirve para facturar: si se
+  // escribió algo, tienen que ser los 11 dígitos (el CHECK de la base
+  // rechazaría igual). El verificador NO bloquea — el form ya avisó.
+  if (cuit && cuit.length !== 11) {
+    return { ok: false, error: CUIT_FORMATO };
+  }
   // El email no se valida con formato ni bloquea la carga: es opcional a
   // propósito y un dato imperfecto es mejor que un alta trabada.
-  return { ok: true, nombre, telefono, email };
+  return { ok: true, nombre, telefono, email, cuit };
 }
 
 export async function crearCliente(
@@ -54,6 +68,7 @@ export async function crearCliente(
     nombre: campos.nombre,
     telefono: campos.telefono,
     email: campos.email,
+    cuit: campos.cuit,
   });
 
   if (error) {
@@ -82,6 +97,7 @@ export async function editarCliente(
       nombre: campos.nombre,
       telefono: campos.telefono,
       email: campos.email,
+      cuit: campos.cuit,
     })
     .eq("id", id);
 

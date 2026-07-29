@@ -158,7 +158,7 @@ function CasoC({ patente, alVolver }: { patente: string; alVolver: () => void })
           />
         </div>
 
-        <div className="sm:col-span-2">
+        <div>
           <label htmlFor="email" className={CLASE_LABEL}>
             Email <span className="text-ink-40 normal-case">(si lo da)</span>
           </label>
@@ -168,6 +168,18 @@ function CasoC({ patente, alVolver }: { patente: string; alVolver: () => void })
             type="email"
             inputMode="email"
             className={CLASE_CAMPO}
+          />
+        </div>
+
+        <div>
+          <label htmlFor="cuit" className={CLASE_LABEL}>
+            CUIL/CUIT <span className="text-ink-40 normal-case">(si lo da)</span>
+          </label>
+          <input
+            id="cuit"
+            name="cuit"
+            inputMode="numeric"
+            className={`${CLASE_CAMPO} tabular-nums`}
           />
         </div>
       </div>

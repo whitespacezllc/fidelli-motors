@@ -23,7 +23,7 @@ export default async function PaginaExperiencia() {
   const [configRes, lubriRes] = await Promise.all([
     supabase
       .from("config_experiencia")
-      .select("logo_url, color_primario, campos_visibles, datos_contacto, updated_at")
+      .select("logo_url, color_primario, color_fondo, color_carton, campos_visibles, datos_contacto, updated_at")
       .maybeSingle(),
     supabase.from("lubricentros").select("slug").maybeSingle(),
   ]);
@@ -43,6 +43,8 @@ export default async function PaginaExperiencia() {
   const contacto = (config.datos_contacto ?? {}) as Record<string, string | null>;
   const datos: ConfigExperiencia = {
     colorPrimario: config.color_primario,
+    colorFondo: config.color_fondo ?? "",
+    colorCarton: config.color_carton ?? "",
     camposVisibles: (config.campos_visibles ?? {}) as Record<string, boolean>,
     whatsapp: contacto.whatsapp ?? "",
     instagram: contacto.instagram ?? "",
