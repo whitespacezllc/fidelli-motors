@@ -64,15 +64,23 @@ const CLASE_CAMPO =
 const CLASE_LABEL =
   "mb-1.5 block text-label font-semibold tracking-[0.06em] text-ink-60 uppercase";
 
-// El próximo service guardado pudo salir de los atajos o de un número a
-// mano: al reabrir, se vuelve al atajo si la cuenta coincide.
+// Los tres saltos del cartón. Sin "Otro": la carga es a botón fijo — un
+// número a mano era la puerta a un 100.000 de más que ensucia la
+// predicción de retorno.
+const SALTOS = ["8", "10", "15"] as const;
+type Salto = (typeof SALTOS)[number];
+
+// El próximo service guardado pudo salir de los atajos o —en services de
+// antes de sacar "Otro"— de un número a mano: al reabrir, se vuelve al
+// atajo si la cuenta coincide y, si no, el valor guardado se conserva
+// como un botón más ("legado"), para que editar otra cosa no lo pise.
 function proxInicial(edicion: ServiceEnEdicion | undefined) {
-  if (!edicion) return { modo: "10" as const, manual: "" };
-  if (edicion.proxServiceKm === edicion.kilometros + 10000)
-    return { modo: "10" as const, manual: "" };
-  if (edicion.proxServiceKm === edicion.kilometros + 15000)
-    return { modo: "15" as const, manual: "" };
-  return { modo: "otro" as const, manual: String(edicion.proxServiceKm) };
+  if (!edicion) return { modo: "10" as const, legado: 0 };
+  for (const salto of SALTOS) {
+    if (edicion.proxServiceKm === edicion.kilometros + Number(salto) * 1000)
+      return { modo: salto, legado: 0 };
+  }
+  return { modo: "legado" as const, legado: edicion.proxServiceKm };
 }
 
 export function Carton({
@@ -96,10 +104,11 @@ export function Carton({
     edicion?.marcados ?? {},
   );
   const [abiertos, setAbiertos] = useState<Record<string, boolean>>({});
-  const [proxModo, setProxModo] = useState<"10" | "15" | "otro">(
+  const [proxModo, setProxModo] = useState<Salto | "legado">(
     proxInicial(edicion).modo,
   );
-  const [proxManual, setProxManual] = useState(proxInicial(edicion).manual);
+  // Solo existe al editar un service viejo cargado con "Otro".
+  const proxLegado = proxInicial(edicion).legado;
   const [observaciones, setObservaciones] = useState(
     edicion?.observaciones ?? "",
   );
@@ -132,9 +141,9 @@ export function Carton({
     aceiteTipo.trim().length > 0 && !esViscosidadValida(aceiteTipo);
 
   const proxKm = useMemo(() => {
-    if (proxModo === "otro") return Number(proxManual.replace(/\D/g, "")) || 0;
-    return kmCargado ? kmNum + (proxModo === "10" ? 10000 : 15000) : 0;
-  }, [proxModo, proxManual, kmCargado, kmNum]);
+    if (proxModo === "legado") return proxLegado;
+    return kmCargado ? kmNum + Number(proxModo) * 1000 : 0;
+  }, [proxModo, proxLegado, kmCargado, kmNum]);
 
   const aceitesDelCatalogo = productos.filter((p) => p.categoria === "aceite");
   const nombreAceite =
@@ -629,30 +638,29 @@ export function Carton({
         <div>
           <span className={CLASE_LABEL}>Próximo service</span>
           <div className="flex flex-wrap gap-2">
-            {(["10", "15", "otro"] as const).map((modo) => (
-              <button
-                key={modo}
-                type="button"
-                onClick={() => setProxModo(modo)}
-                aria-pressed={proxModo === modo}
-                className={`flex h-11 items-center rounded-md border px-3.5 text-ui tabular-nums transition-colors ${
-                  proxModo === modo
-                    ? "border-ink bg-ink font-semibold text-white"
-                    : "border-line bg-base text-ink-60 hover:bg-surface"
-                }`}
-              >
-                {modo === "otro" ? "Otro" : `+${formatearKm(Number(modo) * 1000)} km`}
-              </button>
-            ))}
+            {/* El botón "legado" solo aparece editando un service viejo que
+                se cargó con un número a mano: conserva ese valor sin
+                obligar a recalcularlo con los saltos de hoy. */}
+            {([...SALTOS, ...(proxLegado ? (["legado"] as const) : [])]).map(
+              (modo) => (
+                <button
+                  key={modo}
+                  type="button"
+                  onClick={() => setProxModo(modo)}
+                  aria-pressed={proxModo === modo}
+                  className={`flex h-11 items-center rounded-md border px-3.5 text-ui tabular-nums transition-colors ${
+                    proxModo === modo
+                      ? "border-ink bg-ink font-semibold text-white"
+                      : "border-line bg-base text-ink-60 hover:bg-surface"
+                  }`}
+                >
+                  {modo === "legado"
+                    ? `${formatearKm(proxLegado)} km`
+                    : `+${formatearKm(Number(modo) * 1000)} km`}
+                </button>
+              ),
+            )}
           </div>
-          {proxModo === "otro" && (
-            <input
-              inputMode="numeric"
-              value={proxManual}
-              onChange={(e) => setProxManual(e.target.value)}
-              className={`${CLASE_CAMPO} mt-2 tabular-nums`}
-            />
-          )}
           {proxKm > 0 && (
             <p className="mt-1.5 text-label text-ink-60 tabular-nums">
               Próximo service: {formatearKm(proxKm)} km
