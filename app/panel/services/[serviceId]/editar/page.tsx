@@ -55,7 +55,7 @@ export default async function PaginaEditarService({ params }: Props) {
         .select("id, nombre, marca, categoria")
         .eq("activo", true)
         .order("nombre"),
-      supabase.from("config_experiencia").select("color_primario").maybeSingle(),
+      supabase.from("config_experiencia").select("color_primario, color_carton").maybeSingle(),
     ]);
 
   const service = serviceRes.data;
@@ -138,6 +138,7 @@ export default async function PaginaEditarService({ params }: Props) {
           clienteNombre: service.vehiculos?.clientes?.nombre ?? "",
           lubricentroNombre: sesion?.lubricentroNombre ?? "Tu lubricentro",
           colorTenant: configRes.data?.color_primario ?? "#0A0A0A",
+          colorPapel: configRes.data?.color_carton ?? null,
           sucursales: sucursalesRes.data ?? [],
           sucursalInicial: service.sucursal_id,
           productos: (productosRes.data ?? []).map((p) => ({

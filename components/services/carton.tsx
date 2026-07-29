@@ -34,6 +34,8 @@ export type DatosCarton = {
   colorTenant: string;
   sucursales: Sucursal[];
   sucursalInicial: string;
+  /** El papel del cartón del tenant (config_experiencia). */
+  colorPapel: string | null;
   productos: Producto[];
   ultimoService: { fecha: string; kilometros: number } | null;
   serviceDeHoy: { hora: string; sucursal: string; kilometros: number } | null;
@@ -257,6 +259,7 @@ export function Carton({
     aceiteTipo: normalizarViscosidad(aceiteTipo),
     aceiteNombre: nombreAceite,
     proxServiceKm: proxKm,
+    colorPapel: datos.colorPapel,
     marcados: Object.fromEntries(
       Object.entries(marcados).map(([tipo, detalle]) => [
         tipo,

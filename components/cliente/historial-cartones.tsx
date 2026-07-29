@@ -14,10 +14,12 @@ export function HistorialCartones({
   services,
   lubricentroNombre,
   colorTenant,
+  colorPapel = null,
 }: {
   services: ServiceCarton[];
   lubricentroNombre: string;
   colorTenant: string;
+  colorPapel?: string | null;
 }) {
   if (services.length === 0) return null;
 
@@ -68,6 +70,7 @@ export function HistorialCartones({
                     aceiteTipo: s.aceiteTipo,
                     aceiteNombre: s.aceiteNombre,
                     proxServiceKm: s.proxServiceKm,
+                    colorPapel,
                     marcados: marcadosDe(s),
                   }}
                 />

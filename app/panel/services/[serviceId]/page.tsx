@@ -37,7 +37,7 @@ export default async function PaginaService({ params }: Props) {
       )
       .eq("id", serviceId)
       .maybeSingle(),
-    supabase.from("config_experiencia").select("color_primario").maybeSingle(),
+    supabase.from("config_experiencia").select("color_primario, color_carton").maybeSingle(),
   ]);
 
   const service = serviceRes.data;
@@ -197,6 +197,7 @@ export default async function PaginaService({ params }: Props) {
             datos={{
               lubricentroNombre: sesion?.lubricentroNombre ?? "Tu lubricentro",
               colorTenant: configRes.data?.color_primario ?? "#0A0A0A",
+              colorPapel: configRes.data?.color_carton ?? null,
               fecha: service.fecha,
               kilometros: service.kilometros,
               aceiteTipo: service.aceite_tipo,

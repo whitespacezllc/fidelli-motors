@@ -53,7 +53,17 @@ export default async function PaginaLanding({ params, searchParams }: Props) {
     // El único lugar donde entra el color del lubri: de acá para abajo,
     // `bg-tenant`, `text-tenant` y el anillo de foco lo leen de las cuatro
     // variables. El shell de arriba es neutro.
-    <div style={variablesTenant(paleta)} className="flex min-h-full flex-1 flex-col">
+    <div
+      style={{
+        ...variablesTenant(paleta),
+        // El fondo elegido por el lubri. Sin configurar, el blanco de
+        // siempre — la clase no cambia, solo se pisa el color.
+        ...(lubricentro.colorFondo
+          ? { backgroundColor: lubricentro.colorFondo }
+          : {}),
+      }}
+      className="flex min-h-full flex-1 flex-col"
+    >
       {/* El buscador ocupa el centro de la pantalla apenas carga, sin
           scroll para llegar al input: es lo primero que pide el flow. La
           misma estructura sostiene los tres tamaños —cambia el ancho y el

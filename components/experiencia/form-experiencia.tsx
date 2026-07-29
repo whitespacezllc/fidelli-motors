@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import Link from "next/link";
 import { Boton } from "@/components/ui/boton";
-import { luminancia, paletaTenant } from "@/lib/cliente/color";
+import { esTonoClaro, luminancia, paletaTenant } from "@/lib/cliente/color";
 import {
   guardarExperiencia,
   type EstadoExperiencia,
@@ -47,11 +47,121 @@ const CAMPOS_VISIBLES = [
 
 export type ConfigExperiencia = {
   colorPrimario: string;
+  /** "" = el blanco de siempre. */
+  colorFondo: string;
+  colorCarton: string;
   camposVisibles: Record<string, boolean>;
   whatsapp: string;
   instagram: string;
   facebook: string;
 };
+
+// Tonos curados para fondo y papel: todos claros (pasan la guarda de
+// luminancia con margen). El picker libre existe igual — pero estos son
+// el camino de una sola tocada.
+const TONOS_FONDO = [
+  { nombre: "Crema", hex: "#FAF3E3" },
+  { nombre: "Arena", hex: "#F1EAE0" },
+  { nombre: "Perla", hex: "#F4F4F5" },
+  { nombre: "Celeste", hex: "#E9F1F7" },
+  { nombre: "Verde suave", hex: "#EBF3EC" },
+];
+
+const TONOS_CARTON = [
+  { nombre: "Papel crema", hex: "#FBF5E6" },
+  { nombre: "Arena", hex: "#F1EAE0" },
+  { nombre: "Perla", hex: "#F4F4F5" },
+];
+
+// El selector de un tono claro: Blanco + los curados + un picker libre.
+// El estado vive acá y viaja en un input hidden; "" significa "blanco de
+// siempre" y se guarda como null.
+function SelectorTono({
+  nombre,
+  etiqueta,
+  ayuda,
+  tonos,
+  valorInicial,
+}: {
+  nombre: string;
+  etiqueta: string;
+  ayuda: string;
+  tonos: { nombre: string; hex: string }[];
+  valorInicial: string;
+}) {
+  const [valor, setValor] = useState(valorInicial.toUpperCase());
+
+  const esPreset =
+    valor === "" || tonos.some((t) => t.hex.toUpperCase() === valor);
+  const valorValido = valor === "" || HEX.test(valor);
+  // La guarda de claridad: el texto de la landing es tinta oscura fija y
+  // se lee al sol. La action rechaza igual — acá se avisa antes.
+  const muyOscuro = valor !== "" && HEX.test(valor) && !esTonoClaro(valor);
+
+  const claseChip = (activo: boolean) =>
+    `flex min-h-11 items-center gap-2 rounded-md border px-3 text-ui transition-colors ${
+      activo
+        ? "border-ink font-semibold text-ink"
+        : "border-line text-ink-60 hover:bg-surface"
+    }`;
+
+  return (
+    <div>
+      <p className="mb-1.5 text-label font-semibold tracking-[0.06em] text-ink-60 uppercase">
+        {etiqueta}
+      </p>
+      <input type="hidden" name={nombre} value={valor} />
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => setValor("")}
+          aria-pressed={valor === ""}
+          className={claseChip(valor === "")}
+        >
+          <span className="size-5 rounded-full border border-line bg-white" />
+          Blanco
+        </button>
+        {tonos.map((t) => (
+          <button
+            key={t.hex}
+            type="button"
+            onClick={() => setValor(t.hex.toUpperCase())}
+            aria-pressed={valor === t.hex.toUpperCase()}
+            className={claseChip(valor === t.hex.toUpperCase())}
+          >
+            <span
+              className="size-5 rounded-full border border-line"
+              style={{ backgroundColor: t.hex }}
+            />
+            {t.nombre}
+          </button>
+        ))}
+        {/* El tono libre: el picker nativo limitado por la misma guarda */}
+        <label
+          className={`${claseChip(!esPreset)} cursor-pointer`}
+          title="Elegir otro tono"
+        >
+          <input
+            type="color"
+            value={valorValido && valor !== "" ? valor : "#FFFFFF"}
+            onChange={(e) => setValor(e.target.value.toUpperCase())}
+            className="size-5 cursor-pointer rounded-full border-0 bg-transparent p-0"
+            aria-label={`Otro tono para ${etiqueta.toLowerCase()}`}
+          />
+          Otro…
+        </label>
+      </div>
+      <p className="mt-1.5 text-label text-ink-60">{ayuda}</p>
+      {muyOscuro && (
+        <p className="mt-2 rounded-md bg-urgente-soft px-3.5 py-3 text-ui text-urgente">
+          Ese tono es muy oscuro para acá: el texto de la página es oscuro y
+          tu cliente la lee al sol. Elegí un tono claro — no se puede guardar
+          uno oscuro.
+        </p>
+      )}
+    </div>
+  );
+}
 
 function AvisoContraste({ hex }: { hex: string }) {
   if (!HEX.test(hex)) return null;
@@ -107,34 +217,63 @@ export function FormExperiencia({ config }: { config: ConfigExperiencia }) {
         </p>
       )}
 
-      {/* ---------- El color ---------- */}
+      {/* ---------- Los colores ---------- */}
       <section>
-        <h2 className="mb-3 font-brand text-body font-bold text-ink">Tu color</h2>
-        <div className="flex flex-wrap items-center gap-3">
-          <input
-            type="color"
-            value={colorValido ? color : "#0A0A0A"}
-            onChange={(e) => setColor(e.target.value.toUpperCase())}
-            aria-label="Elegir color"
-            className="h-12 w-16 shrink-0 cursor-pointer rounded-md border border-line bg-base p-1"
-          />
-          <div className="w-36">
-            <input
-              name="color"
-              value={color}
-              onChange={(e) => {
-                const v = e.target.value.trim();
-                setColor(v.startsWith("#") || v === "" ? v.toUpperCase() : `#${v.toUpperCase()}`);
-              }}
-              aria-label="Código hex del color"
-              className={`${CLASE_CAMPO} plate text-center`}
-            />
+        <h2 className="mb-1 font-brand text-body font-bold text-ink">
+          Los colores de tu página
+        </h2>
+        <p className="mb-3 text-ui text-ink-60">
+          Tu color de marca pinta botones y detalles; el fondo y el papel del
+          cartón son el ambiente. Mirá la vista previa al guardar.
+        </p>
+        <div className="flex flex-col gap-5">
+          <div>
+            <p className="mb-1.5 text-label font-semibold tracking-[0.06em] text-ink-60 uppercase">
+              Color de tu marca
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                type="color"
+                value={colorValido ? color : "#0A0A0A"}
+                onChange={(e) => setColor(e.target.value.toUpperCase())}
+                aria-label="Elegir color"
+                className="h-12 w-16 shrink-0 cursor-pointer rounded-md border border-line bg-base p-1"
+              />
+              <div className="w-36">
+                <input
+                  name="color"
+                  value={color}
+                  onChange={(e) => {
+                    const v = e.target.value.trim();
+                    setColor(v.startsWith("#") || v === "" ? v.toUpperCase() : `#${v.toUpperCase()}`);
+                  }}
+                  aria-label="Código hex del color"
+                  className={`${CLASE_CAMPO} plate text-center`}
+                />
+              </div>
+              <span className="text-label text-ink-60">
+                Si tenés manual de marca, pegá el código acá.
+              </span>
+            </div>
+            <AvisoContraste hex={color} />
           </div>
-          <span className="text-label text-ink-60">
-            Si tenés manual de marca, pegá el código acá.
-          </span>
+
+          <SelectorTono
+            nombre="color_fondo"
+            etiqueta="Fondo de la página"
+            ayuda="El color detrás de todo, en tu página y en la del cartón."
+            tonos={TONOS_FONDO}
+            valorInicial={config.colorFondo}
+          />
+
+          <SelectorTono
+            nombre="color_carton"
+            etiqueta="Papel del cartón"
+            ayuda="El color de la tarjeta que ve tu cliente — como elegir el papel."
+            tonos={TONOS_CARTON}
+            valorInicial={config.colorCarton}
+          />
         </div>
-        <AvisoContraste hex={color} />
       </section>
 
       {/* ---------- Qué ve el cliente ---------- */}

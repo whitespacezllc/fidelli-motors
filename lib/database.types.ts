@@ -145,6 +145,8 @@ export type Database = {
       config_experiencia: {
         Row: {
           campos_visibles: Json
+          color_carton: string | null
+          color_fondo: string | null
           color_primario: string
           datos_contacto: Json
           logo_url: string | null
@@ -153,6 +155,8 @@ export type Database = {
         }
         Insert: {
           campos_visibles?: Json
+          color_carton?: string | null
+          color_fondo?: string | null
           color_primario?: string
           datos_contacto?: Json
           logo_url?: string | null
@@ -161,6 +165,8 @@ export type Database = {
         }
         Update: {
           campos_visibles?: Json
+          color_carton?: string | null
+          color_fondo?: string | null
           color_primario?: string
           datos_contacto?: Json
           logo_url?: string | null

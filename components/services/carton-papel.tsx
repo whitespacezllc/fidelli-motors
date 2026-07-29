@@ -24,6 +24,9 @@ export type CartonDatos = {
   // "mostrar productos" — la fila no se dibuja.
   aceiteNombre?: string | null;
   proxServiceKm: number;
+  // El papel del cartón, del diseño de experiencia del tenant. null o
+  // ausente = el blanco de siempre. Llega ya saneado (hexONull).
+  colorPapel?: string | null;
   // tipo → estado del renglón (ausente = no se atendió)
   marcados: Record<string, RenglonMarcado>;
 };
@@ -154,6 +157,9 @@ export function CartonPapel({
   const estilo = {
     "--tn": paleta.primary,
     "--tn-ink": paleta.ink,
+    // El papel pinta por style y no por clase: viene de la base. Sin
+    // color configurado no se emite nada y manda el bg-base de siempre.
+    ...(datos.colorPapel ? { backgroundColor: datos.colorPapel } : {}),
   } as React.CSSProperties;
 
   return (

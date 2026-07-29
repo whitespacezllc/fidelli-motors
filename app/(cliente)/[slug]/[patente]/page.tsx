@@ -45,7 +45,15 @@ export default async function PaginaVehiculo({ params }: Props) {
   if (resultado.estado === "patente_no_encontrada") {
     const paleta = paletaTenant(resultado.lubricentro.colorPrimario);
     return (
-      <div style={variablesTenant(paleta)} className="flex min-h-full flex-1 flex-col">
+      <div
+        style={{
+          ...variablesTenant(paleta),
+          ...(resultado.lubricentro.colorFondo
+            ? { backgroundColor: resultado.lubricentro.colorFondo }
+            : {}),
+        }}
+        className="flex min-h-full flex-1 flex-col"
+      >
         <main className="flex flex-1 flex-col px-5 py-8 sm:px-8 sm:py-12">
           <div className="m-auto w-full max-w-md sm:max-w-xl">
             <PatenteNoEncontrada
@@ -65,7 +73,15 @@ export default async function PaginaVehiculo({ params }: Props) {
   const anteriores = services.slice(1);
 
   return (
-    <div style={variablesTenant(paleta)} className="flex min-h-full flex-1 flex-col">
+    <div
+      style={{
+        ...variablesTenant(paleta),
+        ...(lubricentro.colorFondo
+          ? { backgroundColor: lubricentro.colorFondo }
+          : {}),
+      }}
+      className="flex min-h-full flex-1 flex-col"
+    >
       <main className="flex-1 px-4 py-6 sm:px-8 sm:py-10">
         <div className="mx-auto w-full max-w-md sm:max-w-xl lg:max-w-5xl">
           <CabeceraVehiculo lubricentro={lubricentro} vehiculo={vehiculo} />
@@ -114,6 +130,7 @@ export default async function PaginaVehiculo({ params }: Props) {
                     // no se dibuja.
                     aceiteNombre: ultimo.aceiteNombre,
                     proxServiceKm: ultimo.proxServiceKm,
+                    colorPapel: lubricentro.colorCarton,
                     marcados: marcadosDe(ultimo),
                   }}
                 />
@@ -138,6 +155,7 @@ export default async function PaginaVehiculo({ params }: Props) {
                   services={anteriores}
                   lubricentroNombre={lubricentro.nombre}
                   colorTenant={paleta.primary}
+                  colorPapel={lubricentro.colorCarton}
                 />
 
                 <BotonTurno

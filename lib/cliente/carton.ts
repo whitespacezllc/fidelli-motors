@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { normalizarPatente } from "@/lib/texto";
+import { hexONull } from "@/lib/cliente/color";
 import type {
   DatosContacto,
   Lubricentro,
@@ -60,6 +61,8 @@ type LubricentroJson = {
   nombre?: string;
   logo_url?: string | null;
   color_primario?: string;
+  color_fondo?: string | null;
+  color_carton?: string | null;
   datos_contacto?: DatosContacto;
   sucursales?: SucursalPublica[];
 };
@@ -100,6 +103,8 @@ function aLubricentro(json: LubricentroJson | undefined): Lubricentro {
     nombre: json?.nombre ?? "",
     logoUrl: json?.logo_url ?? null,
     colorPrimario: json?.color_primario ?? "#0A0A0A",
+    colorFondo: hexONull(json?.color_fondo),
+    colorCarton: hexONull(json?.color_carton),
     contacto: json?.datos_contacto ?? {},
     sucursales: json?.sucursales ?? [],
     premio: null,

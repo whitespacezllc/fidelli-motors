@@ -67,7 +67,7 @@ export default async function PaginaCarton({
         .order("fecha", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(5),
-      supabase.from("config_experiencia").select("color_primario").maybeSingle(),
+      supabase.from("config_experiencia").select("color_primario, color_carton").maybeSingle(),
       // El ciclo con reset, calculado en vivo contra la meta vigente.
       supabase.rpc("premio_disponible", { p_vehiculo_id: vehiculoId }),
     ]);
@@ -144,6 +144,7 @@ export default async function PaginaCarton({
           clienteNombre: vehiculo.clientes?.nombre ?? "",
           lubricentroNombre: sesion?.lubricentroNombre ?? "Tu lubricentro",
           colorTenant: configRes.data?.color_primario ?? "#0A0A0A",
+          colorPapel: configRes.data?.color_carton ?? null,
           sucursales,
           sucursalInicial,
           productos: (productosRes.data ?? []).map((p) => ({

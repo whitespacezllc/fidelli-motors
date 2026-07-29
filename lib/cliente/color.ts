@@ -78,6 +78,24 @@ export function paletaTenant(colorPrimario: string | null | undefined): PaletaTe
   };
 }
 
+// Un hex validado o null: la única forma segura de llevar un color del
+// jsonb a un atributo style. Cualquier otra cosa (o un hex a medias) se
+// descarta — null significa "el default de siempre".
+export function hexONull(hex: string | null | undefined): string | null {
+  return typeof hex === "string" && HEX.test(hex) ? hex.toUpperCase() : null;
+}
+
+// El piso de claridad para fondo y papel del cartón. La landing escribe
+// con tinta oscura fija (incluida la secundaria, más tenue) y Pedro la
+// lee al sol: por debajo de esta luminancia el texto gris deja de
+// cumplir contraste. 0.7 deja pasar cremas, arenas, perlas y pasteles —
+// exactamente el espacio sano para un fondo — y frena los tonos plenos.
+export const LUMINANCIA_MINIMA_FONDO = 0.7;
+
+export function esTonoClaro(hex: string): boolean {
+  return HEX.test(hex) && luminancia(hex) >= LUMINANCIA_MINIMA_FONDO;
+}
+
 // Los cuatro tokens de Tailwind, listos para un `style`. Se pisan los
 // `--color-tenant*` directamente y no una variable intermedia: ver la nota
 // en globals.css sobre por qué la indirección no heredaba.
