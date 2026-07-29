@@ -107,27 +107,24 @@ export default async function PaginaVehiculo({ params }: Props) {
                     fecha: ultimo.fecha,
                     kilometros: ultimo.kilometros,
                     aceiteTipo: ultimo.aceiteTipo,
+                    // El producto va EN el cartón (renglón "Aceite marca"):
+                    // pedido de Brothers — antes era una línea suelta acá
+                    // abajo y se perdía. Respeta campos_visibles sin lógica
+                    // propia: apagado, get_carton lo manda null y la fila
+                    // no se dibuja.
+                    aceiteNombre: ultimo.aceiteNombre,
                     proxServiceKm: ultimo.proxServiceKm,
                     marcados: marcadosDe(ultimo),
                   }}
                 />
-                {/* La sucursal y el producto van afuera de la grilla del
-                    papel: en el cartón físico ninguno tiene renglón. La
-                    sucursal se muestra para que el último service no quede
-                    asimétrico con el historial, que la indica en cada fila.
-                    Los dos respetan campos_visibles sin lógica propia: si
-                    el lubri apagó mostrar_sucursal o mostrar_productos,
-                    get_carton los manda en null y acá no se renderizan. */}
-                {(ultimo.sucursal || ultimo.aceiteNombre) && (
-                  <div className="mt-3 flex flex-col gap-1 text-center text-c-body text-ink-60">
-                    {ultimo.sucursal && <p>Hecho en {ultimo.sucursal}</p>}
-                    {ultimo.aceiteNombre && (
-                      <p>
-                        Aceite:{" "}
-                        <span className="text-ink">{ultimo.aceiteNombre}</span>
-                      </p>
-                    )}
-                  </div>
+                {/* La sucursal sí queda afuera: en el cartón físico no
+                    tiene renglón. Se muestra para que el último service no
+                    quede asimétrico con el historial, que la indica en
+                    cada fila. Respeta mostrar_sucursal vía get_carton. */}
+                {ultimo.sucursal && (
+                  <p className="mt-3 text-center text-c-body text-ink-60">
+                    Hecho en {ultimo.sucursal}
+                  </p>
                 )}
               </div>
 

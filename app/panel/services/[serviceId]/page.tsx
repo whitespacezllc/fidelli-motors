@@ -200,6 +200,7 @@ export default async function PaginaService({ params }: Props) {
               fecha: service.fecha,
               kilometros: service.kilometros,
               aceiteTipo: service.aceite_tipo,
+              aceiteNombre: service.aceite_nombre,
               proxServiceKm: service.prox_service_km,
               marcados,
             }}

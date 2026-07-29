@@ -255,6 +255,7 @@ export function Carton({
     fecha,
     kilometros: kmNum || 0,
     aceiteTipo: normalizarViscosidad(aceiteTipo),
+    aceiteNombre: nombreAceite,
     proxServiceKm: proxKm,
     marcados: Object.fromEntries(
       Object.entries(marcados).map(([tipo, detalle]) => [

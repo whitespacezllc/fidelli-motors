@@ -66,6 +66,7 @@ export function HistorialCartones({
                     fecha: s.fecha,
                     kilometros: s.kilometros,
                     aceiteTipo: s.aceiteTipo,
+                    aceiteNombre: s.aceiteNombre,
                     proxServiceKm: s.proxServiceKm,
                     marcados: marcadosDe(s),
                   }}

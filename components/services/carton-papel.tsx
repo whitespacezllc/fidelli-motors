@@ -18,6 +18,11 @@ export type CartonDatos = {
   fecha: string;
   kilometros: number;
   aceiteTipo: string;
+  // El producto usado como aceite de motor ("Elaion F50 · YPF"). Va EN el
+  // cartón, como renglón de la cabecera: en el papel el mecánico escribe
+  // la marca al lado del tipo. null = sin producto o el lubri apagó
+  // "mostrar productos" — la fila no se dibuja.
+  aceiteNombre?: string | null;
   proxServiceKm: number;
   // tipo → estado del renglón (ausente = no se atendió)
   marcados: Record<string, RenglonMarcado>;
@@ -175,6 +180,7 @@ export function CartonPapel({
           ["Fecha", formatearFecha(datos.fecha)],
           ["Kilómetros", formatearKm(datos.kilometros)],
           ["Aceite tipo", datos.aceiteTipo],
+          ...(datos.aceiteNombre ? [["Aceite marca", datos.aceiteNombre]] : []),
         ].map(([clave, valor]) => (
           <div key={clave} className="flex items-stretch border-b border-ink">
             <span
