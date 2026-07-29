@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/server";
 // acciones de este archivo escriben y van por sesionParaEscribir().
 // eslint-disable-next-line no-restricted-imports
 import { sesionParaEscribir, obtenerSesion } from "@/lib/auth/session";
+import { CUIT_FORMATO, normalizarCuit } from "@/lib/cuit";
 import {
   esPatenteValida,
   normalizar,
@@ -201,6 +202,7 @@ export async function crearClienteYVehiculo(
   const nombre = String(formData.get("nombre") ?? "").trim();
   const telefono = String(formData.get("telefono") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim();
+  const cuit = normalizarCuit(String(formData.get("cuit") ?? ""));
 
   if (nombre.length < 2) {
     return { error: "El nombre necesita al menos 2 caracteres." };
@@ -209,6 +211,11 @@ export async function crearClienteYVehiculo(
     return {
       error: "Falta el teléfono. Es con lo que después vas a poder avisarle.",
     };
+  }
+  // Opcional, pero a medias no sirve para facturar: si escribió algo,
+  // tienen que ser los 11 dígitos. El CHECK de la base rechazaría igual.
+  if (cuit && cuit.length !== 11) {
+    return { error: CUIT_FORMATO };
   }
 
   const v = leerVehiculo(formData);
@@ -228,6 +235,7 @@ export async function crearClienteYVehiculo(
     p_marca: v.marca ?? undefined,
     p_modelo: v.modelo ?? undefined,
     p_anio: v.anio ?? undefined,
+    p_cuit: cuit || undefined,
   });
 
   if (error) return { error: traducirError(error) };

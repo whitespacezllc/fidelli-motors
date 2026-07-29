@@ -107,6 +107,7 @@ export type Database = {
       clientes: {
         Row: {
           created_at: string
+          cuit: string | null
           email: string | null
           id: string
           lubricentro_id: string
@@ -115,6 +116,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          cuit?: string | null
           email?: string | null
           id?: string
           lubricentro_id: string
@@ -123,6 +125,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          cuit?: string | null
           email?: string | null
           id?: string
           lubricentro_id?: string
@@ -142,6 +145,8 @@ export type Database = {
       config_experiencia: {
         Row: {
           campos_visibles: Json
+          color_carton: string | null
+          color_fondo: string | null
           color_primario: string
           datos_contacto: Json
           logo_url: string | null
@@ -150,6 +155,8 @@ export type Database = {
         }
         Insert: {
           campos_visibles?: Json
+          color_carton?: string | null
+          color_fondo?: string | null
           color_primario?: string
           datos_contacto?: Json
           logo_url?: string | null
@@ -158,6 +165,8 @@ export type Database = {
         }
         Update: {
           campos_visibles?: Json
+          color_carton?: string | null
+          color_fondo?: string | null
           color_primario?: string
           datos_contacto?: Json
           logo_url?: string | null
@@ -532,6 +541,7 @@ export type Database = {
       }
       service_items: {
         Row: {
+          cambiado: boolean
           created_at: string
           detalle: string | null
           id: string
@@ -541,6 +551,7 @@ export type Database = {
           service_id: string
         }
         Insert: {
+          cambiado?: boolean
           created_at?: string
           detalle?: string | null
           id?: string
@@ -550,6 +561,7 @@ export type Database = {
           service_id: string
         }
         Update: {
+          cambiado?: boolean
           created_at?: string
           detalle?: string | null
           id?: string
@@ -897,6 +909,7 @@ export type Database = {
         Row: {
           cantidad_vehiculos: number | null
           created_at: string | null
+          cuit: string | null
           email: string | null
           id: string | null
           lubricentro_id: string | null
@@ -1093,6 +1106,7 @@ export type Database = {
       crear_cliente_con_vehiculo: {
         Args: {
           p_anio?: number
+          p_cuit?: string
           p_email: string
           p_marca?: string
           p_modelo?: string

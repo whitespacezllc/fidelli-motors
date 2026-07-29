@@ -6,6 +6,7 @@ import { clasesBoton } from "@/components/ui/boton";
 import { DialogCliente } from "@/components/clientes/dialog-cliente";
 import { SeccionVehiculos } from "@/components/vehiculos/seccion-vehiculos";
 import { estadoService } from "@/lib/servicios";
+import { formatearCuit } from "@/lib/cuit";
 import { formatearFecha, formatearMesAnio } from "@/lib/fechas";
 
 export const metadata: Metadata = { title: "Cliente — Fidelli Motors" };
@@ -25,7 +26,7 @@ export default async function FichaCliente({
   const { data: cliente } = await supabase
     .from("vista_clientes")
     .select(
-      "id, nombre, telefono, email, created_at, cantidad_vehiculos, ultimo_service_fecha",
+      "id, nombre, telefono, email, cuit, created_at, cantidad_vehiculos, ultimo_service_fecha",
     )
     .eq("id", id)
     .maybeSingle();
@@ -121,6 +122,8 @@ export default async function FichaCliente({
   const contacto = [
     cliente.telefono,
     cliente.email,
+    // Con guiones, como se lee en una factura.
+    cliente.cuit ? `CUIT ${formatearCuit(cliente.cuit)}` : null,
     cliente.created_at
       ? `cliente desde ${formatearMesAnio(cliente.created_at)}`
       : null,
@@ -156,6 +159,7 @@ export default async function FichaCliente({
             nombre: cliente.nombre,
             telefono: cliente.telefono ?? "",
             email: cliente.email,
+            cuit: cliente.cuit,
           }}
         />
       </header>
