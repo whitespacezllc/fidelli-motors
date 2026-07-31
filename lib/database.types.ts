@@ -378,6 +378,68 @@ export type Database = {
           },
         ]
       }
+      notas_vehiculo: {
+        Row: {
+          contenido: string
+          created_at: string
+          id: string
+          lubricentro_id: string
+          updated_at: string
+          usuario_id: string
+          vehiculo_id: string
+          visible_cliente: boolean
+        }
+        Insert: {
+          contenido: string
+          created_at?: string
+          id?: string
+          lubricentro_id: string
+          updated_at?: string
+          usuario_id: string
+          vehiculo_id: string
+          visible_cliente?: boolean
+        }
+        Update: {
+          contenido?: string
+          created_at?: string
+          id?: string
+          lubricentro_id?: string
+          updated_at?: string
+          usuario_id?: string
+          vehiculo_id?: string
+          visible_cliente?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notas_vehiculo_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notas_vehiculo_usuario_id_fkey"
+            columns: ["usuario_id"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notas_vehiculo_vehiculo_id_fkey"
+            columns: ["vehiculo_id"]
+            isOneToOne: false
+            referencedRelation: "vehiculos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notas_vehiculo_vehiculo_id_fkey"
+            columns: ["vehiculo_id"]
+            isOneToOne: false
+            referencedRelation: "vista_vehiculos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pagos: {
         Row: {
           created_at: string

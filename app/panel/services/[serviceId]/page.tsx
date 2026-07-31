@@ -230,7 +230,7 @@ export default async function PaginaService({ params }: Props) {
           </dd>
           {service.observaciones && (
             <>
-              <dt className="text-ink-60">Observaciones</dt>
+              <dt className="text-ink-60">Observaciones del service</dt>
               <dd className="text-ink">{service.observaciones}</dd>
             </>
           )}

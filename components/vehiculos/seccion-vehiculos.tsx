@@ -1,5 +1,9 @@
 import Link from "next/link";
 import { DialogVehiculo } from "@/components/vehiculos/dialog-vehiculo";
+import {
+  NotasVehiculo,
+  type NotaDelVehiculo,
+} from "@/components/notas/notas-vehiculo";
 import { BadgeEstado } from "@/components/services/badge-estado";
 import { IconoPremio } from "@/components/iconos";
 import { formatearFecha } from "@/lib/fechas";
@@ -41,6 +45,7 @@ type Vehiculo = {
   fidelizacion?: Fidelizacion | null;
   canjes?: Canje[];
   patenteBloqueada?: boolean;
+  notas?: NotaDelVehiculo[];
 };
 
 // El progreso del ciclo y los canjes ya hechos. El dorado es el único
@@ -153,6 +158,9 @@ function TarjetaVehiculo({
       </div>
 
       <Fidelizacion vehiculo={vehiculo} />
+
+      {/* Las recomendaciones sobre EL AUTO — sobreviven al service. */}
+      <NotasVehiculo vehiculoId={vehiculo.id} notas={vehiculo.notas ?? []} />
 
       {/* El historial del hi-fi (pantalla 4): cada service con su estado,
           y la fila entera lleva al cartón. */}

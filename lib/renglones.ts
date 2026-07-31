@@ -30,6 +30,25 @@ export const GRUPOS = ["FILTROS", "ACEITES", "LÍQUIDOS", "ADITIVOS"] as const;
 // líquidos y aditivos van sueltos porque su nombre ya se explica solo.
 export const GRUPOS_CON_ETIQUETA_EN_PAPEL = ["FILTROS", "ACEITES"];
 
+// Las once viscosidades de uso corriente, en orden ascendente — la
+// convención del rubro. Es una CONSTANTE y no una tabla: la viscosidad es
+// un estándar de la industria (SAE J300), no una decisión comercial de
+// cada lubricentro. Los chips de la carga salen de acá; el texto libre
+// sigue existiendo para lo que no esté (un 0W16 de japoneses nuevos).
+export const VISCOSIDADES_SAE = [
+  "0W20",
+  "0W30",
+  "5W20",
+  "5W30",
+  "5W40",
+  "10W30",
+  "10W40",
+  "10W60",
+  "15W40",
+  "20W50",
+  "25W60",
+] as const;
+
 export const VISCOSIDAD_FORMATO =
   "La viscosidad se escribe como 15W40 o 5W30. Revisá el envase.";
 
