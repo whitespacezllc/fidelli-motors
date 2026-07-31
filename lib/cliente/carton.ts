@@ -33,6 +33,11 @@ export type ServiceCarton = {
   items: ItemCarton[];
 };
 
+export type NotaPublica = {
+  fecha: string;
+  contenido: string;
+};
+
 export type Fidelizacion = {
   disponible: boolean;
   servicesCiclo: number;
@@ -48,6 +53,9 @@ export type Carton = {
     modelo: string | null;
     anio: number | null;
   };
+  /** Recomendaciones del taller sobre el auto. Solo llegan las visibles:
+   *  get_carton filtra por nota, y la fecha es SIEMPRE la de creación. */
+  notas: NotaPublica[];
   fidelizacion: Fidelizacion | null;
   services: ServiceCarton[];
 };
@@ -76,6 +84,7 @@ type CartonJson = {
     modelo: string | null;
     anio: number | null;
   };
+  notas?: { fecha: string; contenido: string }[] | null;
   fidelizacion?: {
     disponible: boolean;
     services_ciclo: number;
@@ -144,6 +153,10 @@ export async function obtenerCarton(
         modelo: json.vehiculo?.modelo ?? null,
         anio: json.vehiculo?.anio ?? null,
       },
+      notas: (json.notas ?? []).map((n) => ({
+        fecha: n.fecha,
+        contenido: n.contenido,
+      })),
       fidelizacion: json.fidelizacion
         ? {
             disponible: json.fidelizacion.disponible,

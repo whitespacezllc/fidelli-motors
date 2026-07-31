@@ -95,8 +95,8 @@ export default async function FichaCliente({
 
   // La fidelización de cada auto. premio_disponible() es por vehículo y un
   // cliente tiene uno o dos: se piden en paralelo, no en cascada. Los
-  // canjes van en una sola consulta para todos.
-  const [premios, canjesRes] = await Promise.all([
+  // canjes y las notas van en una sola consulta para todos.
+  const [premios, canjesRes, notasRes] = await Promise.all([
     Promise.all(
       vehiculos.map((v) =>
         supabase.rpc("premio_disponible", { p_vehiculo_id: v.id }),
@@ -110,7 +110,27 @@ export default async function FichaCliente({
         vehiculos.map((v) => v.id),
       )
       .order("created_at", { ascending: false }),
+    supabase
+      .from("notas_vehiculo")
+      .select(
+        "id, vehiculo_id, contenido, visible_cliente, created_at, updated_at, usuarios(nombre)",
+      )
+      .in(
+        "vehiculo_id",
+        vehiculos.map((v) => v.id),
+      )
+      .order("created_at", { ascending: false }),
   ]);
+
+  const notasPorVehiculo = new Map<
+    string,
+    NonNullable<typeof notasRes.data>
+  >();
+  for (const n of notasRes.data ?? []) {
+    const lista = notasPorVehiculo.get(n.vehiculo_id) ?? [];
+    lista.push(n);
+    notasPorVehiculo.set(n.vehiculo_id, lista);
+  }
 
   const canjesPorVehiculo = new Map<string, typeof canjesRes.data>();
   for (const c of canjesRes.data ?? []) {
@@ -199,6 +219,14 @@ export default async function FichaCliente({
           patenteBloqueada: (servicesPorVehiculo.get(v.id) ?? []).some(
             (s) => !s.anulado,
           ),
+          notas: (notasPorVehiculo.get(v.id) ?? []).map((n) => ({
+            id: n.id,
+            contenido: n.contenido,
+            visibleCliente: n.visible_cliente,
+            createdAt: n.created_at,
+            updatedAt: n.updated_at,
+            autor: n.usuarios?.nombre ?? null,
+          })),
         }))}
       />
     </div>

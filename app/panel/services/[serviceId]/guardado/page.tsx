@@ -3,6 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { clasesBoton } from "@/components/ui/boton";
+import { NotaPostGuardado } from "@/components/notas/nota-post-guardado";
 import { formatearKm } from "@/lib/renglones";
 
 export const metadata: Metadata = { title: "Service guardado — Fidelli Motors" };
@@ -120,6 +121,14 @@ export default async function PaginaGuardado({
           </p>
         </div>
       )}
+
+      {/* La nota del vehículo: "vi las cubiertas para cambio" se anota
+          ACÁ, con el auto todavía en el pozo — no después navegando a la
+          ficha. Colapsada y opcional: el service ya está confirmado. */}
+      <NotaPostGuardado
+        vehiculoId={service.vehiculo_id}
+        primerNombre={primerNombre}
+      />
 
       {/* Salidas: el loop para el auto que sigue en el pozo, el cartón, el panel */}
       <div className="mt-5 flex flex-col gap-2.5">
