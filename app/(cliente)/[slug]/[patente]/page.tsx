@@ -6,6 +6,7 @@ import { formatearPatente, normalizarPatente } from "@/lib/texto";
 import { CabeceraVehiculo } from "@/components/cliente/cabecera-vehiculo";
 import { ProximoService } from "@/components/cliente/proximo-service";
 import { ProgresoFidelizacion } from "@/components/cliente/progreso-fidelizacion";
+import { Recomendaciones } from "@/components/cliente/recomendaciones";
 import { HistorialCartones } from "@/components/cliente/historial-cartones";
 import { BotonTurno } from "@/components/cliente/boton-turno";
 import { SinHistorial } from "@/components/cliente/sin-historial";
@@ -67,7 +68,8 @@ export default async function PaginaVehiculo({ params }: Props) {
     );
   }
 
-  const { lubricentro, vehiculo, fidelizacion, services } = resultado.carton;
+  const { lubricentro, vehiculo, notas, fidelizacion, services } =
+    resultado.carton;
   const paleta = paletaTenant(lubricentro.colorPrimario);
   const ultimo = services[0] ?? null;
   const anteriores = services.slice(1);
@@ -89,6 +91,8 @@ export default async function PaginaVehiculo({ params }: Props) {
           {!ultimo ? (
             <div className="mt-6 flex flex-col gap-6 sm:mt-8 sm:gap-8">
               <SinHistorial />
+              {/* Una nota puede existir antes del primer service cargado. */}
+              <Recomendaciones notas={notas} />
               <BotonTurno lubricentro={lubricentro} patente={vehiculo.patente} />
             </div>
           ) : (
@@ -145,8 +149,14 @@ export default async function PaginaVehiculo({ params }: Props) {
                 )}
               </div>
 
-              {/* 3. Fidelización, historial y el único CTA */}
+              {/* 3. Recomendaciones, fidelización, historial y el CTA.
+                  Las notas van primero: después del cartón y antes de los
+                  cartones anteriores — es información sobre el auto, y
+                  "cubiertas para cambio" importa más que el progreso del
+                  premio. */}
               <div className="flex flex-col gap-6 sm:gap-8 lg:col-start-2 lg:row-start-2">
+                <Recomendaciones notas={notas} />
+
                 {fidelizacion && (
                   <ProgresoFidelizacion fidelizacion={fidelizacion} />
                 )}
