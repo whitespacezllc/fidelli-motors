@@ -8,6 +8,7 @@ import { CartonPapel } from "@/components/services/carton-papel";
 import {
   RENGLONES,
   GRUPOS,
+  VISCOSIDADES_SAE,
   esViscosidadValida,
   normalizarViscosidad,
   formatearKm,
@@ -466,6 +467,31 @@ export function Carton({
                 autoComplete="off"
                 className={`${CLASE_CAMPO} tabular-nums`}
               />
+              {/* Las once SAE de un tap, en el orden del rubro y SIEMPRE en
+                  el mismo lugar: la posición fija hace memoria muscular.
+                  Ninguna viene marcada — el campo arranca vacío a propósito
+                  (la viscosidad nunca se autocompleta) — y el texto libre
+                  sigue: el que tiene el envase en la mano sabe más. */}
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {VISCOSIDADES_SAE.map((v) => {
+                  const activa = normalizarViscosidad(aceiteTipo) === v;
+                  return (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setAceiteTipo(v)}
+                      aria-pressed={activa}
+                      className={`flex h-11 items-center rounded-md border px-2.5 text-ui tabular-nums transition-colors ${
+                        activa
+                          ? "border-ink bg-ink font-semibold text-white"
+                          : "border-line bg-base text-ink-60 hover:bg-surface"
+                      }`}
+                    >
+                      {v}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
             <div className="sm:flex-[1.4]">
               <label htmlFor="aceite-producto" className={CLASE_LABEL}>
@@ -727,7 +753,7 @@ export function Carton({
         {mostrarObs ? (
           <div>
             <label htmlFor="obs" className={CLASE_LABEL}>
-              Observaciones
+              Observaciones del service
             </label>
             <textarea
               id="obs"
@@ -736,6 +762,10 @@ export function Carton({
               rows={3}
               className="w-full rounded-md border border-line bg-base px-3.5 py-3 text-body text-ink"
             />
+            <p className="mt-1.5 text-label text-ink-60">
+              Sobre ESTA visita. Para avisos sobre el auto (cubiertas,
+              frenos…) usá las notas del vehículo, en la ficha del cliente.
+            </p>
           </div>
         ) : (
           <button
@@ -743,7 +773,7 @@ export function Carton({
             onClick={() => setMostrarObs(true)}
             className="min-h-11 self-start justify-self-start text-ui font-semibold text-ink-60"
           >
-            + Agregar observaciones
+            + Observaciones del service
           </button>
         )}
         </div>
