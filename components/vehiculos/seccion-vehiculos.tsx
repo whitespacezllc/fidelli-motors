@@ -44,7 +44,7 @@ type Vehiculo = {
   services?: ServiceDelVehiculo[];
   fidelizacion?: Fidelizacion | null;
   canjes?: Canje[];
-  patenteBloqueada?: boolean;
+  primerServiceEn?: string | null;
   notas?: NotaDelVehiculo[];
 };
 
