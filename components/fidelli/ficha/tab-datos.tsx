@@ -6,6 +6,8 @@ import { filtroClientes } from "@/lib/clientes";
 import { normalizarPatente } from "@/lib/texto";
 import { estadoService } from "@/lib/servicios";
 import { FilaServiceFidelli } from "./fila-service-fidelli";
+import { FilaVehiculoFidelli } from "./fila-vehiculo-fidelli";
+import { HistorialCorrecciones } from "./historial-correcciones";
 import { VISTAS_DATOS, esVistaDatos, type Tenant, type VistaDatos } from "./tipos";
 import type { ParamsFicha } from "@/app/fidelli/[id]/page";
 
@@ -250,7 +252,27 @@ async function ListaVehiculos({
   const { data, count } = await consulta;
   const vehiculos = data ?? [];
 
+  // El PRIMER service no anulado de cada auto de esta página: de ahí sale
+  // la ventana de 72 hs. Una consulta para toda la página, no una por auto.
+  const { data: primeros } = vehiculos.length
+    ? await supabase
+        .from("services")
+        .select("vehiculo_id, created_at")
+        .in("vehiculo_id", vehiculos.map((v) => v.id!))
+        .eq("anulado", false)
+        .order("created_at")
+    : { data: [] };
+
+  const primerServicePorVehiculo = new Map<string, string>();
+  for (const s of primeros ?? []) {
+    // Vienen ordenados ascendente: el primero que se ve de cada auto es el suyo.
+    if (!primerServicePorVehiculo.has(s.vehiculo_id)) {
+      primerServicePorVehiculo.set(s.vehiculo_id, s.created_at);
+    }
+  }
+
   return (
+    <div className="flex flex-col gap-5">
     <div className="surface-card overflow-hidden">
       <div className="border-b border-line p-3">
         <Buscador
@@ -270,7 +292,7 @@ async function ListaVehiculos({
         </Vacio>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[620px] border-collapse text-ui">
+          <table className="w-full min-w-[720px] border-collapse text-ui">
             <thead>
               <tr className="border-b border-line">
                 <th scope="col" className={TH}>Patente</th>
@@ -278,34 +300,29 @@ async function ListaVehiculos({
                 <th scope="col" className={TH}>Cliente</th>
                 <th scope="col" className={TH}>Services</th>
                 <th scope="col" className={TH}>Último</th>
+                <th scope="col" className={TH}>
+                  <span className="sr-only">Corrección de patente</span>
+                </th>
               </tr>
             </thead>
             <tbody>
               {vehiculos.map((v) => (
-                <tr key={v.id} className="border-b border-line last:border-b-0">
-                  <td className={`${TD} plate whitespace-nowrap text-ink`}>
-                    {v.patente}
-                  </td>
-                  <td className={TD}>
-                    {[v.marca, v.modelo].filter(Boolean).join(" ") || (
-                      <span className="text-ink-40">sin marca ni modelo</span>
-                    )}
-                    {v.anio && (
-                      <span className="text-ink-60"> · {v.anio}</span>
-                    )}
-                  </td>
-                  <td className={`${TD} text-ink-60`}>
-                    {v.clientes?.nombre ?? "—"}
-                  </td>
-                  <td className={`${TD} text-ink-60`}>{v.cantidad_services}</td>
-                  <td className={`${TD} whitespace-nowrap text-ink-60`}>
-                    {v.ultimo_service_fecha ? (
-                      formatearFecha(v.ultimo_service_fecha)
-                    ) : (
-                      <span className="text-ink-40">nunca</span>
-                    )}
-                  </td>
-                </tr>
+                <FilaVehiculoFidelli
+                  key={v.id}
+                  lubricentroId={tenant.id}
+                  vehiculo={{
+                    id: v.id!,
+                    patente: v.patente!,
+                    vehiculo:
+                      [v.marca, v.modelo].filter(Boolean).join(" ") || null,
+                    anio: v.anio,
+                    cliente: v.clientes?.nombre ?? null,
+                    cantidadServices: v.cantidad_services ?? 0,
+                    ultimoServiceFecha: v.ultimo_service_fecha,
+                    primerServiceEn:
+                      primerServicePorVehiculo.get(v.id!) ?? null,
+                  }}
+                />
               ))}
             </tbody>
           </table>
@@ -317,6 +334,9 @@ async function ListaVehiculos({
         pagina={pagina}
         total={count ?? 0}
       />
+    </div>
+
+    <HistorialCorrecciones lubricentroId={tenant.id} />
     </div>
   );
 }

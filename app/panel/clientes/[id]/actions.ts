@@ -19,10 +19,10 @@ const CHECK_INVALIDO = "23514";
 const YA_EXISTE = "Ya tenés un vehículo con esa patente.";
 
 // El trigger vehiculos_patente_inmutable rechaza el cambio de patente de un
-// auto que ya tiene un service. Se reconoce por el mensaje, no por el código
-// (usa P0001, que es genérico).
+// auto cuyo primer service tiene más de 72 horas. Se reconoce por el
+// mensaje, no por el código (usa P0001, que es genérico).
 const PATENTE_FIJA =
-  "La patente no se puede cambiar: este auto ya tiene services cargados. Si te equivocaste, anulá el service dentro de las 24 horas y volvé a cargarlo con la patente correcta.";
+  "El plazo para corregir la patente de este auto ya venció, así que quedó fija. Escribinos contándonos qué pasó y la corregimos nosotros.";
 
 function esErrorDeRed(error: { message?: string }): boolean {
   return /fetch|network|conexión/i.test(error.message ?? "");

@@ -6,6 +6,12 @@ import { Boton, clasesBoton } from "@/components/ui/boton";
 import { IconoCandado } from "@/components/iconos";
 import { esPatenteValida, PATENTE_FORMATO } from "@/lib/texto";
 import {
+  estadoPatente,
+  patenteEditable,
+  vencimientoLegible,
+} from "@/lib/patente";
+import { urlWhatsappSoporte } from "@/lib/config";
+import {
   crearVehiculo,
   editarVehiculo,
   type EstadoVehiculo,
@@ -17,8 +23,9 @@ type Vehiculo = {
   marca: string | null;
   modelo: string | null;
   anio: number | null;
-  // true = el vehículo ya tiene un service no anulado, la patente se congela.
-  patenteBloqueada?: boolean;
+  // created_at del PRIMER service no anulado, o null si no tiene ninguno.
+  // De ahí sale la ventana de 72 hs para corregir la patente.
+  primerServiceEn?: string | null;
 };
 
 const ESTADO_INICIAL: EstadoVehiculo = {};
@@ -54,10 +61,13 @@ function FormularioVehiculo({
 
   const anioMaximo = new Date().getFullYear() + 1;
 
-  // La patente se congela en cuanto el auto tiene un service. Es solo lectura,
-  // no deshabilitada: así el valor sigue viajando en el submit y la base lo ve
-  // igual (no cambió). Marca, modelo y año se siguen pudiendo editar.
-  const patenteBloqueada = Boolean(vehiculo?.patenteBloqueada);
+  // La patente se corrige hasta 72 hs después del primer service; pasado
+  // ese plazo la cambia Fidelli con un motivo registrado. Cuando está fija
+  // el campo va readOnly y NO disabled: así el valor sigue viajando en el
+  // submit y la base lo ve igual (no cambió). Marca, modelo y año se
+  // siguen pudiendo editar siempre.
+  const patente = estadoPatente(vehiculo?.primerServiceEn ?? null);
+  const patenteBloqueada = !patenteEditable(patente);
 
   return (
     <form
@@ -126,18 +136,39 @@ function FormularioVehiculo({
             patenteBloqueada ? "bg-surface text-ink-40" : ""
           }`}
         />
-        {patenteBloqueada ? (
+        {patente.tipo === "fija" ? (
           <p
             id="patente-motivo"
             className="mt-1.5 flex items-start gap-1.5 rounded-md bg-surface px-3 py-2 text-label text-ink-60"
           >
             <IconoCandado className="mt-px size-3.5 shrink-0" />
             <span>
-              Este auto ya tiene services cargados, así que la patente queda
-              fija para siempre — es lo que hace confiable el historial que ve
-              tu cliente. Si te equivocaste, anulá el service dentro de las 24
-              horas y volvé a cargarlo con la patente correcta.
+              El plazo para corregirla venció, así que la patente quedó fija —
+              es lo que hace confiable el historial que ve tu cliente. Si está
+              mal,{" "}
+              <a
+                href={urlWhatsappSoporte()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold text-ink underline underline-offset-2"
+              >
+                escribinos
+              </a>{" "}
+              contándonos qué pasó y la corregimos nosotros.
             </span>
+          </p>
+        ) : patente.tipo === "ventana" ? (
+          /* Ámbar: corre contra el reloj, como el badge de service abierto.
+             Nunca rojo — el rojo es solo acción. */
+          <p
+            id="patente-motivo"
+            className="mt-1.5 rounded-md bg-urgente-soft px-3 py-2 text-label text-urgente"
+          >
+            Si está mal, corregila{" "}
+            <span className="font-semibold">
+              {vencimientoLegible(patente.vence)}
+            </span>
+            . Después queda fija y la cambiamos nosotros.
           </p>
         ) : (
           <p className="mt-1.5 text-label text-ink-40">

@@ -284,6 +284,68 @@ export type Database = {
           },
         ]
       }
+      correcciones_patente: {
+        Row: {
+          corregido_por: string
+          created_at: string
+          id: string
+          lubricentro_id: string
+          motivo: string
+          patente_anterior: string
+          patente_nueva: string
+          vehiculo_id: string
+        }
+        Insert: {
+          corregido_por: string
+          created_at?: string
+          id?: string
+          lubricentro_id: string
+          motivo: string
+          patente_anterior: string
+          patente_nueva: string
+          vehiculo_id: string
+        }
+        Update: {
+          corregido_por?: string
+          created_at?: string
+          id?: string
+          lubricentro_id?: string
+          motivo?: string
+          patente_anterior?: string
+          patente_nueva?: string
+          vehiculo_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "correcciones_patente_corregido_por_fkey"
+            columns: ["corregido_por"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "correcciones_patente_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "correcciones_patente_vehiculo_id_fkey"
+            columns: ["vehiculo_id"]
+            isOneToOne: false
+            referencedRelation: "vehiculos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "correcciones_patente_vehiculo_id_fkey"
+            columns: ["vehiculo_id"]
+            isOneToOne: false
+            referencedRelation: "vista_vehiculos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       landing_busquedas: {
         Row: {
           created_at: string
@@ -1164,6 +1226,14 @@ export type Database = {
       contactado_fidelli: {
         Args: { p_lubricentro_id: string }
         Returns: boolean
+      }
+      corregir_patente: {
+        Args: {
+          p_motivo: string
+          p_patente_nueva: string
+          p_vehiculo_id: string
+        }
+        Returns: undefined
       }
       crear_cliente_con_vehiculo: {
         Args: {

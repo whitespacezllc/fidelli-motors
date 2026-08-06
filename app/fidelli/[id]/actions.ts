@@ -23,6 +23,15 @@ const MENSAJES: Record<string, string> = {
     "El pago no se registró: la base rechazó el cambio de la suscripción.",
   service_no_desbloqueable:
     "Ese service ya no se puede desbloquear. Puede estar anulado, o alguien lo borró mientras mirabas la pantalla.",
+  motivo_insuficiente:
+    "Escribí el motivo con un poco más de detalle: es lo que queda registrado como justificación de la corrección.",
+  patente_formato:
+    "Esa patente no tiene un formato válido. Vieja (ABC 123) o Mercosur (AB 123 CD).",
+  patente_sin_cambio: "La patente nueva es la misma que ya tiene el vehículo.",
+  patente_ocupada:
+    "Este lubricentro ya tiene otro auto con esa patente. Corregir a esa chapa uniría dos historiales — revisalo con el lubricentro antes de seguir.",
+  vehiculo_no_existe:
+    "Ese vehículo ya no existe. Recargá la pantalla y buscalo de nuevo.",
   periodo_valido: "El período termina antes de empezar. Revisá las fechas.",
 };
 
@@ -111,5 +120,47 @@ export async function desbloquearService(
   if (error) return { error: traducir(error.message) };
 
   revalidatePath(`/fidelli/${lubricentroId}`);
+  return { ok: true };
+}
+
+
+// ============================================================
+// Corregir la patente de un vehículo — Nivel 2
+//
+// El lubricentro se autocorrige durante 72 horas desde el primer service.
+// Pasado ese plazo, la patente solo la cambia esta puerta: superadmin, con
+// un motivo que queda registrado en correcciones_patente ANTES de tocar el
+// dato. La función de la base es la que hace cumplir las dos cosas — acá
+// solo se traduce lo que responde.
+// ============================================================
+
+export type EstadoCorreccion = { error?: string; ok?: boolean };
+
+export async function corregirPatente(
+  _prev: EstadoCorreccion,
+  formData: FormData,
+): Promise<EstadoCorreccion> {
+  await exigirSuperadmin();
+
+  const vehiculoId = String(formData.get("vehiculo_id") ?? "");
+  const lubricentroId = String(formData.get("lubricentro_id") ?? "");
+  const patenteNueva = String(formData.get("patente_nueva") ?? "").trim();
+  const motivo = String(formData.get("motivo") ?? "").trim();
+
+  if (!patenteNueva) return { error: "Escribí la patente correcta." };
+  if (motivo.length < 10) return { error: MENSAJES.motivo_insuficiente };
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("corregir_patente", {
+    p_vehiculo_id: vehiculoId,
+    p_patente_nueva: patenteNueva,
+    p_motivo: motivo,
+  });
+
+  if (error) return { error: traducir(error.message) };
+
+  revalidatePath(`/fidelli/${lubricentroId}`);
+  // La landing del cliente busca por patente: la vieja deja de existir.
+  revalidatePath("/[slug]/[patente]", "page");
   return { ok: true };
 }

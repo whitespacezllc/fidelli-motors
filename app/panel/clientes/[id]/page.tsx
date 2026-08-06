@@ -213,12 +213,16 @@ export default async function FichaCliente({
             sucursal: s.sucursales?.nombre ?? "",
             estado: estadoService(s),
           })),
-          // La patente se congela en cuanto el vehículo tiene un service no
-          // anulado (regla anti-fraude, la impone la base). El dialog lo usa
-          // para mostrar el campo en solo lectura con el motivo.
-          patenteBloqueada: (servicesPorVehiculo.get(v.id) ?? []).some(
-            (s) => !s.anulado,
-          ),
+          // El PRIMER service no anulado abre la ventana de 72 hs para
+          // corregir la patente (regla anti-fraude, la impone la base). Se
+          // mide desde el primero y no desde el último: si no, cargar un
+          // service nuevo reabriría la ventana de un auto con historial.
+          // Los services llegan ordenados por fecha descendente, así que el
+          // primero cronológicamente es el último del arreglo.
+          primerServiceEn:
+            (servicesPorVehiculo.get(v.id) ?? [])
+              .filter((s) => !s.anulado)
+              .at(-1)?.created_at ?? null,
           notas: (notasPorVehiculo.get(v.id) ?? []).map((n) => ({
             id: n.id,
             contenido: n.contenido,
