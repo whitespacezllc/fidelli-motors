@@ -295,3 +295,5 @@ Ramas `feat/*`, `fix/*`, `chore/*` → PR a `develop`. Conventional Commits, en
 español (los comentarios del código están en español). Ver `CONTRIBUTING.md`.
 
 `main` es producción y se toca solo en la fase de deploy.
+
+@CLAUDE-landing.md
