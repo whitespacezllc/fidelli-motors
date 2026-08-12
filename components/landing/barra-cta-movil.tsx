@@ -7,9 +7,13 @@ import { CTA_WHATSAPP } from "@/lib/landing";
 // siempre a la vista y siempre al alcance del pulgar.
 //
 // pb con safe-area para que no quede debajo de la barra de gestos del iPhone.
+//
+// z-60: por encima del menú hamburguesa (z-50), no por debajo. "Visible
+// durante toda la página" se toma literal — con el menú abierto la acción
+// primaria tampoco se tapa, y así el menú nunca bloquea la conversión.
 export function BarraCtaMovil() {
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-base/95 px-5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-md sm:hidden">
+    <div className="fixed inset-x-0 bottom-0 z-60 border-t border-line bg-base/95 px-5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-md sm:hidden">
       <a
         href={CTA_WHATSAPP}
         target="_blank"

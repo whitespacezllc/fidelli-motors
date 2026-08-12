@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Seccion } from "@/components/landing/seccion";
+import { Cierre } from "@/components/landing/cierre";
 
 // La landing comercial. Es la única superficie del producto que se indexa a
 // propósito: `/[slug]` también se indexa —es la vidriera del lubricentro—,
@@ -97,14 +98,7 @@ export default function LandingComercial() {
         trabajo="Desarmar las dudas. Una objeción que no respondés se la contesta él solo, y siempre se contesta que no. Las tres primeras van abiertas, también en mobile."
       />
 
-      <Seccion
-        id="cierre"
-        numero="11"
-        titulo="Cierre"
-        trabajo="Una sola acción, sin fricción. Sobre grafito, centrado. El pie va sobre blanco, abajo."
-        fondo="grafito"
-        primeraDeGrafito
-      />
+      <Cierre />
     </>
   );
 }

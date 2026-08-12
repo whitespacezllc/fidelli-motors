@@ -32,6 +32,21 @@
   --color-success-soft: #EFF9F2;
   --color-reward-soft: #FDF8E7;
 
+  /* ---------- Tinta sobre fondo grafito ----------
+     La escala inversa de `ink`, para las secciones de la landing comercial
+     que van sobre #0A0A0A. Era un hueco real del sistema: ahí `ink-60` e
+     `ink-40` quedan ilegibles, y sin tokens propios cada bloque terminaba
+     inventando su opacidad.
+
+     Van como blanco con alfa y no como grises opacos a propósito: así el
+     mismo token sirve si mañana el fondo deja de ser exactamente #0A0A0A.
+     Contraste sobre #0A0A0A — los tres pasan AA de cuerpo:
+       inverso     20.4:1    inverso-60   9.5:1    inverso-40   5.4:1 */
+  --color-inverso: #FFFFFF;
+  --color-inverso-60: rgba(255, 255, 255, 0.72);
+  --color-inverso-40: rgba(255, 255, 255, 0.55);
+  --color-inverso-line: rgba(255, 255, 255, 0.14);
+
   /* ---------- Color del tenant ----------
      Estos cuatro valores son el default neutro: la landing es un shell y
      así se ve si el lubri nunca eligió color. En runtime, `/[slug]` los
@@ -134,6 +149,21 @@
      Va acá y no pantalla por pantalla, como el cursor. */
   [data-superficie="cliente"] :focus-visible {
     outline-color: var(--color-tenant);
+  }
+
+  /* Scroll suave SOLO en la landing comercial, que es la única superficie
+     con anclas. Se acota con :has() en vez de ponerlo en html a secas
+     porque scroll-behavior también anima el salto al tope que hace el
+     router al navegar, y en el panel —que se usa a velocidad de mostrador—
+     eso se siente como lentitud. */
+  html:has([data-superficie="landing"]) {
+    scroll-behavior: smooth;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html:has([data-superficie="landing"]) {
+      scroll-behavior: auto;
+    }
   }
 
   /* Áreas táctiles: el mecánico tiene los dedos con aceite. */

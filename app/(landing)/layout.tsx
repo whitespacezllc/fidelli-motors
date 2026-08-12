@@ -27,7 +27,10 @@ export default function LayoutLanding({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <div className="flex min-h-full flex-1 flex-col font-brand text-body leading-normal">
+    <div
+      data-superficie="landing"
+      className="flex min-h-full flex-1 flex-col font-brand text-body leading-normal"
+    >
       <Navbar />
       <main className="flex-1 pb-24 sm:pb-0">{children}</main>
       <Pie />
