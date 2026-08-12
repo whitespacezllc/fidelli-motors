@@ -91,6 +91,20 @@ export async function obtenerLanding(slug: string): Promise<Lubricentro | null> 
  * Busca la patente. Devuelve solo si existe: el cartón completo lo arma la
  * pantalla del vehículo. La llamada queda registrada en landing_busquedas
  * por la propia función — acá no hay que agregar nada.
+ *
+ * BACKLOG · LÍMITE DE INTENTOS — decisión de producto pendiente.
+ *
+ * La patente es la única llave de esta puerta y hoy no hay tope: con un
+ * script se puede recorrer el espacio de patentes de un lubricentro y
+ * descubrir qué autos atiende. El dato para detectarlo ya existe —
+ * landing_busquedas guarda cada intento con su lubricentro y si encontró—,
+ * así que lo que falta no es instrumentación sino la definición: cuántos
+ * intentos por ventana, contra qué se cuenta (IP, sesión anónima, slug), y
+ * qué ve el que se pasa.
+ *
+ * No implementar sin esa definición. Un tope mal calibrado deja afuera al
+ * cliente legítimo que escribe mal la patente dos veces desde el celular, y
+ * ese es el usuario que menos tolerancia tiene a que la pantalla lo rechace.
  */
 export async function existeVehiculo(slug: string, patente: string): Promise<boolean> {
   const supabase = await createClient();
