@@ -127,6 +127,19 @@ export async function guardarClave(
     };
   }
 
-  // Con la contraseña guardada, la raíz enruta según el rol.
-  redirect("/");
+  // El destino se resuelve ACÁ y no en la raíz.
+  //
+  // Antes esto hacía redirect("/") y dejaba que la raíz enrutara según el
+  // rol. Desde que "/" sirve la landing comercial, ese redirect dejaría al
+  // owner recién activado —su primer minuto en el producto, viniendo del
+  // enlace del correo— parado en la página de ventas en vez de su panel.
+  // Mismo criterio que app/login/page.tsx: el rol decide la superficie.
+  const { data: claims } = await supabase.auth.getClaims();
+  const { data: usuario } = await supabase
+    .from("usuarios")
+    .select("rol")
+    .eq("id", claims?.claims?.sub ?? "")
+    .maybeSingle();
+
+  redirect(usuario?.rol === "superadmin" ? "/fidelli" : "/panel");
 }
