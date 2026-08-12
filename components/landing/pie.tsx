@@ -6,10 +6,6 @@ import { CTA_WHATSAPP, LINKS_NAVBAR } from "@/lib/landing";
 //
 // Sin newsletter: este público no se suscribe a nada.
 //
-// PENDIENTE: Instagram y mail no están definidos todavía (el spec nombra
-// la columna pero no los valores). Hasta que estén, la columna muestra
-// solo el WhatsApp, que sí existe. Un enlace a "#" que no lleva a ningún
-// lado es peor que un enlace que todavía no está.
 const CLASE_TITULO =
   "font-ui text-label font-semibold tracking-[0.06em] text-ink-40 uppercase";
 const CLASE_LINK = "text-ui text-ink-60 transition-colors hover:text-ink";
@@ -47,6 +43,21 @@ export function Pie() {
                 className={CLASE_LINK}
               >
                 WhatsApp
+              </a>
+            </li>
+            <li>
+              <a
+                href="https://instagram.com/fidelli.motors"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={CLASE_LINK}
+              >
+                Instagram
+              </a>
+            </li>
+            <li>
+              <a href="mailto:hola@fidellimotors.app" className={CLASE_LINK}>
+                hola@fidellimotors.app
               </a>
             </li>
           </ul>

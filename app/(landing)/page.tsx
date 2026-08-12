@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Seccion } from "@/components/landing/seccion";
+import { Hero } from "@/components/landing/hero";
 import { Cierre } from "@/components/landing/cierre";
 
 // La landing comercial. Es la única superficie del producto que se indexa a
@@ -27,12 +28,7 @@ export const metadata: Metadata = {
 export default function LandingComercial() {
   return (
     <>
-      <Seccion
-        id="hero"
-        numero="02"
-        titulo="Hero"
-        trabajo="Que se reconozca en la primera línea. Si no se ve retratado en tres segundos, el resto de la página no existe. En mobile: texto primero, imagen después."
-      />
+      <Hero />
 
       <Seccion
         id="como-funciona"
