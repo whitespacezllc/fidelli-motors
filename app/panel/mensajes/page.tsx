@@ -10,7 +10,7 @@ import { FilaMensaje } from "@/components/mensajes/fila-mensaje";
 import { formatearKm } from "@/lib/renglones";
 import type { VariablesMensaje } from "@/lib/contacto";
 
-export const metadata: Metadata = { title: "Mensajes — Fidelli Motors" };
+export const metadata: Metadata = { title: "Mensajes" };
 
 // Si el tenant no tiene ni un vehículo, la vista previa usa esto y lo
 // aclara. Con el primero real que aparezca, el ejemplo pasa a ser suyo.

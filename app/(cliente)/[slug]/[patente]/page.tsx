@@ -19,7 +19,8 @@ type Props = { params: Promise<{ slug: string; patente: string }> };
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { patente } = await params;
   return {
-    title: `${formatearPatente(patente)} — Tu historial`,
+    // `absolute`: superficie del lubricentro, sin el template de marca.
+    title: { absolute: `${formatearPatente(patente)} · Tu historial` },
     // Pública por diseño, indexable no: la patente está en la chapa a la
     // vista de cualquiera, pero que buscarla en Google devuelva el
     // historial de service del auto es otra cosa. El que la sabe entra;

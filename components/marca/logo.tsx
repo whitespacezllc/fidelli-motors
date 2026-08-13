@@ -31,6 +31,11 @@ export function Logo({
       width={1000}
       height={127}
       priority={priority}
+      // En pantalla nunca pasa de ~240px de ancho (h-5/h-6/h-8 por el
+      // ratio 7.9:1). Sin `sizes`, next/image asumía el width intrínseco
+      // y pedía la variante de 2048 para un hueco de 190px — en el navbar
+      // de TODAS las páginas.
+      sizes="240px"
       className={className}
     />
   );

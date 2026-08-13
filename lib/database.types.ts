@@ -1370,6 +1370,13 @@ export type Database = {
       service_editable: { Args: { p_service_id: string }; Returns: boolean }
       slug_estado: { Args: { p_slug: string }; Returns: string }
       slug_reservado: { Args: { p_slug: string }; Returns: boolean }
+      slugs_publicos: {
+        Args: never
+        Returns: {
+          created_at: string
+          slug: string
+        }[]
+      }
       soy_superadmin: { Args: never; Returns: boolean }
       telefono_de_contacto: {
         Args: { p_lubricentro_id: string }

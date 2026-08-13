@@ -32,6 +32,21 @@
   --color-success-soft: #EFF9F2;
   --color-reward-soft: #FDF8E7;
 
+  /* ---------- Tinta sobre fondo grafito ----------
+     La escala inversa de `ink`, para las secciones de la landing comercial
+     que van sobre #0A0A0A. Era un hueco real del sistema: ahí `ink-60` e
+     `ink-40` quedan ilegibles, y sin tokens propios cada bloque terminaba
+     inventando su opacidad.
+
+     Van como blanco con alfa y no como grises opacos a propósito: así el
+     mismo token sirve si mañana el fondo deja de ser exactamente #0A0A0A.
+     Contraste sobre #0A0A0A — los tres pasan AA de cuerpo:
+       inverso     20.4:1    inverso-60   9.5:1    inverso-40   5.4:1 */
+  --color-inverso: #FFFFFF;
+  --color-inverso-60: rgba(255, 255, 255, 0.72);
+  --color-inverso-40: rgba(255, 255, 255, 0.55);
+  --color-inverso-line: rgba(255, 255, 255, 0.14);
+
   /* ---------- Color del tenant ----------
      Estos cuatro valores son el default neutro: la landing es un shell y
      así se ve si el lubri nunca eligió color. En runtime, `/[slug]` los
@@ -136,6 +151,21 @@
     outline-color: var(--color-tenant);
   }
 
+  /* Scroll suave SOLO en la landing comercial, que es la única superficie
+     con anclas. Se acota con :has() en vez de ponerlo en html a secas
+     porque scroll-behavior también anima el salto al tope que hace el
+     router al navegar, y en el panel —que se usa a velocidad de mostrador—
+     eso se siente como lentitud. */
+  html:has([data-superficie="landing"]) {
+    scroll-behavior: smooth;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html:has([data-superficie="landing"]) {
+      scroll-behavior: auto;
+    }
+  }
+
   /* Áreas táctiles: el mecánico tiene los dedos con aceite. */
   button, a[role="button"], [role="tab"] {
     min-height: var(--spacing-row);
@@ -180,6 +210,127 @@
   font-weight: 600;
   letter-spacing: 0.08em;
   font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   El contenedor de la landing comercial — UNO SOLO
+   ============================================================
+   Todas las secciones se alinean con esto: navbar, las once secciones y
+   el pie. El eje izquierdo del logo, del badge, del titular, de los
+   botones y de la captura del hero es el mismo porque sale del mismo
+   lugar, no porque cada sección haya elegido el mismo número.
+
+   Va como utilidad y no como componente de React para que también la
+   puedan usar el <header> y el <footer> sin envolver nada de más.
+
+   El padding es fluido: 20px en un celular, 40px de 800px para arriba.
+   Con un salto por breakpoint —lo que había antes, px-5 sm:px-8— el
+   contenido se corre de golpe en un punto y no acompaña al ancho.
+
+   NO agregar padding-inline por sección: si una necesita sangrar algo a
+   los bordes, existe `sangrado`, que descuenta exactamente este mismo
+   padding. Cualquier número escrito a mano se despega el día que este
+   clamp cambie. */
+@utility contenedor {
+  max-width: 1200px;
+  margin-inline: auto;
+  padding-inline: clamp(20px, 5vw, 40px);
+}
+
+/* El negativo exacto de `contenedor`, para lo que tiene que llegar al
+   borde de la pantalla desde adentro de una sección. */
+@utility sangrado {
+  margin-inline: calc(clamp(20px, 5vw, 40px) * -1);
+}
+
+/* ============================================================
+   El aire vertical entre secciones — UNO SOLO
+   ============================================================
+   Desde que las secciones claras van todas sobre blanco, el ritmo de la
+   página ya no lo pone el cambio de superficie: lo pone este espacio.
+   Por eso es una utilidad y no un py-* por sección — el día que haya que
+   darle más aire, se toca un solo número.
+
+   Fluido como el padding del contenedor: 64px en un celular de 390,
+   ~82 en tablet, 112 de 1440 para arriba. Dos secciones blancas seguidas
+   quedan separadas por el doble de esto.
+
+   `aire-seccion-pie` es la mitad de abajo sola: la sección 06 continúa
+   el grafito de la 05 sin corte y no lleva aire arriba. */
+@utility aire-seccion {
+  padding-block: clamp(4rem, 2.9rem + 4.6vw, 7rem);
+}
+
+@utility aire-seccion-pie {
+  padding-bottom: clamp(4rem, 2.9rem + 4.6vw, 7rem);
+}
+
+/* ============================================================
+   La escena de Fidelliza (sección 07)
+   ============================================================
+   Dos animaciones que cuentan una sola cosa: el personaje respira, y
+   cuando el premio se desbloquea pega un salto.
+
+   Van con la propiedad `translate` y no con `transform` para que puedan
+   convivir anidadas —el padre flota, el hijo rebota— sin pisarse.
+
+   Ocho píxeles y cuatro segundos: si se percibe como "una animación",
+   está de más. Nada de rotación ni de escala. */
+@utility animar-flotar {
+  animation: flotar 4s ease-in-out infinite;
+}
+
+@keyframes flotar {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -8px;
+  }
+}
+
+/* El rebote del desbloqueo. Una sola pasada, un poco más marcado que la
+   flotación —de eso se trata— y con un segundo saltito más chico que lo
+   deja asentarse en vez de frenar en seco. */
+@utility animar-rebote {
+  animation: rebote 620ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@keyframes rebote {
+  0% {
+    translate: 0 0;
+  }
+  35% {
+    translate: 0 -18px;
+  }
+  62% {
+    translate: 0 0;
+  }
+  80% {
+    translate: 0 -6px;
+  }
+  100% {
+    translate: 0 0;
+  }
+}
+
+/* La aparición de una pantalla o una ficha en la simulación de carga:
+   entra desde abajo y se asienta. La regla global de reduced-motion de
+   arriba la corta sola (animation-duration 0.01ms). */
+@utility animar-aparicion {
+  animation: aparecer 240ms var(--ease-standard) both;
+}
+
+@keyframes aparecer {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
 }
 
 @utility surface-card {

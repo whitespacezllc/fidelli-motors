@@ -17,7 +17,7 @@ import {
 } from "@/lib/contacto";
 import { formatearKm } from "@/lib/renglones";
 
-export const metadata: Metadata = { title: "Próximos services — Fidelli Motors" };
+export const metadata: Metadata = { title: "Próximos services" };
 
 // El orden es la pantalla: se trabaja de arriba a abajo sin decidir nada.
 const PESO: Record<EstadoContacto, number> = { vencido: 0, urgente: 1, proximo: 2 };

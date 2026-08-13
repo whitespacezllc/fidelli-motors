@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { TarjetaPlan } from "@/components/fidelli/tarjeta-plan";
 import type { PlanCompleto } from "@/components/fidelli/tipos";
 
-export const metadata: Metadata = { title: "Plan y precios — Fidelli Motors" };
+export const metadata: Metadata = { title: "Plan y precios" };
 
 export default async function PaginaPrecios() {
   const supabase = await createClient();

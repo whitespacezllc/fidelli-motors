@@ -12,7 +12,7 @@ import { formatearKm } from "@/lib/renglones";
 import { formatearFecha, formatearFechaHora } from "@/lib/fechas";
 import { urlWhatsappSoporte } from "@/lib/config";
 
-export const metadata: Metadata = { title: "Service — Fidelli Motors" };
+export const metadata: Metadata = { title: "Service" };
 
 type Props = { params: Promise<{ serviceId: string }> };
 

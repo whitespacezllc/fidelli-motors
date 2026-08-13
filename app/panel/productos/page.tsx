@@ -13,7 +13,7 @@ import { FiltrosProductos } from "@/components/productos/filtros-productos";
 import { CATEGORIAS, esCategoria } from "@/lib/categorias";
 import { normalizar } from "@/lib/texto";
 
-export const metadata: Metadata = { title: "Productos — Fidelli Motors" };
+export const metadata: Metadata = { title: "Productos" };
 
 export default async function PaginaProductos({
   searchParams,

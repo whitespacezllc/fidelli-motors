@@ -13,7 +13,7 @@ import { Dashboard, type DatosInicio } from "@/components/inicio/dashboard";
 import { FiltroSucursal } from "@/components/inicio/filtro-sucursal";
 import { formatearDiaLargo } from "@/lib/fechas";
 
-export const metadata: Metadata = { title: "Inicio — Fidelli Motors" };
+export const metadata: Metadata = { title: "Inicio" };
 
 type Resumen = DatosInicio & { checklist: EstadoChecklist };
 

@@ -4,7 +4,10 @@ import { Logo } from "@/components/marca/logo";
 import { clasesBoton } from "@/components/ui/boton";
 import { urlWhatsappSoporte } from "@/lib/config";
 
-export const metadata: Metadata = { title: "El enlace no sirve — Fidelli Motors" };
+export const metadata: Metadata = {
+  title: "El enlace no sirve",
+  robots: { index: false, follow: false },
+};
 
 // ============================================================
 // Dónde aterriza un enlace de email que no se pudo canjear.

@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { WizardAlta } from "@/components/fidelli/wizard-alta";
 import type { PlanCompleto } from "@/components/fidelli/tipos";
 
-export const metadata: Metadata = { title: "Nuevo lubricentro — Fidelli Motors" };
+export const metadata: Metadata = { title: "Nuevo lubricentro" };
 
 export default async function PaginaAlta() {
   const supabase = await createClient();

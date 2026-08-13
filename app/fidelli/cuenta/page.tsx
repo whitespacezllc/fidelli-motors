@@ -3,7 +3,7 @@ import { exigirRol } from "@/lib/auth/session";
 import { PanelFicha, Dato } from "@/components/fidelli/ficha/panel-dato";
 import { FormClave } from "@/components/fidelli/form-clave";
 
-export const metadata: Metadata = { title: "Mi cuenta — Fidelli Motors" };
+export const metadata: Metadata = { title: "Mi cuenta" };
 
 // Mínima a propósito: quién sos y cómo cambiar tu contraseña. El equipo
 // Fidelli son dos personas y sus cuentas se crean por la API de

@@ -9,7 +9,7 @@ import { clasesBoton } from "@/components/ui/boton";
 import { Carton } from "@/components/services/carton";
 import { COOKIE_SUCURSAL } from "@/lib/preferencias";
 
-export const metadata: Metadata = { title: "Cargar service — Fidelli Motors" };
+export const metadata: Metadata = { title: "Cargar service" };
 
 // Momento 1 — el cartón. Espejo del papel, en una sola pantalla scrolleable.
 export default async function PaginaCarton({

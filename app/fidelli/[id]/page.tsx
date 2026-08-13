@@ -13,7 +13,7 @@ import {
 } from "@/components/fidelli/ficha/tipos";
 import type { PlanCompleto } from "@/components/fidelli/tipos";
 
-export const metadata: Metadata = { title: "Ficha del lubricentro — Fidelli Motors" };
+export const metadata: Metadata = { title: "Ficha del lubricentro" };
 
 export type ParamsFicha = {
   tab?: string;

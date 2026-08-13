@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { exigirRol } from "@/lib/auth/session";
 import { cerrarSesion } from "@/lib/auth/actions";
 import { Logo } from "@/components/marca/logo";
@@ -6,6 +7,12 @@ import { NavLink } from "@/components/panel/nav-link";
 // El panel de administración de Fidelli: barra superior en vez de sidebar —
 // dos módulos no justifican uno (ver docs/Panel de Administración.html).
 // Densidad alta: acá las filas van a 40px, no a 44.
+// Superficie privada: nunca en el índice. El robots.txt además la
+// excluye del rastreo; esto cubre el caso de una URL llegada por link.
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
+
 export default async function LayoutFidelli({
   children,
 }: {
