@@ -250,3 +250,68 @@ Lo único propio de la landing comercial:
   cualquier implementación que lo cumpla está bien. `next/font/google` lo cumple —descarga
   en build y sirve desde el propio dominio— y ya está en uso en todo el proyecto, así que
   **no se toca**.
+
+---
+
+# SEO y GEO — decisiones fijas
+
+Implementado en la sesión del 13/08/2026. Lo que sigue no se revisa en cada PR: se cambia
+solo con una decisión explícita.
+
+## Identidad — un solo lugar
+
+`lib/seo.ts` es la fuente del nombre, la URL, el título, la description y la imagen OG.
+**"Fidelli Motors" se escribe idéntico en title, Open Graph, JSON-LD, footer y llms.txt** —
+sin "Fidelli" suelto ni "FidelliMotors". El title y la description arrancan con una oración
+completa que se entiende sola ("Fidelli Motors es..."): los motores generativos citan
+pasajes fuera de contexto.
+
+Las palabras clave de búsqueda ("sistema de gestión para lubricentros", etc.) viven SOLO en
+metadata, alt text y llms.txt. El copy de las secciones no se toca por SEO.
+
+## Superficies indexables
+
+| Ruta | Indexación |
+|---|---|
+| `/` | index |
+| `/[slug]` | index — la vidriera del lubricentro |
+| `/[slug]/[patente]` | **noindex** — historial de un vehículo identificable, sin excepción |
+| `/panel`, `/fidelli`, `/login`, `/auth/*`, `/recuperar` | noindex + Disallow en robots |
+
+`/[slug]/[patente]` NO se bloquea en robots.txt a propósito: el noindex es una meta en el
+HTML y el crawler tiene que poder entrar a leerla. Tampoco va nunca en el sitemap.
+
+Los títulos de las páginas declaran solo su nombre; el template del layout raíz agrega
+"| Fidelli Motors". **La superficie del cliente usa `title: { absolute }`**: esa página es
+del lubricentro y no lleva nuestra marca en el título.
+
+## Crawlers de IA — permitidos, decisión de negocio
+
+`app/robots.ts` permite explícitamente: GPTBot, OAI-SearchBot, ChatGPT-User, ClaudeBot,
+Claude-User, Claude-SearchBot, PerplexityBot, Perplexity-User, Google-Extended,
+Applebot-Extended, CCBot y meta-externalagent. El objetivo es aparecer cuando alguien le
+pregunte a un modelo qué sistema usar para su lubricentro. **No se bloquean sin discutirlo.**
+
+## llms.txt
+
+`public/llms.txt`. **Todo su contenido sale del copy que ya está publicado en la landing** —
+si algo no está dicho en la página, no va en llms.txt. Cuando cambia el copy de una sección
+citada ahí, llms.txt se actualiza en el mismo PR.
+
+## Datos estructurados
+
+- `/`: Organization + SoftwareApplication (`components/landing/datos-estructurados.tsx`) y
+  FAQPage (vive en `preguntas.tsx`, al lado de las preguntas). Los precios del JSON-LD
+  tienen que coincidir EXACTO con la sección 09.
+- `/[slug]`: AutoRepair con SOLO los campos reales del registro. `horarios` es texto libre
+  y no se emite como openingHours; geo no existe en la base.
+- **PROHIBIDO: AggregateRating, Review o cualquier schema de reseñas.** No hay reseñas
+  verificables y el schema falso es penalización directa. Con testimonios reales
+  autorizados, entran como Review con autor identificado — no antes.
+
+## La tarjeta de WhatsApp
+
+`public/assets/og-image.jpg` — 1200×630, JPEG (la misma imagen en PNG pesaba 947KB y
+WhatsApp recorta arriba de ~300KB). Declarada SIEMPRE con width, height y alt: sin
+dimensiones, WhatsApp muestra miniatura en vez de tarjeta. Servida directo desde
+`/assets/`, sin redirects. El PNG original queda en el repo como fuente de diseño.

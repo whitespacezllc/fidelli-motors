@@ -8,7 +8,7 @@ import {
 } from "@/components/fidelizacion/formulario-premio";
 import { META_MINIMA, META_MAXIMA } from "@/lib/fidelizacion";
 
-export const metadata: Metadata = { title: "Fidelización — Fidelli Motors" };
+export const metadata: Metadata = { title: "Fidelización" };
 
 // El programa del lubricentro: cada cuántos services y qué se lleva el
 // cliente. Un solo premio activo (la base lo garantiza con un índice único

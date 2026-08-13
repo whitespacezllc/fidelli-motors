@@ -16,7 +16,7 @@ import {
 } from "@/components/fidelli/pulso";
 import type { PlanCompleto } from "@/components/fidelli/tipos";
 
-export const metadata: Metadata = { title: "Lubricentros — Fidelli Motors" };
+export const metadata: Metadata = { title: "Lubricentros" };
 
 export default async function PaginaLubricentros({
   searchParams,

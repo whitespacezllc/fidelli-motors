@@ -1,5 +1,11 @@
 import type { Metadata } from "next";
 import { Nunito, Public_Sans } from "next/font/google";
+import {
+  DESCRIPCION_PORTADA,
+  NOMBRE_SITIO,
+  SITIO_URL,
+  TITULO_PORTADA,
+} from "@/lib/seo";
 import "./globals.css";
 
 // Nunito: la voz de la marca y de todo lo que lee el cliente final.
@@ -18,37 +24,34 @@ const publicSans = Public_Sans({
   display: "swap",
 });
 
-const DESCRIPCION =
-  "El cartón de service digitalizado: cargá el service y tus clientes ven su historial escaneando el QR.";
-
 // metadataBase hace que la URL del og:image sea ABSOLUTA. Sin esto WhatsApp
 // no puede resolver la imagen y cae al favicon —que era, justamente, lo que
 // mostraba el logo de Vercel—. Producción por defecto; se puede pisar con la
 // env para apuntar a otro entorno.
 export const metadata: Metadata = {
-  metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL ?? "https://fidellimotors.app",
-  ),
-  // Las páginas ya traen "— Fidelli Motors" en su propio título, así que
-  // acá NO va un template (duplicaría la marca). Este default sólo se usa
-  // en las pocas rutas que no ponen título propio.
-  title: "Fidelli Motors",
-  description: DESCRIPCION,
-  applicationName: "Fidelli Motors",
-  // app/icon.svg, app/apple-icon.png y app/favicon.ico los detecta Next solo.
-  // app/opengraph-image.png y app/twitter-image.png también: son la tarjeta
-  // que ve WhatsApp al compartir el link, en vez del favicon suelto.
+  metadataBase: new URL(SITIO_URL),
+  // El default es el título de "/" —la única página que no declara título
+  // propio—. El resto de las páginas declara solo su nombre y el template
+  // les agrega la marca; las de la superficie del cliente usan `absolute`
+  // porque esa superficie es del lubricentro, no nuestra.
+  title: {
+    default: TITULO_PORTADA,
+    template: `%s | ${NOMBRE_SITIO}`,
+  },
+  description: DESCRIPCION_PORTADA,
+  applicationName: NOMBRE_SITIO,
+  // app/icon.png, app/icon.svg, app/apple-icon.png y app/favicon.ico los
+  // detecta Next solo. La imagen de Open Graph NO va por convención de
+  // archivo sino declarada en cada página indexable: la convención pisa a
+  // la metadata explícita y no deja declarar width/height/alt, que es lo
+  // que WhatsApp necesita para la tarjeta grande.
   openGraph: {
-    title: "Fidelli Motors",
-    description: DESCRIPCION,
-    siteName: "Fidelli Motors",
+    siteName: NOMBRE_SITIO,
     locale: "es_AR",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Fidelli Motors",
-    description: DESCRIPCION,
   },
 };
 
@@ -59,7 +62,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="es"
+      lang="es-AR"
       className={`${nunito.variable} ${publicSans.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>

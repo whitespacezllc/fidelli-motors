@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { obtenerLanding } from "@/lib/cliente/landing";
+import { OG_IMAGEN, SITIO_URL, SLUGS_SIN_INDEXAR } from "@/lib/seo";
+import { obtenerLanding, type Lubricentro } from "@/lib/cliente/landing";
 import { paletaTenant, variablesTenant } from "@/lib/cliente/color";
 import { normalizarPatente } from "@/lib/texto";
 import { MarcaLubricentro } from "@/components/cliente/marca-lubricentro";
@@ -18,11 +19,87 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const lubricentro = await obtenerLanding(slug);
 
-  if (!lubricentro) return { title: "Lubricentro no encontrado" };
+  if (!lubricentro) {
+    return {
+      title: { absolute: "Lubricentro no encontrado" },
+      robots: { index: false, follow: false },
+    };
+  }
+
+  // `absolute` en el título: esta página es la vidriera del LUBRICENTRO,
+  // no nuestra — el template "| Fidelli Motors" del layout raíz acá no
+  // corresponde. La marca de la plataforma ya vive en el pie de confianza.
+  const titulo = `${lubricentro.nombre} · Historial de tu auto`;
+  const descripcion = `Escribí la patente de tu auto y mirá todo lo que le hicieron en ${lubricentro.nombre}, y cuándo te toca volver.`;
 
   return {
-    title: `${lubricentro.nombre} — Historial de tu auto`,
-    description: `Escribí la patente de tu auto y mirá todo lo que le hicieron en ${lubricentro.nombre}, y cuándo te toca volver.`,
+    title: { absolute: titulo },
+    description: descripcion,
+    alternates: { canonical: `/${slug}` },
+    // Se indexa a propósito: es la vidriera del lubricentro y le suma. La
+    // página de la patente —un vehículo identificable— es la que va
+    // noindex, en su propia ruta.
+    //
+    // La excepción es `demo` y cualquier otro tenant de la lista: existe y
+    // se le puede pasar el link a un prospecto, pero no es un negocio real
+    // y no compite en el buscador. El sitemap usa la misma lista.
+    robots: SLUGS_SIN_INDEXAR.includes(slug)
+      ? { index: false, follow: true }
+      : { index: true, follow: true },
+    // La imagen es la general de la marca, NO el logo del lubricentro:
+    // la tarjeta grande de WhatsApp exige 1200×630 con dimensiones
+    // declaradas, y un logo cuadrado de tamaño desconocido la degrada a
+    // miniatura. El día que cada lubricentro tenga su propia pieza en esa
+    // proporción, entra acá.
+    openGraph: {
+      title: titulo,
+      description: descripcion,
+      url: `/${slug}`,
+      siteName: "Fidelli Motors",
+      locale: "es_AR",
+      type: "website",
+      images: [OG_IMAGEN],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: titulo,
+      description: descripcion,
+      images: [OG_IMAGEN.url],
+    },
+  };
+}
+
+// JSON-LD del lubricentro: AutoRepair, el subtipo de LocalBusiness que
+// corresponde. SOLO los campos que existen de verdad en el registro — un
+// campo inventado o vacío es peor que ausente, así que dirección y
+// teléfono entran únicamente si la primera sucursal los tiene cargados.
+// `horarios` es texto libre del dueño y no el formato que openingHours
+// espera, así que no se emite; geo no existe en la base.
+function datosLubricentro(slug: string, lubricentro: Lubricentro) {
+  const conDireccion = lubricentro.sucursales.find((s) => s.direccion);
+  const conTelefono = lubricentro.sucursales.find((s) => s.telefono);
+  const redes = [
+    lubricentro.contacto.instagram,
+    lubricentro.contacto.facebook,
+  ].filter((u): u is string => !!u && u.startsWith("http"));
+
+  return {
+    "@context": "https://schema.org",
+    "@type": "AutoRepair",
+    name: lubricentro.nombre,
+    url: `${SITIO_URL}/${slug}`,
+    ...(lubricentro.logoUrl ? { image: lubricentro.logoUrl } : {}),
+    ...(conTelefono ? { telephone: conTelefono.telefono } : {}),
+    ...(conDireccion
+      ? {
+          address: {
+            "@type": "PostalAddress",
+            streetAddress: conDireccion.direccion,
+            addressCountry: "AR",
+          },
+        }
+      : {}),
+    ...(redes.length ? { sameAs: redes } : {}),
   };
 }
 
@@ -64,6 +141,17 @@ export default async function PaginaLanding({ params, searchParams }: Props) {
       }}
       className="flex min-h-full flex-1 flex-col"
     >
+      {/* Escapado como el resto de los JSON-LD: un `<` dentro de un
+          <script> puede cerrar la etiqueta antes de tiempo. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(datosLubricentro(slug, lubricentro)).replace(
+            /</g,
+            "\\u003c",
+          ),
+        }}
+      />
       {/* El buscador ocupa el centro de la pantalla apenas carga, sin
           scroll para llegar al input: es lo primero que pide el flow. La
           misma estructura sostiene los tres tamaños —cambia el ancho y el

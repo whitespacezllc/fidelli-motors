@@ -7,7 +7,7 @@ import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { FilaSucursal } from "@/components/sucursales/fila-sucursal";
 import { DialogSucursal } from "@/components/sucursales/dialog-sucursal";
 
-export const metadata: Metadata = { title: "Sucursales — Fidelli Motors" };
+export const metadata: Metadata = { title: "Sucursales" };
 
 export default async function PaginaSucursales() {
   const supabase = await createClient();

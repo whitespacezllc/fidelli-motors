@@ -9,7 +9,7 @@ import { clasesBoton } from "@/components/ui/boton";
 import { Carton } from "@/components/services/carton";
 import { estadoService, puedeEditarse } from "@/lib/servicios";
 
-export const metadata: Metadata = { title: "Editar service — Fidelli Motors" };
+export const metadata: Metadata = { title: "Editar service" };
 
 type Props = { params: Promise<{ serviceId: string }> };
 

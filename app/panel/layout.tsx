@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { exigirRol } from "@/lib/auth/session";
 import { cerrarSesion } from "@/lib/auth/actions";
 import { Sidebar } from "@/components/panel/sidebar";
@@ -5,6 +6,12 @@ import { BarraMobile } from "@/components/panel/barra-mobile";
 import { AvisoSuspension } from "@/components/panel/aviso-suspension";
 
 // La autorización vive acá, no en el proxy: /panel es del rol owner.
+// Superficie privada: nunca en el índice. El robots.txt además la
+// excluye del rastreo; esto cubre el caso de una URL llegada por link.
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
+
 export default async function LayoutPanel({
   children,
 }: {

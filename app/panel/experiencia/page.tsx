@@ -10,7 +10,7 @@ import {
 import { PreviewCelular } from "@/components/experiencia/preview-celular";
 import { obtenerSesion } from "@/lib/auth/session";
 
-export const metadata: Metadata = { title: "Diseño de experiencia — Fidelli Motors" };
+export const metadata: Metadata = { title: "Diseño de experiencia" };
 
 // Donde Bruno decide cómo ve su marca el cliente final. Es lo que
 // convierte la landing de un template en algo suyo, y por eso la vista
