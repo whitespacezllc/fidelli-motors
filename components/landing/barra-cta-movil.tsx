@@ -1,27 +1,37 @@
-import { CTA_WHATSAPP } from "@/lib/landing";
+"use client";
 
-// La barra fija al pie, solo en mobile y durante TODA la página.
+import { CtaWhatsapp } from "@/components/landing/cta-whatsapp";
+import { useCtaHeroVisible } from "@/components/landing/usar-cta-hero";
+
+// La barra fija al pie, solo en mobile.
 //
-// El CTA no va en el navbar de mobile ni en un menú hamburguesa: un menú
-// esconde la única acción de la página detrás de un toque de más. Acá está
-// siempre a la vista y siempre al alcance del pulgar.
+// APARECE RECIÉN CUANDO EL CTA DEL HERO SE VA DE PANTALLA. Antes estaba
+// desde el primer scroll y era el mismo botón dos veces en la misma
+// pantalla: uno en el hero y otro tapándolo tres centímetros abajo.
 //
-// pb con safe-area para que no quede debajo de la barra de gestos del iPhone.
+// El CTA no va en el menú hamburguesa: un menú esconde la única acción de
+// la página detrás de un toque de más. Mientras el hero está a la vista la
+// acción ya está ahí, a tamaño completo; después la toma esta barra y no la
+// suelta hasta el final.
 //
-// z-60: por encima del menú hamburguesa (z-50), no por debajo. "Visible
-// durante toda la página" se toma literal — con el menú abierto la acción
-// primaria tampoco se tapa, y así el menú nunca bloquea la conversión.
+// Montada siempre y corrida hacia abajo con transform, para que entre
+// deslizando. `inert` mientras está afuera: sin eso, el tabulador cae en un
+// botón que no se ve.
+//
+// El aire de abajo lleva safe-area para no quedar debajo de la barra de
+// gestos del iPhone. El alto total —72px más el safe-area— es el mismo
+// padding que reserva el layout al final de la página.
 export function BarraCtaMovil() {
+  const mostrar = !useCtaHeroVisible();
+
   return (
-    <div className="fixed inset-x-0 bottom-0 z-60 border-t border-line bg-base/95 px-5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-md sm:hidden">
-      <a
-        href={CTA_WHATSAPP}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex h-12 w-full items-center justify-center rounded-md bg-brand font-brand text-body font-bold text-white transition-colors hover:bg-brand-deep"
-      >
-        Quiero mi lugar
-      </a>
+    <div
+      inert={!mostrar}
+      className={`fixed inset-x-0 bottom-0 z-60 border-t border-line bg-base px-5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] transition-transform duration-[220ms] ease-out md:hidden ${
+        mostrar ? "translate-y-0" : "translate-y-full"
+      }`}
+    >
+      <CtaWhatsapp className="h-12 w-full text-body" />
     </div>
   );
 }

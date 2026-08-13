@@ -1,18 +1,45 @@
 import type { Metadata } from "next";
-import { Seccion } from "@/components/landing/seccion";
+import { DESCRIPCION_PORTADA, OG_IMAGEN, TITULO_PORTADA } from "@/lib/seo";
+import { DatosEstructurados } from "@/components/landing/datos-estructurados";
 import { Hero } from "@/components/landing/hero";
+import { Prueba } from "@/components/landing/prueba";
+import { QueCambia } from "@/components/landing/que-cambia";
+import { QrYPasos } from "@/components/landing/qr-y-pasos";
+import { Fidelliza } from "@/components/landing/fidelliza";
+import { Caso } from "@/components/landing/caso";
+import { Preguntas } from "@/components/landing/preguntas";
+import { Precio } from "@/components/landing/precio";
 import { Cierre } from "@/components/landing/cierre";
 
 // La landing comercial. Es la única superficie del producto que se indexa a
 // propósito: `/[slug]` también se indexa —es la vidriera del lubricentro—,
 // pero `/[slug]/[patente]` y el panel van noindex.
+// Sin `title` propio: el default del layout raíz ES el título de esta
+// página. El Open Graph se declara acá COMPLETO —Next no lo mezcla en
+// profundidad con el del layout— y con la imagen dimensionada: sin width y
+// height, WhatsApp muestra la miniatura chica en vez de la tarjeta grande.
 export const metadata: Metadata = {
-  title: "Fidelli Motors — el cartón de service, digital",
   alternates: { canonical: "/" },
   robots: { index: true, follow: true },
+  openGraph: {
+    title: TITULO_PORTADA,
+    description: DESCRIPCION_PORTADA,
+    url: "/",
+    siteName: "Fidelli Motors",
+    locale: "es_AR",
+    type: "website",
+    images: [OG_IMAGEN],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: TITULO_PORTADA,
+    description: DESCRIPCION_PORTADA,
+    images: [OG_IMAGEN.url],
+  },
 };
 
-// ANDAMIO — las once secciones en el orden narrativo, todavía sin contenido.
+// Las once secciones, en el orden narrativo. Ya no queda andamio: el
+// componente <Seccion> que sostenía los carteles quedó sin uso.
 //
 // El orden es dolor → deseo → duda, y no es negociable:
 //   · abre por el desorden (02), que es lo que lo hace frenar;
@@ -28,71 +55,28 @@ export const metadata: Metadata = {
 export default function LandingComercial() {
   return (
     <>
+      <DatosEstructurados />
+
       <Hero />
 
-      <Seccion
-        id="como-funciona"
-        numero="03"
-        titulo="La prueba de que es fácil"
-        trabajo="Matar la duda número uno. Se responde mostrando, no explicando: el video de una carga real, sin cortes. La sección que más convierte."
-        fondo="surface"
-      />
+      <Prueba />
 
-      <Seccion
-        id="que-cambia"
-        numero="04"
-        titulo="Qué cambia en tu lubricentro"
-        trabajo="Llevarlo a la situación deseada. Cuatro filas, una por deseo. En mobile la alternancia desaparece: siempre foto arriba, texto abajo."
-      />
+      <QueCambia />
 
       {/* 05 y 06 comparten el fondo grafito SIN corte entre ellas: es el
-          único quiebre visual de la página. */}
-      <Seccion
-        id="qr"
-        numero="05"
-        titulo="Y encima, el QR"
-        trabajo="El “y encima esto”. No resuelve un dolor que él ya sentía: es diferenciación frente al de la vuelta, y lo que hace que el precio parezca barato."
-        fondo="grafito"
-        primeraDeGrafito
-      />
+          único quiebre visual de la página. Las renderiza un solo
+          componente para que no se pueda meter nada en el medio. */}
+      <QrYPasos />
 
-      <Seccion
-        id="pasos-cliente"
-        numero="06"
-        titulo="Los tres pasos del cliente"
-        trabajo="Responder “¿y si mis clientes no lo usan?” mostrando que no hay nada que aprender. Nada de carrusel en mobile: esconde los pasos 2 y 3, que son los que prueban que es fácil."
-        fondo="grafito"
-      />
+      <Fidelliza />
 
-      <Seccion
-        id="fidelliza"
-        numero="07"
-        titulo="Fidelliza"
-        trabajo="El toque de marca y el último empujón antes del precio. Se presenta como un plus, no como la razón principal. Único lugar de la página donde el rojo es superficie."
-        fondo="brand-soft"
-      />
+      {/* La 08 va PEGADA a la 09: la prueba social rinde el doble
+          inmediatamente antes de la cifra. No mover una sin la otra. */}
+      <Caso />
 
-      <Seccion
-        id="caso"
-        numero="08"
-        titulo="El caso Brothers Oil"
-        trabajo="Probar que funciona con alguien igual a él, justo antes de hablar de plata. La prueba social rinde el doble inmediatamente antes del precio."
-      />
+      <Precio />
 
-      <Seccion
-        id="precio"
-        numero="09"
-        titulo="Precio, garantía y cupos"
-        trabajo="Que el precio se lea después del valor y con la garantía al lado. Los cupos se comunican como promesa de servicio, nunca como exclusividad."
-        fondo="surface"
-      />
-
-      <Seccion
-        id="preguntas"
-        numero="10"
-        titulo="Preguntas"
-        trabajo="Desarmar las dudas. Una objeción que no respondés se la contesta él solo, y siempre se contesta que no. Las tres primeras van abiertas, también en mobile."
-      />
+      <Preguntas />
 
       <Cierre />
     </>

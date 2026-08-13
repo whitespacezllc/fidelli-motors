@@ -12,8 +12,8 @@ const CLASE_LINK = "text-ui text-ink-60 transition-colors hover:text-ink";
 
 export function Pie() {
   return (
-    <footer className="border-t border-line bg-base px-5 py-12 sm:px-8 sm:py-14">
-      <div className="mx-auto grid w-full max-w-6xl gap-9 sm:grid-cols-2 lg:grid-cols-4 lg:gap-8">
+    <footer className="border-t border-line bg-base py-12 sm:py-14">
+      <div className="contenedor grid gap-9 sm:grid-cols-2 lg:grid-cols-4 lg:gap-8">
         <div>
           <Logo className="h-5 w-auto" />
           <p className="mt-2.5 text-ui text-ink-60">Córdoba, Argentina</p>

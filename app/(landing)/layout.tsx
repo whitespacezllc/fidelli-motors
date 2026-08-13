@@ -11,8 +11,14 @@ import { Pie } from "@/components/landing/pie";
 // No lee la sesión en ningún punto: la landing es lo que más tráfico
 // anónimo va a recibir y tiene que poder servirse estática.
 //
-// El pb-24 de mobile deja lugar a la barra fija del CTA, que es fixed y no
-// ocupa espacio en el flujo — sin ese aire, tapa el pie.
+// EL AIRE DE ABAJO VA EN ESTE DIV Y NO EN <main>. La barra fija del CTA es
+// `fixed`: no ocupa lugar en el flujo, así que hay que reservárselo al final
+// del documento. Estaba en <main>, que solo empuja el pie hacia abajo — el
+// pie seguía quedando debajo de la barra al llegar al final de la página.
+//
+// La medida no es a ojo y se midió, no se estimó: 73px son 1 de borde + 12
+// de aire arriba + 48 del botón + 12 abajo, más el safe-area del iPhone.
+// A ojo daban 72 y el pie quedaba un píxel abajo de la barra.
 // LA VOZ POR DEFECTO SE DECLARA ACÁ, y no se hereda del body.
 //
 // globals.css pone en <body> la voz del INSTRUMENTO —Public Sans, 14px—,
@@ -29,10 +35,10 @@ export default function LayoutLanding({
   return (
     <div
       data-superficie="landing"
-      className="flex min-h-full flex-1 flex-col font-brand text-body leading-normal"
+      className="flex min-h-full flex-1 flex-col pb-[calc(4.5rem+1px+env(safe-area-inset-bottom))] font-brand text-body leading-normal md:pb-0"
     >
       <Navbar />
-      <main className="flex-1 pb-24 sm:pb-0">{children}</main>
+      <main className="flex-1">{children}</main>
       <Pie />
       <BarraCtaMovil />
     </div>

@@ -1,11 +1,9 @@
 "use client";
 
 import { useRef, useState } from "react";
-import Link from "next/link";
-import { clasesBoton } from "@/components/ui/boton";
 import { PanelAlta } from "@/components/services/panel-alta";
+import { CampoPatente, MiniFicha } from "@/components/services/campos-carton";
 import { esPatenteValida, normalizarPatente, PATENTE_FORMATO } from "@/lib/texto";
-import { formatearFecha } from "@/lib/fechas";
 import {
   buscarPorPatente,
   type VehiculoIdentificado,
@@ -15,58 +13,8 @@ import {
 // ahí tiene sentido salir a buscar.
 const LARGO_MINIMO = 6;
 
-// Caso A: el vehículo ya pasó. Todo lo que el mecánico necesita saber antes
-// de arrancar, incluido si le tiene que anticipar el premio al cliente.
-function MiniFicha({ vehiculo }: { vehiculo: VehiculoIdentificado }) {
-  const nombre =
-    [vehiculo.marca, vehiculo.modelo].filter(Boolean).join(" ") || "Vehículo";
-
-  const ultimo = vehiculo.ultimoServiceFecha
-    ? [
-        `Último service: ${formatearFecha(vehiculo.ultimoServiceFecha)}`,
-        vehiculo.ultimoServiceKm !== null
-          ? `${vehiculo.ultimoServiceKm.toLocaleString("es-AR")} km`
-          : null,
-        vehiculo.ultimoServiceSucursal,
-      ]
-        .filter(Boolean)
-        .join(" · ")
-    : "Todavía no tiene services cargados";
-
-  return (
-    <div className="mt-4 rounded-lg border border-line bg-base p-4">
-      <div className="flex items-start justify-between gap-2.5">
-        {/* Sin truncar: el dueño es uno de los datos que el mecánico necesita
-            sí o sí, y a 375px con el badge al lado no entra en una línea.
-            Preferimos que baje de renglón antes que perderlo. */}
-        <div className="min-w-0">
-          <p className="font-brand text-lead font-bold text-balance text-ink">
-            {nombre}
-          </p>
-          <p className="plate mt-0.5 text-ui text-ink-60">
-            {vehiculo.patente.toUpperCase()} · {vehiculo.clienteNombre}
-          </p>
-        </div>
-        {/* El premio se anticipa acá, antes de arrancar: el cliente está
-            parado enfrente. Dorado, el único amarillo del sistema. */}
-        {vehiculo.premioDisponible && (
-          <span className="shrink-0 rounded-sm border border-reward bg-reward-soft px-2.5 py-1 text-label font-semibold tracking-[0.04em] text-reward uppercase">
-            Premio disponible
-          </span>
-        )}
-      </div>
-
-      <p className="mt-2 text-ui text-ink-60 tabular-nums">{ultimo}</p>
-
-      <Link
-        href={`/panel/services/nuevo/${vehiculo.vehiculoId}`}
-        className={`${clasesBoton("primario", "lg")} mt-3.5 w-full`}
-      >
-        Cargar service
-      </Link>
-    </div>
-  );
-}
+// La MiniFicha (caso A: el vehículo ya pasó) y el campo de patente viven en
+// campos-carton.tsx: son los mismos que usa la simulación de la landing.
 
 export function IdentificarVehiculo() {
   const [patente, setPatente] = useState("");
@@ -127,22 +75,12 @@ export function IdentificarVehiculo() {
       <p className="mt-0.5 text-ui text-ink-60">Escribí la patente y listo</p>
 
       <div className="mt-4">
-        <label htmlFor="patente" className="sr-only">
-          Patente
-        </label>
-        <input
-          id="patente"
-          name="patente"
-          value={patente}
-          onChange={(e) => alEscribir(e.target.value)}
-          // El foco entra solo: el mecánico llega con el auto en el pozo.
+        {/* El foco entra solo: el mecánico llega con el auto en el pozo. */}
+        <CampoPatente
+          valor={patente}
+          alEscribir={alEscribir}
           autoFocus
-          autoComplete="off"
-          autoCapitalize="characters"
-          spellCheck={false}
-          placeholder="ABC 123"
-          aria-describedby={formatoRaro ? "aviso-patente" : undefined}
-          className="plate h-15 w-full rounded-md border-2 border-ink bg-base text-center text-h3 uppercase placeholder:text-ink-40 focus:outline-none"
+          describedBy={formatoRaro ? "aviso-patente" : undefined}
         />
       </div>
 

@@ -1,6 +1,6 @@
-import Image from "next/image";
 import Link from "next/link";
-import { CTA_WHATSAPP } from "@/lib/landing";
+import { CtaWhatsapp } from "@/components/landing/cta-whatsapp";
+import { ID_CTA_HERO } from "@/lib/landing";
 
 // 02 · Hero — que se reconozca en la primera línea.
 //
@@ -33,7 +33,7 @@ export function Hero() {
         className="pointer-events-none absolute -top-40 -left-40 h-[36rem] w-[36rem] rounded-full bg-[radial-gradient(circle,rgba(10,10,10,0.045),transparent_70%)]"
       />
 
-      <div className="relative mx-auto w-full max-w-6xl px-5 pt-10 pb-0 sm:px-8 sm:pt-14 lg:pt-16">
+      <div className="contenedor relative pt-10 pb-0 sm:pt-14 lg:pt-16">
         {/* 1 · Badge pill. Dos partes: el tag en su propio recuadro y el
             texto al lado. */}
         <p className="inline-flex items-center gap-2.5 rounded-full border border-line bg-base py-1.5 pr-4 pl-1.5">
@@ -49,80 +49,124 @@ export function Hero() {
             text-balance reparte las dos líneas sin dejar una huérfana. */}
         <h1
           id="hero-titulo"
-          className="mt-7 max-w-4xl text-balance text-h2 leading-[1.1] font-bold tracking-[-0.02em] text-ink sm:text-h1 lg:text-display"
+          className="mt-7 max-w-4xl text-balance text-h3 leading-[1.1] font-bold tracking-[-0.02em] text-ink min-[360px]:text-h2 sm:text-h1 lg:text-display"
         >
-          Tus services están en un Excel, un cuaderno y un cartón que se pierde.
+          {/* Espacio duro entre "sus" y "autos". No cambia el copy: impide
+              un solo punto de corte. Sin él, los tres modos de wrap dejan
+              algo colgando — balance corta en "sus / autos", pretty en
+              "y / cada service.", y el normal deja "service." solo. Con
+              "sus autos" pegado, el corte cae en la coma, que es donde la
+              frase respira. */}
+          Todos tus clientes, sus{"\u00A0"}autos y cada service.{" "}
+          {/* El remate en su propio renglón, pero solo desde md: `block`
+              fuerza el corte donde el spec lo quiere y en mobile lo suelta
+              para que el titular rompa natural.
+
+              `whitespace-nowrap` en todos los anchos porque la frase no
+              puede quedar partida — es el remate, no una oración más. Eso
+              obliga a que entre entera: a 31px mide 300px y en una pantalla
+              de 320 quedan 280, así que abajo de 360 el titular baja un
+              escalón. Es el mismo problema de "10 días" en la sección 08. */}
+          <span className="whitespace-nowrap md:block">
+            En una sola pantalla.
+          </span>
         </h1>
 
         {/* 3 · Lead. Se queda en 20px SIEMPRE, no escala con el titular.
-            max-w topa la medida de línea en ~65-75 caracteres. */}
-        <p className="mt-5 max-w-[46ch] text-pretty text-lead leading-relaxed text-ink-60">
-          Fidelli Motors los junta en un solo lugar. Cargás el service en 90
-          segundos y el sistema te dice a quién le toca volver.
+            `text-balance` y NO `text-pretty`, que es lo que usa el resto de
+            la landing: `pretty` solo evita la huérfana de UNA palabra, y
+            acá la última línea quedaba en "toca volver." en las dos puntas
+            —a 1440 y a 390—. `balance` empareja los renglones y el corte
+            cae solo en la juntura de la frase:
+              1440 → "…desde el celular," / "y el sistema te dice…"
+               390 → tres renglones parejos, el último de siete palabras
+            En mobile el ancho lo pone el contenedor, así que toparlo no
+            alcanzaba: el único arreglo que sirve en los dos lados es este.
+            48ch topa la medida de línea en desktop, dentro de los 65-75. */}
+        <p className="mt-5 max-w-[48ch] text-balance text-lead leading-relaxed text-ink-60">
+          Los cargás en 90 segundos desde el celular, y el sistema te dice a
+          quién le toca volver.
         </p>
 
         {/* 4 · Los dos botones. El primario es el único rojo; el secundario
             va en outline grafito y baja a la sección 03. */}
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
-          <a
-            href={CTA_WHATSAPP}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex h-13 items-center justify-center rounded-md bg-brand px-7 text-body font-bold text-white transition-colors hover:bg-brand-deep"
-          >
-            Quiero mi lugar
-          </a>
+          {/* Lleva el id que miran el navbar y la barra fija de mobile: los
+              dos cambian de estado cuando este botón sale de pantalla. */}
+          <CtaWhatsapp id={ID_CTA_HERO} className="h-13 px-7 text-body" />
           <Link
             href="#como-funciona"
             className="inline-flex h-13 items-center justify-center gap-2 rounded-md border border-ink px-7 text-body font-bold text-ink transition-colors hover:bg-surface"
           >
-            Ver cómo se carga
+            Ver cómo funciona
             <span aria-hidden className="text-ink-60">
               ↓
             </span>
           </Link>
         </div>
 
-        {/* 5 · La prueba social. NO va en rojo: es escasez, no acción. El
-            punto verde dice "esto está andando ahora", que es literal. */}
-        <p className="mt-6 flex flex-wrap items-center gap-x-2 gap-y-1 text-ui text-ink-40">
-          <span aria-hidden className="size-2 shrink-0 rounded-full bg-success" />
-          Funcionando en Brothers Oil, Córdoba
-          <span aria-hidden className="text-line">·</span>
-          Quedan 4 de 5 lugares
-        </p>
-
-        {/* 6 · La captura, a todo el ancho del contenedor y con su borde
+        {/* 5 · La captura, a todo el ancho del contenedor y con su borde
             izquierdo en el mismo eje que el badge, el titular y los botones.
 
-            La altura va en `svh` y NO en `flex-1`: un flex item no se encoge
-            por debajo de su contenido, así que con flex-1 la imagen entraba
-            entera y estiraba la sección a 1181px en una pantalla de 900 —
-            justo lo contrario del recorte. Con una altura proporcional al
-            viewport el corte está garantizado en los tres tamaños, porque la
-            captura es más alta que ancha (ratio 1.16) y a cualquier ancho su
-            alto natural supera al contenedor.
+            SON DOS CAPTURAS, no una recortada. Encoger la de escritorio a
+            390px deja la tabla en tipografía de 4px, y además muestra el
+            producto en el dispositivo equivocado: el lubricentrero que abre
+            esto desde el mostrador tiene que ver la app en un teléfono.
+            Las dos son reales, del panel andando con las patentes ficticias
+            del entorno local, y se regeneran con scripts/capturar-panel.mjs.
 
-            Es una captura REAL del panel andando —la pantalla de próximos
-            services, con las patentes del entorno de prueba—, no un mockup
-            dibujado. Se regenera con scripts/capturar-panel.mjs. */}
-        <div className="mt-10 h-[26svh] min-h-24 overflow-hidden sm:mt-14 sm:h-[38svh] lg:h-[44svh]">
-          <div className="overflow-hidden rounded-t-lg border border-b-0 border-line shadow-[0_-1px_40px_rgba(10,10,10,0.06)]">
-            {/* En mobile la captura va al DOBLE del ancho del contenedor y
-                se corta también a la derecha. Encogida a 335px, la tabla
-                del panel queda en tipografía de 4px: no se lee nada y deja
-                de ser prueba para pasar a ser ruido. Al doble se reconoce
-                la lista de autos con su patente y su estado, que es
-                justamente lo que la sección tiene que demostrar. */}
-            <Image
-              src="/assets/panel-proximos-services.webp"
-              alt="El panel de Fidelli Motors mostrando los próximos services: qué cliente, qué vehículo, cuándo le toca volver y su estado."
-              width={2880}
-              height={2480}
-              priority
-              className="w-[200%] max-w-none sm:w-full"
-            />
+            `<picture>` y no dos <Image> con `hidden`: un <img> en
+            display:none igual se descarga, así que el celular se bajaría
+            también la captura de escritorio. Con <source media> el
+            navegador elige una sola, y es la única forma de hacer art
+            direction de verdad. Por eso también se pierde next/image acá:
+            los archivos ya son webp del tamaño justo.
+
+            LA PORCIÓN VISIBLE ES LA MISMA EN LOS TRES ANCHOS — 60% de cada
+            captura. La proporción del marco sale de dividir la de cada
+            imagen por 0,6: la de escritorio es 16:10 → 8/3, y la de celular
+            390×844 → 10/13. Sin eso se veía media pantalla en un tamaño y
+            dos filas en otro. */}
+        <div className="relative mt-10 sm:mt-14">
+          <div className="aspect-[10/13] overflow-hidden rounded-t-lg border-x border-t border-line md:aspect-[8/3]">
+            <picture>
+              {/* Dos densidades: la de 1520 alcanza para una pantalla 1x
+                  (el hueco tope mide ~1120px de CSS) y la de 2880 es para
+                  retina. Sin el srcset, una notebook 1x bajaba el doble de
+                  píxeles de los que podía mostrar. */}
+              <source
+                media="(min-width: 768px)"
+                srcSet="/assets/panel-proximos-services-1520.webp 1520w, /assets/panel-proximos-services.webp 2880w"
+                sizes="(min-width: 1240px) 1118px, 92vw"
+                width={2880}
+                height={1800}
+              />
+              <img
+                src="/assets/panel-proximos-services-celular.webp"
+                alt="El panel de Fidelli Motors con los próximos services: qué cliente, qué vehículo, cuándo le toca volver y su estado."
+                width={780}
+                height={1688}
+                // Es la imagen del LCP: se pide temprano y sin lazy, que es
+                // lo que hacía `priority` en next/image.
+                fetchPriority="high"
+                decoding="async"
+                className="h-auto w-full"
+              />
+            </picture>
           </div>
+
+          {/* El corte de abajo es un DEGRADADO, no un tajo: la captura se
+              desvanece contra el fondo de la página. Va como capa aparte y
+              sobre el marco —no adentro— para que también apague los bordes
+              laterales; si no, las dos líneas seguían bajando nítidas hasta
+              cortarse de golpe.
+
+              El color final es el token del fondo de esta sección, no un
+              blanco escrito a mano: cualquier diferencia se ve como costura. */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_bottom,transparent_0%,transparent_55%,var(--color-base)_100%)]"
+          />
         </div>
       </div>
     </section>

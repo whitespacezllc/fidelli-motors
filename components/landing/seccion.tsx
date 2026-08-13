@@ -48,7 +48,7 @@ export function Seccion({
       aria-labelledby={`${id}-titulo`}
       // scroll-mt deja el título despejado del navbar sticky al saltar por
       // el ancla. 56px en mobile, 64 desde sm: los altos del navbar.
-      className={`scroll-mt-14 px-5 sm:scroll-mt-16 sm:px-8 ${FONDOS[fondo]} ${
+      className={`scroll-mt-14 px-5 md:scroll-mt-16 sm:px-8 ${FONDOS[fondo]} ${
         enGrafito && !primeraDeGrafito ? "pt-0 pb-14 sm:pb-20" : "py-14 sm:py-20"
       }`}
     >

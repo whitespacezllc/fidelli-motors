@@ -2,6 +2,14 @@
 
 Once secciones. Copy cerrado. El diseño visual sale del design system en `CLAUDE.md`.
 
+> **Nota de sesión (12/08/2026):** decisiones de chat que pisan partes de este documento
+> y todavía no están reescritas sección por sección: el CTA único de toda la página es
+> **[ícono WhatsApp] Sumar mi lubricentro** (reemplaza a "Quiero mi lugar" en 01/02/09 y a
+> "Hablar por WhatsApp" en 11); **"Ingresar" salió del navbar** y vive en el pie; el navbar
+> es blanco sin borde, se esconde al bajar y su botón alterna outline/rojo según el CTA del
+> hero; el H1 y el lead del hero son los de la sesión del 12/08. La **sección 03 ya está
+> actualizada acá abajo** (la simulación reemplazó al video).
+
 **Orden narrativo: dolor → deseo → duda.** Abre por el desorden porque es lo que lo hace frenar;
 sigue por la facilidad porque es la condición de entrada; después los resultados. El QR va en el
 medio, no arriba — es el "y encima", no el gancho. Las dudas se responden **antes** del precio.
@@ -68,36 +76,44 @@ Derecha: foto. **La línea de prueba social va arriba del fold.**
 
 ## 03 · La prueba de que es fácil
 
-**Trabajo:** matar la duda número uno. Se responde mostrando, no explicando.
-Es la sección que más convierte y la más barata de producir.
+**Trabajo:** matar la duda número uno. Se responde **haciendo**, no explicando: el
+visitante carga un service él mismo. *(Decisión de sesión del 12/08: la simulación
+interactiva reemplazó al video — un video se mira, esto se prueba, y no depende de
+material que todavía no existe.)*
 
-**Desktop** — título centrado, toggle segmentado, y abajo dos columnas: video 3:4 a la
-izquierda, tres pasos en cards a la derecha.
-**Mobile** — título, toggle, video a ancho completo sangrado a los bordes, pasos apilados.
+**Desktop** — título centrado, y abajo dos columnas: el marco de celular con la
+simulación a la izquierda, tres pasos en cards a la derecha.
+**Mobile** — sin marco de celular (un teléfono adentro de un teléfono es redundante):
+la simulación a ancho completo, pasos apilados abajo.
 
 ### Copy
 
-> **H2:** Así se carga un service. Sin cortes.
-> **Lead:** Grabado en Brothers Oil, con el cronómetro corriendo.
->
-> **Toggle:** Desde el celular | Desde la compu
+> **H2:** Cargá un service ahora mismo. Sin instalar nada.
+> **Lead:** Es el flujo real del producto, tal cual lo ve tu mecánico.
 >
 > **Pasos:**
 > 1. **Patente y kilómetros** — Si el auto ya vino, aparece todo solo.
 > 2. **Aceite y filtros** — De tu propio catálogo, cargado en la instalación.
 > 3. **Confirmar** — Listo. El próximo service se calcula solo.
 >
-> **Remate:** ⏱ 1:24 en el video, sin acelerar
-
-"Sin cortes" es la palabra clave: todo el mundo sabe que un video de producto está editado.
-**Si el video real da 1:24, poné 1:24.** No lo redondees a 90.
+> **Éxito:** ✓ Service guardado · Lo cargaste en {el tiempo del visitante}. · Volver a empezar
 
 ### Notas
 
-- `autoplay muted loop playsinline` + poster. Sin sonido: se ve en el trabajo.
-- El toggle cambia el `src` sin recargar. Precargar el segundo video.
-- Cronómetro **quemado en el video**, no en HTML, para que sobreviva si alguien lo comparte.
-- Mismo encuadre 3:4 en las dos tomas para que el toggle no salte.
+- **La simulación se construye con los componentes REALES del formulario de carga**
+  (`components/services/campos-carton.tsx`) — mismos inputs, mismo orden, mismos
+  textos. Si el formulario cambia, la landing cambia sola. Nada de maquetas paralelas.
+- Flujo de un solo camino feliz: patente → **el auto y el cliente aparecen solos**
+  (el momento más importante, con transición visible) → kilómetros → aceite y
+  filtros → confirmar → éxito.
+- Cronómetro en pantalla: arranca al primer toque, para al confirmar, y el número
+  que se muestra es el del visitante.
+- Sin backend, sin validación real, sin persistencia.
+- **Fallback obligatorio:** sin JS o sin interacción se ve el formulario ya completo
+  (la "vitrina", renderizada en el servidor), nunca una pantalla vacía. "Probalo vos"
+  es la puerta al modo interactivo.
+- Teclado de punta a punta y `prefers-reduced-motion` respetado (sin delay de
+  búsqueda artificial ni animaciones).
 
 ---
 
@@ -303,7 +319,7 @@ En mobile las tres primeras **siguen abiertas** — no las escondas para ahorrar
 ### Abiertas
 
 > **¿Me lleva más tiempo que el cartón?**
-> No. 90 segundos, y el próximo service se calcula solo. Mirá el video de arriba.
+> No. 90 segundos, y el próximo service se calcula solo. Probalo vos, acá arriba.
 >
 > **¿Tengo que cargar mis clientes viejos?**
 > No. Arrancás con el próximo service de cada uno. Si tenés Excel, lo migramos nosotros.
@@ -380,14 +396,14 @@ Sin newsletter. Este público no se suscribe a nada.
 
 - Las 11 secciones completas con el copy de este documento
 - **Capturas reales del panel** — se toman hoy, gratis, nunca se reemplazan por IA
-- **Screen recording** de una carga de service con cronómetro, en lugar del video filmado
+- **Simulación interactiva de la carga** en la sección 03 *(reemplazó al screen recording y al video filmado — decisión de sesión del 12/08)*
 - Imágenes IA solo de ambiente, con el nombre de archivo final que va a tener la real
 - Caso Brothers Oil **sin retrato**: cita, números y logo
 - WhatsApp andando · dominio · favicon · deploy
 
 ## Entrega 2 — viernes · material real
 
-- Video de carga: celular y compu, con cronómetro, sin cortes
+- ~~Video de carga: celular y compu~~ — reemplazado por la simulación interactiva de la 03
 - Video de Bruno de 20 segundos, o su foto si no sale
 - Foto de la calco pegada en un parasol real
 - Las tres fotos del recorrido del cliente
@@ -410,7 +426,7 @@ Sin newsletter. Este público no se suscribe a nada.
 | Sección | Hoy | Viernes |
 |---|---|---|
 | 02 Hero | IA · ambiente de lubricentro argentino, plano general, sin caras | Panel en el celular, en el box |
-| 03 Prueba | **Real** · screen recording con cronómetro | Los dos videos 3:4 |
+| 03 Prueba | **Real** · simulación interactiva con los componentes del producto | Sin cambios |
 | 04 Qué cambia | **Real** · capturas del panel con patentes cambiadas | Idem + foto de contexto por fila |
 | 05 QR | IA · calco genérica + **real** captura de la página pública | Calco de Brothers Oil en un parasol real |
 | 06 Tres pasos | IA · manos con celular + capturas reales de las pantallas 2 y 3 | Las tres fotos del recorrido |

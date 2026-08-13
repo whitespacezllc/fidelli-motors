@@ -16,6 +16,42 @@ const MENSAJE =
 export const CTA_WHATSAPP = `https://wa.me/${WHATSAPP_VENTAS}?text=${encodeURIComponent(MENSAJE)}`;
 
 /**
+ * El texto del CTA, uno solo para toda la página: navbar, hero, precio,
+ * cierre y la barra fija de mobile.
+ *
+ * OJO — `docs/landing-spec.md` todavía dice "Quiero mi lugar" en la 01 y la
+ * 02, y "Hablar por WhatsApp" en la 11. Esto lo pisa por decisión de sesión:
+ * una sola acción con un solo nombre. Si el spec no se actualiza, el
+ * próximo que lo lea va a creer que la landing está mal.
+ */
+export const TEXTO_CTA = "Sumar mi lubricentro";
+
+/**
+ * El id del CTA del hero. Lo miran con IntersectionObserver el navbar —para
+ * decidir si su botón va en outline o en rojo— y la barra fija de mobile,
+ * que recién aparece cuando este sale de pantalla. Vive acá y no escrito a
+ * mano en cada lado porque son tres archivos que tienen que coincidir.
+ */
+export const ID_CTA_HERO = "cta-hero";
+
+/**
+ * La garantía de 30 días, palabra por palabra.
+ *
+ * Vive en una constante y no suelta en el JSX de la sección 09 porque el
+ * spec la ata al documento de cancelación y reembolsos (entrega 2): si acá
+ * dice "te devolvemos la plata" y allá dice "menos el costo de las calcos",
+ * es un reclamo esperando. Cuando se escriba `/terminos`, esa página importa
+ * esta constante en vez de volver a tipear la frase.
+ *
+ * La segunda oración es una CONDICIÓN, no un adorno: "que lo hayas usado"
+ * es lo único que separa la garantía de un mes gratis. Cuando se escriba la
+ * política tiene que definir qué cuenta como usarlo, y decirlo igual que
+ * acá.
+ */
+export const GARANTIA_30_DIAS =
+  "Si a los 30 días no te sirve, te devolvemos la plata. Solo te pedimos que lo hayas usado.";
+
+/**
  * Las once secciones, en el orden narrativo: dolor → deseo → duda.
  * El id es el ancla; los tres que usa el navbar son `como-funciona`,
  * `precio` y `preguntas`. El resto lleva id igual, para poder medir
