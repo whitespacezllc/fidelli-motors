@@ -4,7 +4,10 @@ import { createClient } from "@/lib/supabase/server";
 import { Logo } from "@/components/marca/logo";
 import { FormularioClave } from "@/components/auth/formulario-clave";
 
-export const metadata: Metadata = { title: "Creá tu contraseña — Fidelli Motors" };
+export const metadata: Metadata = {
+  title: "Creá tu contraseña",
+  robots: { index: false, follow: false },
+};
 
 // Sirve para los dos enlaces de email: invitación y recuperación.
 // El título es neutro a propósito — el flujo es el mismo en ambos casos.

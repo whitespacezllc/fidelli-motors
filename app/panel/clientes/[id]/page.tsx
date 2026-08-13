@@ -9,7 +9,7 @@ import { estadoService } from "@/lib/servicios";
 import { formatearCuit } from "@/lib/cuit";
 import { formatearFecha, formatearMesAnio } from "@/lib/fechas";
 
-export const metadata: Metadata = { title: "Cliente — Fidelli Motors" };
+export const metadata: Metadata = { title: "Cliente" };
 
 export default async function FichaCliente({
   params,

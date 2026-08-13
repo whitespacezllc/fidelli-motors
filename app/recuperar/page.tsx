@@ -3,7 +3,8 @@ import { Logo } from "@/components/marca/logo";
 import { FormularioRecuperar } from "@/components/auth/formulario-recuperar";
 
 export const metadata: Metadata = {
-  title: "Recuperá tu contraseña — Fidelli Motors",
+  title: "Recuperá tu contraseña",
+  robots: { index: false, follow: false },
 };
 
 export default function PaginaRecuperar() {

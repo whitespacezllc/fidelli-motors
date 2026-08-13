@@ -1,0 +1,47 @@
+# Fidelli Motors
+
+> Fidelli Motors es el sistema para lubricentros en Argentina: cargá un service en 90 segundos, olvidate del cartón y traé a tus clientes de vuelta.
+
+Sitio: https://fidellimotors.app
+
+## Para quién
+
+Para el dueño de un lubricentro. Todos tus clientes, sus autos y cada service, en una sola pantalla. Los cargás en 90 segundos desde el celular, y el sistema te dice a quién le toca volver.
+
+## Qué hace hoy
+
+- Cargar un service: patente, kilómetros, aceite, filtros. Listo. El mismo gesto que hacías en el cartón, en el celular, en 90 segundos.
+- Avisos por kilómetros: cada auto pasa por tres estados (próximo, urgente y vencido) y en cada uno le mandás un mensaje, hasta tres seguimientos para que no se le pase el service.
+- Página pública con QR y tu marca: una calco en el parasol, y tu cliente tiene todo el historial del auto. Escanea el QR, escribe su patente y ve su historial. Sin app, sin cuenta y sin contraseña.
+- Fidelliza: definís el premio y cada cuántos services se gana. El sistema lleva la cuenta solo, y tu cliente ve cuánto le falta cada vez que escanea el parasol.
+- Services y clientes ilimitados. Soporte por WhatsApp.
+
+## Qué NO hace
+
+- No carga tus clientes viejos: arrancás con el próximo service de cada uno, y el historial se arma solo a medida que trabajás.
+- Necesita conexión. Como cargás desde el celular, si se cae el wifi del local seguís trabajando con los datos del teléfono.
+- Hoy está hecho para el service: cargás el aceite, los filtros y los líquidos, y tenés un campo de observaciones para el resto del trabajo. La versión completa para talleres mecánicos está en el roadmap.
+- Tu cliente no baja ninguna app.
+
+## Precio
+
+- Plan mensual: $46.750 por mes. Ajuste trimestral según IPC. Sin permanencia.
+- Plan anual: $35.063 por mes ($420.750 al año, pagás 9 meses y usás 12).
+- Instalación: $0 para los fundadores hasta octubre de 2026 (después, $93.500). Incluye 500 calcos con QR, carga del catálogo de productos, capacitación en el local y manual de usuario.
+- Garantía de 30 días: si a los 30 días no te sirve, te devolvemos la plata. Solo te pedimos que lo hayas usado.
+
+## Cómo se contrata
+
+Por WhatsApp: https://wa.me/5493516136192
+
+No activamos un lubricentro a distancia. Vamos a tu local, lo dejamos funcionando el mismo día y capacitamos a tu equipo. Por eso abrimos 5 lugares por mes hasta octubre de 2026.
+
+## Caso real
+
+Brothers Oil (Córdoba): 262 services cargados en los 15 días desde la instalación, con 2 sucursales funcionando.
+
+## Secciones
+
+- Cómo funciona: https://fidellimotors.app/#como-funciona
+- Precio: https://fidellimotors.app/#precio
+- Preguntas frecuentes: https://fidellimotors.app/#preguntas

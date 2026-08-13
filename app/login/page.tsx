@@ -6,7 +6,10 @@ import { PanelVisual } from "@/components/auth/panel-visual";
 import { FormularioLogin } from "@/components/auth/formulario-login";
 import { Logo } from "@/components/marca/logo";
 
-export const metadata: Metadata = { title: "Entrá a tu panel — Fidelli Motors" };
+export const metadata: Metadata = {
+  title: "Entrá a tu panel",
+  robots: { index: false, follow: false },
+};
 
 export default async function PaginaLogin({
   searchParams,

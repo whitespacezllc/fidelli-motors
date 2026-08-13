@@ -11,7 +11,7 @@ import { FilaCliente } from "@/components/clientes/fila-cliente";
 import { BotonExportar } from "@/components/clientes/boton-exportar";
 import { filtroClientes } from "@/lib/clientes";
 
-export const metadata: Metadata = { title: "Clientes — Fidelli Motors" };
+export const metadata: Metadata = { title: "Clientes" };
 
 export default async function PaginaClientes({
   searchParams,

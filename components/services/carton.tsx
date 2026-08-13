@@ -8,13 +8,21 @@ import { CartonPapel } from "@/components/services/carton-papel";
 import {
   RENGLONES,
   GRUPOS,
-  VISCOSIDADES_SAE,
   esViscosidadValida,
   normalizarViscosidad,
   formatearKm,
   VISCOSIDAD_FORMATO,
   type ItemTipo,
 } from "@/lib/renglones";
+import {
+  CLASE_CAMPO,
+  CLASE_LABEL,
+  CabeceraCarton,
+  CampoKilometros,
+  SelectorViscosidad,
+  SelectorProductoAceite,
+  RenglonInterruptor,
+} from "@/components/services/campos-carton";
 import { recordarSucursal } from "@/lib/preferencias";
 import {
   guardarService,
@@ -64,10 +72,8 @@ export type ServiceEnEdicion = {
   cambiados: Record<string, boolean>;
 };
 
-const CLASE_CAMPO =
-  "h-12 w-full rounded-md border border-line bg-base px-3.5 text-body text-ink placeholder:text-ink-40";
-const CLASE_LABEL =
-  "mb-1.5 block text-label font-semibold tracking-[0.06em] text-ink-60 uppercase";
+// CLASE_CAMPO y CLASE_LABEL viven en campos-carton.tsx, junto con los
+// campos extraídos que también usa la simulación de la landing.
 
 // Los tres saltos del cartón. Sin "Otro": la carga es a botón fijo — un
 // número a mano era la puerta a un 100.000 de más que ensucia la
@@ -142,10 +148,7 @@ export function Carton({
 
   const kmNum = Number(km.replace(/\D/g, ""));
   const kmCargado = km.trim() !== "" && Number.isFinite(kmNum);
-  // El typo más probable y el que más ensucia la predicción de retorno.
-  // Advierte, nunca bloquea: un odómetro cambiado es real.
-  const kmMenor =
-    kmCargado && datos.ultimoService !== null && kmNum < datos.ultimoService.kilometros;
+  // El aviso de "menos que el último service" vive en CampoKilometros.
 
   const viscosidadRara =
     aceiteTipo.trim().length > 0 && !esViscosidadValida(aceiteTipo);
@@ -364,17 +367,13 @@ export function Carton({
   // ---------- Momento 1 ----------
   return (
     <div>
-      {/* 1. Cabecera sticky: acompaña todo el scroll.
-          En mobile va a sangre, como una barra del sistema. En desktop se
-          contiene al ancho del cartón y flota como tarjeta: una banda que
-          sobresale del formulario se lee como un error de maquetado. */}
-      <div className="sticky top-0 z-20 -mx-4 mb-4 flex items-center gap-3 border-b border-line bg-base px-4 py-3 sm:mx-0 sm:rounded-lg sm:border sm:px-5 sm:shadow-md">
-        <div className="min-w-0 flex-1">
-          <p className="plate truncate text-body text-ink">{datos.patente}</p>
-          <p className="truncate text-label text-ink-60">
-            {datos.vehiculoNombre} · {datos.clienteNombre}
-          </p>
-        </div>
+      {/* 1. Cabecera sticky, compartida con la simulación de la landing.
+          El select de sucursal es del panel y va como hijo. */}
+      <CabeceraCarton
+        patente={datos.patente}
+        vehiculoNombre={datos.vehiculoNombre}
+        clienteNombre={datos.clienteNombre}
+      >
         <select
           value={sucursalId}
           onChange={(e) => {
@@ -391,7 +390,7 @@ export function Carton({
             </option>
           ))}
         </select>
-      </div>
+      </CabeceraCarton>
 
       {/* Caso borde: ya se cargó un service hoy para esta patente */}
       {datos.serviceDeHoy && (
@@ -423,30 +422,11 @@ export function Carton({
             />
           </div>
 
-          <div>
-          <label htmlFor="km" className={CLASE_LABEL}>
-            Kilómetros
-          </label>
-          <input
-            id="km"
-            inputMode="numeric"
-            value={km}
-            onChange={(e) => setKm(e.target.value)}
-            className={`${CLASE_CAMPO} h-14 text-h3 tabular-nums`}
+          <CampoKilometros
+            km={km}
+            alCambiar={setKm}
+            ultimoService={datos.ultimoService}
           />
-          {datos.ultimoService && (
-            <p className="mt-1.5 text-label text-ink-60 tabular-nums">
-              Último service: {formatearKm(datos.ultimoService.kilometros)} km
-            </p>
-          )}
-          {kmMenor && datos.ultimoService && (
-            <p className="mt-2 rounded-md bg-urgente-soft px-3.5 py-3 text-ui text-urgente">
-              Son menos que el último service (
-              {formatearKm(datos.ultimoService.kilometros)} km). Verificá el
-              odómetro — si está bien, seguí igual.
-            </p>
-          )}
-          </div>
         </div>
 
         {/* 4. Aceite de motor — bloque destacado, siempre en blanco */}
@@ -456,67 +436,15 @@ export function Carton({
           </p>
           <div className="flex flex-col gap-3 sm:flex-row">
             <div className="sm:flex-1">
-              <label htmlFor="viscosidad" className={CLASE_LABEL}>
-                Viscosidad
-              </label>
-              <input
-                id="viscosidad"
-                value={aceiteTipo}
-                onChange={(e) => setAceiteTipo(e.target.value.toUpperCase())}
-                autoCapitalize="characters"
-                autoComplete="off"
-                className={`${CLASE_CAMPO} tabular-nums`}
-              />
-              {/* Las once SAE de un tap, en el orden del rubro y SIEMPRE en
-                  el mismo lugar: la posición fija hace memoria muscular.
-                  Ninguna viene marcada — el campo arranca vacío a propósito
-                  (la viscosidad nunca se autocompleta) — y el texto libre
-                  sigue: el que tiene el envase en la mano sabe más. */}
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {VISCOSIDADES_SAE.map((v) => {
-                  const activa = normalizarViscosidad(aceiteTipo) === v;
-                  return (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => setAceiteTipo(v)}
-                      aria-pressed={activa}
-                      className={`flex h-11 items-center rounded-md border px-2.5 text-ui tabular-nums transition-colors ${
-                        activa
-                          ? "border-ink bg-ink font-semibold text-white"
-                          : "border-line bg-base text-ink-60 hover:bg-surface"
-                      }`}
-                    >
-                      {v}
-                    </button>
-                  );
-                })}
-              </div>
+              <SelectorViscosidad valor={aceiteTipo} alCambiar={setAceiteTipo} />
             </div>
             <div className="sm:flex-[1.4]">
-              <label htmlFor="aceite-producto" className={CLASE_LABEL}>
-                Producto <span className="text-ink-40 normal-case">(opcional)</span>
-              </label>
-              <select
-                id="aceite-producto"
-                value={aceiteProductoId}
-                onChange={(e) => {
-                  if (e.target.value === "__nuevo") {
-                    setAltaProducto(true);
-                    return;
-                  }
-                  setAceiteProductoId(e.target.value);
-                }}
-                className={CLASE_CAMPO}
-              >
-                <option value="">Sin producto</option>
-                {aceitesDelCatalogo.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nombre}
-                  </option>
-                ))}
-                <option value="__nuevo">+ Agregar producto…</option>
-              </select>
+              <SelectorProductoAceite
+                valor={aceiteProductoId}
+                alCambiar={setAceiteProductoId}
+                aceites={aceitesDelCatalogo}
+                alPedirAlta={() => setAltaProducto(true)}
+              />
             </div>
           </div>
 
@@ -579,32 +507,11 @@ export function Carton({
               const encendido = r.tipo in marcados;
               return (
                 <div key={r.tipo} className="border-b border-line last:border-b-0">
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={encendido}
-                    onClick={() => alternarRenglon(r.tipo)}
-                    className="flex min-h-13 w-full items-center justify-between gap-3 px-3.5 py-2 text-left"
-                  >
-                    <span
-                      className={`text-body ${
-                        encendido ? "font-semibold text-ink" : "text-ink-60"
-                      }`}
-                    >
-                      {r.corto}
-                    </span>
-                    <span
-                      className={`flex h-6 w-10 shrink-0 items-center rounded-full p-0.5 transition-colors ${
-                        encendido ? "bg-ink" : "bg-line"
-                      }`}
-                    >
-                      <span
-                        className={`size-5 rounded-full bg-base shadow-sm transition-transform ${
-                          encendido ? "translate-x-4" : "translate-x-0"
-                        }`}
-                      />
-                    </span>
-                  </button>
+                  <RenglonInterruptor
+                    etiqueta={r.corto}
+                    encendido={encendido}
+                    alAlternar={() => alternarRenglon(r.tipo)}
+                  />
 
                   {encendido && (
                     <div className="flex flex-col gap-1 px-3.5 pb-3">

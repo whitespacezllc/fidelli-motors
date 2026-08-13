@@ -25,7 +25,7 @@ import {
   type Periodo,
 } from "@/lib/fidelli/plan";
 
-export const metadata: Metadata = { title: "Mi cuenta — Fidelli Motors" };
+export const metadata: Metadata = { title: "Mi cuenta" };
 
 function Bloque({
   titulo,

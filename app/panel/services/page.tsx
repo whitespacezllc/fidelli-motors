@@ -11,7 +11,7 @@ import { FilaService } from "@/components/services/fila-service";
 import { estadoService } from "@/lib/servicios";
 import { normalizarPatente } from "@/lib/texto";
 
-export const metadata: Metadata = { title: "Services — Fidelli Motors" };
+export const metadata: Metadata = { title: "Services" };
 
 // Un lubricentro activo acumula miles: se pagina siempre, no se trae todo.
 const POR_PAGINA = 30;
