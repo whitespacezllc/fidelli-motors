@@ -26,11 +26,16 @@ export function FiltroSucursal({
       value={actual ?? ""}
       onChange={(e) => {
         const v = e.target.value;
-        iniciar(() =>
-          router.replace(v ? `/panel?sucursal=${v}` : "/panel", {
-            scroll: false,
-          }),
-        );
+        // Se edita SOLO la clave sucursal: reconstruir la URL entera se
+        // llevaba puesto ?vista= (el período del gráfico) y cualquier otro
+        // parámetro que la pantalla sume después.
+        iniciar(() => {
+          const params = new URLSearchParams(window.location.search);
+          if (v) params.set("sucursal", v);
+          else params.delete("sucursal");
+          const qs = params.toString();
+          router.replace(qs ? `/panel?${qs}` : "/panel", { scroll: false });
+        });
       }}
       aria-label="Filtrar por sucursal"
       className="h-11 rounded-md border border-line bg-base px-2.5 text-ui text-ink"
