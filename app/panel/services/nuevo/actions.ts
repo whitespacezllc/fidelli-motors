@@ -18,6 +18,7 @@ import {
   sanitizarBusqueda,
   PATENTE_FORMATO,
 } from "@/lib/texto";
+import { hoyISO } from "@/lib/fechas";
 
 export type VehiculoIdentificado = {
   vehiculoId: string;
@@ -147,7 +148,9 @@ function leerVehiculo(formData: FormData) {
   const modelo = String(formData.get("modelo") ?? "").trim() || null;
   const anioTexto = String(formData.get("anio") ?? "").trim();
 
-  const maximo = new Date().getFullYear() + 1;
+  // El año del calendario argentino: con el del proceso (UTC), el 31/12
+  // a la noche el tope se corría un año antes de tiempo.
+  const maximo = Number(hoyISO().slice(0, 4)) + 1;
   const anio = anioTexto ? Number(anioTexto) : null;
   const anioValido =
     anio === null || (Number.isInteger(anio) && anio >= 1900 && anio <= maximo);

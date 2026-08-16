@@ -9,7 +9,11 @@ import { BadgeEstado } from "@/components/services/badge-estado";
 import { AnularService } from "@/components/services/anular-service";
 import { estadoService, puedeEditarse } from "@/lib/servicios";
 import { formatearKm } from "@/lib/renglones";
-import { formatearFecha, formatearFechaHora } from "@/lib/fechas";
+import {
+  formatearFecha,
+  formatearFechaHora,
+  formatearHora,
+} from "@/lib/fechas";
 import { urlWhatsappSoporte } from "@/lib/config";
 
 export const metadata: Metadata = { title: "Service" };
@@ -79,14 +83,10 @@ export default async function PaginaService({ params }: Props) {
     ]),
   );
 
+  // formatearHora fija la zona argentina: este componente se renderiza en
+  // el servidor y el Intl pelado usaba la hora del proceso (UTC en Vercel).
   const horaDesbloqueo =
-    estado.tipo === "desbloqueado"
-      ? new Intl.DateTimeFormat("es-AR", {
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-        }).format(estado.hasta)
-      : null;
+    estado.tipo === "desbloqueado" ? formatearHora(estado.hasta) : null;
 
   return (
     <div className="mx-auto max-w-md sm:max-w-2xl lg:max-w-4xl">

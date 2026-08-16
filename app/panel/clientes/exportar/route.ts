@@ -3,7 +3,7 @@ import writeXlsxFile from "write-excel-file/node";
 import { createClient } from "@/lib/supabase/server";
 import { obtenerSesion } from "@/lib/auth/session";
 import { filtroClientes } from "@/lib/clientes";
-import { formatearFecha } from "@/lib/fechas";
+import { formatearFecha, hoyISO } from "@/lib/fechas";
 
 // La exportación de clientes a Excel. Es .xlsx y no CSV a propósito:
 // Excel en español abre los CSV con coma como una sola columna, y las
@@ -24,7 +24,8 @@ function nombreDeArchivo(lubricentro: string, hoy: Date): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
-  const fecha = hoy.toISOString().slice(0, 10);
+  // hoyISO y no toISOString: el nombre lleva el día del negocio, no el UTC.
+  const fecha = hoyISO(hoy);
   return `clientes-${slug}-${fecha}.xlsx`;
 }
 

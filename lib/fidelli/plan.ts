@@ -1,4 +1,5 @@
 import type { Database } from "@/lib/database.types";
+import { diasEntre, hoyISO } from "@/lib/fechas";
 
 export type Periodo = Database["public"]["Enums"]["periodo_suscripcion"];
 export type EstadoSuscripcion = Database["public"]["Enums"]["estado_suscripcion"];
@@ -126,10 +127,8 @@ export function sumarMeses(iso: string, meses: number): string {
 }
 
 // Días que faltan para el vencimiento. Negativo = ya venció.
+// "Hoy" es el del negocio (hora argentina), no el del proceso: con el
+// reloj del servidor, un vencimiento caía tres horas antes de tiempo.
 export function diasHasta(iso: string): number {
-  const [a, m, d] = iso.slice(0, 10).split("-").map(Number);
-  const objetivo = new Date(a, m - 1, d);
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
-  return Math.round((objetivo.getTime() - hoy.getTime()) / 86_400_000);
+  return diasEntre(hoyISO(), iso);
 }
