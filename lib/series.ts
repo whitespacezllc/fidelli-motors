@@ -43,7 +43,7 @@ export const VISTAS_PANEL: readonly {
     nombre: "Trimestral",
     descripcion: "Últimos 8 trimestres",
   },
-  { clave: "anio", nombre: "Anual", descripcion: "Año por año" },
+  { clave: "anio", nombre: "Anual", descripcion: "Últimos 5 años" },
 ];
 
 export function esVistaPanel(v: string | undefined): v is VistaPanel {
