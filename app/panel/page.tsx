@@ -12,7 +12,11 @@ import {
 import { Dashboard, type DatosInicio } from "@/components/inicio/dashboard";
 import { FiltroSucursal } from "@/components/inicio/filtro-sucursal";
 import { formatearDiaLargo, hoyISO } from "@/lib/fechas";
-import { esVistaPanel, type VistaPanel } from "@/lib/series";
+import {
+  esVistaPanel,
+  type PuntoSerie,
+  type VistaPanel,
+} from "@/lib/series";
 
 export const metadata: Metadata = { title: "Inicio" };
 
@@ -42,8 +46,27 @@ export default async function PaginaInicio({
       .order("nombre"),
   ]);
 
-  const resumen = resumenRes.data as Resumen | null;
+  const crudo = resumenRes.data as (Omit<Resumen, "series"> & {
+    series?: Partial<Record<VistaPanel, PuntoSerie[]>>;
+  }) | null;
   const sucursales = sucursalesRes.data ?? [];
+
+  // Las cuatro series, con piso vacío cada una. El `?? []` no es
+  // paranoia de tipos: desacopla el orden de despliegue. Si el front
+  // nuevo llega antes que la migración —una ventana real entre el deploy
+  // de Vercel y el `db push`—, `series` no existe y `series[vista]` tira
+  // un TypeError que se lleva puesto el Inicio de TODOS los tenants. Con
+  // el piso, el gráfico muestra su estado vacío y el resto de la pantalla
+  // sigue en pie. Es la misma defensa que ya tiene el Pulso de /fidelli.
+  const resumen: Resumen | null = crudo && {
+    ...crudo,
+    series: {
+      semana: crudo.series?.semana ?? [],
+      mes: crudo.series?.mes ?? [],
+      trimestre: crudo.series?.trimestre ?? [],
+      anio: crudo.series?.anio ?? [],
+    },
+  };
 
   // El "hoy" del negocio (hora argentina), no el del proceso Node — en
   // Vercel esto corre en UTC y a la noche se iba al día siguiente.
