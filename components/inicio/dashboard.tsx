@@ -2,12 +2,10 @@ import Link from "next/link";
 import { clasesBoton } from "@/components/ui/boton";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { IconoReloj, IconoQR } from "@/components/iconos";
-import {
-  GraficoEvolucion,
-  type PuntoMes,
-} from "@/components/inicio/grafico-evolucion";
+import { GraficoServices } from "@/components/inicio/grafico-services";
 import { formatearKm } from "@/lib/renglones";
 import { formatearFechaHora, nombreDelMes } from "@/lib/fechas";
+import type { PuntoSerie, VistaPanel } from "@/lib/series";
 
 export type DatosInicio = {
   metricas: {
@@ -17,7 +15,7 @@ export type DatosInicio = {
     canjes_mes: number;
   };
   landing: { flota: number; escaneados: number; leads: number };
-  evolucion: PuntoMes[];
+  series: Record<VistaPanel, PuntoSerie[]>;
   services_por_sucursal: { nombre: string; cantidad: number }[];
   retencion: { vencido: number; urgente: number; proximo: number };
   ultimos: {
@@ -84,9 +82,12 @@ function Badge({
 export function Dashboard({
   datos,
   hoy,
+  vista,
 }: {
   datos: DatosInicio;
   hoy: string;
+  /** La vista inicial del gráfico de services, validada en la page. */
+  vista: VistaPanel;
 }) {
   const { metricas, retencion, ultimos, landing } = datos;
   const desglose = datos.services_por_sucursal
@@ -176,15 +177,7 @@ export function Dashboard({
 
       {/* El gráfico y la landing, lado a lado en desktop */}
       <div className="grid gap-5 lg:grid-cols-[1fr_20rem] lg:items-start">
-        <section className="rounded-lg border border-line px-5 py-4">
-          <h2 className="font-brand text-body font-bold text-ink">
-            Services por mes
-          </h2>
-          <p className="mt-0.5 mb-4 text-label text-ink-40">
-            Últimos 6 meses · {nombreDelMes(hoy)} todavía está en curso
-          </p>
-          <GraficoEvolucion datos={datos.evolucion} />
-        </section>
+        <GraficoServices series={datos.series} vistaInicial={vista} />
 
         {/* La landing es de la marca, no de un local: el QR es uno solo
             para todo el lubricentro. Por eso este bloque NO cambia con el

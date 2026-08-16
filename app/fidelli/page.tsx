@@ -8,12 +8,12 @@ import { BotonAlta } from "@/components/fidelli/boton-alta";
 import { esAtencion } from "@/lib/fidelli/atencion";
 import { calcularTotales } from "@/lib/fidelli/totales";
 import { FranjaTotales } from "@/components/fidelli/franja-totales";
+import { Pulso } from "@/components/fidelli/pulso";
 import {
-  Pulso,
   esGranularidad,
   type Granularidad,
-  type PuntoPulso,
-} from "@/components/fidelli/pulso";
+  type PuntoSerie,
+} from "@/lib/series";
 import type { PlanCompleto } from "@/components/fidelli/tipos";
 
 export const metadata: Metadata = { title: "Lubricentros" };
@@ -44,8 +44,10 @@ export default async function PaginaLubricentros({
       .eq("activo", true)
       .order("nombre"),
     // Lo único de toda esta superficie que NO se filtra por tenant: son
-    // los números de la plataforma entera y sumarlos es el punto.
-    supabase.rpc("metricas_plataforma", { p_granularidad: granularidad }),
+    // los números de la plataforma entera y sumarlos es el punto. Trae
+    // las TRES granularidades juntas: el toggle del pulso es instantáneo
+    // y no vuelve a consultar.
+    supabase.rpc("metricas_plataforma"),
   ]);
 
   const lubricentros = filas ?? [];
@@ -54,7 +56,12 @@ export default async function PaginaLubricentros({
   const metricas = (plataforma ?? {}) as {
     services_mes?: number;
     acumulado?: number;
-    serie?: PuntoPulso[];
+    series?: Partial<Record<Granularidad, PuntoSerie[]>>;
+  };
+  const series: Record<Granularidad, PuntoSerie[]> = {
+    dia: metricas.series?.dia ?? [],
+    semana: metricas.series?.semana ?? [],
+    mes: metricas.series?.mes ?? [],
   };
   // La franja sale de las filas que ya trajimos: el MRR necesita el precio
   // del plan y los dos descuentos, y listado_lubricentros() los devuelve.
@@ -88,10 +95,9 @@ export default async function PaginaLubricentros({
           />
 
           <Pulso
-            serie={metricas.serie ?? []}
+            series={series}
             acumulado={metricas.acumulado ?? 0}
-            granularidad={granularidad}
-            soloAtencion={soloAtencion}
+            granularidadInicial={granularidad}
           />
 
           <Filtro
