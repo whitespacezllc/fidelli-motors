@@ -12,6 +12,7 @@ import {
 import { Dashboard, type DatosInicio } from "@/components/inicio/dashboard";
 import { FiltroSucursal } from "@/components/inicio/filtro-sucursal";
 import { formatearDiaLargo, hoyISO } from "@/lib/fechas";
+import { esVistaPanel, type VistaPanel } from "@/lib/series";
 
 export const metadata: Metadata = { title: "Inicio" };
 
@@ -20,9 +21,12 @@ type Resumen = DatosInicio & { checklist: EstadoChecklist };
 export default async function PaginaInicio({
   searchParams,
 }: {
-  searchParams: Promise<{ sucursal?: string }>;
+  searchParams: Promise<{ sucursal?: string; vista?: string }>;
 }) {
-  const { sucursal } = await searchParams;
+  const { sucursal, vista } = await searchParams;
+  // Mensual por defecto: es la vista que ya existía y la que mejor lee un
+  // negocio con meses de historia. El guard valida lo que venga en la URL.
+  const vistaInicial: VistaPanel = esVistaPanel(vista) ? vista : "mes";
   const supabase = await createClient();
 
   // Una sola consulta para toda la pantalla —métricas, landing, gráfico,
@@ -90,7 +94,7 @@ export default async function PaginaInicio({
         {nombreSucursal && ` · ${nombreSucursal}`}
       </p>
 
-      <Dashboard datos={resumen} hoy={hoy} />
+      <Dashboard datos={resumen} hoy={hoy} vista={vistaInicial} />
     </div>
   );
 }
