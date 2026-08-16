@@ -7,6 +7,7 @@ import { BloqueoSuspension } from "@/components/panel/bloqueo-suspension";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { clasesBoton } from "@/components/ui/boton";
 import { Carton } from "@/components/services/carton";
+import { formatearHora, hoyISO } from "@/lib/fechas";
 import { COOKIE_SUCURSAL } from "@/lib/preferencias";
 
 export const metadata: Metadata = { title: "Cargar service" };
@@ -112,18 +113,16 @@ export default async function PaginaCarton({
   const sucursalInicial =
     sucursales.find((s) => s.id === recordada)?.id ?? sucursales[0].id;
 
-  // La fecha se arma con las partes para no correrse de día por zona horaria.
-  const ahora = new Date();
-  const hoy = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, "0")}-${String(ahora.getDate()).padStart(2, "0")}`;
+  // El "hoy" del NEGOCIO, no del servidor: esto corre en Vercel (UTC) y
+  // armar la fecha con getFullYear/getMonth del proceso fechaba a mañana
+  // todo service cargado entre las 21:00 y las 24:00 hora argentina.
+  const hoy = hoyISO();
 
   // Caso borde: ya hay un service de hoy para esta patente.
   const deHoy = servicios.find((s) => s.fecha === hoy);
   const serviceDeHoy = deHoy
     ? {
-        hora: new Date(deHoy.created_at).toLocaleTimeString("es-AR", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
+        hora: formatearHora(deHoy.created_at),
         sucursal: deHoy.sucursales?.nombre ?? "otra sucursal",
         kilometros: deHoy.kilometros,
       }

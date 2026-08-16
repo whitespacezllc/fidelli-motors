@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { sesionParaEscribir } from "@/lib/auth/session";
 import { esPatenteValida, PATENTE_FORMATO } from "@/lib/texto";
+import { hoyISO } from "@/lib/fechas";
 
 export type EstadoVehiculo = { error?: string; ok?: boolean };
 
@@ -50,7 +51,8 @@ function leerCampos(formData: FormData): Campos {
 
   let anio: number | null = null;
   if (anioTexto) {
-    const maximo = new Date().getFullYear() + 1;
+    // Año del calendario argentino, no del proceso (ver services/nuevo).
+    const maximo = Number(hoyISO().slice(0, 4)) + 1;
     anio = Number(anioTexto);
     if (!Number.isInteger(anio) || anio < 1900 || anio > maximo) {
       return {

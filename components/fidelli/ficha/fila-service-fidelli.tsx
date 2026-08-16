@@ -5,7 +5,7 @@ import { Dialog, DialogTrigger, DialogContenido } from "@/components/ui/dialog";
 import { Boton } from "@/components/ui/boton";
 import { IconoCandado } from "@/components/iconos";
 import { CLASE_ERROR } from "@/components/fidelli/estilos";
-import { formatearFecha } from "@/lib/fechas";
+import { formatearFecha, formatearHora } from "@/lib/fechas";
 import { horasParaBadge, type EstadoService } from "@/lib/servicios";
 import {
   desbloquearService,
@@ -31,14 +31,8 @@ type ServiceFila = {
 };
 
 // "hasta las 18:30" — la hora sola alcanza si es hoy, que es el caso normal
-// de una ventana de 24 horas.
-function horaCorta(hasta: Date): string {
-  return new Intl.DateTimeFormat("es-AR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(hasta);
-}
+// de una ventana de 24 horas. formatearHora fija la zona argentina.
+const horaCorta = formatearHora;
 
 export function FilaServiceFidelli({
   lubricentroId,

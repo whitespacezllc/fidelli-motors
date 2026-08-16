@@ -9,6 +9,7 @@ import {
   CLASE_LABEL,
 } from "@/components/fidelli/estilos";
 import { registrarPago, type EstadoPago } from "@/app/fidelli/[id]/actions";
+import { hoyISO } from "@/lib/fechas";
 
 const INICIAL: EstadoPago = {};
 
@@ -30,12 +31,10 @@ export function FormPago({
 }) {
   const [estado, guardar, guardando] = useActionState(registrarPago, INICIAL);
 
-  // Hoy, en la zona del navegador: la transferencia normalmente se registra
-  // el día que entró.
-  const [hoy] = useState(() => {
-    const f = new Date();
-    return `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, "0")}-${String(f.getDate()).padStart(2, "0")}`;
-  });
+  // Hoy en hora ARGENTINA, no la del navegador: la fecha del pago es un
+  // dato del negocio, y tiene que ser la misma aunque quien lo registre
+  // esté de viaje.
+  const [hoy] = useState(() => hoyISO());
 
   return (
     <form action={guardar} className="flex flex-col gap-4">

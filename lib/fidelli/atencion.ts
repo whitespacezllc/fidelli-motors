@@ -11,7 +11,7 @@ import {
   mensajeTrial,
   type MotivoAviso,
 } from "@/lib/config";
-import { formatearFecha } from "@/lib/fechas";
+import { diasEntre, formatearFecha, hoyISO } from "@/lib/fechas";
 import type { PlanCompleto } from "@/components/fidelli/tipos";
 
 // Los cuatro estados que devuelve estado_atencion() en la base. El front no
@@ -128,11 +128,8 @@ export function linkDeAviso({
 // la fecha, no desde el umbral: no hace falta repetir acá el 7 que ya vive
 // en dias_de_aviso().
 export function textoDeVencimiento(vencimiento: string): string {
-  const [a, m, d] = vencimiento.slice(0, 10).split("-").map(Number);
-  const objetivo = new Date(a, m - 1, d);
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
-  const dias = Math.round((objetivo.getTime() - hoy.getTime()) / 86_400_000);
+  // Calendario argentino, no el del proceso (UTC en Vercel).
+  const dias = diasEntre(hoyISO(), vencimiento);
 
   if (dias === 0) return "vence hoy";
   if (dias === 1) return "vence mañana";

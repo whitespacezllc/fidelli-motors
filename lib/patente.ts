@@ -8,6 +8,8 @@
 // desde el último. Si se midiera desde el último, cargar un service nuevo
 // reabriría la ventana de un auto con años de historial.
 
+import { ZONA_AR, diasEntre, fechaCalendarioAR, formatearHora, hoyISO } from "@/lib/fechas";
+
 /** Las mismas 72 horas que aplica el trigger. Un solo número, un solo lugar. */
 export const HORAS_PARA_CORREGIR_PATENTE = 72;
 
@@ -40,27 +42,25 @@ export function patenteEditable(estado: EstadoPatente): boolean {
 // "hasta mañana a las 14:30" · "hasta el jueves 3/8 a las 14:30".
 // El plazo se dice en el idioma del mostrador: cuándo se cierra, no
 // cuántas horas quedan — nadie calcula 72 horas de cabeza.
+//
+// Todo en calendario ARGENTINO: `vence` es un instante, y leerle
+// getDate()/getMonth() con el reloj del proceso (UTC en Vercel) corría el
+// vencimiento de día para cualquier ventana que cruce las 21:00.
 export function vencimientoLegible(vence: Date): string {
-  const ahora = new Date();
-  const hora = new Intl.DateTimeFormat("es-AR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(vence);
-
-  const dias = Math.round(
-    (new Date(vence.getFullYear(), vence.getMonth(), vence.getDate()).getTime() -
-      new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate()).getTime()) /
-      86_400_000,
-  );
+  const hora = formatearHora(vence);
+  const dias = diasEntre(hoyISO(), fechaCalendarioAR(vence));
 
   if (dias === 0) return `hoy a las ${hora}`;
   if (dias === 1) return `mañana a las ${hora}`;
 
   // El día se arma a mano: Intl con weekday+day+month devuelve "sábado 8-8",
   // con guión, y todo el resto del producto escribe las fechas con barra.
-  const diaSemana = new Intl.DateTimeFormat("es-AR", { weekday: "long" }).format(
-    vence,
-  );
-  return `el ${diaSemana} ${vence.getDate()}/${vence.getMonth() + 1} a las ${hora}`;
+  const partes = new Intl.DateTimeFormat("es-AR", {
+    timeZone: ZONA_AR,
+    weekday: "long",
+    day: "numeric",
+    month: "numeric",
+  }).formatToParts(vence);
+  const dato = (tipo: string) => partes.find((p) => p.type === tipo)?.value ?? "";
+  return `el ${dato("weekday")} ${dato("day")}/${dato("month")} a las ${hora}`;
 }
