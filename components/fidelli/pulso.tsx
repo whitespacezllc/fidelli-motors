@@ -1,87 +1,86 @@
-import Link from "next/link";
+"use client";
+
+import { useState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AreaClosed, LinePath } from "@visx/shape";
 import { LinearGradient } from "@visx/gradient";
 import { curveMonotoneX } from "@visx/curve";
-import { scaleLinear, scaleTime } from "@visx/scale";
-
-export type Granularidad = "dia" | "semana" | "mes";
-
-export type PuntoPulso = { inicio: string; cantidad: number };
-
-export const GRANULARIDADES: { clave: Granularidad; nombre: string }[] = [
-  { clave: "dia", nombre: "Día" },
-  { clave: "semana", nombre: "Semana" },
-  { clave: "mes", nombre: "Mes" },
-];
-
-export function esGranularidad(v: string | undefined): v is Granularidad {
-  return v === "dia" || v === "semana" || v === "mes";
-}
+import { scaleLinear } from "@visx/scale";
+import {
+  GRANULARIDADES,
+  etiquetaDePunto,
+  mostrarEtiqueta,
+  pasoDeEtiquetas,
+  type Granularidad,
+  type PuntoSerie,
+} from "@/lib/series";
+import { Segmentado } from "@/components/ui/segmentado";
+import { OverlaySerie } from "@/components/graficos/overlay-serie";
 
 const ANCHO = 900;
 const ALTO = 200;
-// Aire abajo para las etiquetas del eje X, que van en HTML y no adentro
-// del SVG: así conservan la tipografía del sistema y no se deforman con el
-// escalado horizontal.
+// Aire abajo para que la curva no muerda el borde; arriba para el pico.
 const PISO = 8;
-// Un respiro a los costados: con el rango pegado a los bordes, el trazo
-// del primer y del último punto queda cortado por la mitad.
-const MARGEN = 6;
-
-function aFecha(iso: string): Date {
-  const [a, m, d] = iso.slice(0, 10).split("-").map(Number);
-  return new Date(a, m - 1, d);
-}
-
-// "12/05" para día y semana, "may" para mes: la etiqueta más corta que
-// todavía se entiende sola.
-function etiqueta(iso: string, granularidad: Granularidad): string {
-  const f = aFecha(iso);
-  if (granularidad === "mes") {
-    return new Intl.DateTimeFormat("es-AR", { month: "short" })
-      .format(f)
-      .replace(".", "");
-  }
-  return new Intl.DateTimeFormat("es-AR", {
-    day: "2-digit",
-    month: "2-digit",
-  }).format(f);
-}
 
 // ============================================================
-// El pulso de la plataforma.
+// El pulso de la plataforma — ahora interactivo.
 //
 // Área cerrada con gradiente, como la cotización de algo que acaba de
 // salir al mercado: el día uno es hoy y de acá en adelante se llena.
 //
+// LAS TRES SERIES LLEGAN JUNTAS y el toggle cambia de serie al instante
+// (useState); router.replace corre atrás en una transición para que la
+// URL siga siendo compartible y los <Link> del filtro de atención —que el
+// server renderiza con ?pulso= adentro— se re-sincronicen. Se edita SOLO
+// la clave pulso del querystring: el filtro ?atencion=1 sobrevive.
+//
+// LA GEOMETRÍA VA POR ÍNDICE, no por scaleTime: las etiquetas, el overlay
+// y el tooltip reparten el ancho en n celdas iguales, y una escala de
+// tiempo desalinea la curva de sus etiquetas en meses de 28-31 días.
+// Cada punto cae en el CENTRO de su celda — (i + 0.5) / n — y esa misma
+// fracción posiciona el marcador y el tooltip en HTML con `left: %`, que
+// es lo único que sobrevive al estiramiento del SVG
+// (preserveAspectRatio="none"). Un <circle> adentro del SVG se
+// deformaría en elipse; por eso el marcador del hover es un div.
+//
 // COLOR — se evaluó el rojo de marca muy diluido y quedó en los neutros.
 // Razón: la tabla de abajo ya está llena de color de estado (verde de "al
 // día", ámbar de lo vencido) y esos colores tienen que ganar, porque son
-// los que dicen a quién llamar hoy. Un área roja arriba de todo sería la
-// cuarta familia de color de la pantalla y se llevaría el ojo a un dato
-// que no pide ninguna acción. La línea en ink con el relleno degradado
-// tiene la lectura financiera que busca la metáfora y deja el color donde
-// hace falta.
+// los que dicen a quién llamar hoy. La línea en ink con el relleno
+// degradado tiene la lectura financiera que busca la metáfora.
 //
-// DEGRADACIÓN — la serie llega de la base ya recortada al primer service
-// de la historia: con tres días de datos hay tres puntos, no veintisiete
-// ceros previos al lanzamiento fingiendo un eje lleno. Los períodos sin
-// services SÍ van en cero y visibles, que es otra cosa: un domingo
-// cerrado es información.
+// DEGRADACIÓN — cada serie llega de la base ya recortada al primer
+// service de la historia: con tres días de datos hay tres puntos, no
+// veintisiete ceros previos al lanzamiento. Los períodos sin services SÍ
+// van en cero y visibles: un domingo cerrado es información.
 // ============================================================
 export function Pulso({
-  serie,
+  series,
   acumulado,
-  granularidad,
-  soloAtencion,
+  granularidadInicial,
 }: {
-  serie: PuntoPulso[];
+  series: Record<Granularidad, PuntoSerie[]>;
   acumulado: number;
-  granularidad: Granularidad;
-  soloAtencion: boolean;
+  granularidadInicial: Granularidad;
 }) {
-  // Cambiar la granularidad no puede apagar el filtro de atención.
-  const sufijo = soloAtencion ? "&atencion=1" : "";
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [, iniciar] = useTransition();
+  const [granularidad, setGranularidad] = useState(granularidadInicial);
+  const [indice, setIndice] = useState<number | null>(null);
+
+  function cambiar(g: Granularidad) {
+    setGranularidad(g);
+    setIndice(null);
+    // La URL atrás, sin bloquear el cambio visual. Se toca solo `pulso`:
+    // pisar el querystring entero se llevaría puesto ?atencion=1.
+    iniciar(() => {
+      const params = new URLSearchParams(searchParams);
+      params.set("pulso", g);
+      router.replace(`/fidelli?${params.toString()}`, { scroll: false });
+    });
+  }
+
   return (
     <section className="surface-card mb-5 overflow-hidden">
       <div className="flex flex-wrap items-end justify-between gap-4 px-4.5 py-4">
@@ -94,28 +93,25 @@ export function Pulso({
           </p>
         </div>
 
-        <nav aria-label="Granularidad del gráfico" className="flex gap-1">
-          {GRANULARIDADES.map((g) => {
-            const activa = g.clave === granularidad;
-            return (
-              <Link
-                key={g.clave}
-                href={`/fidelli?pulso=${g.clave}${sufijo}`}
-                aria-current={activa ? "page" : undefined}
-                className={`flex h-8 items-center rounded-md px-2.5 text-label font-semibold transition-colors ${
-                  activa
-                    ? "bg-ink text-base"
-                    : "border border-line bg-base text-ink-60 hover:bg-surface"
-                }`}
-              >
-                {g.nombre}
-              </Link>
-            );
-          })}
-        </nav>
+        <Segmentado
+          etiqueta="Granularidad del gráfico"
+          opciones={GRANULARIDADES}
+          valor={granularidad}
+          alCambiar={cambiar}
+        />
       </div>
 
-      <Grafico serie={serie} granularidad={granularidad} />
+      {/* key: al cambiar de serie el bloque se remonta con la aparición
+          suave de la casa — un crossfade barato sin animar `d`, que entre
+          series de 30 y 12 puntos no es interpolable. */}
+      <div key={granularidad} className="animar-aparicion">
+        <Grafico
+          serie={series[granularidad]}
+          granularidad={granularidad}
+          indice={indice}
+          alCambiar={setIndice}
+        />
+      </div>
     </section>
   );
 }
@@ -123,9 +119,13 @@ export function Pulso({
 function Grafico({
   serie,
   granularidad,
+  indice,
+  alCambiar,
 }: {
-  serie: PuntoPulso[];
+  serie: PuntoSerie[];
   granularidad: Granularidad;
+  indice: number | null;
+  alCambiar: (i: number | null) => void;
 }) {
   if (serie.length === 0) {
     return (
@@ -136,7 +136,7 @@ function Grafico({
     );
   }
 
-  // Un solo punto no es una curva: no hay tendencia que dibujar y una área
+  // Un solo punto no es una curva: no hay tendencia que dibujar y un área
   // de un punto es una mancha. Se muestra el dato y ya — degradar con
   // dignidad es también saber cuándo no hay gráfico.
   if (serie.length === 1) {
@@ -146,20 +146,18 @@ function Grafico({
           {serie[0].cantidad}
         </p>
         <p className="mt-0.5 text-ui text-ink-60">
-          {etiqueta(serie[0].inicio, granularidad)} — el primer período de la
-          plataforma. Con dos ya hay curva.
+          {etiquetaDePunto(serie[0].inicio, granularidad)} — el primer período
+          de la plataforma. Con dos ya hay curva.
         </p>
       </div>
     );
   }
 
-  const puntos = serie.map((p) => ({ fecha: aFecha(p.inicio), cantidad: p.cantidad }));
-  const maximo = Math.max(...puntos.map((p) => p.cantidad));
+  const n = serie.length;
+  const maximo = Math.max(...serie.map((p) => p.cantidad));
 
-  const x = scaleTime({
-    domain: [puntos[0].fecha, puntos[puntos.length - 1].fecha],
-    range: [MARGEN, ANCHO - MARGEN],
-  });
+  // El centro de la celda i, en coordenadas del viewBox.
+  const x = (i: number) => ((i + 0.5) / n) * ANCHO;
 
   // Con todo en cero el dominio sería [0,0] y no habría escala: el max de 1
   // deja el gráfico plano contra el piso, que es exactamente lo que pasó.
@@ -169,66 +167,111 @@ function Grafico({
     nice: true,
   });
 
+  const activo = indice !== null ? serie[indice] : null;
+
   return (
     <div className="border-t border-line px-4.5 pt-4 pb-3">
-      <svg
-        viewBox={`0 0 ${ANCHO} ${ALTO}`}
-        preserveAspectRatio="none"
-        className="block h-[200px] w-full"
-        role="img"
-        aria-label={`Services por ${granularidad}: ${serie
-          .map((p) => `${etiqueta(p.inicio, granularidad)} ${p.cantidad}`)
-          .join(", ")}`}
+      <OverlaySerie
+        n={n}
+        indice={indice}
+        alCambiar={alCambiar}
+        etiqueta={`Services por ${granularidad}`}
+        tooltip={(i) => (
+          <p className="font-ui text-ui text-ink">
+            <span className="font-semibold tabular-nums">
+              {serie[i].cantidad}
+            </span>{" "}
+            {serie[i].cantidad === 1 ? "service" : "services"}
+            <span className="text-ink-60">
+              {" "}
+              · {etiquetaDePunto(serie[i].inicio, granularidad)}
+            </span>
+          </p>
+        )}
       >
-        <LinearGradient
-          id="pulso-relleno"
-          from="var(--color-ink)"
-          to="var(--color-ink)"
-          fromOpacity={0.16}
-          toOpacity={0}
-        />
+        <svg
+          viewBox={`0 0 ${ANCHO} ${ALTO}`}
+          preserveAspectRatio="none"
+          className="block h-[200px] w-full"
+          role="img"
+          aria-label={`Services por ${granularidad}: ${serie
+            .map((p) => `${etiquetaDePunto(p.inicio, granularidad)} ${p.cantidad}`)
+            .join(", ")}`}
+        >
+          <LinearGradient
+            id="pulso-relleno"
+            from="var(--color-ink)"
+            to="var(--color-ink)"
+            fromOpacity={0.16}
+            toOpacity={0}
+          />
 
-        <AreaClosed
-          data={puntos}
-          x={(d) => x(d.fecha)}
-          y={(d) => y(d.cantidad)}
-          yScale={y}
-          curve={curveMonotoneX}
-          fill="url(#pulso-relleno)"
-        />
+          <AreaClosed
+            data={serie}
+            x={(_, i) => x(i)}
+            y={(d) => y(d.cantidad)}
+            yScale={y}
+            curve={curveMonotoneX}
+            fill="url(#pulso-relleno)"
+          />
 
-        {/* El borde superior definido y el relleno suave: la línea es la
-            que se lee, el área solo le da cuerpo. */}
-        <LinePath
-          data={puntos}
-          x={(d) => x(d.fecha)}
-          y={(d) => y(d.cantidad)}
-          curve={curveMonotoneX}
-          stroke="var(--color-ink)"
-          strokeWidth={2}
-          // El SVG se estira en horizontal: sin esto el trazo se
-          // engrosaría con el escalado.
-          vectorEffect="non-scaling-stroke"
-          fill="none"
-        />
-      </svg>
+          {/* El borde superior definido y el relleno suave: la línea es la
+              que se lee, el área solo le da cuerpo. */}
+          <LinePath
+            data={serie}
+            x={(_, i) => x(i)}
+            y={(d) => y(d.cantidad)}
+            curve={curveMonotoneX}
+            stroke="var(--color-ink)"
+            strokeWidth={2}
+            // El SVG se estira en horizontal: sin esto el trazo se
+            // engrosaría con el escalado.
+            vectorEffect="non-scaling-stroke"
+            fill="none"
+          />
+        </svg>
+
+        {/* La guía y el punto del hover, en HTML por porcentajes: lo único
+            que no se deforma con el estiramiento del SVG. */}
+        {activo && indice !== null && (
+          <>
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-y-0 w-px bg-line"
+              style={{ left: `${((indice + 0.5) / n) * 100}%` }}
+            />
+            <div
+              aria-hidden
+              className="pointer-events-none absolute size-2.5 rounded-full border-2 border-base bg-ink"
+              style={{
+                left: `${((indice + 0.5) / n) * 100}%`,
+                top: `${(y(activo.cantidad) / ALTO) * 100}%`,
+                translate: "-50% -50%",
+              }}
+            />
+          </>
+        )}
+      </OverlaySerie>
 
       {/* Las etiquetas van en HTML, alineadas por grilla contra el mismo
-          reparto que el SVG. Sin ejes decorados ni grilla pesada: lo
-          mínimo para leer la tendencia. */}
+          reparto de celdas que usa la curva. Sin ejes decorados ni grilla
+          pesada: lo mínimo para leer la tendencia. */}
       <div
         className="mt-1.5 grid gap-1 text-center text-label text-ink-40 tabular-nums"
-        style={{ gridTemplateColumns: `repeat(${serie.length}, minmax(0, 1fr))` }}
+        style={{ gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` }}
       >
         {serie.map((p, i) => (
-          // Con treinta puntos las etiquetas se pisan: se muestra una de
-          // cada tantas, siempre incluyendo la última. Las salteadas van
-          // vacías y no ocultas — una etiqueta invisible sigue ocupando su
-          // ancho y se desborda de la celda en pantallas angostas.
-          <span key={p.inicio}>
-            {serie.length > 14 && i % 4 !== 0 && i !== serie.length - 1
-              ? ""
-              : etiqueta(p.inicio, granularidad)}
+          // Las etiquetas anchas se saltean para no pisarse — ancladas a
+          // la última, que siempre se ve. Las salteadas van vacías y no
+          // ocultas: una etiqueta invisible sigue ocupando su ancho y se
+          // desborda de la celda en pantallas angostas.
+          <span
+            key={p.inicio}
+            className={i === indice ? "font-semibold text-ink" : undefined}
+          >
+            {mostrarEtiqueta(i, n, pasoDeEtiquetas(n, granularidad))
+              ? etiquetaDePunto(p.inicio, granularidad)
+              : ""}
           </span>
         ))}
       </div>
