@@ -1,4 +1,5 @@
 import type { EstadoSuscripcion } from "@/lib/fidelli/plan";
+import { diasEntre, hoyISO } from "@/lib/fechas";
 
 // ============================================================
 // La salud de un tenant responde UNA pregunta: ¿a quién tengo que
@@ -47,11 +48,10 @@ export const ESTILO_SALUD: Record<
   },
 };
 
+// Días de calendario ARGENTINO desde una fecha — no del calendario del
+// proceso, que en Vercel corre en UTC.
 function diasDesde(iso: string): number {
-  const [a, m, d] = iso.slice(0, 10).split("-").map(Number);
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
-  return Math.round((hoy.getTime() - new Date(a, m - 1, d).getTime()) / 86_400_000);
+  return diasEntre(iso, hoyISO());
 }
 
 export function saludDe({

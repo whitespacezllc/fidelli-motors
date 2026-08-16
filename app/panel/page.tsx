@@ -11,7 +11,7 @@ import {
 } from "@/components/inicio/checklist";
 import { Dashboard, type DatosInicio } from "@/components/inicio/dashboard";
 import { FiltroSucursal } from "@/components/inicio/filtro-sucursal";
-import { formatearDiaLargo } from "@/lib/fechas";
+import { formatearDiaLargo, hoyISO } from "@/lib/fechas";
 
 export const metadata: Metadata = { title: "Inicio" };
 
@@ -41,8 +41,9 @@ export default async function PaginaInicio({
   const resumen = resumenRes.data as Resumen | null;
   const sucursales = sucursalesRes.data ?? [];
 
-  const ahora = new Date();
-  const hoy = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, "0")}-${String(ahora.getDate()).padStart(2, "0")}`;
+  // El "hoy" del negocio (hora argentina), no el del proceso Node — en
+  // Vercel esto corre en UTC y a la noche se iba al día siguiente.
+  const hoy = hoyISO();
 
   if (!resumen) {
     return (
