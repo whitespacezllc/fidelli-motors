@@ -40,16 +40,16 @@ const CITA_ANTES = "Tenía ";
 const CITA_RESALTADA = "un montón de planillas de Excel";
 const CITA_DESPUES = " y estaban todas desordenadas.";
 
-// Los tres números salen de la instalación real, no de una proyección:
-// 262 services cargados a mano en 15 días, en los dos locales. No hay
-// importación en el producto, así que no hay nada "migrado" inflando la
-// cifra — por eso el número exacto y no un "150+" redondeado.
+// Los tres números salen de la operación real, no de una proyección. No
+// hay importación en el producto, así que no hay nada "migrado" inflando
+// la cifra — por eso el número exacto y no un "250+" redondeado.
+//
+// ⚠ MANTENIMIENTO HUMANO: services y días crecen juntos con la operación
+// de Brothers Oil. Cuando se actualice uno se actualizan los DOS —un par
+// desfasado ("292 en 20 días" seis meses después) es peor que redondear.
 const NUMEROS = [
-  { cifra: "262", etiqueta: "services cargados" },
-  // "desde la instalación" envejecía: en noviembre iba a seguir diciendo
-  // 15 y ser falso. En pasado es un hecho histórico — no caduca nunca y
-  // mantiene coherente el par con los 262.
-  { cifra: "15 días", etiqueta: "le llevó cargarlos" },
+  { cifra: "292", etiqueta: "services cargados" },
+  { cifra: "20 días", etiqueta: "de operación" },
   { cifra: "2", etiqueta: "sucursales funcionando" },
 ] as const;
 
@@ -88,19 +88,12 @@ export function Caso() {
             </p>
           </blockquote>
 
-          {/* Quién lo dice. El círculo es el lugar de la foto real; hasta
-              entonces, el monograma — tipografía de marca, nada de caras
-              inventadas. */}
+          {/* Quién lo dice — solo el nombre y el cargo, sin avatar: no va
+              a haber foto, y un monograma sin foto detrás era un adorno. */}
           <figcaption className="mt-10 flex flex-col items-center sm:mt-12">
-            <span
-              aria-hidden
-              className="grid size-14 place-items-center rounded-full border border-line bg-surface text-lead font-bold text-ink"
-            >
-              BA
-            </span>
-            <p className="mt-4 text-lead font-bold text-ink">Bruno Albertini</p>
+            <p className="text-lead font-bold text-ink">Bruno Albertini</p>
             <p className="mt-1 text-body text-ink-60">
-              Fundador de Brothers Oil · Córdoba
+              Fundador de Brothers Oil
             </p>
           </figcaption>
         </figure>
@@ -116,7 +109,7 @@ export function Caso() {
           {NUMEROS.map((n) => (
             <div key={n.etiqueta} className="px-1 text-center sm:px-4">
               {/* Cifra de marca: Nunito —la hereda del layout— Y tabular.
-                  Baja un escalón abajo de 360px: a 25px "15 días" no entra
+                  Baja un escalón abajo de 360px: a 25px "20 días" no entra
                   en un tercio de un iPhone SE y se parte en dos renglones,
                   y una cifra partida al lado de dos enteras desarma la
                   fila. */}
