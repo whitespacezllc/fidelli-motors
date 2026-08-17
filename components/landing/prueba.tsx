@@ -1,3 +1,4 @@
+import { Revelar } from "@/components/landing/revelar";
 import { SimuladorCarga } from "@/components/landing/simulador-carga";
 
 // 03 · La prueba de que es fácil — matar la duda número uno.
@@ -25,23 +26,23 @@ export function Prueba() {
       className="aire-seccion scroll-mt-14 bg-base md:scroll-mt-16"
     >
       <div className="contenedor">
-        <div className="mx-auto max-w-2xl text-center">
+        <Revelar className="mx-auto max-w-2xl text-center">
           <h2
             id="como-funciona-titulo"
             className="text-balance text-h3 font-bold sm:text-h2"
           >
             Cargá un service ahora mismo. Sin instalar nada.
           </h2>
-          <p className="mt-4 text-pretty text-body text-ink-60 sm:text-lead">
+          <p className="mt-(--espacio-h2-lead) text-pretty text-body text-ink-60 sm:text-lead">
             Es el flujo real del producto, tal cual lo ve tu mecánico.
           </p>
-        </div>
+        </Revelar>
 
         {/* La simulación trae su propia grilla: teléfono y guía de pasos
             van juntos porque comparten estado. */}
-        <div className="mt-10 sm:mt-12">
+        <Revelar className="mt-(--espacio-lead)">
           <SimuladorCarga />
-        </div>
+        </Revelar>
       </div>
     </section>
   );

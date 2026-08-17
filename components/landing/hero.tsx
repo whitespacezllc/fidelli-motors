@@ -22,7 +22,11 @@ export function Hero() {
     <section
       id="hero"
       aria-labelledby="hero-titulo"
-      className="relative overflow-hidden bg-base"
+      // El pie con el token de sección: el hero no usa aire-seccion (el
+      // degradado de la captura es su borde visual), pero el hueco hasta
+      // la 03 tiene que cumplir la misma regla que el resto — el espacio
+      // entre secciones es el doble de cualquier espacio interno.
+      className="relative overflow-hidden bg-base pb-(--espacio-seccion)"
     >
       {/* El lavado gris de arriba a la izquierda. Tiene que ser casi
           imperceptible: si se nota que hay un degradado, está muy fuerte.

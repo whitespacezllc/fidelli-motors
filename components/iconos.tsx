@@ -81,7 +81,47 @@ export {
   ShieldCheck as IconoGarantia,
   // Sección 10 · el acordeón de preguntas.
   ChevronDown as IconoDesplegar,
+  // Sección del calco · los pasos del cliente final.
+  ScanLine as IconoEscanear,
+  History as IconoVerHistorial,
 } from "lucide-react";
+
+// El paso 2 del cliente es "escribe la patente", y no existe un ícono de
+// patente en lucide — ni parecido. La patente es EL objeto central del
+// producto (es la llave de todo el historial), así que merece una marca
+// dibujada y no un genérico de tarjeta. Está dibujada en el lenguaje de
+// lucide para convivir con ScanLine e History: grilla 24×24, stroke 1.5,
+// extremos y uniones redondeados, sin relleno. La banda superior es la
+// franja azul de la chapa Mercosur; los tres trazos de abajo, los grupos
+// de caracteres.
+export function IconoPatente({
+  className,
+  strokeWidth = 1.5,
+  "aria-hidden": ariaHidden,
+}: {
+  className?: string;
+  strokeWidth?: number;
+  "aria-hidden"?: boolean;
+}) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={ariaHidden}
+      className={className}
+    >
+      <rect x="2.75" y="6" width="18.5" height="12" rx="2" />
+      <path d="M2.75 10h18.5" />
+      <path d="M6.25 14.25h3" />
+      <path d="M11.5 14.25h2.5" />
+      <path d="M16.25 14.25h1.5" />
+    </svg>
+  );
+}
 
 // Superficie del cliente final
 export const IconoQR = delSistema(QrCodeIcon);
