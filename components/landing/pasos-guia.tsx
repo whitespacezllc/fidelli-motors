@@ -25,24 +25,24 @@ import {
 
 export type EstadoPaso = "pendiente" | "activo" | "completado";
 
+// SOLO TÍTULOS, sin párrafos: el formulario de al lado ya demuestra cada
+// paso —el autocompletado se ve al escribir la patente— y el cálculo del
+// próximo service se cuenta en la sección 04. Lo que el demo muestra, el
+// texto no lo repite.
 const PASOS = [
   {
     numero: "1",
     titulo: "Cargás la patente y los kilómetros",
-    texto: "Si el auto ya vino antes, el cliente y el vehículo aparecen solos.",
     Icono: IconoAuto,
   },
   {
     numero: "2",
-    titulo: "Marcás qué le hiciste al auto",
-    texto: "Aceite, filtros y líquidos. Los de tu propio catálogo.",
+    titulo: "Marcás qué le hiciste",
     Icono: IconoFluidos,
   },
   {
     numero: "3",
-    titulo: "Confirmás y ya está",
-    texto:
-      "El sistema calcula solo a qué kilómetros le toca volver, y te avisa.",
+    titulo: "Confirmás y listo",
     Icono: IconoConfirmar,
   },
 ] as const;
@@ -105,9 +105,6 @@ export function PasosGuia({ estados }: { estados: EstadoPaso[] }) {
               >
                 {paso.titulo}
               </h3>
-              <p className="mt-1.5 max-w-[46ch] text-pretty text-body text-ink-60">
-                {paso.texto}
-              </p>
             </div>
           </li>
         );

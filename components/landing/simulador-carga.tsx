@@ -31,8 +31,8 @@ import type { VehiculoIdentificado } from "@/app/panel/services/nuevo/actions";
 // EL FALLBACK ES EL ESTADO INICIAL, no un caso aparte: el componente se
 // renderiza en el servidor con el formulario ya COMPLETO (modo "vitrina").
 // Sin JavaScript, sin interacción o con cualquier falla, eso es lo que se
-// ve: la carga terminada, nunca una pantalla vacía. "Probá cargar un service" es lo
-// único que arranca el modo interactivo, y necesita JS por definición.
+// ve: la carga terminada, nunca una pantalla vacía. Tocar el teléfono es
+// lo único que arranca el modo interactivo, y necesita JS por definición.
 
 // El mismo vehículo demo que el resto de la landing: el Corsa de Pedro,
 // con su último service en los números que muestran las capturas de las
@@ -120,8 +120,8 @@ export function SimuladorCarga() {
   }, []);
 
   // CADA TRANSICIÓN LLEVA EL FOCO A LA PANTALLA NUEVA. Sin esto, el botón
-  // que se acaba de apretar ("Probá cargar un service", "Cargar service", "Confirmar
-  // service", "Volver a empezar") se desmonta con el foco puesto, el foco
+  // que se acaba de apretar ("Cargar service", "Confirmar service",
+  // "Volver a empezar") se desmonta con el foco puesto, el foco
   // cae al <body> y el próximo Tab arranca desde el navbar. Y de paso
   // resuelve el anuncio para lectores de pantalla: enfocar el contenedor
   // hace que VoiceOver/NVDA lean la pantalla nueva — incluido el
@@ -259,7 +259,35 @@ export function SimuladorCarga() {
             mismo bisel que PreviewCelular (components/experiencia). En
             mobile no hay marco: un teléfono adentro de un teléfono es
             redundante y roba ancho. */}
-        <div className="relative overflow-hidden rounded-lg border border-line bg-base lg:h-[604px] lg:w-[320px] lg:rounded-[36px] lg:border-[6px] lg:border-ink lg:shadow-lg">
+        {/* EN VITRINA, EL TELÉFONO ENTERO ES LA PUERTA al modo interactivo.
+            El botón "Probá cargar un service" se fue: era la tercera
+            invitación a lo mismo en la misma pantalla. La señal de que
+            esto se toca ahora es de diseño —cursor, anillo al pasar y al
+            enfocar— y el aria-label conserva la invitación verbal para
+            lectores de pantalla. Enter o Espacio arrancan igual que el
+            click; apenas arranca, el rol de botón desaparece y el
+            formulario vuelve a ser formulario. */}
+        <div
+          role={vitrina ? "button" : undefined}
+          tabIndex={vitrina ? 0 : undefined}
+          aria-label={vitrina ? "Probá cargar un service" : undefined}
+          onClick={vitrina ? empezar : undefined}
+          onKeyDown={
+            vitrina
+              ? (e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    empezar();
+                  }
+                }
+              : undefined
+          }
+          className={`relative overflow-hidden rounded-lg border border-line bg-base lg:h-[604px] lg:w-[320px] lg:rounded-[36px] lg:border-[6px] lg:border-ink lg:shadow-lg ${
+            vitrina
+              ? "cursor-pointer transition-shadow hover:ring-2 hover:ring-ink/30 focus-visible:ring-2"
+              : ""
+          }`}
+        >
           {/* El cronómetro, quemado sobre la pantalla como en las capturas
               del producto. Vive fuera del área inerte para que siga
               corriendo visible aunque el contenido se esté recorriendo. */}
@@ -462,24 +490,6 @@ export function SimuladorCarga() {
           </div>
         </div>
 
-        {/* La puerta al modo interactivo. Solo en vitrina: apenas arranca,
-            el formulario mismo es la interacción.
-
-            SECUNDARIO, no rojo: la única acción primaria de la página es
-            WhatsApp, y adentro del teléfono ya hay un botón rojo del
-            producto. Tres rojos apilados dejan de ordenar. */}
-        {vitrina && (
-          <div className="mt-4 flex justify-center">
-            <Boton
-              variante="secundario"
-              tam="lg"
-              onClick={empezar}
-              className="w-full border-ink font-bold sm:w-auto sm:px-8"
-            >
-              Probá cargar un service
-            </Boton>
-          </div>
-        )}
       </div>
 
       <PasosGuia estados={estadosPasos} />

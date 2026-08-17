@@ -35,6 +35,19 @@ export const TEXTO_CTA = "Sumar mi lubricentro";
 export const ID_CTA_HERO = "cta-hero";
 
 /**
+ * LOS CUPOS DEL MES — la única fuente de verdad.
+ *
+ * El módulo de la sección de precio Y la línea del cierre salen de acá:
+ * antes el número estaba escrito a mano en dos lugares con dos
+ * redacciones distintas, y en algún momento se iban a contradecir solos.
+ *
+ * ⚠ MANTENIMIENTO HUMANO: `tomados` se actualiza a mano con cada venta y
+ * `mes` con cada mes nuevo. Si esto deja de actualizarse, EL MÓDULO SE
+ * SACA — un contador congelado destruye más confianza de la que genera.
+ */
+export const CUPOS = { mes: "Agosto 2026", total: 5, tomados: 1 } as const;
+
+/**
  * La garantía de 30 días, palabra por palabra.
  *
  * Vive en una constante y no suelta en el JSX de la sección 09 porque el
@@ -61,8 +74,7 @@ export const SECCIONES = [
   { id: "hero", nombre: "Hero" },
   { id: "como-funciona", nombre: "La prueba de que es fácil" },
   { id: "que-cambia", nombre: "Qué cambia en tu lubricentro" },
-  { id: "qr", nombre: "Y encima, el QR" },
-  { id: "pasos-cliente", nombre: "Los tres pasos del cliente" },
+  { id: "qr", nombre: "La calco y los pasos del cliente" },
   { id: "fidelliza", nombre: "Fidelliza" },
   { id: "caso", nombre: "El caso Brothers Oil" },
   { id: "precio", nombre: "Precio, garantía y cupos" },

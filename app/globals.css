@@ -234,35 +234,113 @@
 @utility contenedor {
   max-width: 1200px;
   margin-inline: auto;
-  padding-inline: clamp(20px, 5vw, 40px);
+  padding-inline: var(--espacio-lateral);
 }
 
 /* El negativo exacto de `contenedor`, para lo que tiene que llegar al
    borde de la pantalla desde adentro de una sección. */
 @utility sangrado {
-  margin-inline: calc(clamp(20px, 5vw, 40px) * -1);
+  margin-inline: calc(var(--espacio-lateral) * -1);
 }
 
 /* ============================================================
-   El aire vertical entre secciones — UNO SOLO
+   El sistema de espaciado de la landing — LOS SEIS VALORES
    ============================================================
-   Desde que las secciones claras van todas sobre blanco, el ritmo de la
-   página ya no lo pone el cambio de superficie: lo pone este espacio.
-   Por eso es una utilidad y no un py-* por sección — el día que haya que
-   darle más aire, se toca un solo número.
+   Todo el aire vertical de la landing sale de estas variables; ninguna
+   sección escribe un número propio. Escalones exactos en los tres
+   anchos de diseño (375 / 768 / 1280):
 
-   Fluido como el padding del contenedor: 64px en un celular de 390,
-   ~82 en tablet, 112 de 1440 para arriba. Dos secciones blancas seguidas
-   quedan separadas por el doble de esto.
+                                375     768    1280
+     entre secciones             96     128     160   (cada una pone la mitad)
+     entre bloques internos      40      48      64
+     H2 → lead                   12      12      16
+     lead → primer contenido     32      40      48
+     entre tarjetas (04)         48      64      80
+     padding lateral             20      32      32
 
-   `aire-seccion-pie` es la mitad de abajo sola: la sección 06 continúa
-   el grafito de la 05 sin corte y no lleva aire arriba. */
+   LA REGLA DURA que estos números garantizan: el espacio entre
+   secciones es al menos el DOBLE del mayor espacio interno de cualquier
+   sección. Si están cerca, el ojo no puede separar una sección de la
+   siguiente y la página se lee como una masa. Antes de tocar un valor,
+   verificá que la regla siga cerrando en los tres anchos.
+
+   (El spec pedía tarjetas a 56 en 375, pero 2×56=112 > 96 rompía la
+   regla dura en mobile: quedaron en 48, que la cumple.)
+
+   Se consumen con la sintaxis de variable de Tailwind:
+   `mt-(--espacio-bloque)`, `gap-(--espacio-tarjeta)`, etc. */
+:root {
+  --espacio-seccion: 48px; /* mitad del hueco de 96 */
+  --espacio-bloque: 40px;
+  --espacio-h2-lead: 12px;
+  --espacio-lead: 32px;
+  --espacio-tarjeta: 48px;
+  --espacio-lateral: 20px;
+}
+
+@media (min-width: 768px) {
+  :root {
+    --espacio-seccion: 64px;
+    --espacio-bloque: 48px;
+    --espacio-lead: 40px;
+    --espacio-tarjeta: 64px;
+    --espacio-lateral: 32px;
+  }
+}
+
+@media (min-width: 1280px) {
+  :root {
+    --espacio-seccion: 80px;
+    --espacio-bloque: 64px;
+    --espacio-h2-lead: 16px;
+    --espacio-lead: 48px;
+    --espacio-tarjeta: 80px;
+  }
+}
+
+/* `aire-seccion-pie` es la mitad de abajo sola: la sección de los pasos
+   continúa el grafito de la calco sin corte y no lleva aire arriba. */
 @utility aire-seccion {
-  padding-block: clamp(4rem, 2.9rem + 4.6vw, 7rem);
+  padding-block: var(--espacio-seccion);
 }
 
 @utility aire-seccion-pie {
-  padding-bottom: clamp(4rem, 2.9rem + 4.6vw, 7rem);
+  padding-bottom: var(--espacio-seccion);
+}
+
+/* ============================================================
+   El reveal de entrada — sobrio, y a prueba de fallas
+   ============================================================
+   SALVAGUARDA CRÍTICA: el estado por defecto es VISIBLE. La clase que
+   oculta (`revelar-oculto`) la agrega JavaScript al montar, y solo a los
+   elementos que todavía no entraron al viewport. Sin JS, con el observer
+   roto o con un bloqueador agresivo, la página se ve completa — una
+   landing que puede quedar en blanco no vale ninguna animación.
+
+   Solo opacity y translate. 480ms con la curva del spec. El retraso del
+   stagger llega por variable (--revelar-retraso), 70ms por hermano con
+   tope en el quinto. */
+.revelar-oculto {
+  opacity: 0;
+  translate: 0 12px;
+}
+
+.revelar-entra {
+  opacity: 1;
+  translate: 0 0;
+  transition:
+    opacity 480ms cubic-bezier(0.16, 1, 0.3, 1) var(--revelar-retraso, 0ms),
+    translate 480ms cubic-bezier(0.16, 1, 0.3, 1) var(--revelar-retraso, 0ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Doble cinturón: el componente ya no oculta nada con reduce, pero si
+     alguna clase quedara puesta, acá se anula igual. */
+  .revelar-oculto {
+    opacity: 1;
+    translate: 0 0;
+    transition: none;
+  }
 }
 
 /* ============================================================

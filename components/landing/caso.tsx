@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { Revelar } from "@/components/landing/revelar";
 
 // 08 · El testimonio de Brothers Oil — probar que funciona con alguien
 // igual a él, justo antes de hablar de plata.
@@ -45,7 +46,10 @@ const CITA_DESPUES = " y estaban todas desordenadas.";
 // cifra — por eso el número exacto y no un "150+" redondeado.
 const NUMEROS = [
   { cifra: "262", etiqueta: "services cargados" },
-  { cifra: "15 días", etiqueta: "desde la instalación" },
+  // "desde la instalación" envejecía: en noviembre iba a seguir diciendo
+  // 15 y ser falso. En pasado es un hecho histórico — no caduca nunca y
+  // mantiene coherente el par con los 262.
+  { cifra: "15 días", etiqueta: "le llevó cargarlos" },
   { cifra: "2", etiqueta: "sucursales funcionando" },
 ] as const;
 
@@ -60,6 +64,7 @@ export function Caso() {
       className="aire-seccion scroll-mt-14 bg-base md:scroll-mt-16"
     >
       <div className="contenedor">
+        <Revelar>
         <figure className="mx-auto flex max-w-3xl flex-col items-center text-center">
           {/* El logo con su placa grafito propia: sin marco ni radio
               nuestro encima. Es el logo de ellos, no una pieza nuestra. */}
@@ -99,13 +104,15 @@ export function Caso() {
             </p>
           </figcaption>
         </figure>
+        </Revelar>
 
         {/* ---------- Los números ----------
             La prueba dura debajo de la prueba blanda, como ficha y no como
             tres tarjetas: una línea arriba, divisores entre columnas, cero
             cajas. En fila también en mobile — apilados pierden el efecto
             de tríada. */}
-        <dl className="mx-auto mt-12 grid max-w-3xl grid-cols-3 divide-x divide-line border-t border-line pt-8 sm:mt-16 sm:pt-10">
+        <Revelar indice={1}>
+        <dl className="mx-auto mt-(--espacio-bloque) grid max-w-3xl grid-cols-3 divide-x divide-line border-t border-line pt-8 sm:pt-10">
           {NUMEROS.map((n) => (
             <div key={n.etiqueta} className="px-1 text-center sm:px-4">
               {/* Cifra de marca: Nunito —la hereda del layout— Y tabular.
@@ -122,6 +129,7 @@ export function Caso() {
             </div>
           ))}
         </dl>
+        </Revelar>
       </div>
     </section>
   );

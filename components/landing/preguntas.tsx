@@ -1,4 +1,5 @@
 import { AcordeonPreguntas } from "@/components/landing/acordeon-preguntas";
+import { Revelar } from "@/components/landing/revelar";
 import { CTA_WHATSAPP } from "@/lib/landing";
 
 // 10 · Preguntas frecuentes — desarmar las dudas.
@@ -173,42 +174,44 @@ export function Preguntas() {
       />
 
       <div className="contenedor">
-        <div className="mx-auto max-w-2xl text-center">
+        <Revelar className="mx-auto max-w-2xl text-center">
           <h2
             id="preguntas-titulo"
             className="text-balance text-h3 font-bold sm:text-h2"
           >
             Preguntas frecuentes
           </h2>
-          <p className="mt-4 text-pretty text-body text-ink-60 sm:text-lead">
+          <p className="mt-(--espacio-h2-lead) text-pretty text-body text-ink-60 sm:text-lead">
             Lo que nos preguntan antes de decidirse.
           </p>
-        </div>
+        </Revelar>
 
         {/* Las cuatro abiertas. En mobile se apilan pero SIGUEN ABIERTAS. */}
-        <div className="mt-10 grid gap-4 sm:mt-12 sm:grid-cols-2 sm:gap-5">
-          {ABIERTAS.map((f) => (
-            <div
+        <div className="mt-(--espacio-lead) grid gap-4 sm:grid-cols-2 sm:gap-5">
+          {ABIERTAS.map((f, i) => (
+            <Revelar
               key={f.pregunta}
+              indice={i}
               className="rounded-lg border border-line bg-base p-5 sm:p-6"
             >
               <h3 className="text-lead font-bold text-ink">{f.pregunta}</h3>
               <p className="mt-2 max-w-[46ch] text-pretty text-body text-ink-60">
                 <Respuesta texto={f.respuesta} enlace={f.enlace} />
               </p>
-            </div>
+            </Revelar>
           ))}
         </div>
 
-        <div className="mt-4 sm:mt-5">
+        <Revelar className="mt-4 sm:mt-5">
           <AcordeonPreguntas items={ACORDEON} />
-        </div>
+        </Revelar>
 
         {/* ---------- El remate ----------
             NO es un botón rojo: el CTA primario de la página no se duplica
             acá. Es una salida para el que llegó hasta el final con una duda
             que no está en la lista, y por eso va como enlace de texto. */}
-        <p className="mt-12 text-center text-pretty text-body text-ink sm:mt-14 sm:text-lead">
+        <Revelar>
+        <p className="mt-(--espacio-bloque) text-center text-pretty text-body text-ink sm:text-lead">
           ¿Tenés otra pregunta?{" "}
           <a
             href={CTA_WHATSAPP}
@@ -220,6 +223,7 @@ export function Preguntas() {
           </a>
           .
         </p>
+        </Revelar>
       </div>
     </section>
   );

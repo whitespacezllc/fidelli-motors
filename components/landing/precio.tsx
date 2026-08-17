@@ -4,7 +4,9 @@ import {
   IconoMismoDia,
 } from "@/components/iconos";
 import { CtaWhatsapp } from "@/components/landing/cta-whatsapp";
+import { ModuloCupos } from "@/components/landing/modulo-cupos";
 import { SelectorPlan } from "@/components/landing/selector-plan";
+import { Revelar } from "@/components/landing/revelar";
 import { GARANTIA_30_DIAS } from "@/lib/landing";
 
 // 09 · Precio — dos números y nada más.
@@ -101,18 +103,18 @@ export function Precio() {
           esta sección se topaba además en max-w-5xl y quedaba más angosta
           que todo lo de arriba y lo de abajo. */}
       <div className="contenedor">
-        <div className="mx-auto max-w-2xl text-center">
+        <Revelar className="mx-auto max-w-2xl text-center">
           <h2
             id="precio-titulo"
             className="text-balance text-h3 font-bold sm:text-h2"
           >
             Un solo plan, para cualquier lubricentro.
           </h2>
-          <p className="mt-4 text-pretty text-body text-ink-60 sm:text-lead">
+          <p className="mt-(--espacio-h2-lead) text-pretty text-body text-ink-60 sm:text-lead">
             Lo pagás por mes o por año. La instalación es una sola vez, y para
             los fundadores no la cobramos.
           </p>
-        </div>
+        </Revelar>
 
         {/* ---------- Las dos tarjetas ----------
             `items-start` y no `items-stretch`: cada una mide lo que mide.
@@ -122,13 +124,13 @@ export function Precio() {
             768 la tarjeta de instalación quedaría en ~270px y ahí no entran
             el precio tachado al lado del $0 ni los renglones sin partirse.
             Apiladas a ese ancho se leen mejor. */}
-        <div className="mt-10 grid items-start gap-6 sm:mt-12 lg:grid-cols-12 lg:gap-10">
+        <div className="mt-(--espacio-lead) grid items-start gap-6 lg:grid-cols-12 lg:gap-10">
           {/* ============ A · La columna del plan ============
               La tarjeta y, debajo, la nota de capacidad. Van juntas y al
               mismo ancho a propósito: la nota explica por qué hay lista de
               espera para ESTO. A lo ancho de la página quedaba flotando
               entre las dos tarjetas sin pertenecer a ninguna. */}
-          <div className="flex flex-col gap-5 lg:col-span-7">
+          <Revelar className="flex flex-col gap-5 lg:col-span-7">
             {/* Sin borde de marca. La jerarquía la da el grafito y el tamaño
                 de la columna, no un contorno rojo.
 
@@ -177,32 +179,13 @@ export function Precio() {
               />
             </div>
 
-            {/* ---------- La capacidad ----------
-                PROMESA DE SERVICIO, NO EXCLUSIVIDAD. A este público "competí
-                por entrar" le suena a que no lo querés atender: el límite se
-                explica por lo que hacemos, ir al local, y no por lo que no
-                podemos.
-
-                Sin contador dinámico y sin cuenta regresiva: un número que
-                baja solo es una promesa que hay que sostener, y el día que
-                no baje se nota. La condición es una fecha.
-
-                Sin ícono. Es una aclaración, no un elemento de interfaz, y
-                un pin al costado la disfrazaba de aviso del sistema. */}
-            <div className="rounded-lg bg-surface px-5 py-5 sm:px-6 sm:py-5">
-              <p className="text-pretty text-body text-ink-60">
-                No activamos un lubricentro a distancia. Vamos a tu local, lo
-                dejamos funcionando el mismo día y capacitamos a tu equipo. Por
-                eso abrimos{" "}
-                <span className="tabular-nums">5 lugares por mes</span> hasta
-                octubre de 2026.
-              </p>
-            </div>
-          </div>
+            <ModuloCupos />
+          </Revelar>
 
           {/* ============ B · La instalación ============
               Sin botón propio: una sola acción primaria en toda la página. */}
-          <div className="flex flex-col rounded-lg border border-line bg-base p-6 sm:p-8 lg:col-span-5">
+          <Revelar indice={1} className="lg:col-span-5">
+          <div className="flex flex-col rounded-lg border border-line bg-base p-6 sm:p-8">
             <p className={`${ETIQUETA} text-ink-60`}>
               Instalación · Programa Fundadores
             </p>
@@ -270,6 +253,7 @@ export function Precio() {
               </p>
             </div>
           </div>
+          </Revelar>
         </div>
       </div>
     </section>
