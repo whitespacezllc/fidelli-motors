@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { VideoFeature } from "@/components/landing/video-feature";
+import { Revelar } from "@/components/landing/revelar";
 
 // 04 · Qué cambia en tu lubricentro — llevarlo a la situación deseada.
 //
@@ -22,36 +23,35 @@ import { VideoFeature } from "@/components/landing/video-feature";
 // Sin íconos decorativos y un solo nivel de título por fila: el número es
 // una etiqueta, no un encabezado. El único <h3> es el título.
 
+// UNA LÍNEA POR TARJETA. El video ya muestra lo que antes narraban tres
+// renglones: si la imagen lo cuenta, el texto no lo repite. La sección
+// bajó de ~140 palabras a ~35 con este recorte.
 const FILAS = [
   {
     numero: "01",
-    titulo: "Contás con todo en un solo lugar",
-    texto:
-      "Tus clientes, sus autos y cada service que les hiciste. Buscás por patente y aparece todo: qué aceite lleva, qué filtros, cuándo fue la última vez.",
+    titulo: "Todo en un solo lugar",
+    texto: "Buscás por patente y aparece todo.",
     video: "/assets/videos/01-todo_en_un_solo_lugar",
     alt: "El panel abierto en Inicio: los services del mes, la retención pendiente y los últimos autos que pasaron por el taller.",
   },
   {
     numero: "02",
-    titulo: "Cargás los services como lo hacés a mano",
-    texto:
-      "Patente, kilómetros, aceite, filtros. Listo. El mismo gesto que hacías en el cartón, en el celular, en 90 segundos.",
+    titulo: "Se carga como se hace a mano",
+    texto: "El mismo gesto que hacías en el cartón.",
     video: "/assets/videos/02-cargalo_como_lo_haces_a_mano",
     alt: "La carga de un service de punta a punta: la patente, los kilómetros, la viscosidad del aceite y los renglones del cartón.",
   },
   {
     numero: "03",
-    titulo: "Vas a saber quiénes están próximos a service",
-    texto:
-      "Con el segundo service el sistema ya sabe cuántos kilómetros hace por día cada auto: estima cuándo vuelve y acierta el 85% de las veces. No tenés que acordarte de nadie.",
+    titulo: "Sabés quién está por volver",
+    texto: "El sistema lo calcula solo y acierta el 85% de las veces.",
     imagen: "/assets/panel-proximos-por-kilometros.webp",
     alt: "La lista de próximos services: cada auto con su último service, los kilómetros a los que le toca el próximo y la fecha estimada de retorno.",
   },
   {
     numero: "04",
-    titulo: "Enviás un seguimiento en un solo clic",
-    texto:
-      "Cada auto pasa por tres estados: próximo, urgente y vencido. En cada uno le mandás un mensaje, hasta tres seguimientos para que no se le pase el service. Cuidás su auto y no perdés el trabajo.",
+    titulo: "Le escribís en un clic",
+    texto: "Próximo, urgente o vencido. Con el mensaje ya armado.",
     video: "/assets/videos/04-envia_seguimientos_en_un_clic",
     alt: "La lista de próximos services con sus tres estados, y el WhatsApp que sale armado al tocar el botón de una fila.",
     // El archivo trae 37px de banda negra arriba, medidos sobre el póster.
@@ -69,21 +69,24 @@ export function QueCambia() {
       className="aire-seccion scroll-mt-14 bg-base md:scroll-mt-16"
     >
       <div className="contenedor">
+        {/* El H2 anterior repetía "una sola pantalla" del H1 del hero:
+            cada idea se dice una vez, donde pega más fuerte. */}
         <h2
           id="que-cambia-titulo"
           className="max-w-3xl text-balance text-h3 font-bold sm:text-h2"
         >
-          De cinco planillas a una sola pantalla.
+          Vos cargás. El resto lo hace el sistema.
         </h2>
 
-        <div className="mt-12 flex flex-col gap-14 sm:mt-14 sm:gap-16 lg:gap-20">
+        <div className="mt-(--espacio-lead) flex flex-col gap-(--espacio-tarjeta)">
           {FILAS.map((fila, i) => {
             // Pares (02 y 04) con la foto a la derecha, solo desde lg.
             const fotoALaDerecha = i % 2 === 1;
 
             return (
-              <div
+              <Revelar
                 key={fila.numero}
+                indice={i}
                 className="grid items-center gap-6 sm:gap-8 lg:grid-cols-2 lg:gap-14"
               >
                 {/* El marco: 16:10 en las cuatro, sea video o captura. */}
@@ -125,7 +128,7 @@ export function QueCambia() {
                     {fila.texto}
                   </p>
                 </div>
-              </div>
+              </Revelar>
             );
           })}
         </div>

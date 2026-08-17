@@ -1,5 +1,6 @@
 import { IconoCheck } from "@/components/iconos";
 import { EscenaFidelliza } from "@/components/landing/escena-fidelliza";
+import { Revelar } from "@/components/landing/revelar";
 
 // 07 · Fidelliza — el toque de marca y el último empujón antes del precio.
 //
@@ -28,6 +29,7 @@ export function Fidelliza() {
       aria-labelledby="fidelliza-titulo"
       className="aire-seccion scroll-mt-14 bg-base text-ink md:scroll-mt-16"
     >
+      <Revelar>
       <EscenaFidelliza>
         <div className="lg:col-start-1 lg:row-start-1 lg:self-center">
           <h2
@@ -37,7 +39,7 @@ export function Fidelliza() {
             Tu cliente ve cuánto le falta para el premio. Y vuelve.
           </h2>
 
-          <p className="mt-4 max-w-[46ch] text-pretty text-body text-ink-60 sm:text-lead">
+          <p className="mt-(--espacio-h2-lead) max-w-[46ch] text-pretty text-body text-ink-60 sm:text-lead">
             Definís el premio y cada cuántos services se gana. El sistema lleva
             la cuenta solo, y tu cliente ve cuánto le falta cada vez que escanea
             el parasol.
@@ -56,6 +58,7 @@ export function Fidelliza() {
           </ul>
         </div>
       </EscenaFidelliza>
+      </Revelar>
     </section>
   );
 }

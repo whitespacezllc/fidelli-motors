@@ -10,9 +10,9 @@ Para el dueño de un lubricentro. Todos tus clientes, sus autos y cada service, 
 
 ## Qué hace hoy
 
-- Cargar un service: patente, kilómetros, aceite, filtros. Listo. El mismo gesto que hacías en el cartón, en el celular, en 90 segundos.
+- Cargar un service: buscás por patente y aparece todo. El mismo gesto que hacías en el cartón, en 90 segundos.
 - Avisos por kilómetros: cada auto pasa por tres estados (próximo, urgente y vencido) y en cada uno le mandás un mensaje, hasta tres seguimientos para que no se le pase el service.
-- Página pública con QR y tu marca: una calco en el parasol, y tu cliente tiene todo el historial del auto. Escanea el QR, escribe su patente y ve su historial. Sin app, sin cuenta y sin contraseña.
+- Página pública con QR y tu marca: una calco en el parasol, y tu cliente tiene todo el historial. Escanea la calco, escribe su patente y ve su historial con fecha, kilómetros y tu logo. Sin apps, sin cuenta y sin contraseña.
 - Fidelliza: definís el premio y cada cuántos services se gana. El sistema lleva la cuenta solo, y tu cliente ve cuánto le falta cada vez que escanea el parasol.
 - Services y clientes ilimitados. Soporte por WhatsApp.
 
@@ -34,7 +34,7 @@ Para el dueño de un lubricentro. Todos tus clientes, sus autos y cada service, 
 
 Por WhatsApp: https://wa.me/5493516136192
 
-No activamos un lubricentro a distancia. Vamos a tu local, lo dejamos funcionando el mismo día y capacitamos a tu equipo. Por eso abrimos 5 lugares por mes hasta octubre de 2026.
+Instalamos en tu local, en persona. 5 lugares por mes.
 
 ## Caso real
 
