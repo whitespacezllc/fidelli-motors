@@ -23,7 +23,7 @@ export function Cierre() {
           id="cierre-titulo"
           className="text-balance text-h3 font-bold sm:text-h2"
         >
-          Ordená tu lubricentro con fidelli motors.
+          Ordená tu lubricentro con Fidelli Motors.
         </h2>
 
         {/* max-w-prose topa la medida de línea: el lead es largo y en

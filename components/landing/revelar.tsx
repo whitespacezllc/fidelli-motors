@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ElementType, type ReactNode } from "react";
 
 // El reveal de entrada de la landing. Envuelve un bloque y lo hace
 // aparecer —opacity 0→1, translateY 12px→0— la primera vez que entra al
@@ -24,13 +24,27 @@ export function Revelar({
   children,
   indice = 0,
   className,
+  como = "div",
 }: {
   children: ReactNode;
   /** Posición entre hermanos que aparecen juntos, para el stagger. */
   indice?: number;
   className?: string;
+  /**
+   * Qué elemento renderiza. El default `div` sirve casi siempre, PERO NO
+   * DENTRO DE UNA LISTA: un div entre el <ol> y sus <li> rompe la
+   * semántica —el lector de pantalla deja de anunciar "lista de 3
+   * elementos"— y es HTML inválido. Ahí va `como="li"`.
+   *
+   * Existe por eso: envolver el <li> en un div hacía pasar el validador
+   * por accidente en algunos casos y empeoraba la accesibilidad en todos.
+   * Con esta prop, animar un ítem de lista no obliga a elegir entre las
+   * dos cosas.
+   */
+  como?: ElementType;
 }) {
-  const ref = useRef<HTMLDivElement | null>(null);
+  const Elemento = como;
+  const ref = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const el = ref.current;
@@ -57,7 +71,7 @@ export function Revelar({
   const retraso = Math.min(indice, 5) * 70;
 
   return (
-    <div
+    <Elemento
       ref={ref}
       className={className}
       style={
@@ -67,6 +81,6 @@ export function Revelar({
       }
     >
       {children}
-    </div>
+    </Elemento>
   );
 }
