@@ -3,7 +3,7 @@
 // El número NO es el mismo que WHATSAPP_SOPORTE de lib/config.ts, y es a
 // propósito: aquel es soporte de clientes que ya compraron, este es ventas.
 // Si algún día se unifican, se unifican los dos lugares a la vez.
-const WHATSAPP_VENTAS = "5493516136192";
+const WHATSAPP_VENTAS = "5493513736028";
 
 const MENSAJE =
   "Hola Santiago, tengo un lubricentro y quiero saber más de Fidelli Motors";
