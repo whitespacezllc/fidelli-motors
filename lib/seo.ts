@@ -40,7 +40,7 @@ export const OG_IMAGEN = {
 } as const;
 
 /** El WhatsApp de ventas en formato E.164, para el JSON-LD. */
-export const TELEFONO_VENTAS = "+5493516136192";
+export const TELEFONO_VENTAS = "+5493513736028";
 
 /** Las redes de la marca, para el `sameAs` del Organization. */
 export const REDES = ["https://instagram.com/fidelli.motors"] as const;
