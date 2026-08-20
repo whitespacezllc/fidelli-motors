@@ -6,6 +6,23 @@
 // en uno de los dos.
 export const GTM_ID = "GTM-5N2856ZH";
 
+// ⚠ GOOGLE ANALYTICS NO SE INSTALA ACÁ. La propiedad de GA4 es
+// G-D5ZPJ6BZHX y vive ADENTRO del contenedor de arriba, configurada
+// desde el panel de GTM. En el código no hay ni va a haber un gtag.js.
+//
+// Por qué importa que quede escrito: cuando alguien entra al asistente
+// de GA4, Google le muestra el snippet de la "etiqueta de Google" para
+// pegar en el <head>, sin saber que este sitio ya tiene GTM. Pegarlo
+// además del contenedor hace que cada visita se cuente DOS VECES —una
+// por el gtag directo y otra por la etiqueta de GA4 de adentro de GTM—
+// y las métricas quedan infladas al doble sin ningún error visible. El
+// propio diálogo de Google lo avisa: "No añada más de una etiqueta de
+// Google a cada página".
+//
+// La consecuencia buena de esta decisión: cualquier etiqueta futura —un
+// píxel de Meta, una conversión de Google Ads, lo que sea— se agrega
+// desde el panel de GTM, sin tocar código y sin esperar un deploy.
+
 /**
  * Si la analítica se carga o no.
  *
