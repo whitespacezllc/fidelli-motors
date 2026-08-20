@@ -286,7 +286,7 @@ La prueba social rinde el doble inmediatamente antes del precio.
 >
 > **Card 2 — Instalación · pago único**
 > ~~$93.500~~ **Sin cargo** para los primeros 5 lubricentros
-> - 500 calcos con tu QR, impresas
+> - 250 calcos con tu QR, impresas
 > - Carga de tu catálogo de productos
 > - Capacitación en tu local, presencial
 > - Te dejamos andando el mismo día
