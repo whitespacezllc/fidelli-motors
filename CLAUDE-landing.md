@@ -161,7 +161,7 @@ un botón rojo al lado de "Quiero mi lugar": es enlace de texto.
 Todos los CTA apuntan al mismo href:
 
 ```
-https://wa.me/5493516136192?text=Hola%20Santiago%2C%20tengo%20un%20lubricentro%20y%20quiero%20saber%20m%C3%A1s%20de%20Fidelli%20Motors
+https://wa.me/5493513736028?text=Hola%20Santiago%2C%20tengo%20un%20lubricentro%20y%20quiero%20saber%20m%C3%A1s%20de%20Fidelli%20Motors
 ```
 
 ## Resto
