@@ -7,7 +7,7 @@ import { CTA_WHATSAPP, LINKS_NAVBAR } from "@/lib/landing";
 // Sin newsletter: este público no se suscribe a nada.
 //
 const CLASE_TITULO =
-  "font-ui text-label font-semibold tracking-[0.06em] text-ink-40 uppercase";
+  "font-ui text-label font-semibold tracking-[0.06em] text-ink-60 uppercase";
 const CLASE_LINK = "text-ui text-ink-60 transition-colors hover:text-ink";
 
 export function Pie() {

@@ -102,10 +102,18 @@ export function QrYPasos() {
             se estiraba una pantalla entera; en fila, los tres pasos entran
             juntos en el viewport, que es lo que los hace leerse como una
             secuencia. Desktop: tres columnas iguales. */}
+        {/* `como="li"`: el Revelar ES el ítem de la lista. Envolverlo en un
+            div metía un elemento entre el <ol> y sus <li> —HTML inválido, y
+            el lector de pantalla dejaba de anunciar "lista de 3
+            elementos". */}
         <ol className="mt-6 grid gap-6 sm:mt-8 sm:gap-8 lg:grid-cols-3 lg:gap-10">
           {PASOS.map((paso, i) => (
-            <Revelar key={paso.numero} indice={i}>
-              <li className="flex items-start gap-4 lg:flex-col lg:gap-5">
+            <Revelar
+              key={paso.numero}
+              indice={i}
+              como="li"
+              className="flex items-start gap-4 lg:flex-col lg:gap-5"
+            >
                 {/* 56px en mobile, 64 en desktop, radio 14. El fondo claro
                     sobre el grafito hace de linterna: los tres íconos son
                     lo único claro entre la foto y el cierre. */}
@@ -131,7 +139,6 @@ export function QrYPasos() {
                     {paso.texto}
                   </p>
                 </div>
-              </li>
             </Revelar>
           ))}
         </ol>
