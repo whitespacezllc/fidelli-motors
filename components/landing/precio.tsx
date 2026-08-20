@@ -49,7 +49,7 @@ const INCLUYE_PLAN = [
 // ni cargar services, clientes o vehículos históricos: el producto hoy no
 // lo hace y prometerlo acá se paga el día de la instalación.
 const INCLUYE_INSTALACION = [
-  "500 calcos con QR, diseñados e impresos",
+  "250 calcos con QR, diseñados e impresos",
   "Carga de tu catálogo de productos",
   "Capacitación en tu local",
   "Manual de usuario",
