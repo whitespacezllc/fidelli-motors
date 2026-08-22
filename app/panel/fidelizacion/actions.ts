@@ -16,7 +16,9 @@ export async function guardarPremio(
   _previo: EstadoPremio,
   formData: FormData,
 ): Promise<EstadoPremio> {
-  const sesion = await sesionParaEscribir();
+  // "premios" es el cuarto chequeo: sin la feature, la acción ni llega a
+  // la base — redirige a la sección, donde BloqueoPlan explica qué pasa.
+  const sesion = await sesionParaEscribir("premios");
 
   const meta = Number(formData.get("meta"));
   const descripcion = String(formData.get("descripcion") ?? "").trim();
@@ -65,6 +67,12 @@ export async function guardarPremio(
     }
     if (error.code === "23514") {
       return { error: `La meta va de ${META_MINIMA} a ${META_MAXIMA} services.` };
+    }
+    // 42501 = lo rechazó la policy de RLS. Es el cinturón de la base: solo
+    // se ve si alguien saltea el chequeo de arriba — pero aun así el error
+    // tiene que decir el hecho, no "row-level security".
+    if (error.code === "42501") {
+      return { error: "Fidelliza no está en tu plan. Escribinos si lo querés activar." };
     }
     return { error: "No se pudo guardar el premio. Probá de nuevo." };
   }

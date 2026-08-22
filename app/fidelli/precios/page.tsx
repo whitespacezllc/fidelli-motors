@@ -14,13 +14,16 @@ export default async function PaginaPrecios() {
   const [{ data: planes }, { data: filas }] = await Promise.all([
     supabase
       .from("planes")
-      .select("id, nombre, precio_mensual, descuento_semestral_pct, descuento_anual_pct")
+      .select(
+        "id, nombre, precio_mensual, descuento_semestral_pct, descuento_anual_pct, features, limites, heredado",
+      )
       .eq("activo", true)
-      .order("nombre"),
+      .order("heredado")
+      .order("precio_mensual"),
     supabase.rpc("listado_lubricentros"),
   ]);
 
-  const catalogo = (planes ?? []) as PlanCompleto[];
+  const catalogo = (planes ?? []) as unknown as PlanCompleto[];
   const lubricentros = filas ?? [];
 
   return (

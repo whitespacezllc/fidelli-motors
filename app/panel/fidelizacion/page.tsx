@@ -7,6 +7,8 @@ import {
   type Premio,
 } from "@/components/fidelizacion/formulario-premio";
 import { META_MINIMA, META_MAXIMA } from "@/lib/fidelizacion";
+import { obtenerSesion, featureHabilitada } from "@/lib/auth/session";
+import { BloqueoPlan } from "@/components/panel/bloqueo-plan";
 
 export const metadata: Metadata = { title: "Fidelización" };
 
@@ -15,6 +17,14 @@ export const metadata: Metadata = { title: "Fidelización" };
 // parcial) y sin snapshots: el sistema calcula siempre contra la meta
 // vigente, así que un cambio mueve a todos los vehículos al instante.
 export default async function PaginaFidelizacion() {
+  // El plan primero: si no incluye Fidelliza, la sección entera es la
+  // pantalla que lo explica — nunca un crash ni un rechazo mudo. El menú
+  // ya no la ofrece; esto atiende la URL directa y el link guardado.
+  const sesion = await obtenerSesion();
+  if (!featureHabilitada(sesion, "premios")) {
+    return <BloqueoPlan funcion="Fidelliza" />;
+  }
+
   const supabase = await createClient();
 
   const [premioRes, ciclosRes] = await Promise.all([

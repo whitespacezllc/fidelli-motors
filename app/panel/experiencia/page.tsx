@@ -8,7 +8,8 @@ import {
   type ConfigExperiencia,
 } from "@/components/experiencia/form-experiencia";
 import { PreviewCelular } from "@/components/experiencia/preview-celular";
-import { obtenerSesion } from "@/lib/auth/session";
+import { obtenerSesion, featureHabilitada } from "@/lib/auth/session";
+import { BloqueoPlan } from "@/components/panel/bloqueo-plan";
 
 export const metadata: Metadata = { title: "Diseño de experiencia" };
 
@@ -19,6 +20,13 @@ export const metadata: Metadata = { title: "Diseño de experiencia" };
 export default async function PaginaExperiencia() {
   const supabase = await createClient();
   const sesion = await obtenerSesion();
+
+  // Sin la feature, la sección es la pantalla que lo explica. La página
+  // pública del tenant sigue funcionando con la configuración que ya
+  // tiene: lo que se apaga es EDITARLA, nunca lo configurado.
+  if (!featureHabilitada(sesion, "personalizacion_pagina")) {
+    return <BloqueoPlan funcion="La personalización de tu página" />;
+  }
 
   const [configRes, lubriRes] = await Promise.all([
     supabase

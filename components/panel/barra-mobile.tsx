@@ -13,13 +13,15 @@ import {
 } from "@/components/iconos";
 import { urlWhatsappSoporte } from "@/lib/config";
 import { MOTIVO_SUSPENSION } from "@/components/panel/aviso-suspension";
+import type { FeaturePlan } from "@/lib/planes";
 
-// Secciones que no entran en la barra: viven en la hoja "Más".
-const SECCIONES_MAS = [
+// Secciones que no entran en la barra: viven en la hoja "Más". `feature` =
+// qué tiene que habilitar el plan para que el item exista.
+const SECCIONES_MAS: { href: string; nombre: string; feature?: FeaturePlan }[] = [
   { href: "/panel/services", nombre: "Services" },
   { href: "/panel/productos", nombre: "Productos" },
-  { href: "/panel/fidelizacion", nombre: "Fidelización" },
-  { href: "/panel/experiencia", nombre: "Diseño de experiencia" },
+  { href: "/panel/fidelizacion", nombre: "Fidelización", feature: "premios" },
+  { href: "/panel/experiencia", nombre: "Diseño de experiencia", feature: "personalizacion_pagina" },
   { href: "/panel/mensajes", nombre: "Mensajes" },
   { href: "/panel/sucursales", nombre: "Sucursales" },
   { href: "/panel/cuenta", nombre: "Mi cuenta" },
@@ -53,12 +55,17 @@ function ItemBarra({
 export function BarraMobile({
   cerrarSesion,
   suspendido = false,
+  features = {},
 }: {
   cerrarSesion: () => Promise<void>;
   suspendido?: boolean;
+  features?: Partial<Record<FeaturePlan, boolean>>;
 }) {
   const pathname = usePathname();
   const [abierta, setAbierta] = useState(false);
+  const secciones = SECCIONES_MAS.filter(
+    (s) => !s.feature || features[s.feature],
+  );
 
   // La hoja se cierra con Escape; al navegar la cierra el onClick de cada link.
   useEffect(() => {
@@ -68,7 +75,7 @@ export function BarraMobile({
     return () => window.removeEventListener("keydown", onKey);
   }, [abierta]);
 
-  const enMas = SECCIONES_MAS.some((s) => pathname.startsWith(s.href));
+  const enMas = secciones.some((s) => pathname.startsWith(s.href));
 
   return (
     <>
@@ -146,7 +153,7 @@ export function BarraMobile({
           />
           <div className="absolute inset-x-0 bottom-0 rounded-t-lg bg-base p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
             <nav className="flex flex-col">
-              {SECCIONES_MAS.map((s) => (
+              {secciones.map((s) => (
                 <Link
                   key={s.href}
                   href={s.href}

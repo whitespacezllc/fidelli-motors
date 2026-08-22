@@ -36,3 +36,75 @@ begin
         'agregá el alter view ... set (security_invoker = on) al final de esa misma migración.';
   end if;
 end $$;
+
+-- ============================================================
+-- Planes con control real (Bloque 1A)
+--
+-- Tres invariantes que, rotos, fallan hacia el lado caro:
+--   1. Las funciones de resolución tienen que existir y ser SECURITY
+--      DEFINER — sin definer, evaluarlas dentro de una policy recursa o
+--      lee con el RLS del que llama y el gating queda a merced de lo que
+--      ese rol pueda ver.
+--   2. Ningún plan vigente puede tener features vacías: con la resolución
+--      fail-closed, un vigente sin claves es un plan que no habilita NADA
+--      y se le vendería a un cliente.
+--   3. (Las vistas con security_invoker ya las vigila el bloque de arriba
+--      para TODAS las vistas, incluidas las que toque 1B.)
+-- ============================================================
+
+do $$
+declare
+  v_nombre  text;
+  v_definer boolean;
+  v_hay     integer;
+  v_fallas  text := '';
+  v_planes  text;
+begin
+  -- 1 · resolución presente y security definer
+  foreach v_nombre in array array[
+    'plan_permite', 'plan_limite', 'feature_de_tenant', 'limite_de_tenant',
+    'limite_del_plan', 'sucursales_dentro_del_limite', 'plan_capacidades'
+  ] loop
+    select count(*), bool_and(p.prosecdef)
+      into v_hay, v_definer
+      from pg_proc p
+     where p.proname = v_nombre
+       and p.pronamespace = 'public'::regnamespace;
+
+    if coalesce(v_hay, 0) = 0 then
+      v_fallas := v_fallas || format(E'  · falta la función %s()\n', v_nombre);
+    elsif not v_definer then
+      v_fallas := v_fallas || format(
+        E'  · %s() no es SECURITY DEFINER — dentro de una policy recursa o lee con el RLS del que llama\n',
+        v_nombre);
+    end if;
+  end loop;
+
+  -- 2 · ningún plan vigente con features vacías
+  select string_agg(nombre, ', ')
+    into v_planes
+    from planes
+   where not heredado
+     and (features is null or features = '{}'::jsonb);
+
+  if v_planes is not null then
+    v_fallas := v_fallas || format(
+      E'  · plan(es) vigente(s) sin features: %s — con resolución fail-closed no habilitan nada\n',
+      v_planes);
+  end if;
+
+  -- 3 · los dos candados existen: el del override y el del tope de
+  --     reactivación de sucursales. Sin trigger, la regla es decorativa.
+  foreach v_nombre in array array['candado_override_plan', 'tope_sucursales'] loop
+    if not exists (select 1 from pg_trigger where tgname = v_nombre and not tgisinternal) then
+      v_fallas := v_fallas || format(E'  · falta el trigger %s\n', v_nombre);
+    end if;
+  end loop;
+
+  if v_fallas <> '' then
+    raise exception E'CONTROL POR PLAN ROTO:\n%', v_fallas
+      using hint =
+        'La resolución vive en 20260822150000_planes_con_control.sql; '
+        'el catálogo en feature_plan_valida() y su espejo en lib/planes.ts.';
+  end if;
+end $$;

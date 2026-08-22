@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { sesionParaEscribir } from "@/lib/auth/session";
+import { sesionParaEscribir, featureHabilitada } from "@/lib/auth/session";
 import type { CategoriaProducto } from "@/lib/categorias";
 
 export type ItemCargado = {
@@ -54,7 +54,17 @@ function traducirError(error: { code?: string; message?: string }): string {
 export async function guardarService(
   payload: PayloadService,
 ): Promise<ResultadoGuardado> {
-  await sesionParaEscribir();
+  const sesion = await sesionParaEscribir();
+
+  // La UI ya no ofrece el canje sin la feature; esto atiende el payload
+  // armado a mano. Sin el chequeo, el rechazo lo daría la policy de canjes
+  // AL FINAL del guardado — perdiendo el service entero con un error crudo.
+  if (payload.canjearPremio && !featureHabilitada(sesion, "premios")) {
+    return {
+      error:
+        "Fidelliza no está en tu plan, así que el premio no se puede canjear. Guardá el service sin el canje.",
+    };
+  }
 
   if (!payload.sucursalId) return { error: "Elegí la sucursal donde se hizo." };
   if (!Number.isFinite(payload.kilometros) || payload.kilometros < 0) {

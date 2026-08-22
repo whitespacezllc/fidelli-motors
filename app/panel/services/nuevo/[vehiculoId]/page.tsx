@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { obtenerSesion, panelSuspendido } from "@/lib/auth/session";
+import { obtenerSesion, panelSuspendido, featureHabilitada } from "@/lib/auth/session";
 import { BloqueoSuspension } from "@/components/panel/bloqueo-suspension";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { clasesBoton } from "@/components/ui/boton";
@@ -70,7 +70,12 @@ export default async function PaginaCarton({
         .limit(5),
       supabase.from("config_experiencia").select("color_primario, color_carton").maybeSingle(),
       // El ciclo con reset, calculado en vivo contra la meta vigente.
-      supabase.rpc("premio_disponible", { p_vehiculo_id: vehiculoId }),
+      // Sin la feature de premios ni se consulta: el checkbox de canje no
+      // aparece y el guardado nunca choca con la policy al final — que era
+      // exactamente el rechazo crudo que había que evitar.
+      featureHabilitada(sesion, "premios")
+        ? supabase.rpc("premio_disponible", { p_vehiculo_id: vehiculoId })
+        : Promise.resolve({ data: null }),
     ]);
 
   const vehiculo = vehiculoRes.data;

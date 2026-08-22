@@ -5,9 +5,12 @@ import { IconoPlus, IconoCandado } from "@/components/iconos";
 import { cerrarSesion } from "@/lib/auth/actions";
 import { urlWhatsappSoporte } from "@/lib/config";
 import { MOTIVO_SUSPENSION } from "@/components/panel/aviso-suspension";
+import type { FeaturePlan } from "@/lib/planes";
 
 // Los grupos y el orden vienen del hi-fi (pantalla 2 · Inicio — panel del lubri).
-const GRUPOS: { titulo: string; items: { href: string; nombre: string; exacto?: boolean }[] }[] = [
+// `feature` = qué tiene que habilitar el plan para que el item exista. La
+// resolución viene con la sesión (plan_capacidades); acá solo se filtra.
+const GRUPOS: { titulo: string; items: { href: string; nombre: string; exacto?: boolean; feature?: FeaturePlan }[] }[] = [
   {
     titulo: "Operación",
     items: [
@@ -21,13 +24,13 @@ const GRUPOS: { titulo: string; items: { href: string; nombre: string; exacto?: 
     titulo: "Negocio",
     items: [
       { href: "/panel/productos", nombre: "Productos" },
-      { href: "/panel/fidelizacion", nombre: "Fidelización" },
+      { href: "/panel/fidelizacion", nombre: "Fidelización", feature: "premios" },
     ],
   },
   {
     titulo: "Configuración",
     items: [
-      { href: "/panel/experiencia", nombre: "Diseño de experiencia" },
+      { href: "/panel/experiencia", nombre: "Diseño de experiencia", feature: "personalizacion_pagina" },
       { href: "/panel/mensajes", nombre: "Mensajes" },
       { href: "/panel/sucursales", nombre: "Sucursales" },
       { href: "/panel/cuenta", nombre: "Mi cuenta" },
@@ -41,10 +44,19 @@ const CLASE_ITEM =
 export function Sidebar({
   lubricentroNombre,
   suspendido = false,
+  features = {},
 }: {
   lubricentroNombre: string;
   suspendido?: boolean;
+  features?: Partial<Record<FeaturePlan, boolean>>;
 }) {
+  // Lo que el plan no incluye no aparece — la sección de URL directa la
+  // atiende BloqueoPlan, pero el menú no ofrece lo que no se puede usar.
+  const grupos = GRUPOS.map((g) => ({
+    ...g,
+    items: g.items.filter((i) => !i.feature || features[i.feature]),
+  })).filter((g) => g.items.length > 0);
+
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-line bg-base lg:flex">
       <div className="px-5 pt-5 pb-4">
@@ -76,7 +88,7 @@ export function Sidebar({
       </div>
 
       <nav className="mt-1 flex-1 overflow-y-auto px-4 pb-4">
-        {GRUPOS.map((grupo) => (
+        {grupos.map((grupo) => (
           <div key={grupo.titulo}>
             <p className="px-3 pt-4 pb-1 text-label font-semibold tracking-[0.06em] text-ink-40 uppercase">
               {grupo.titulo}

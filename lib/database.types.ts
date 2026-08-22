@@ -34,6 +34,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      cambios_override_plan: {
+        Row: {
+          cambiado_por: string
+          created_at: string
+          id: string
+          lubricentro_id: string
+          motivo: string
+          overrides_antes: Json
+          overrides_despues: Json
+        }
+        Insert: {
+          cambiado_por: string
+          created_at?: string
+          id?: string
+          lubricentro_id: string
+          motivo: string
+          overrides_antes: Json
+          overrides_despues: Json
+        }
+        Update: {
+          cambiado_por?: string
+          created_at?: string
+          id?: string
+          lubricentro_id?: string
+          motivo?: string
+          overrides_antes?: Json
+          overrides_despues?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cambios_override_plan_cambiado_por_fkey"
+            columns: ["cambiado_por"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cambios_override_plan_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       canjes: {
         Row: {
           created_at: string
@@ -385,6 +430,7 @@ export type Database = {
           created_at: string
           id: string
           nombre: string
+          plan_overrides: Json
           slug: string
         }
         Insert: {
@@ -393,6 +439,7 @@ export type Database = {
           created_at?: string
           id?: string
           nombre: string
+          plan_overrides?: Json
           slug: string
         }
         Update: {
@@ -401,6 +448,7 @@ export type Database = {
           created_at?: string
           id?: string
           nombre?: string
+          plan_overrides?: Json
           slug?: string
         }
         Relationships: []
@@ -566,7 +614,10 @@ export type Database = {
           created_at: string
           descuento_anual_pct: number
           descuento_semestral_pct: number
+          features: Json
+          heredado: boolean
           id: string
+          limites: Json
           nombre: string
           precio_mensual: number
         }
@@ -575,7 +626,10 @@ export type Database = {
           created_at?: string
           descuento_anual_pct?: number
           descuento_semestral_pct?: number
+          features?: Json
+          heredado?: boolean
           id?: string
+          limites?: Json
           nombre: string
           precio_mensual: number
         }
@@ -584,7 +638,10 @@ export type Database = {
           created_at?: string
           descuento_anual_pct?: number
           descuento_semestral_pct?: number
+          features?: Json
+          heredado?: boolean
           id?: string
+          limites?: Json
           nombre?: string
           precio_mensual?: number
         }
@@ -1216,6 +1273,8 @@ export type Database = {
           vehiculo_id: string
         }[]
       }
+      catalogo_features_plan: { Args: never; Returns: string[] }
+      catalogo_limites_plan: { Args: never; Returns: string[] }
       ciclos_fidelizacion: {
         Args: never
         Returns: {
@@ -1280,6 +1339,16 @@ export type Database = {
           lubricentro_id: string
         }[]
       }
+      feature_de_tenant: {
+        Args: { p_feature: string; p_lubricentro: string }
+        Returns: boolean
+      }
+      feature_plan_valida: { Args: { p_feature: string }; Returns: boolean }
+      features_plan_bien_formadas: { Args: { p: Json }; Returns: boolean }
+      fijar_override_plan: {
+        Args: { p_lubricentro: string; p_motivo: string; p_overrides: Json }
+        Returns: undefined
+      }
       fm_unaccent: { Args: { "": string }; Returns: string }
       get_carton: { Args: { p_patente: string; p_slug: string }; Returns: Json }
       get_landing: { Args: { p_slug: string }; Returns: Json }
@@ -1299,6 +1368,16 @@ export type Database = {
         }
         Returns: string
       }
+      limite_de_tenant: {
+        Args: { p_limite: string; p_lubricentro: string }
+        Returns: number
+      }
+      limite_del_plan: {
+        Args: { p_limite: string; p_plan: string }
+        Returns: number
+      }
+      limite_plan_valido: { Args: { p_limite: string }; Returns: boolean }
+      limites_plan_bien_formados: { Args: { p: Json }; Returns: boolean }
       listado_lubricentros: {
         Args: never
         Returns: {
@@ -1333,6 +1412,13 @@ export type Database = {
       mi_lubricentro_id: { Args: never; Returns: string }
       normalizar_patente: { Args: { entrada: string }; Returns: string }
       orden_atencion: { Args: { p_atencion: string }; Returns: number }
+      overrides_plan_bien_formados: { Args: { p: Json }; Returns: boolean }
+      plan_capacidades: {
+        Args: { u: Database["public"]["Tables"]["usuarios"]["Row"] }
+        Returns: Json
+      }
+      plan_limite: { Args: { p_limite: string }; Returns: number }
+      plan_permite: { Args: { p_feature: string }; Returns: boolean }
       premio_disponible: {
         Args: { p_vehiculo_id: string }
         Returns: {
@@ -1378,6 +1464,10 @@ export type Database = {
         }[]
       }
       soy_superadmin: { Args: never; Returns: boolean }
+      sucursales_dentro_del_limite: {
+        Args: { p_lubricentro: string; p_sucursal: string }
+        Returns: boolean
+      }
       telefono_de_contacto: {
         Args: { p_lubricentro_id: string }
         Returns: string

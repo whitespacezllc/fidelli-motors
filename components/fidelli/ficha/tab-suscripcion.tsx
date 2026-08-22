@@ -9,6 +9,9 @@ import {
 } from "@/lib/fidelli/plan";
 import { obtenerSesion } from "@/lib/auth/session";
 import { FormPago } from "./form-pago";
+import { FormOverrides } from "./form-overrides";
+import { ETIQUETA_FEATURE, type FeaturePlan } from "@/lib/planes";
+import { haceCuanto } from "@/lib/fechas";
 import { BotonAviso } from "@/components/fidelli/boton-aviso";
 import {
   ESTILO_ATENCION,
@@ -34,7 +37,7 @@ export async function TabSuscripcion({
 
   // El filtro por tenant es lo único que aísla: pagos no tiene RLS que
   // recorte a un superadmin.
-  const [pagosRes, atencionRes, sesion] = await Promise.all([
+  const [pagosRes, atencionRes, sesion, overridesRes, cambiosRes] = await Promise.all([
     supabase
       .from("pagos")
       .select(
@@ -46,7 +49,28 @@ export async function TabSuscripcion({
     // y la tabla no pueden decir cosas distintas del mismo lubricentro.
     supabase.rpc("atencion_tenant", { p_lubricentro_id: tenant.id }),
     obtenerSesion(),
+    // El override vigente y su historial. Mismo criterio de aislamiento:
+    // el .eq es lo único que recorta para un superadmin.
+    supabase
+      .from("lubricentros")
+      .select("plan_overrides")
+      .eq("id", tenant.id)
+      .single(),
+    supabase
+      .from("cambios_override_plan")
+      .select("id, overrides_despues, motivo, created_at, usuarios!cambiado_por(nombre)")
+      .eq("lubricentro_id", tenant.id)
+      .order("created_at", { ascending: false })
+      .limit(8),
   ]);
+
+  const overrides =
+    (overridesRes.data?.plan_overrides as Record<string, boolean | number | null> | null) ?? {};
+  const cambios = cambiosRes.data ?? [];
+  const planFeatures =
+    (suscripcion?.plan?.features ?? {}) as Partial<Record<FeaturePlan, boolean>>;
+  const planLimiteSucursales = suscripcion?.plan?.limites?.sucursales ?? null;
+  const clavesOverride = Object.keys(overrides);
 
   const aviso = (atencionRes.data ?? {}) as {
     atencion?: string | null;
@@ -83,6 +107,7 @@ export async function TabSuscripcion({
       : 0;
 
   return (
+    <>
     <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
       <section className="surface-card min-w-0 flex-1 overflow-hidden">
         <div className="border-b border-line px-4.5 py-3">
@@ -185,6 +210,89 @@ export async function TabSuscripcion({
         </div>
       </section>
     </div>
+
+    {/* ============ Plan y overrides ============
+        Qué habilita el plan de este tenant y las excepciones por cuenta.
+        El override es LA salida sancionada para "activale esto a este
+        cliente": pisa al plan, exige motivo y deja rastro — a diferencia
+        de editar el plan, que movería a TODOS los que lo tienen. */}
+    <section className="surface-card mt-5 overflow-hidden">
+      <div className="border-b border-line px-4.5 py-3">
+        <h2 className="font-brand text-ui font-bold tracking-[0.04em] text-ink-60 uppercase">
+          Plan y overrides
+        </h2>
+      </div>
+
+      <div className="grid gap-6 px-4.5 py-4 lg:grid-cols-[1fr_360px]">
+        <div>
+          <p className="text-ui text-ink-60">
+            {suscripcion?.plan
+              ? `Plan ${suscripcion.plan.nombre}. Lo que habilita se cambia por migración — para una excepción puntual de ESTE tenant, el override de la derecha.`
+              : "Este lubricentro no tiene suscripción, así que las features resuelven cerradas."}
+          </p>
+
+          {clavesOverride.length > 0 && (
+            <p className="mt-2 rounded-md border border-reward bg-reward-soft px-3 py-2 text-ui text-ink">
+              Con override vigente:{" "}
+              <span className="font-semibold">
+                {clavesOverride
+                  .map((k) => {
+                    const v = overrides[k];
+                    const nombre = ETIQUETA_FEATURE[k as FeaturePlan] ?? "Límite de sucursales";
+                    if (typeof v === "boolean") return `${nombre}: ${v ? "sí" : "no"}`;
+                    return `${nombre}: ${v === null ? "sin límite" : v}`;
+                  })
+                  .join(" · ")}
+              </span>
+            </p>
+          )}
+
+          {/* El historial: qué cambió, quién y por qué. */}
+          <div className="mt-4">
+            <p className="mb-2 text-label font-semibold tracking-[0.06em] text-ink-40 uppercase">
+              Historial de overrides
+            </p>
+            {cambios.length === 0 ? (
+              <p className="text-ui text-ink-60">
+                Nunca se tocó: este tenant vive con lo que dice su plan.
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-2.5">
+                {cambios.map((c) => (
+                  <li key={c.id} className="rounded-md border border-line px-3 py-2.5">
+                    <p className="text-label text-ink-40">
+                      {haceCuanto(c.created_at)} · {c.usuarios?.nombre ?? "—"} · quedó en{" "}
+                      <span className="font-semibold text-ink-60 tabular-nums">
+                        {Object.keys((c.overrides_despues as Record<string, unknown>) ?? {}).length === 0
+                          ? "sin overrides"
+                          : Object.entries(c.overrides_despues as Record<string, boolean | number | null>)
+                              .map(([k, v]) =>
+                                `${k}: ${typeof v === "boolean" ? (v ? "sí" : "no") : v === null ? "sin límite" : v}`,
+                              )
+                              .join(" · ")}
+                      </span>
+                    </p>
+                    <p className="mt-1 text-ui text-ink">{c.motivo}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+
+        {/* key: al guardar, revalidate trae overrides nuevos y el form se
+            monta de cero con ese estado — sin sincronización manual. */}
+        <FormOverrides
+          key={JSON.stringify(overrides)}
+          lubricentroId={tenant.id}
+          planNombre={suscripcion?.plan?.nombre ?? null}
+          planFeatures={planFeatures}
+          planLimiteSucursales={planLimiteSucursales}
+          overrides={overrides}
+        />
+      </div>
+    </section>
+    </>
   );
 }
 

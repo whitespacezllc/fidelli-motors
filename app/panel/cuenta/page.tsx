@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { obtenerSesion, panelSuspendido } from "@/lib/auth/session";
+import { FEATURES_PLAN, ETIQUETA_FEATURE } from "@/lib/planes";
+import { IconoIncluido, IconoCerrar } from "@/components/iconos";
 import { cerrarSesion } from "@/lib/auth/actions";
 import { origenDelSitio } from "@/lib/origen";
 import { urlWhatsappSoporte } from "@/lib/config";
@@ -222,6 +224,55 @@ export default async function PaginaCuenta() {
                 </>
               )}
             </p>
+
+            {/* Qué incluye el plan, YA RESUELTO por la base (con overrides).
+                Es la superficie natural para que el owner sepa qué más hay:
+                lo apagado se muestra en gris, no se esconde. */}
+            {sesion?.capacidades && (
+              <div className="border-t border-line pt-4">
+                <p className="mb-2 text-label font-semibold tracking-[0.06em] text-ink-60 uppercase">
+                  Qué incluye
+                </p>
+                <ul className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
+                  {FEATURES_PLAN.map((f) => {
+                    const activa = sesion.capacidades?.features[f] === true;
+                    return (
+                      <li
+                        key={f}
+                        className={`flex items-center gap-2 text-ui ${activa ? "text-ink" : "text-ink-40"}`}
+                      >
+                        {activa ? (
+                          <IconoIncluido aria-hidden className="size-4 shrink-0 text-success" />
+                        ) : (
+                          <IconoCerrar aria-hidden className="size-4 shrink-0 text-ink-40" />
+                        )}
+                        {ETIQUETA_FEATURE[f]}
+                        {!activa && <span className="sr-only"> — no incluida en tu plan</span>}
+                      </li>
+                    );
+                  })}
+                </ul>
+                <p className="mt-2.5 text-ui text-ink-60 tabular-nums">
+                  {sesion.capacidades.limites.sucursales == null
+                    ? "Sucursales activas: sin límite."
+                    : `Hasta ${sesion.capacidades.limites.sucursales} sucursal(es) activa(s).`}
+                </p>
+                {FEATURES_PLAN.some((f) => sesion.capacidades?.features[f] !== true) && (
+                  <p className="mt-1.5 text-ui text-ink-60">
+                    ¿Te interesa algo de lo que no está?{" "}
+                    <a
+                      href={urlWhatsappSoporte()}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-semibold text-brand"
+                    >
+                      Escribinos
+                    </a>{" "}
+                    y te contamos cómo sumarlo.
+                  </p>
+                )}
+              </div>
+            )}
 
             {pagos.length > 0 && (
               <div>
