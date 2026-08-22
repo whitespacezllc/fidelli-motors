@@ -1,6 +1,13 @@
 -- Datos de desarrollo. Corre en cada `supabase db reset`.
 select seed_demo();
 
+-- El plan del seed nace ACÁ, después de las migraciones — seed_demo() lo
+-- inserta recién en el reset. La migración de planes-con-control marca como
+-- heredado todo lo que existía al momento de aplicarse, así que a este no
+-- llega a verlo: se marca acá. En dev y producción el plan es dato previo y
+-- la migración lo marca sola; esto es solo del entorno local.
+update planes set heredado = true where nombre = 'Fidelli Motors';
+
 -- Horarios de las sucursales demo. La columna llegó después de que
 -- seed_demo() quedó mergeada (las migraciones no se editan), así que se
 -- completa acá — este archivo es solo del entorno local.
