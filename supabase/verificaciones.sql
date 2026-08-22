@@ -62,7 +62,8 @@ declare
 begin
   -- 1 · resolución presente y security definer
   foreach v_nombre in array array[
-    'plan_permite', 'plan_limite', 'sucursales_dentro_del_limite'
+    'plan_permite', 'plan_limite', 'feature_de_tenant', 'limite_de_tenant',
+    'limite_del_plan', 'sucursales_dentro_del_limite', 'plan_capacidades'
   ] loop
     select count(*), bool_and(p.prosecdef)
       into v_hay, v_definer
@@ -91,6 +92,14 @@ begin
       E'  · plan(es) vigente(s) sin features: %s — con resolución fail-closed no habilitan nada\n',
       v_planes);
   end if;
+
+  -- 3 · los dos candados existen: el del override y el del tope de
+  --     reactivación de sucursales. Sin trigger, la regla es decorativa.
+  foreach v_nombre in array array['candado_override_plan', 'tope_sucursales'] loop
+    if not exists (select 1 from pg_trigger where tgname = v_nombre and not tgisinternal) then
+      v_fallas := v_fallas || format(E'  · falta el trigger %s\n', v_nombre);
+    end if;
+  end loop;
 
   if v_fallas <> '' then
     raise exception E'CONTROL POR PLAN ROTO:\n%', v_fallas

@@ -1273,6 +1273,8 @@ export type Database = {
           vehiculo_id: string
         }[]
       }
+      catalogo_features_plan: { Args: never; Returns: string[] }
+      catalogo_limites_plan: { Args: never; Returns: string[] }
       ciclos_fidelizacion: {
         Args: never
         Returns: {
@@ -1337,6 +1339,10 @@ export type Database = {
           lubricentro_id: string
         }[]
       }
+      feature_de_tenant: {
+        Args: { p_feature: string; p_lubricentro: string }
+        Returns: boolean
+      }
       feature_plan_valida: { Args: { p_feature: string }; Returns: boolean }
       features_plan_bien_formadas: { Args: { p: Json }; Returns: boolean }
       fijar_override_plan: {
@@ -1361,6 +1367,14 @@ export type Database = {
           p_vehiculo_id: string
         }
         Returns: string
+      }
+      limite_de_tenant: {
+        Args: { p_limite: string; p_lubricentro: string }
+        Returns: number
+      }
+      limite_del_plan: {
+        Args: { p_limite: string; p_plan: string }
+        Returns: number
       }
       limite_plan_valido: { Args: { p_limite: string }; Returns: boolean }
       limites_plan_bien_formados: { Args: { p: Json }; Returns: boolean }
@@ -1399,6 +1413,10 @@ export type Database = {
       normalizar_patente: { Args: { entrada: string }; Returns: string }
       orden_atencion: { Args: { p_atencion: string }; Returns: number }
       overrides_plan_bien_formados: { Args: { p: Json }; Returns: boolean }
+      plan_capacidades: {
+        Args: { u: Database["public"]["Tables"]["usuarios"]["Row"] }
+        Returns: Json
+      }
       plan_limite: { Args: { p_limite: string }; Returns: number }
       plan_permite: { Args: { p_feature: string }; Returns: boolean }
       premio_disponible: {

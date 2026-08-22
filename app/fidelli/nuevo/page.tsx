@@ -11,11 +11,16 @@ export default async function PaginaAlta() {
 
   const { data } = await supabase
     .from("planes")
-    .select("id, nombre, precio_mensual, descuento_semestral_pct, descuento_anual_pct")
+    .select(
+      "id, nombre, precio_mensual, descuento_semestral_pct, descuento_anual_pct, features, limites",
+    )
+    // Los heredados no se ofrecen más en el alta: siguen activos (se cobran
+    // y se editan en /fidelli/precios), pero acá no aparecen.
     .eq("activo", true)
-    .order("nombre");
+    .eq("heredado", false)
+    .order("precio_mensual");
 
-  const planes = (data ?? []) as PlanCompleto[];
+  const planes = (data ?? []) as unknown as PlanCompleto[];
 
   return (
     <div className="mx-auto max-w-2xl">

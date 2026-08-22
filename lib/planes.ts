@@ -27,3 +27,34 @@ export type FeaturePlan = (typeof FEATURES_PLAN)[number];
 export const LIMITES_PLAN = ["sucursales"] as const;
 
 export type LimitePlan = (typeof LIMITES_PLAN)[number];
+
+/** Cómo se le nombra cada feature al usuario. El catálogo manda; esto es voz. */
+export const ETIQUETA_FEATURE: Record<FeaturePlan, string> = {
+  mecanica: "Trabajos de mecánica",
+  pendientes: "Trabajos pendientes",
+  premios: "Fidelliza — premios por services",
+  presupuestos: "Presupuestos",
+  personalizacion_pagina: "Personalización de tu página",
+  pagina_premium: "Página premium",
+};
+
+/**
+ * A dónde manda sesionParaEscribir() cuando la feature no está en el plan:
+ * la sección correspondiente, que es donde vive la pantalla que explica qué
+ * pasa y cómo se activa. Mismo criterio que la suspensión (→ /panel).
+ * Solo tienen ruta las features con superficie propia en el panel hoy.
+ */
+export const RUTA_FEATURE: Partial<Record<FeaturePlan, string>> = {
+  premios: "/panel/fidelizacion",
+  personalizacion_pagina: "/panel/experiencia",
+};
+
+/**
+ * Lo que devuelve plan_capacidades() — el campo calculado que viaja en la
+ * consulta de sesión. Resuelto en la BASE (override → plan → cerrado):
+ * acá no se re-decide nada, solo se tipa.
+ */
+export type CapacidadesPlan = {
+  features: Record<FeaturePlan, boolean>;
+  limites: { sucursales: number | null };
+};

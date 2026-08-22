@@ -59,7 +59,7 @@ export default async function PaginaFicha({
       .from("suscripciones")
       .select(
         `id, estado, periodo, descuento_pct, inicio, vencimiento,
-         planes(id, nombre, precio_mensual, descuento_semestral_pct, descuento_anual_pct)`,
+         planes(id, nombre, precio_mensual, descuento_semestral_pct, descuento_anual_pct, features, limites, heredado)`,
       )
       .eq("lubricentro_id", id)
       .order("inicio", { ascending: false })
@@ -80,7 +80,7 @@ export default async function PaginaFicha({
         descuento_pct: Number(fila.descuento_pct),
         inicio: fila.inicio,
         vencimiento: fila.vencimiento,
-        plan: (fila.planes as PlanCompleto | null) ?? null,
+        plan: (fila.planes as unknown as PlanCompleto | null) ?? null,
       }
     : null;
 

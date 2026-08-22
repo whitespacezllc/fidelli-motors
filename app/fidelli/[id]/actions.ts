@@ -164,3 +164,57 @@ export async function corregirPatente(
   revalidatePath("/[slug]/[patente]", "page");
   return { ok: true };
 }
+
+
+// ============================================================
+// El override de plan — la excepción por cuenta
+//
+// La UI hace read-modify-write del objeto COMPLETO: fijar_override_plan()
+// REEMPLAZA el jsonb entero, así que acá llega el estado final con todas
+// las claves que quedan vigentes. Mandar un parcial borraría las demás.
+// La base valida forma, motivo y permisos, y deja el rastro en
+// cambios_override_plan; esto solo traduce los errores nombrados.
+// ============================================================
+
+export type EstadoOverride = { error?: string; ok?: boolean };
+
+export async function fijarOverridePlan(
+  _prev: EstadoOverride,
+  datos: {
+    lubricentroId: string;
+    overrides: Record<string, boolean | number | null>;
+    motivo: string;
+  },
+): Promise<EstadoOverride> {
+  await exigirSuperadmin();
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("fijar_override_plan", {
+    p_lubricentro: datos.lubricentroId,
+    p_overrides: datos.overrides,
+    p_motivo: datos.motivo,
+  });
+
+  if (error) {
+    const m = error.message ?? "";
+    if (m.includes("motivo_corto")) {
+      return {
+        error:
+          "Contá por qué este tenant sale de su plan: mínimo 10 caracteres. Es lo que se lee en el historial dentro de seis meses.",
+      };
+    }
+    if (m.includes("override_invalido")) {
+      return {
+        error:
+          "Hay una clave o un valor que la base no reconoce. Recargá la ficha y probá de nuevo.",
+      };
+    }
+    if (m.includes("lubricentro_no_existe")) {
+      return { error: "Ese lubricentro ya no existe." };
+    }
+    return { error: "No se pudo guardar el override. Probá de nuevo." };
+  }
+
+  revalidatePath(`/fidelli/${datos.lubricentroId}`);
+  return { ok: true };
+}

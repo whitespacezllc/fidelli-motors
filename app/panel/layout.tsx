@@ -19,12 +19,15 @@ export default async function LayoutPanel({
 }) {
   const sesion = await exigirRol("owner");
   const suspendido = !sesion.lubricentroActivo;
+  // Resueltas por la base y viajaron con la sesión: acá solo se reparten.
+  const features = sesion.capacidades?.features ?? {};
 
   return (
     <div className="min-h-dvh bg-surface/40">
       <Sidebar
         lubricentroNombre={sesion.lubricentroNombre ?? "Tu lubricentro"}
         suspendido={suspendido}
+        features={features}
       />
       <div className="lg:pl-64">
         {/* pb extra en mobile para que la barra inferior no tape contenido */}
@@ -35,7 +38,11 @@ export default async function LayoutPanel({
           {children}
         </main>
       </div>
-      <BarraMobile cerrarSesion={cerrarSesion} suspendido={suspendido} />
+      <BarraMobile
+        cerrarSesion={cerrarSesion}
+        suspendido={suspendido}
+        features={features}
+      />
     </div>
   );
 }

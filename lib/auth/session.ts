@@ -2,6 +2,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/database.types";
+import { RUTA_FEATURE, type CapacidadesPlan, type FeaturePlan } from "@/lib/planes";
 
 export type Rol = Database["public"]["Enums"]["rol_usuario"];
 
@@ -16,6 +17,10 @@ export type Sesion = {
   // lo que cambia es que el panel pasa a solo lectura y la landing pública
   // deja de responder. Ver components/panel/aviso-suspension.tsx.
   lubricentroActivo: boolean;
+  // Lo que el plan del tenant habilita, YA RESUELTO por la base (override →
+  // plan vigente → cerrado). Viene del campo calculado plan_capacidades en
+  // el mismo select de abajo: cero round trips extra. Null para superadmin.
+  capacidades: CapacidadesPlan | null;
 };
 
 // El rol y el tenant salen de public.usuarios (RLS deja leer solo la fila propia).
@@ -27,11 +32,28 @@ export const obtenerSesion = cache(async (): Promise<Sesion | null> => {
   const sub = data?.claims?.sub;
   if (!sub) return null;
 
-  const { data: usuario } = await supabase
+  // `plan_capacidades` es un CAMPO CALCULADO de PostgREST (una función
+  // sobre la fila de usuarios, definida en la migración de planes): las
+  // features del plan viajan en esta misma consulta, resueltas por la
+  // base. El parser de tipos de supabase-js no conoce los campos
+  // calculados, de ahí el cast.
+  const { data: fila } = await supabase
     .from("usuarios")
-    .select("id, rol, nombre, email, lubricentro_id, lubricentros(nombre, activo)")
+    .select(
+      "id, rol, nombre, email, lubricentro_id, plan_capacidades, lubricentros(nombre, activo)",
+    )
     .eq("id", sub)
     .single();
+
+  const usuario = fila as unknown as {
+    id: string;
+    rol: Rol;
+    nombre: string;
+    email: string;
+    lubricentro_id: string | null;
+    plan_capacidades: CapacidadesPlan | null;
+    lubricentros: { nombre: string; activo: boolean } | null;
+  } | null;
 
   if (!usuario) return null;
 
@@ -44,8 +66,22 @@ export const obtenerSesion = cache(async (): Promise<Sesion | null> => {
     lubricentroNombre: usuario.lubricentros?.nombre ?? null,
     // Un superadmin no tiene tenant: nunca está suspendido.
     lubricentroActivo: usuario.lubricentros?.activo ?? true,
+    capacidades: usuario.plan_capacidades,
   };
 });
+
+// ¿El plan del tenant habilita esta feature? La resolución REAL vive en la
+// base (feature_de_tenant); esto solo lee el resultado que vino con la
+// sesión. Sin capacidades —no debería pasar para un owner— falla cerrado,
+// igual que la base.
+export function featureHabilitada(
+  sesion: Sesion | null,
+  feature: FeaturePlan,
+): boolean {
+  if (!sesion) return false;
+  if (sesion.rol === "superadmin") return true;
+  return sesion.capacidades?.features?.[feature] === true;
+}
 
 // ¿El panel está en solo lectura? Verdadero solo para un owner cuyo
 // lubricentro fue suspendido por falta de pago. obtenerSesion() está
@@ -84,10 +120,20 @@ export type SesionDeOwner = Sesion & { lubricentroId: string };
 // Suspendido → /panel, que es donde está el aviso con el WhatsApp de
 // Fidelli. No es un error críptico: es el lugar que explica qué pasó.
 // ============================================================
-export async function sesionParaEscribir(): Promise<SesionDeOwner> {
+export async function sesionParaEscribir(
+  featureRequerida?: FeaturePlan,
+): Promise<SesionDeOwner> {
   const sesion = await obtenerSesion();
   if (!sesion?.lubricentroId) redirect("/login");
   if (sesion.rol === "owner" && !sesion.lubricentroActivo) redirect("/panel");
+  // El cuarto chequeo: el plan. La acción declara qué feature necesita y
+  // la respuesta viene resuelta de la base vía plan_capacidades — acá no
+  // se re-decide nada. Bloqueado → a la sección, donde BloqueoPlan explica
+  // qué pasa y cómo se activa. Mismo criterio que la suspensión: el
+  // rechazo nunca es mudo, es un lugar que lo cuenta.
+  if (featureRequerida && !featureHabilitada(sesion, featureRequerida)) {
+    redirect(RUTA_FEATURE[featureRequerida] ?? "/panel");
+  }
   return sesion as SesionDeOwner;
 }
 

@@ -23,6 +23,7 @@ import {
   type Periodo,
 } from "@/lib/fidelli/plan";
 import type { PlanCompleto } from "@/components/fidelli/tipos";
+import { FEATURES_PLAN, ETIQUETA_FEATURE } from "@/lib/planes";
 
 const INICIAL: EstadoPlan = {};
 
@@ -73,9 +74,51 @@ export function TarjetaPlan({
 
   return (
     <section className="surface-card overflow-hidden">
-      <div className="border-b border-line px-5 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-5 py-4">
         <h2 className="font-brand text-lead font-bold text-ink">{plan.nombre}</h2>
+        {plan.heredado && (
+          <span className="rounded-sm border border-line bg-surface px-2 py-0.5 text-label font-semibold tracking-[0.04em] text-ink-60 uppercase">
+            Heredado — no se ofrece en el alta
+          </span>
+        )}
       </div>
+
+      {/* ---------- Qué habilita: SOLO LECTURA a propósito ----------
+          Editar esto afecta a todos los tenants que tienen el plan: se
+          cambia por migración, no con un clic. La excepción puntual es el
+          override por cuenta, en la ficha del tenant, que deja rastro. */}
+      {plan.features && (
+        <div className="border-b border-line px-5 py-3.5">
+          <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
+            {FEATURES_PLAN.map((f) => {
+              const activa = plan.features?.[f] === true;
+              return (
+                <li
+                  key={f}
+                  className={`inline-flex items-center gap-1.5 text-ui ${activa ? "text-ink" : "text-ink-40 line-through decoration-line"}`}
+                >
+                  <span
+                    aria-hidden
+                    className={`size-1.5 rounded-full ${activa ? "bg-success" : "bg-line"}`}
+                  />
+                  {ETIQUETA_FEATURE[f]}
+                </li>
+              );
+            })}
+            <li className="inline-flex items-center gap-1.5 text-ui text-ink-60 tabular-nums">
+              <span aria-hidden className="size-1.5 rounded-full bg-line" />
+              Sucursales:{" "}
+              {plan.limites?.sucursales == null
+                ? "sin límite"
+                : `hasta ${plan.limites.sucursales}`}
+            </li>
+          </ul>
+          <p className="mt-2 text-label text-ink-40">
+            Qué habilita un plan se cambia por migración. Para una excepción
+            puntual: override en la ficha del tenant.
+          </p>
+        </div>
+      )}
 
       <div className="grid gap-6 p-5 lg:grid-cols-2">
         {/* ---------- Lo que se edita ---------- */}

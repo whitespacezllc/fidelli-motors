@@ -30,6 +30,10 @@ export async function crearSucursal(
   formData: FormData,
 ): Promise<EstadoSucursal> {
   const sesion = await sesionParaEscribir();
+  // El tope por plan lo hace cumplir la BASE (policy de INSERT + trigger de
+  // reactivación). Acá solo se prepara el mensaje: el límite ya vino
+  // resuelto con la sesión, sin ninguna consulta extra.
+  const limiteSucursales = sesion.capacidades?.limites.sucursales ?? null;
 
   const campos = leerCampos(formData);
   if (campos.nombre.length < 2) {
@@ -45,6 +49,12 @@ export async function crearSucursal(
 
   if (error) {
     if (esErrorDeRed(error)) return { error: SIN_CONEXION };
+    // La policy de INSERT rechaza la sucursal que pasa el tope del plan.
+    if (error.code === "42501") {
+      return {
+        error: `Tu plan permite ${limiteSucursales ?? "?"} sucursal(es) activa(s) y ya las tenés. Desactivá una o escribinos para ampliar el plan.`,
+      };
+    }
     return { error: "No se pudo guardar la sucursal. Probá de nuevo en un momento." };
   }
 
@@ -112,6 +122,12 @@ export async function toggleSucursal(
   if (error) {
     if (esErrorDeRed(error)) {
       return { error: "Sin conexión a internet. Revisá la señal y probá de nuevo." };
+    }
+    // El trigger de la base rechaza reactivar por encima del tope del plan.
+    if (/limite_sucursales/.test(error.message ?? "")) {
+      return {
+        error: "Reactivarla te pasaría del límite de sucursales de tu plan. Desactivá otra primero o escribinos para ampliarlo.",
+      };
     }
     return { error: "No se pudo cambiar el estado. Probá de nuevo en un momento." };
   }
