@@ -8,8 +8,9 @@ import {
   type ConfigExperiencia,
 } from "@/components/experiencia/form-experiencia";
 import { PreviewCelular } from "@/components/experiencia/preview-celular";
-import { obtenerSesion, featureHabilitada } from "@/lib/auth/session";
+import { obtenerSesion, featureHabilitada, panelSuspendido } from "@/lib/auth/session";
 import { BloqueoPlan } from "@/components/panel/bloqueo-plan";
+import { BloqueoSuspension } from "@/components/panel/bloqueo-suspension";
 
 export const metadata: Metadata = { title: "Diseño de experiencia" };
 
@@ -18,6 +19,16 @@ export const metadata: Metadata = { title: "Diseño de experiencia" };
 // previa es la landing REAL en un marco de celular: cambia el color,
 // guarda, y lo ve. "Así lo ve tu cliente" es el argumento comercial.
 export default async function PaginaExperiencia() {
+  // EL ORDEN ES REGLA: suspendido → plan → normal. Ver fidelizacion/page.
+  if (await panelSuspendido()) {
+    return (
+      <BloqueoSuspension
+        titulo="No podés cambiar el diseño mientras la cuenta está suspendida"
+        descripcion="El diseño que guardaste no se pierde: queda tal cual para cuando la cuenta vuelva. Para reactivarla, escribinos."
+      />
+    );
+  }
+
   const supabase = await createClient();
   const sesion = await obtenerSesion();
 
