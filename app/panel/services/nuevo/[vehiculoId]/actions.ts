@@ -14,6 +14,13 @@ export type ItemCargado = {
   cambiado: boolean;
 };
 
+export type PendienteNuevo = {
+  descripcion: string;
+  objetivoFecha: string | null;
+  objetivoKm: number | null;
+  visibleCliente: boolean;
+};
+
 export type PayloadService = {
   vehiculoId: string;
   /** 'service' si falta: los llamadores viejos no lo mandan. */
@@ -30,6 +37,10 @@ export type PayloadService = {
   items: ItemCargado[];
   /** El toggle del cartón. El canje se registra al confirmar, no después. */
   canjearPremio?: boolean;
+  /** Lo que quedó por hacer, anotado al cargar. */
+  pendientes?: PendienteNuevo[];
+  /** Los abiertos que se hicieron EN este trabajo. */
+  resolverPendientes?: string[];
 };
 
 export type ResultadoGuardado = { error?: string; serviceId?: string };
@@ -53,6 +64,9 @@ function traducirError(error: { code?: string; message?: string }): string {
   }
   if (/descripcion_requerida/.test(error.message ?? "")) {
     return "Contá qué trabajo se hizo: es lo que va a ver tu cliente en su historial.";
+  }
+  if (/pendiente_sin_objetivo|pendiente_invalido/.test(error.message ?? "")) {
+    return "A cada pendiente ponele qué es y una fecha o kilómetros.";
   }
   if (/fetch|network|conexión/i.test(error.message ?? "")) return SIN_CONEXION;
   if (error.code === "23514") {
@@ -83,6 +97,24 @@ export async function guardarService(
   if (esMecanica && !featureHabilitada(sesion, "mecanica")) {
     return {
       error: "Los trabajos de mecánica no están en tu plan. Escribinos si los querés activar.",
+    };
+  }
+
+  const pendientes = (payload.pendientes ?? []).filter(
+    (tp) => tp.descripcion.trim().length >= 5,
+  );
+  const resolverPendientes = payload.resolverPendientes ?? [];
+  if (
+    (pendientes.length > 0 || resolverPendientes.length > 0) &&
+    !featureHabilitada(sesion, "pendientes")
+  ) {
+    return {
+      error: "Los trabajos pendientes no están en tu plan. Guardá sin pendientes, o escribinos si los querés activar.",
+    };
+  }
+  if (pendientes.some((tp) => !tp.objetivoFecha && !tp.objetivoKm)) {
+    return {
+      error: "A cada pendiente ponele una fecha o kilómetros: es lo que dispara el aviso.",
     };
   }
 
@@ -135,6 +167,13 @@ export async function guardarService(
     p_aceite_nombre: payload.aceiteNombre ?? undefined,
     p_observaciones: payload.observaciones ?? undefined,
     p_canjear_premio: payload.canjearPremio ?? false,
+    p_pendientes: pendientes.map((tp) => ({
+      descripcion: tp.descripcion.trim(),
+      objetivo_fecha: tp.objetivoFecha,
+      objetivo_km: tp.objetivoKm,
+      visible_cliente: tp.visibleCliente,
+    })),
+    p_resolver_pendientes: resolverPendientes,
   });
 
   if (error) return { error: traducirError(error) };

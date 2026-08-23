@@ -332,3 +332,109 @@ begin
     raise exception 'REGRESIÓN 2B: get_carton muestra el progreso del premio de un tenant suspendido.';
   end if;
 end $$;
+
+-- ============================================================
+-- Trabajos pendientes (Bloque 3) — la red del bloque
+--
+-- R5: la ventana — un pendiente a tres meses NO aparece; uno a diez días
+--     aparece 'proximo'; uno por km contra el odómetro conocido aparece
+--     'urgente'. Es la prueba 1 del bloque, en cada reset.
+-- R6: el tildado — guardar_service resuelve pendientes EN la transacción
+--     del trabajo (la prueba 3 del bloque).
+-- R7: un Basic no escribe pendientes ni por SQL directo.
+-- (R2 sigue vigilando que la retención no se altere: los pendientes van
+-- en vista APARTE y esa es la garantía estructural.)
+-- ============================================================
+do $$
+declare
+  v_lub    uuid;
+  v_owner  uuid;
+  v_veh    uuid;
+  v_suc    uuid;
+  v_plan   uuid;
+  v_basic  uuid;
+  v_km     integer;
+  v_p1     uuid;
+  v_p2     uuid;
+  v_p3     uuid;
+  v_serv   uuid;
+  v_estado text;
+begin
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+  select u.id into v_owner from usuarios u where u.lubricentro_id = v_lub and u.rol = 'owner' limit 1;
+  select su.id into v_suc from sucursales su where su.lubricentro_id = v_lub and su.activa limit 1;
+  select s.plan_id into v_plan from suscripciones s where s.lubricentro_id = v_lub
+    order by s.inicio desc, s.created_at desc limit 1;
+  select p.id into v_basic from planes p where p.nombre = 'Basic';
+
+  -- un vehículo con odómetro conocido
+  select s.vehiculo_id, max(s.kilometros) into v_veh, v_km
+  from services s where s.lubricentro_id = v_lub and not s.anulado and s.kilometros is not null
+  group by s.vehiculo_id order by max(s.kilometros) desc limit 1;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  -- R5a · a tres meses: NO aparece
+  insert into trabajos_pendientes (lubricentro_id, vehiculo_id, usuario_id, descripcion, objetivo_fecha)
+  values (v_lub, v_veh, v_owner, 'Regresión: correa a tres meses', current_date + 90)
+  returning id into v_p1;
+  if exists (select 1 from vista_pendientes where pendiente_id = v_p1) then
+    raise exception 'REGRESIÓN 3: un pendiente a 90 días apareció en la lista — la ventana de 30 no rige.';
+  end if;
+
+  -- R5b · a diez días: aparece 'proximo'
+  insert into trabajos_pendientes (lubricentro_id, vehiculo_id, usuario_id, descripcion, objetivo_fecha)
+  values (v_lub, v_veh, v_owner, 'Regresión: pastillas a diez días', current_date + 10)
+  returning id into v_p2;
+  select estado::text into v_estado from vista_pendientes where pendiente_id = v_p2;
+  if v_estado is distinct from 'proximo' then
+    raise exception 'REGRESIÓN 3: pendiente a 10 días debería ser proximo y es %.', coalesce(v_estado, 'INVISIBLE');
+  end if;
+
+  -- R5c · por km, a 300 del odómetro conocido: 'urgente'
+  insert into trabajos_pendientes (lubricentro_id, vehiculo_id, usuario_id, descripcion, objetivo_km)
+  values (v_lub, v_veh, v_owner, 'Regresión: bujías por km', v_km + 300)
+  returning id into v_p3;
+  select estado::text into v_estado from vista_pendientes where pendiente_id = v_p3;
+  if v_estado is distinct from 'urgente' then
+    raise exception 'REGRESIÓN 3: pendiente a 300 km debería ser urgente y es %.', coalesce(v_estado, 'INVISIBLE');
+  end if;
+
+  -- R6 · el tildado en la MISMA transacción del trabajo
+  v_serv := guardar_service(
+    p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => current_date,
+    p_kilometros => v_km + 10, p_aceite_tipo => '10W40', p_prox_service_km => v_km + 10010,
+    p_resolver_pendientes => array[v_p2]);
+  if not exists (
+    select 1 from trabajos_pendientes
+    where id = v_p2 and estado = 'resuelto' and resuelto_service_id = v_serv
+  ) then
+    raise exception 'REGRESIÓN 3: el tildado no resolvió el pendiente en la transacción del trabajo.';
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- R7 · Basic no escribe pendientes ni por SQL
+  update suscripciones set plan_id = v_basic where lubricentro_id = v_lub;
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  begin
+    insert into trabajos_pendientes (lubricentro_id, vehiculo_id, usuario_id, descripcion, objetivo_fecha)
+    values (v_lub, v_veh, v_owner, 'no debería entrar en Basic', current_date + 5);
+    raise exception 'REGRESIÓN 3: un Basic escribió un pendiente — el gating por plan no rige.';
+  exception
+    when insufficient_privilege then null;
+  end;
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+  update suscripciones set plan_id = v_plan where lubricentro_id = v_lub;
+
+  -- limpieza
+  delete from service_items where service_id = v_serv;
+  delete from services where id = v_serv;
+  delete from trabajos_pendientes where id in (v_p1, v_p2, v_p3);
+end $$;

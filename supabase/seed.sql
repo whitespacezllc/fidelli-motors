@@ -8,6 +8,20 @@ select seed_demo();
 -- la migración lo marca sola; esto es solo del entorno local.
 update planes set heredado = true where nombre = 'Fidelli Motors';
 
+-- Mismo caso: las plantillas del demo nacen acá, después de las
+-- migraciones, así que el backfill de contenido_pendiente (bloque 3) no
+-- llega a verlas. En dev y producción son datos previos y la migración
+-- las cubre sola.
+update mensaje_templates set contenido_pendiente = case tono
+  when 'Cercano' then
+    'Hola {nombre}! Te escribimos del taller. Cuando trajiste tu {vehiculo} ({patente}) quedó pendiente: {pendiente}. ¿Coordinamos un turno para resolverlo?'
+  when 'Formal' then
+    'Estimado/a {nombre}: le recordamos que su vehículo {vehiculo}, patente {patente}, tiene un trabajo pendiente: {pendiente}. Quedamos a disposición para agendar el turno.'
+  else
+    '{nombre}, tu {vehiculo} tiene un trabajo pendiente: {pendiente}. Escribinos y te damos turno.'
+end
+where contenido_pendiente is null;
+
 -- Horarios de las sucursales demo. La columna llegó después de que
 -- seed_demo() quedó mergeada (las migraciones no se editan), así que se
 -- completa acá — este archivo es solo del entorno local.
