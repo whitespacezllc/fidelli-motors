@@ -84,6 +84,7 @@ ul.feats li b{color:var(--ink);font-weight:700}
 .ico{flex:0 0 18px;margin-top:2px;color:var(--success)}
 .card.pro .ico{color:#fff}
 .ico.dash{color:var(--ink-40)}
+.nope{font-size:14px;line-height:1.45;color:var(--ink-40);margin:-8px 0 22px;padding-top:16px;border-top:1px solid var(--line)}
 
 /* cta */
 .cta{display:block;text-align:center;text-decoration:none;font-size:14px;font-weight:600;letter-spacing:.02em;padding:15px 18px;border-radius:10px;transition:.16s;cursor:pointer}
@@ -177,8 +178,8 @@ footer{border-top:1px solid var(--line);padding:26px 0;margin-top:60px}
       <!-- BASIC -->
       <div class="card">
         <div class="ptop"><h3 class="pname">Basic</h3></div>
-        <div class="price"><span class="v num" data-m="$35.000" data-a="$26.250">$35.000</span><span class="per">por mes</span></div>
-        <p class="psub" data-m="Para el lubricentro de una sucursal que quiere ordenarse." data-a="<b>$315.000 al año.</b> Pagás 9 meses, usás 12.">Para el lubricentro de una sucursal que quiere ordenarse.</p>
+        <div class="price"><span class="v num" data-m="$39.000" data-a="$29.250">$39.000</span><span class="per">por mes</span></div>
+        <p class="psub" data-m="Para el lubricentro de una sucursal que quiere ordenarse." data-a="<b>$351.000 al año.</b> Pagás 9 meses, usás 12.">Para el lubricentro de una sucursal que quiere ordenarse.</p>
         <div class="rule"></div>
         <p class="inc">Incluye</p>
         <ul class="feats">
@@ -189,6 +190,7 @@ footer{border-top:1px solid var(--line);padding:26px 0;margin-top:60px}
           <li><span class="ico">✓</span><span>1 sucursal</span></li>
           <li><span class="ico">✓</span><span>Soporte por WhatsApp</span></li>
         </ul>
+        <p class="nope">Sin trabajos mecánicos, presupuestos ni calcos impresas.</p>
         <a class="cta ghost" href="#">Empezar con Basic</a>
       </div>
 
@@ -255,7 +257,7 @@ footer{border-top:1px solid var(--line);padding:26px 0;margin-top:60px}
         <thead>
           <tr>
             <th></th>
-            <th><span class="hplan">Basic</span><div class="hprice num">$35.000</div></th>
+            <th><span class="hplan">Basic</span><div class="hprice num">$39.000</div></th>
             <th class="pro"><span class="hplan">Pro</span><div class="hprice num">$49.000</div></th>
             <th><span class="hplan">Ultra</span><div class="hprice num">$99.000</div></th>
           </tr>
@@ -323,7 +325,7 @@ document.querySelectorAll('#seg button').forEach(b => b.addEventListener('click'
   });
   document.querySelectorAll('.price .v').forEach(el => { el.textContent = el.dataset[v]; });
   document.querySelectorAll('.psub').forEach(el => { el.innerHTML = el.dataset[v]; });
-  const P = { m:['$35.000','$49.000','$99.000'], a:['$26.250','$36.750','$74.250'] };
+  const P = { m:['$39.000','$49.000','$99.000'], a:['$29.250','$36.750','$74.250'] };
   document.querySelectorAll('.cmp .hprice').forEach((el,i) => { el.textContent = P[v][i]; });
 }));
 

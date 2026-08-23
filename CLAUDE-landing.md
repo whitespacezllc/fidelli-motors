@@ -73,7 +73,7 @@ misma frase, no sirve.
 Regla que decide: **contenido de marca o de cliente → Nunito. Dato operativo en tabla o
 formulario → Public Sans.**
 
-**Cuidado con las cifras.** "$46.750", "150+", "1:24" son cifras de marca: van en **Nunito**
+**Cuidado con las cifras.** "$39.000", "150+", "1:24" son cifras de marca: van en **Nunito**
 y **además** en `tabular-nums`. El reflejo "número = Public Sans" las manda a la familia
 equivocada; el reflejo inverso las deja sin tabular. Son las dos cosas a la vez.
 
