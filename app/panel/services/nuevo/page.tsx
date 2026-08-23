@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { createClient } from "@/lib/supabase/server";
 import { panelSuspendido } from "@/lib/auth/session";
 import { IdentificarVehiculo } from "@/components/services/identificar-vehiculo";
 import { BloqueoSuspension } from "@/components/panel/bloqueo-suspension";
@@ -24,9 +25,18 @@ export default async function PaginaNuevoService() {
     );
   }
 
+  // El catálogo de marcas baja con la página para que el combobox del alta
+  // (casos B y C) no tenga que ir a buscarlo en medio de la carga.
+  const supabase = await createClient();
+  const { data: filasMarcas } = await supabase
+    .from("marcas_vehiculo")
+    .select("nombre")
+    .eq("activa", true)
+    .order("orden");
+
   return (
     <div className="mx-auto max-w-md lg:max-w-lg lg:pt-6">
-      <IdentificarVehiculo />
+      <IdentificarVehiculo marcas={(filasMarcas ?? []).map((m) => m.nombre)} />
     </div>
   );
 }

@@ -453,6 +453,30 @@ export type Database = {
         }
         Relationships: []
       }
+      marcas_vehiculo: {
+        Row: {
+          activa: boolean
+          alias: string[]
+          created_at: string
+          nombre: string
+          orden: number
+        }
+        Insert: {
+          activa?: boolean
+          alias?: string[]
+          created_at?: string
+          nombre: string
+          orden: number
+        }
+        Update: {
+          activa?: boolean
+          alias?: string[]
+          created_at?: string
+          nombre?: string
+          orden?: number
+        }
+        Relationships: []
+      }
       mensaje_templates: {
         Row: {
           activo: boolean
@@ -1805,10 +1829,19 @@ export type Database = {
           ultimo_service: string
         }[]
       }
+      marca_canonica: { Args: { p_texto: string }; Returns: string }
       metricas_plataforma: { Args: never; Returns: Json }
       metricas_tenant: { Args: { p_lubricentro_id: string }; Returns: Json }
       mi_lubricentro_id: { Args: never; Returns: string }
+      modelos_sugeridos: {
+        Args: { p_marca?: string }
+        Returns: {
+          modelo: string
+          propio: boolean
+        }[]
+      }
       normalizar_patente: { Args: { entrada: string }; Returns: string }
+      normalizar_texto_vehiculo: { Args: { p: string }; Returns: string }
       orden_atencion: { Args: { p_atencion: string }; Returns: number }
       overrides_plan_bien_formados: { Args: { p: Json }; Returns: boolean }
       plan_capacidades: {

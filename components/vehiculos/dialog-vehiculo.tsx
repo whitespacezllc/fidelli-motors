@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
+import { CamposMarcaModelo } from "@/components/vehiculos/campos-marca-modelo";
 import { Dialog, DialogTrigger, DialogContenido } from "@/components/ui/dialog";
 import { Boton, clasesBoton } from "@/components/ui/boton";
 import { IconoCandado } from "@/components/iconos";
@@ -38,10 +39,12 @@ const CLASE_LABEL =
 function FormularioVehiculo({
   clienteId,
   vehiculo,
+  marcas,
   alGuardar,
 }: {
   clienteId: string;
   vehiculo?: Vehiculo;
+  marcas: string[];
   alGuardar: () => void;
 }) {
   const [estado, accion, pendiente] = useActionState(
@@ -177,30 +180,11 @@ function FormularioVehiculo({
         )}
       </div>
 
-      <div className="flex gap-3">
-        <div className="flex-1">
-          <label htmlFor="marca" className={CLASE_LABEL}>
-            Marca <span className="text-ink-40 normal-case">(opcional)</span>
-          </label>
-          <input
-            id="marca"
-            name="marca"
-            defaultValue={vehiculo?.marca ?? ""}
-            className={CLASE_CAMPO}
-          />
-        </div>
-        <div className="flex-1">
-          <label htmlFor="modelo" className={CLASE_LABEL}>
-            Modelo <span className="text-ink-40 normal-case">(opcional)</span>
-          </label>
-          <input
-            id="modelo"
-            name="modelo"
-            defaultValue={vehiculo?.modelo ?? ""}
-            className={CLASE_CAMPO}
-          />
-        </div>
-      </div>
+      <CamposMarcaModelo
+        marcas={marcas}
+        marcaInicial={vehiculo?.marca ?? ""}
+        modeloInicial={vehiculo?.modelo ?? ""}
+      />
 
       <div>
         <label htmlFor="anio" className={CLASE_LABEL}>
@@ -230,11 +214,13 @@ function FormularioVehiculo({
 export function DialogVehiculo({
   clienteId,
   vehiculo,
+  marcas = [],
   etiquetaTrigger,
   variante = "secundario",
 }: {
   clienteId: string;
   vehiculo?: Vehiculo;
+  marcas?: string[];
   etiquetaTrigger?: string;
   variante?: "primario" | "secundario";
 }) {
@@ -249,6 +235,7 @@ export function DialogVehiculo({
         <FormularioVehiculo
           clienteId={clienteId}
           vehiculo={vehiculo}
+          marcas={marcas}
           alGuardar={() => setAbierto(false)}
         />
       </DialogContenido>
