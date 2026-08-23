@@ -44,6 +44,7 @@ export default async function PaginaCarton({
     serviciosRes,
     configRes,
     premioRes,
+    pendientesRes,
   ] = await Promise.all([
       supabase
         .from("vehiculos")
@@ -78,6 +79,15 @@ export default async function PaginaCarton({
       // exactamente el rechazo crudo que había que evitar.
       featureHabilitada(sesion, "premios")
         ? supabase.rpc("premio_disponible", { p_vehiculo_id: vehiculoId })
+        : Promise.resolve({ data: null }),
+      // Los pendientes abiertos, para tildarlos sin salir del flujo.
+      featureHabilitada(sesion, "pendientes")
+        ? supabase
+            .from("trabajos_pendientes")
+            .select("id, descripcion, created_at, objetivo_fecha, objetivo_km")
+            .eq("vehiculo_id", vehiculoId)
+            .eq("estado", "pendiente")
+            .order("created_at")
         : Promise.resolve({ data: null }),
     ]);
 
@@ -173,6 +183,14 @@ export default async function PaginaCarton({
               }
             : null,
           puedeMecanica,
+          puedePendientes: featureHabilitada(sesion, "pendientes"),
+          pendientesAbiertos: (pendientesRes.data ?? []).map((tp) => ({
+            id: tp.id,
+            descripcion: tp.descripcion,
+            creado: tp.created_at,
+            objetivoFecha: tp.objetivo_fecha,
+            objetivoKm: tp.objetivo_km,
+          })),
         }}
       />
     </div>

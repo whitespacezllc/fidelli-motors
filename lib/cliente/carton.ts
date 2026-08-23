@@ -45,6 +45,14 @@ export type NotaPublica = {
   contenido: string;
 };
 
+/** Un trabajo pendiente que el lubricentro decidió mostrarle al dueño. */
+export type PendientePublico = {
+  descripcion: string;
+  objetivoFecha: string | null;
+  objetivoKm: number | null;
+  creado: string;
+};
+
 export type Fidelizacion = {
   disponible: boolean;
   servicesCiclo: number;
@@ -63,6 +71,9 @@ export type Carton = {
   /** Recomendaciones del taller sobre el auto. Solo llegan las visibles:
    *  get_carton filtra por nota, y la fecha es SIEMPRE la de creación. */
   notas: NotaPublica[];
+  /** Solo los abiertos marcados visibles. Default oculto: mostrarlos es
+   *  decisión del lubricentro, y llega vacío si no marcó ninguno. */
+  pendientes: PendientePublico[];
   fidelizacion: Fidelizacion | null;
   services: ServiceCarton[];
 };
@@ -92,6 +103,14 @@ type CartonJson = {
     anio: number | null;
   };
   notas?: { fecha: string; contenido: string }[] | null;
+  pendientes?:
+    | {
+        descripcion: string;
+        objetivo_fecha: string | null;
+        objetivo_km: number | null;
+        creado: string;
+      }[]
+    | null;
   fidelizacion?: {
     disponible: boolean;
     services_ciclo: number;
@@ -165,6 +184,12 @@ export async function obtenerCarton(
       notas: (json.notas ?? []).map((n) => ({
         fecha: n.fecha,
         contenido: n.contenido,
+      })),
+      pendientes: (json.pendientes ?? []).map((tp) => ({
+        descripcion: tp.descripcion,
+        objetivoFecha: tp.objetivo_fecha,
+        objetivoKm: tp.objetivo_km,
+        creado: tp.creado,
       })),
       fidelizacion: json.fidelizacion
         ? {

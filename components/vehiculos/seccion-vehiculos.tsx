@@ -4,6 +4,10 @@ import {
   NotasVehiculo,
   type NotaDelVehiculo,
 } from "@/components/notas/notas-vehiculo";
+import {
+  PendientesVehiculo,
+  type PendienteDelVehiculo,
+} from "@/components/pendientes/pendientes-vehiculo";
 import { BadgeEstado } from "@/components/services/badge-estado";
 import { IconoPremio } from "@/components/iconos";
 import { formatearFecha } from "@/lib/fechas";
@@ -51,6 +55,8 @@ type Vehiculo = {
   canjes?: Canje[];
   primerServiceEn?: string | null;
   notas?: NotaDelVehiculo[];
+  /** undefined = el plan no trae pendientes: la sección no existe. */
+  pendientes?: PendienteDelVehiculo[];
 };
 
 // El progreso del ciclo y los canjes ya hechos. El dorado es el único
@@ -180,6 +186,15 @@ function TarjetaVehiculo({
 
       {/* Las recomendaciones sobre EL AUTO — sobreviven al service. */}
       <NotasVehiculo vehiculoId={vehiculo.id} notas={vehiculo.notas ?? []} />
+
+      {/* Los compromisos con vencimiento. Solo si el plan trae la feature:
+          undefined = ni el título aparece. */}
+      {vehiculo.pendientes !== undefined && (
+        <PendientesVehiculo
+          vehiculoId={vehiculo.id}
+          pendientes={vehiculo.pendientes}
+        />
+      )}
 
       {/* El historial del hi-fi (pantalla 4): cada service con su estado,
           y la fila entera lleva al cartón. */}

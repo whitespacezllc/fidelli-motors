@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { sesionParaEscribir } from "@/lib/auth/session";
-import type { EstadoContacto } from "@/lib/contacto";
+import type { MotivoContacto } from "@/lib/contacto";
 
 export type ResultadoContacto = { error?: string };
 
@@ -16,7 +16,7 @@ export type ResultadoContacto = { error?: string };
 // pero se evita igual el insert redundante.
 export async function registrarContacto(
   vehiculoId: string,
-  estado: EstadoContacto,
+  estado: MotivoContacto,
   canal: "whatsapp" | "manual" = "whatsapp",
 ): Promise<ResultadoContacto> {
   const sesion = await sesionParaEscribir();
@@ -48,7 +48,7 @@ export async function registrarContacto(
 // hecho por afuera del sistema.
 export async function alternarContacto(
   vehiculoId: string,
-  estado: EstadoContacto,
+  estado: MotivoContacto,
   contactado: boolean,
 ): Promise<ResultadoContacto> {
   await sesionParaEscribir();
@@ -56,6 +56,22 @@ export async function alternarContacto(
   if (!contactado) return registrarContacto(vehiculoId, estado, "manual");
 
   const supabase = await createClient();
+
+  // El motivo 'pendiente' no está atado a un ciclo de services: destildar
+  // borra todos los contactos de ese motivo del vehículo — son tildes,
+  // no historial de retención, y "volver a avisar" es justo el caso.
+  if (estado === "pendiente") {
+    const { error } = await supabase
+      .from("contactos")
+      .delete()
+      .eq("vehiculo_id", vehiculoId)
+      .eq("estado", "pendiente");
+    if (error) {
+      return { error: "No se pudo destildar el contacto. Probá de nuevo." };
+    }
+    revalidatePath("/panel/proximos");
+    return {};
+  }
 
   // El último service acota el borrado igual que la vista acota el exists:
   // los contactos de ciclos anteriores son historial y no se tocan.

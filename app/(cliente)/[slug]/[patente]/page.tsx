@@ -7,6 +7,7 @@ import { CabeceraVehiculo } from "@/components/cliente/cabecera-vehiculo";
 import { ProximoService } from "@/components/cliente/proximo-service";
 import { ProgresoFidelizacion } from "@/components/cliente/progreso-fidelizacion";
 import { Recomendaciones } from "@/components/cliente/recomendaciones";
+import { PendientesTaller } from "@/components/cliente/pendientes-taller";
 import { HistorialCartones } from "@/components/cliente/historial-cartones";
 import { BotonTurno } from "@/components/cliente/boton-turno";
 import { SinHistorial } from "@/components/cliente/sin-historial";
@@ -73,7 +74,7 @@ export default async function PaginaVehiculo({ params }: Props) {
     );
   }
 
-  const { lubricentro, vehiculo, notas, fidelizacion, services } =
+  const { lubricentro, vehiculo, notas, pendientes, fidelizacion, services } =
     resultado.carton;
   const paleta = paletaTenant(lubricentro.colorPrimario);
   // El cartón destacado y la respuesta de "¿cuándo me toca?" salen del
@@ -102,8 +103,10 @@ export default async function PaginaVehiculo({ params }: Props) {
           {!ultimo ? (
             <div className="mt-6 flex flex-col gap-6 sm:mt-8 sm:gap-8">
               <SinHistorial />
-              {/* Una nota puede existir antes del primer service cargado. */}
+              {/* Una nota o un pendiente pueden existir antes del primer
+                  service cargado. */}
               <Recomendaciones notas={notas} />
+              <PendientesTaller pendientes={pendientes} />
               <BotonTurno lubricentro={lubricentro} patente={vehiculo.patente} />
             </div>
           ) : (
@@ -185,6 +188,8 @@ export default async function PaginaVehiculo({ params }: Props) {
                   premio. */}
               <div className="flex flex-col gap-6 sm:gap-8 lg:col-start-2 lg:row-start-2">
                 <Recomendaciones notas={notas} />
+
+                <PendientesTaller pendientes={pendientes} />
 
                 {fidelizacion && (
                   <ProgresoFidelizacion fidelizacion={fidelizacion} />

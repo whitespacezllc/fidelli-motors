@@ -33,7 +33,7 @@ export default async function PaginaMensajes() {
   const [mensajesRes, previewRes] = await Promise.all([
     supabase
       .from("mensaje_templates")
-      .select("id, tono, contenido, activo")
+      .select("id, tono, contenido, contenido_pendiente, activo")
       .order("activo", { ascending: false })
       .order("created_at"),
     supabase

@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { IconoWhatsapp } from "@/components/iconos";
 import { registrarContacto } from "@/app/panel/proximos/actions";
-import type { EstadoContacto } from "@/lib/contacto";
+import type { MotivoContacto } from "@/lib/contacto";
 import { MOTIVO_SUSPENSION } from "@/components/panel/aviso-suspension";
 
 // El contacto en un tap. Es un <a> de verdad, no un botón que abre la
@@ -37,7 +37,7 @@ export function BotonWhatsapp({
   suspendido = false,
 }: {
   vehiculoId: string;
-  estado: EstadoContacto;
+  estado: MotivoContacto;
   link: string;
   contactado: boolean;
   cliente: string;

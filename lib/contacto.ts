@@ -5,6 +5,13 @@
 export type EstadoContacto = "vencido" | "urgente" | "proximo";
 
 /**
+ * Por qué se contacta: los tres estados del service, o el trabajo
+ * pendiente. Es lo que se registra en `contactos` y lo que gobierna el
+ * anti-spam — un contacto por motivo.
+ */
+export type MotivoContacto = EstadoContacto | "pendiente";
+
+/**
  * Teléfono argentino a formato wa.me: solo dígitos, con el 54 adelante.
  *
  * El mecánico carga el teléfono como se lo dictan: "351 555 0442",
@@ -53,6 +60,25 @@ export type VariablesMensaje = {
   proximo_km: string;
 };
 
+/** Las variables del mensaje de un trabajo PENDIENTE: sin km de próximo
+ *  service — eso sería mentirle al cliente sobre lo que se le avisa. */
+export type VariablesPendiente = {
+  nombre: string;
+  vehiculo: string;
+  patente: string;
+  pendiente: string;
+};
+
+export const VARIABLES_MENSAJE_PENDIENTE: {
+  clave: keyof VariablesPendiente;
+  descripcion: string;
+}[] = [
+  { clave: "nombre", descripcion: "el nombre del cliente" },
+  { clave: "vehiculo", descripcion: "marca y modelo del auto" },
+  { clave: "patente", descripcion: "la patente" },
+  { clave: "pendiente", descripcion: "qué quedó por hacer" },
+];
+
 // El catálogo de variables, para el editor de mensajes: qué existe y qué
 // significa cada una. Es la fuente única — el resolvedor y la advertencia
 // de typos comparan contra estas cuatro claves.
@@ -69,8 +95,11 @@ export const VARIABLES_MENSAJE: {
 // Los {algo} del texto que NO son ninguna de las cuatro variables. Un typo
 // tipo {nombre_cliente} sale literal en el WhatsApp del cliente y queda
 // pésimo: el editor lo advierte antes de guardar.
-export function variablesDesconocidas(contenido: string): string[] {
-  const conocidas = new Set<string>(VARIABLES_MENSAJE.map((v) => v.clave));
+export function variablesDesconocidas(
+  contenido: string,
+  catalogo: { clave: string }[] = VARIABLES_MENSAJE,
+): string[] {
+  const conocidas = new Set<string>(catalogo.map((v) => v.clave));
   const vistas = new Set<string>();
   for (const [, clave] of contenido.matchAll(/\{(\w+)\}/g)) {
     if (!conocidas.has(clave)) vistas.add(clave);
@@ -83,10 +112,10 @@ export function variablesDesconocidas(contenido: string): string[] {
 // que es mejor que un hueco silencioso en el mensaje.
 export function resolverTemplate(
   contenido: string,
-  variables: VariablesMensaje,
+  variables: Record<string, string>,
 ): string {
   return contenido.replace(/\{(\w+)\}/g, (original, clave: string) =>
-    clave in variables ? variables[clave as keyof VariablesMensaje] : original,
+    clave in variables ? variables[clave] : original,
   );
 }
 

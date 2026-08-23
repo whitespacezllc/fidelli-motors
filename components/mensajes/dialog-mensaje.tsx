@@ -5,6 +5,7 @@ import { Dialog, DialogTrigger, DialogContenido } from "@/components/ui/dialog";
 import { Boton, clasesBoton } from "@/components/ui/boton";
 import {
   VARIABLES_MENSAJE,
+  VARIABLES_MENSAJE_PENDIENTE,
   resolverTemplate,
   variablesDesconocidas,
   type VariablesMensaje,
@@ -19,6 +20,8 @@ type Mensaje = {
   id: string;
   tono: string;
   contenido: string;
+  /** El mensaje del trabajo PENDIENTE: sin km de próximo service. */
+  contenido_pendiente: string | null;
 };
 
 const ESTADO_INICIAL: EstadoMensaje = {};
@@ -44,6 +47,9 @@ function FormularioMensaje({
     ESTADO_INICIAL,
   );
   const [contenido, setContenido] = useState(mensaje?.contenido ?? "");
+  const [contenidoPendiente, setContenidoPendiente] = useState(
+    mensaje?.contenido_pendiente ?? "",
+  );
   const [sinConexion, setSinConexion] = useState(false);
   const areaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -72,6 +78,10 @@ function FormularioMensaje({
   }
 
   const desconocidas = variablesDesconocidas(contenido);
+  const desconocidasPendiente = variablesDesconocidas(
+    contenidoPendiente,
+    VARIABLES_MENSAJE_PENDIENTE,
+  );
   const vistaPrevia = contenido.trim()
     ? resolverTemplate(contenido, ejemplo)
     : null;
@@ -155,6 +165,46 @@ function FormularioMensaje({
           Tocá una variable para agregarla: al mandar el mensaje se reemplaza
           por el dato real de cada cliente.
         </p>
+      </div>
+
+      {/* La segunda plantilla del tono: la del TRABAJO PENDIENTE. Habla de
+          lo que quedó por hacer — nunca de km de próximo service, que acá
+          sería mentira. {pendiente} = la descripción anotada. */}
+      <div>
+        <label htmlFor="contenido_pendiente" className={CLASE_LABEL}>
+          Mensaje de trabajo pendiente
+        </label>
+        <textarea
+          id="contenido_pendiente"
+          name="contenido_pendiente"
+          rows={4}
+          value={contenidoPendiente}
+          onChange={(e) => setContenidoPendiente(e.target.value)}
+          className="w-full rounded-md border border-line bg-base px-3.5 py-3 text-body text-ink"
+        />
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {VARIABLES_MENSAJE_PENDIENTE.map((v) => (
+            <button
+              key={v.clave}
+              type="button"
+              onClick={() =>
+                setContenidoPendiente((c) => `${c}{${v.clave}}`)
+              }
+              title={`Se reemplaza por ${v.descripcion}`}
+              className="rounded-md border border-line bg-surface px-2.5 py-1.5 font-ui text-label font-semibold text-ink tabular-nums hover:bg-line/60"
+            >
+              {`{${v.clave}}`}
+            </button>
+          ))}
+        </div>
+        {desconocidasPendiente.length > 0 && (
+          <p className="mt-2 rounded-md border border-urgente bg-urgente-soft px-3.5 py-3 text-ui text-urgente">
+            <span className="font-semibold tabular-nums">
+              {desconocidasPendiente.map((d) => `{${d}}`).join(", ")}
+            </span>{" "}
+            no {desconocidasPendiente.length === 1 ? "es una variable" : "son variables"} de este mensaje: las que existen son las cuatro de arriba.
+          </p>
+        )}
       </div>
 
       {desconocidas.length > 0 && (
