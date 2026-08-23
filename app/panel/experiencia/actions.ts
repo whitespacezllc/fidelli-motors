@@ -56,6 +56,15 @@ export async function guardarExperiencia(
     }
   }
 
+  // El tema y el tamaño del logo: opciones cerradas, nunca texto libre.
+  // El tema es la elección del LUBRICENTRO para todos los que escanean —
+  // no un prefers-color-scheme. El default de los dos es lo de hoy.
+  const tema = formData.get("tema") === "oscuro" ? "oscuro" : "claro";
+  const logoTamanoCrudo = String(formData.get("logo_tamano") ?? "normal");
+  const logoTamano = ["normal", "grande", "xl"].includes(logoTamanoCrudo)
+    ? logoTamanoCrudo
+    : "normal";
+
   const whatsapp = String(formData.get("whatsapp") ?? "").trim();
   const instagram = String(formData.get("instagram") ?? "").trim();
   const facebook = String(formData.get("facebook") ?? "").trim();
@@ -102,6 +111,8 @@ export async function guardarExperiencia(
       color_primario: color,
       color_fondo: colorFondo,
       color_carton: colorCarton,
+      tema,
+      logo_tamano: logoTamano,
       datos_contacto: contacto,
       campos_visibles: visibles,
       updated_at: new Date().toISOString(),
@@ -204,6 +215,58 @@ export async function subirLogo(
 
   if (errorConfig) {
     return { error: "El logo subió pero no se pudo guardar. Probá de nuevo." };
+  }
+
+  await revalidarSuperficiePublica(supabase);
+  return { ok: true };
+}
+
+// ---------- El mensaje del taller al escanear (pagina_premium) ----------
+
+export type EstadoMensaje = { error?: string; ok?: boolean };
+
+// Guarda el mensaje que ve el cliente al escanear. Gateado dos veces:
+// acá por sesionParaEscribir(pagina_premium) y en la base por el trigger
+// tope_mensaje_escaneo — si el plan cambió entre pantalla y guardado, la
+// base tiene la última palabra.
+export async function guardarMensajeTaller(
+  _previo: EstadoMensaje,
+  formData: FormData,
+): Promise<EstadoMensaje> {
+  const sesion = await sesionParaEscribir("pagina_premium");
+
+  const mensaje = String(formData.get("mensaje") ?? "").trim();
+  if (mensaje.length > 280) {
+    return { error: "El mensaje puede tener hasta 280 caracteres. Acortalo un poco." };
+  }
+
+  // La vigencia es opcional, pero un aviso con fecha se apaga solo — un
+  // "traé el auto en septiembre" que sigue puesto en marzo es una
+  // vergüenza. Se valida el formato y nada más: puede ser mañana o el
+  // año que viene, eso lo decide el taller.
+  const vigenciaCruda = String(formData.get("vigencia") ?? "").trim();
+  if (vigenciaCruda && !/^\d{4}-\d{2}-\d{2}$/.test(vigenciaCruda)) {
+    return { error: "La fecha de vigencia no se entendió. Elegila del calendario." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("config_experiencia")
+    .update({
+      mensaje_escaneo: mensaje || null,
+      mensaje_vigencia: vigenciaCruda || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("lubricentro_id", sesion.lubricentroId);
+
+  if (error) {
+    if (error.code === "23514") {
+      return { error: "El mensaje puede tener hasta 280 caracteres. Acortalo un poco." };
+    }
+    if (error.code === "P0001") {
+      return { error: "El mensaje al escanear es parte del plan Ultra." };
+    }
+    return { error: "No se pudo guardar. Revisá la conexión y probá de nuevo." };
   }
 
   await revalidarSuperficiePublica(supabase);

@@ -43,6 +43,7 @@ function aHex(r: number, g: number, b: number): string {
 
 // Luminancia relativa de WCAG 2.1. Exportada porque la pantalla de
 // diseño de experiencia la usa para avisar el contraste antes de guardar.
+// (contrasteWCAG, abajo, es la razón entre dos luminancias.)
 export function luminancia(hex: string): number {
   const canal = (v: number) => {
     const s = v / 255;
@@ -62,13 +63,22 @@ function mezclar(hex: string, hacia: [number, number, number], proporcion: numbe
   );
 }
 
-export function paletaTenant(colorPrimario: string | null | undefined): PaletaTenant {
+export function paletaTenant(
+  colorPrimario: string | null | undefined,
+  tema: "claro" | "oscuro" = "claro",
+): PaletaTenant {
   const primary = normalizarHex(colorPrimario);
 
   return {
     primary,
-    // Fondo suave para chips y avisos: el color casi disuelto en blanco.
-    soft: mezclar(primary, [255, 255, 255], 0.9),
+    // Fondo suave para chips y avisos: el color casi disuelto en el
+    // fondo del modo. En claro hacia blanco; en oscuro hacia el grafito
+    // (disolverlo en blanco daría un chip casi blanco flotando en la
+    // página oscura).
+    soft:
+      tema === "oscuro"
+        ? mezclar(primary, [20, 20, 20], 0.78)
+        : mezclar(primary, [255, 255, 255], 0.9),
     // Un escalón más oscuro para el hover del botón.
     deep: mezclar(primary, [0, 0, 0], 0.16),
     // El lubri puede elegir un amarillo: contra un color claro, el blanco
@@ -76,6 +86,17 @@ export function paletaTenant(colorPrimario: string | null | undefined): PaletaTe
     // medios —donde gana por contraste— y pasa a tinta sobre pasteles.
     ink: luminancia(primary) > 0.45 ? "#0A0A0A" : "#FFFFFF",
   };
+}
+
+// La razón de contraste de WCAG 2.1 entre dos colores. La guarda del
+// panel la usa contra el fondo del MODO ACTIVO: un verde oscuro sobre
+// grafito desaparece, y eso se avisa antes de guardar — avisar, nunca
+// cambiarle el color en silencio: es su marca y la decisión es suya.
+export function contrasteWCAG(hexA: string, hexB: string): number {
+  const a = luminancia(hexA);
+  const b = luminancia(hexB);
+  const [claro, oscuro] = a >= b ? [a, b] : [b, a];
+  return (claro + 0.05) / (oscuro + 0.05);
 }
 
 // Un hex validado o null: la única forma segura de llevar un color del

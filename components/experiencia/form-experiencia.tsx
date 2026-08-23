@@ -1,9 +1,17 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
 import Link from "next/link";
 import { Boton } from "@/components/ui/boton";
-import { esTonoClaro, luminancia, paletaTenant } from "@/lib/cliente/color";
+import {
+  contrasteWCAG,
+  esTonoClaro,
+  hexONull,
+  luminancia,
+  paletaTenant,
+} from "@/lib/cliente/color";
+import type { TamanoLogo, TemaCliente } from "@/lib/cliente/tema";
+import type { BorradorExperiencia } from "@/components/experiencia/pantalla-experiencia";
 import {
   guardarExperiencia,
   type EstadoExperiencia,
@@ -50,6 +58,11 @@ export type ConfigExperiencia = {
   /** "" = el blanco de siempre. */
   colorFondo: string;
   colorCarton: string;
+  tema: TemaCliente;
+  logoTamano: TamanoLogo;
+  /** "" = sin mensaje. Solo lo edita Ultra (pagina_premium). */
+  mensajeEscaneo: string;
+  mensajeVigencia: string;
   camposVisibles: Record<string, boolean>;
   whatsapp: string;
   instagram: string;
@@ -81,15 +94,17 @@ function SelectorTono({
   etiqueta,
   ayuda,
   tonos,
-  valorInicial,
+  valor,
+  alCambiar,
 }: {
   nombre: string;
   etiqueta: string;
   ayuda: string;
   tonos: { nombre: string; hex: string }[];
-  valorInicial: string;
+  valor: string;
+  alCambiar: (v: string) => void;
 }) {
-  const [valor, setValor] = useState(valorInicial.toUpperCase());
+  const setValor = alCambiar;
 
   const esPreset =
     valor === "" || tonos.some((t) => t.hex.toUpperCase() === valor);
@@ -163,49 +178,87 @@ function SelectorTono({
   );
 }
 
-function AvisoContraste({ hex }: { hex: string }) {
+// LA GUARDA DE CONTRASTE. El lubricentro elige su color y también el
+// modo — y un verde oscuro que se leía perfecto sobre blanco DESAPARECE
+// sobre el grafito del modo oscuro. La razón WCAG se calcula contra el
+// fondo del MODO ACTIVO del formulario, y la muestra se pinta sobre ese
+// mismo fondo: el aviso se lee y se VE. Se avisa, nunca se corrige en
+// silencio: es su marca y la decisión es suya.
+function AvisoContraste({
+  hex,
+  tema,
+  colorFondo,
+}: {
+  hex: string;
+  tema: TemaCliente;
+  colorFondo: string;
+}) {
   if (!HEX.test(hex)) return null;
   const luz = luminancia(hex);
-  const paleta = paletaTenant(hex);
+  const paleta = paletaTenant(hex, tema);
 
-  // No se bloquea nada: es la marca del lubri y la elige él. Pero lo que
-  // va a pasar con el texto se dice antes, no después.
+  const fondoActivo =
+    tema === "oscuro" ? "#0A0A0A" : (hexONull(colorFondo) ?? "#FFFFFF");
+  // 3:1 es el piso de WCAG para componentes de interfaz: por debajo, el
+  // botón se funde con el fondo.
+  const razon = contrasteWCAG(hex, fondoActivo);
+
   let aviso: string | null = null;
-  if (luz > 0.82) {
+  if (razon < 3) {
     aviso =
-      "Ese color es muy claro: los botones casi no se van a distinguir del fondo blanco, y el texto sobre ellos va a ser negro.";
-  } else if (luz > 0.45) {
+      tema === "oscuro"
+        ? "Ese color casi no se distingue del fondo oscuro: tus botones van a desaparecer. Es tu marca y la decisión es tuya — mirá la muestra y la vista previa."
+        : "Ese color casi no se distingue del fondo de la página: tus botones van a desaparecer. Mirá la muestra y la vista previa.";
+  } else if (luz > 0.45 && tema === "claro") {
     aviso = "Con este color, el texto sobre los botones va a ser negro para que se lea.";
-  } else if (luz < 0.02) {
+  } else if (luz < 0.02 && tema === "claro") {
     aviso =
       "Ese color es muy oscuro: los botones se van a ver casi negros, igual que el texto de la página.";
   }
 
   return (
     <div className="mt-2.5 flex flex-wrap items-center gap-3">
-      {/* La muestra dice más que el aviso: así va a verse el botón. */}
+      {/* La muestra dice más que el aviso: el botón SOBRE el fondo del
+          modo elegido, no sobre el blanco del panel. */}
       <span
-        className="inline-flex h-10 items-center rounded-md px-4 text-ui font-bold"
-        style={{ backgroundColor: paleta.primary, color: paleta.ink }}
+        className="inline-flex items-center rounded-md p-2"
+        style={{ backgroundColor: fondoActivo }}
       >
-        Ver mi historial
+        <span
+          className="inline-flex h-10 items-center rounded-md px-4 text-ui font-bold"
+          style={{ backgroundColor: paleta.primary, color: paleta.ink }}
+        >
+          Ver mi historial
+        </span>
       </span>
       {aviso && <span className="flex-1 basis-52 text-ui text-urgente">{aviso}</span>}
     </div>
   );
 }
 
-export function FormExperiencia({ config }: { config: ConfigExperiencia }) {
+export function FormExperiencia({
+  config,
+  borrador,
+  alCambiar,
+}: {
+  config: ConfigExperiencia;
+  borrador: BorradorExperiencia;
+  alCambiar: (parcial: Partial<BorradorExperiencia>) => void;
+}) {
   const [estado, accion, guardando] = useActionState(
     guardarExperiencia,
     ESTADO_INICIAL,
   );
-  const [color, setColor] = useState(config.colorPrimario);
+  const color = borrador.color;
+  const setColor = (v: string) => alCambiar({ color: v });
 
   const colorValido = HEX.test(color);
 
   return (
     <form action={accion} className="flex flex-col gap-6">
+      {/* El modo y el tamaño viajan como el resto: FormData. */}
+      <input type="hidden" name="tema" value={borrador.tema} />
+      <input type="hidden" name="logo_tamano" value={borrador.logoTamano} />
       {estado.error && (
         <p role="alert" className="rounded-md bg-overdue-soft px-3.5 py-3 text-ui text-overdue">
           {estado.error}
@@ -255,24 +308,115 @@ export function FormExperiencia({ config }: { config: ConfigExperiencia }) {
                 Si tenés manual de marca, pegá el código acá.
               </span>
             </div>
-            <AvisoContraste hex={color} />
+            <AvisoContraste
+              hex={color}
+              tema={borrador.tema}
+              colorFondo={borrador.colorFondo}
+            />
           </div>
 
-          <SelectorTono
-            nombre="color_fondo"
-            etiqueta="Fondo de la página"
-            ayuda="El color detrás de todo, en tu página y en la del cartón."
-            tonos={TONOS_FONDO}
-            valorInicial={config.colorFondo}
-          />
+          {/* ---------- El modo ---------- */}
+          <div>
+            <p className="mb-1.5 text-label font-semibold tracking-[0.06em] text-ink-60 uppercase">
+              Modo de tu página
+            </p>
+            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Modo de tu página">
+              {(
+                [
+                  ["claro", "Claro"],
+                  ["oscuro", "Oscuro"],
+                ] as const
+              ).map(([valor, etiqueta]) => (
+                <button
+                  key={valor}
+                  type="button"
+                  role="radio"
+                  aria-checked={borrador.tema === valor}
+                  onClick={() => alCambiar({ tema: valor })}
+                  className={`flex min-h-11 items-center gap-2 rounded-md border px-4 text-ui transition-colors ${
+                    borrador.tema === valor
+                      ? "border-ink font-semibold text-ink"
+                      : "border-line text-ink-60 hover:bg-surface"
+                  }`}
+                >
+                  <span
+                    className="size-5 rounded-full border border-line"
+                    style={{ backgroundColor: valor === "oscuro" ? "#0A0A0A" : "#FFFFFF" }}
+                  />
+                  {etiqueta}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-label text-ink-60">
+              Lo ven así TODOS los que escanean, sin importar cómo tengan el
+              celular. El cartón sigue siendo papel claro: es un recibo sobre
+              el mostrador.
+            </p>
+          </div>
+
+          {borrador.tema === "oscuro" ? (
+            <p className="rounded-md bg-surface px-3.5 py-3 text-ui text-ink-60">
+              En modo oscuro el fondo es el gris grafito del sistema. El tono
+              de fondo que tenías queda guardado para cuando vuelvas a claro.
+            </p>
+          ) : (
+            <SelectorTono
+              nombre="color_fondo"
+              etiqueta="Fondo de la página"
+              ayuda="El color detrás de todo, en tu página y en la del cartón."
+              tonos={TONOS_FONDO}
+              valor={borrador.colorFondo}
+              alCambiar={(v) => alCambiar({ colorFondo: v })}
+            />
+          )}
+          {/* En oscuro el valor guardado sigue viajando: no se pierde. */}
+          {borrador.tema === "oscuro" && (
+            <input type="hidden" name="color_fondo" value={borrador.colorFondo} />
+          )}
 
           <SelectorTono
             nombre="color_carton"
             etiqueta="Papel del cartón"
             ayuda="El color de la tarjeta que ve tu cliente — como elegir el papel."
             tonos={TONOS_CARTON}
-            valorInicial={config.colorCarton}
+            valor={borrador.colorCarton}
+            alCambiar={(v) => alCambiar({ colorCarton: v })}
           />
+
+          {/* ---------- El tamaño del logo ---------- */}
+          <div>
+            <p className="mb-1.5 text-label font-semibold tracking-[0.06em] text-ink-60 uppercase">
+              Tamaño de tu logo
+            </p>
+            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Tamaño de tu logo">
+              {(
+                [
+                  ["normal", "Normal"],
+                  ["grande", "Grande"],
+                  ["xl", "Extra grande"],
+                ] as const
+              ).map(([valor, etiqueta]) => (
+                <button
+                  key={valor}
+                  type="button"
+                  role="radio"
+                  aria-checked={borrador.logoTamano === valor}
+                  onClick={() => alCambiar({ logoTamano: valor })}
+                  className={`flex min-h-11 items-center rounded-md border px-4 text-ui transition-colors ${
+                    borrador.logoTamano === valor
+                      ? "border-ink font-semibold text-ink"
+                      : "border-line text-ink-60 hover:bg-surface"
+                  }`}
+                >
+                  {etiqueta}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-label text-ink-60">
+              Vale para tu página y para la del cartón. Con cualquier tamaño,
+              el buscador de patente queda a la vista — mirá la vista previa.
+            </p>
+          </div>
         </div>
       </section>
 

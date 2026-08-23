@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { obtenerCarton, marcadosDe } from "@/lib/cliente/carton";
 import { paletaTenant, variablesTenant } from "@/lib/cliente/color";
+import { estilosTema, ESTILO_PAPEL } from "@/lib/cliente/tema";
+import { MensajeTaller } from "@/components/cliente/mensaje-taller";
 import { formatearPatente, normalizarPatente } from "@/lib/texto";
 import { CabeceraVehiculo } from "@/components/cliente/cabecera-vehiculo";
 import { ProximoService } from "@/components/cliente/proximo-service";
@@ -50,14 +52,15 @@ export default async function PaginaVehiculo({ params }: Props) {
   // La patente que no aparece es un lead, no un error: mismo mensaje que en
   // la landing, con el WhatsApp del lubri. Nunca un 404 pelado.
   if (resultado.estado === "patente_no_encontrada") {
-    const paleta = paletaTenant(resultado.lubricentro.colorPrimario);
+    const paleta = paletaTenant(
+      resultado.lubricentro.colorPrimario,
+      resultado.lubricentro.tema,
+    );
     return (
       <div
         style={{
           ...variablesTenant(paleta),
-          ...(resultado.lubricentro.colorFondo
-            ? { backgroundColor: resultado.lubricentro.colorFondo }
-            : {}),
+          ...estilosTema(resultado.lubricentro.tema, resultado.lubricentro.colorFondo),
         }}
         className="flex min-h-full flex-1 flex-col"
       >
@@ -74,9 +77,17 @@ export default async function PaginaVehiculo({ params }: Props) {
     );
   }
 
-  const { lubricentro, vehiculo, notas, pendientes, fidelizacion, services } =
-    resultado.carton;
-  const paleta = paletaTenant(lubricentro.colorPrimario);
+  const {
+    lubricentro,
+    mensajeTaller,
+    whatsappTaller,
+    vehiculo,
+    notas,
+    pendientes,
+    fidelizacion,
+    services,
+  } = resultado.carton;
+  const paleta = paletaTenant(lubricentro.colorPrimario, lubricentro.tema);
   // El cartón destacado y la respuesta de "¿cuándo me toca?" salen del
   // último SERVICE — es lo que gobierna el próximo cambio de aceite y lo
   // que replica el papel del parasol. Si el auto solo tiene mecánica (el
@@ -90,9 +101,10 @@ export default async function PaginaVehiculo({ params }: Props) {
     <div
       style={{
         ...variablesTenant(paleta),
-        ...(lubricentro.colorFondo
-          ? { backgroundColor: lubricentro.colorFondo }
-          : {}),
+        // El tema es del lubricentro, para todos los que escanean — ver
+        // la nota en la landing del slug. El cartón queda afuera del
+        // apagón a propósito: es papel (reset más abajo).
+        ...estilosTema(lubricentro.tema, lubricentro.colorFondo),
       }}
       className="flex min-h-full flex-1 flex-col"
     >
@@ -107,7 +119,11 @@ export default async function PaginaVehiculo({ params }: Props) {
                   service cargado. */}
               <Recomendaciones notas={notas} />
               <PendientesTaller pendientes={pendientes} />
-              <BotonTurno lubricentro={lubricentro} patente={vehiculo.patente} />
+              <BotonTurno
+                lubricentro={lubricentro}
+                whatsappTaller={whatsappTaller}
+                patente={vehiculo.patente}
+              />
             </div>
           ) : (
             // En desktop el cartón no se estira: es un objeto de papel de
@@ -136,6 +152,12 @@ export default async function PaginaVehiculo({ params }: Props) {
                   ancho desde tablet: estirado a 576px dejaría de parecerse
                   a lo que cuelga del parasol y a lo que ve Pedro en la mano. */}
               <div className="sm:mx-auto sm:w-full sm:max-w-[26rem] lg:sticky lg:top-8 lg:col-start-1 lg:row-start-1 lg:row-span-2 lg:mx-0 lg:max-w-none">
+                {/* El papel no se apaga: en modo oscuro el cartón sigue
+                    siendo un recibo claro sobre el mostrador oscuro — la
+                    metáfora se refuerza. El reset devuelve la tinta clara
+                    SOLO adentro del papel; el "Hecho en" de abajo queda
+                    afuera y acompaña al tema. */}
+                <div style={ESTILO_PAPEL}>
                 {ultimo.tipo === "mecanica" ? (
                   <CartonPapelMecanica
                     escala="cliente"
@@ -170,6 +192,7 @@ export default async function PaginaVehiculo({ params }: Props) {
                     }}
                   />
                 )}
+                </div>
                 {/* La sucursal sí queda afuera: en el cartón físico no
                     tiene renglón. Se muestra para que el último service no
                     quede asimétrico con el historial, que la indica en
@@ -187,6 +210,15 @@ export default async function PaginaVehiculo({ params }: Props) {
                   "cubiertas para cambio" importa más que el progreso del
                   premio. */}
               <div className="flex flex-col gap-6 sm:gap-8 lg:col-start-2 lg:row-start-2">
+                {/* El momento de mayor intención del mes: entre el
+                    próximo service y el historial, sin tapar nada. */}
+                {mensajeTaller && (
+                  <MensajeTaller
+                    mensaje={mensajeTaller}
+                    nombreLubricentro={lubricentro.nombre}
+                  />
+                )}
+
                 <Recomendaciones notas={notas} />
 
                 <PendientesTaller pendientes={pendientes} />
@@ -204,6 +236,7 @@ export default async function PaginaVehiculo({ params }: Props) {
 
                 <BotonTurno
                   lubricentro={lubricentro}
+                  whatsappTaller={whatsappTaller}
                   patente={vehiculo.patente}
                 />
               </div>

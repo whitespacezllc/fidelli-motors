@@ -1,7 +1,10 @@
 import type { Lubricentro } from "@/lib/cliente/landing";
+import { CLASE_LOGO_LANDING } from "@/lib/cliente/tema";
 
 // La marca es marco, no obstáculo: confirma "estoy en el lugar correcto"
-// y nada más. Por eso no lleva navegación ni ocupa media pantalla.
+// y nada más. Por eso no lleva navegación ni ocupa media pantalla. El
+// tamaño del logo es la única perilla (normal/grande/xl) y viene topado
+// desde lib/cliente/tema: sin tope, el buscador cae abajo del pliegue.
 export function MarcaLubricentro({ lubricentro }: { lubricentro: Lubricentro }) {
   const iniciales = lubricentro.nombre
     .split(" ")
@@ -24,7 +27,7 @@ export function MarcaLubricentro({ lubricentro }: { lubricentro: Lubricentro }) 
           // rounded-lg: muchos lubris suben un logo cuadrado con fondo, y el
           // canto vivo se pelea con el resto de la superficie. El redondeo lo
           // ablanda sin recortar el logo (object-contain no lo estira).
-          className="mx-auto h-16 w-auto rounded-lg object-contain sm:h-24"
+          className={`mx-auto w-auto rounded-lg object-contain ${CLASE_LOGO_LANDING[lubricentro.logoTamano]}`}
         />
       ) : (
         <span
