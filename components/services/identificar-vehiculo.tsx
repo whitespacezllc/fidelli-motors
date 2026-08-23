@@ -16,7 +16,7 @@ const LARGO_MINIMO = 6;
 // La MiniFicha (caso A: el vehículo ya pasó) y el campo de patente viven en
 // campos-carton.tsx: son los mismos que usa la simulación de la landing.
 
-export function IdentificarVehiculo() {
+export function IdentificarVehiculo({ marcas }: { marcas: string[] }) {
   const [patente, setPatente] = useState("");
   const [vehiculo, setVehiculo] = useState<VehiculoIdentificado | null>(null);
   const [buscado, setBuscado] = useState(false);
@@ -98,7 +98,7 @@ export function IdentificarVehiculo() {
 
       {vehiculo && <MiniFicha vehiculo={vehiculo} />}
 
-      {mostrarAlta && <PanelAlta patente={patente.trim()} />}
+      {mostrarAlta && <PanelAlta patente={patente.trim()} marcas={marcas} />}
 
       {/* La salida manual del hi-fi, que va también junto a la mini-ficha:
           si el auto que apareció no es el que está en el pozo (un dígito de

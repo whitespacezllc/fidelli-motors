@@ -101,7 +101,8 @@ export default async function FichaCliente({
   // La fidelización de cada auto. premio_disponible() es por vehículo y un
   // cliente tiene uno o dos: se piden en paralelo, no en cascada. Los
   // canjes y las notas van en una sola consulta para todos.
-  const [premios, canjesRes, notasRes, pendientesRes] = await Promise.all([
+  const [premios, canjesRes, notasRes, pendientesRes, marcasRes] =
+    await Promise.all([
     Promise.all(
       vehiculos.map((v) =>
         supabase.rpc("premio_disponible", { p_vehiculo_id: v.id }),
@@ -139,7 +140,17 @@ export default async function FichaCliente({
           .eq("estado", "pendiente")
           .order("created_at")
       : Promise.resolve({ data: null }),
+
+    // El catálogo de marcas para el alta/edición de vehículos. Global y
+    // chico (~34 filas): viaja en el mismo paralelo, no agrega cascada.
+    supabase
+      .from("marcas_vehiculo")
+      .select("nombre")
+      .eq("activa", true)
+      .order("orden"),
   ]);
+
+  const marcas = (marcasRes.data ?? []).map((m) => m.nombre);
 
   const pendientesPorVehiculo = new Map<
     string,
@@ -218,6 +229,7 @@ export default async function FichaCliente({
 
       <SeccionVehiculos
         clienteId={cliente.id}
+        marcas={marcas}
         vehiculos={vehiculos.map((v, i) => ({
           ...v,
           fidelizacion: (() => {

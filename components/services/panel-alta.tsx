@@ -10,6 +10,7 @@ import {
   type ClienteSugerido,
   type EstadoAlta,
 } from "@/app/panel/services/nuevo/actions";
+import { CamposMarcaModelo } from "@/components/vehiculos/campos-marca-modelo";
 
 const ESTADO_INICIAL: EstadoAlta = {};
 
@@ -20,24 +21,17 @@ const CLASE_LABEL =
 
 // Campos del auto, compartidos por los dos caminos. La patente ya viene
 // tipeada del Momento 0: no se vuelve a pedir, se muestra fija.
-function CamposVehiculo({ patente }: { patente: string }) {
+function CamposVehiculo({
+  patente,
+  marcas,
+}: {
+  patente: string;
+  marcas: string[];
+}) {
   return (
     <>
       <input type="hidden" name="patente" value={patente} />
-      <div className="flex gap-3">
-        <div className="flex-1">
-          <label htmlFor="marca" className={CLASE_LABEL}>
-            Marca <span className="text-ink-40 normal-case">(opcional)</span>
-          </label>
-          <input id="marca" name="marca" className={CLASE_CAMPO} />
-        </div>
-        <div className="flex-1">
-          <label htmlFor="modelo" className={CLASE_LABEL}>
-            Modelo <span className="text-ink-40 normal-case">(opcional)</span>
-          </label>
-          <input id="modelo" name="modelo" className={CLASE_CAMPO} />
-        </div>
-      </div>
+      <CamposMarcaModelo marcas={marcas} />
       {/* En mobile el año ocupa todo el ancho, como siempre. Desde tablet se
           recorta a media fila —el mismo ancho que marca y modelo— para que no
           quede un campo largo suelto debajo del par. */}
@@ -71,10 +65,12 @@ function Aviso({ mensaje }: { mensaje: string }) {
 function CasoB({
   patente,
   cliente,
+  marcas,
   alVolver,
 }: {
   patente: string;
   cliente: ClienteSugerido;
+  marcas: string[];
   alVolver: () => void;
 }) {
   const [estado, accion, pendiente] = useActionState(
@@ -105,7 +101,7 @@ function CasoB({
         </button>
       </div>
 
-      <CamposVehiculo patente={patente} />
+      <CamposVehiculo patente={patente} marcas={marcas} />
 
       <Boton type="submit" tam="lg" disabled={pendiente} className="w-full">
         {pendiente ? "Guardando…" : "Guardar y cargar service"}
@@ -115,7 +111,15 @@ function CasoB({
 }
 
 // ---------- Caso C: cliente y auto nuevos ----------
-function CasoC({ patente, alVolver }: { patente: string; alVolver: () => void }) {
+function CasoC({
+  patente,
+  marcas,
+  alVolver,
+}: {
+  patente: string;
+  marcas: string[];
+  alVolver: () => void;
+}) {
   const [estado, accion, pendiente] = useActionState(
     crearClienteYVehiculo,
     ESTADO_INICIAL,
@@ -184,7 +188,7 @@ function CasoC({ patente, alVolver }: { patente: string; alVolver: () => void })
         </div>
       </div>
 
-      <CamposVehiculo patente={patente} />
+      <CamposVehiculo patente={patente} marcas={marcas} />
 
       <Boton type="submit" tam="lg" disabled={pendiente} className="w-full">
         {pendiente ? "Guardando…" : "Guardar y cargar service"}
@@ -202,7 +206,13 @@ function CasoC({ patente, alVolver }: { patente: string; alVolver: () => void })
 }
 
 // ---------- El panel que resuelve B y C sin salir de la pantalla ----------
-export function PanelAlta({ patente }: { patente: string }) {
+export function PanelAlta({
+  patente,
+  marcas,
+}: {
+  patente: string;
+  marcas: string[];
+}) {
   const [sugerencias, setSugerencias] = useState<ClienteSugerido[]>([]);
   const [buscado, setBuscado] = useState(false);
   const [elegido, setElegido] = useState<ClienteSugerido | null>(null);
@@ -230,6 +240,7 @@ export function PanelAlta({ patente }: { patente: string }) {
         <CasoB
           patente={patente}
           cliente={elegido}
+          marcas={marcas}
           alVolver={() => setElegido(null)}
         />
       </div>
@@ -242,7 +253,11 @@ export function PanelAlta({ patente }: { patente: string }) {
         <h2 className="mb-4 font-brand text-lead font-bold text-ink">
           Cliente y auto nuevos
         </h2>
-        <CasoC patente={patente} alVolver={() => setNuevoCliente(false)} />
+        <CasoC
+          patente={patente}
+          marcas={marcas}
+          alVolver={() => setNuevoCliente(false)}
+        />
       </div>
     );
   }

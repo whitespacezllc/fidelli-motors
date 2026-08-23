@@ -579,3 +579,62 @@ begin
   delete from services where id = v_serv;
   delete from productos where id in (v_pelado, v_conteo, v_aceite);
 end $$;
+
+-- ---------- R10 · El piso de anonimato de los modelos (Bloque 6) ----------
+-- El nivel global de modelos_sugeridos cruza tenants: un string que
+-- existe en un solo lubricentro puede ser el dato de un cliente de la
+-- competencia. Este chequeo crea un tenant fantasma y verifica los dos
+-- lados del piso: lo único NO se ve; lo compartido (>=3 vehículos en
+-- >=2 lubricentros) sí.
+do $$
+declare
+  v_lub      uuid;
+  v_owner    uuid;
+  v_fantasma uuid;
+  v_cli_f    uuid;
+  v_cli_d    uuid;
+  v_veh_d    uuid;
+begin
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+  select u.id into v_owner from usuarios u where u.lubricentro_id = v_lub and u.rol = 'owner' limit 1;
+
+  -- El tenant fantasma, con un modelo ÚNICO y uno compartible.
+  insert into lubricentros (nombre, slug) values ('Fantasma R10', 'fantasma-r10')
+  returning id into v_fantasma;
+  insert into clientes (lubricentro_id, nombre, telefono)
+  values (v_fantasma, 'Cliente Fantasma', '351555000') returning id into v_cli_f;
+  insert into vehiculos (lubricentro_id, cliente_id, patente, patente_normalizada, marca, modelo) values
+    (v_fantasma, v_cli_f, 'ZZZ 901', 'ZZZ901', 'Fiat', 'ModeloSecretoR10'),
+    (v_fantasma, v_cli_f, 'ZZZ 902', 'ZZZ902', 'Fiat', 'CompartidoR10'),
+    (v_fantasma, v_cli_f, 'ZZZ 903', 'ZZZ903', 'Fiat', 'CompartidoR10');
+  -- Y el demo aporta el tercer vehículo del compartido (2º lubricentro).
+  select c.id into v_cli_d from clientes c where c.lubricentro_id = v_lub limit 1;
+  insert into vehiculos (lubricentro_id, cliente_id, patente, patente_normalizada, marca, modelo)
+  values (v_lub, v_cli_d, 'ZZZ 904', 'ZZZ904', 'Fiat', 'CompartidoR10')
+  returning id into v_veh_d;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  -- El modelo único del fantasma NO puede aparecerle al demo.
+  if exists (select 1 from modelos_sugeridos('Fiat') s where s.modelo = 'ModeloSecretoR10') then
+    raise exception 'REGRESIÓN 6: el piso de anonimato se rompió — un modelo de UN solo tenant se filtró a otro.';
+  end if;
+  -- El compartido (3 vehículos, 2 lubricentros) SÍ, como global.
+  if not exists (select 1 from modelos_sugeridos('Fiat') s where s.modelo = 'CompartidoR10') then
+    raise exception 'REGRESIÓN 6: un modelo que cumple el piso (3 veh, 2 tenants) no se sugiere.';
+  end if;
+  -- Y jamás una fila con conteos: la función devuelve (modelo, propio) y
+  -- nada más — lo garantiza el tipo de retorno, que este SELECT compila.
+  perform s.modelo, s.propio from modelos_sugeridos('Fiat') s limit 1;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- limpieza total del fantasma
+  delete from vehiculos where id = v_veh_d;
+  delete from vehiculos where lubricentro_id = v_fantasma;
+  delete from clientes where id = v_cli_f;
+  delete from lubricentros where id = v_fantasma;
+end $$;
