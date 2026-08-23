@@ -21,7 +21,14 @@ import { IconoDesplegar } from "@/components/iconos";
 // final. El hijo lleva `overflow-hidden`, que es lo que recorta mientras la
 // fila mide cero.
 
-type Item = { readonly pregunta: string; readonly respuesta: string };
+import { RespuestaFaq, type EnlaceFaq } from "@/components/landing/respuesta-faq";
+
+type Item = {
+  readonly pregunta: string;
+  readonly respuesta: string;
+  /** Opcional: la de los planes remite a la comparación. */
+  readonly enlace?: EnlaceFaq;
+};
 
 export function AcordeonPreguntas({ items }: { items: readonly Item[] }) {
   // El primero abierto. Se guarda el índice y no un Set: uno por vez.
@@ -77,7 +84,7 @@ export function AcordeonPreguntas({ items }: { items: readonly Item[] }) {
             >
               <div className="overflow-hidden">
                 <p className="max-w-[68ch] text-pretty px-5 pb-5 text-body text-ink-60">
-                  {item.respuesta}
+                  <RespuestaFaq texto={item.respuesta} enlace={item.enlace} />
                 </p>
               </div>
             </div>

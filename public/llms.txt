@@ -1,40 +1,46 @@
 # Fidelli Motors
 
-> Fidelli Motors es el sistema para lubricentros en Argentina: cargá un service en 90 segundos, olvidate del cartón y traé a tus clientes de vuelta.
+> Fidelli Motors es el sistema para lubricentros y talleres mecánicos de Argentina: cargá un trabajo en 90 segundos y traé a tus clientes de vuelta.
 
 Sitio: https://fidellimotors.app
 
 ## Para quién
 
-Para el dueño de un lubricentro. Todos tus clientes, sus autos y cada service, en una sola pantalla. Los cargás en 90 segundos desde el celular, y el sistema te dice a quién le toca volver.
+Para el dueño de un lubricentro o de un taller mecánico. Todos tus clientes, sus autos y cada trabajo, en una sola pantalla. Los cargás en 90 segundos desde el celular, y el sistema te dice a quién le toca volver.
 
 ## Qué hace hoy
 
-- Cargar un service: buscás por patente y aparece todo. El mismo gesto que hacías en el cartón, en 90 segundos.
-- Avisos por kilómetros: cada auto pasa por tres estados (próximo, urgente y vencido) y en cada uno le mandás un mensaje, hasta tres seguimientos para que no se le pase el service.
-- Página pública con QR y tu marca: una calco en el parasol, y tu cliente tiene todo el historial. Escanea la calco, escribe su patente y ve su historial con fecha, kilómetros y tu logo. Sin apps, sin cuenta y sin contraseña.
-- Fidelliza: definís el premio y cada cuántos services se gana. El sistema lleva la cuenta solo, y tu cliente ve cuánto le falta cada vez que escanea el parasol.
-- Services y clientes ilimitados. Soporte por WhatsApp.
+- Cargar un trabajo: elegís si es un service o un trabajo de mecánica, buscás por patente y aparece todo. El mismo gesto que hacías en el cartón, en 90 segundos.
+- Trabajos de mecánica: anotás lo que hiciste y los repuestos que pusiste. El historial del auto los muestra junto a los services, y el próximo cambio de aceite se sigue calculando aparte.
+- Trabajos pendientes: lo que le dijiste al cliente y nunca siguió nadie —las pastillas al 30%, la correa para 15.000 km—. Lo anotás con fecha o con kilómetros y, cuando llega el momento, ese auto aparece en la misma lista de a quién llamar.
+- Avisos por kilómetros: cada auto pasa por tres estados (próximo, urgente y vencido) y en cada uno le mandás un mensaje ya armado, hasta tres seguimientos.
+- Página del cliente con QR y tu marca: una calco en el parasol, y tu cliente escanea, escribe su patente y ve su historial con fecha, kilómetros y tu logo. Sin apps, sin cuenta y sin contraseña.
+- Presupuestos con tu marca: los armás y los mandás por WhatsApp desde el celular.
+- Catálogo de tus productos, con precio y stock opcionales.
+- Premios: definís el premio y cada cuántos trabajos se gana. El sistema lleva la cuenta solo, y tu cliente ve cuánto le falta cada vez que escanea el parasol.
+- Trabajos, clientes y vehículos ilimitados en todos los planes. Soporte por WhatsApp.
 
 ## Qué NO hace
 
-- No carga tus clientes viejos: arrancás con el próximo service de cada uno, y el historial se arma solo a medida que trabajás.
+- No carga tus clientes viejos: arrancás con el próximo trabajo de cada uno, y el historial se arma solo a medida que trabajás.
 - Necesita conexión. Como cargás desde el celular, si se cae el wifi del local seguís trabajando con los datos del teléfono.
-- Hoy está hecho para el service: cargás el aceite, los filtros y los líquidos, y tenés un campo de observaciones para el resto del trabajo. La versión completa para talleres mecánicos está en el roadmap.
 - Tu cliente no baja ninguna app.
 
 ## Precio
 
-- Plan mensual: $46.750 por mes. Ajuste trimestral según IPC. Sin permanencia.
-- Plan anual: $35.063 por mes ($420.750 al año, pagás 9 meses y usás 12).
-- Instalación: $0 para los fundadores hasta octubre de 2026 (después, $93.500). Incluye 250 calcos con QR, carga del catálogo de productos, capacitación en el local y manual de usuario.
-- Garantía de 30 días: si a los 30 días no te sirve, te devolvemos la plata. Solo te pedimos que lo hayas usado.
+Tres planes. Todos incluyen trabajos ilimitados y la página del cliente con QR. La diferencia es cuánto hace el sistema por vos. Sin permanencia. Ajuste trimestral según IPC. Pagando por año son 12 meses al precio de 9.
+
+- Basic: $35.000 por mes, o $315.000 al año. Para el lubricentro de una sucursal que quiere ordenarse. Incluye avisos por kilómetros, a quién llamar, la página del cliente con QR, la hoja de calcos QR lista para imprimir, 1 sucursal y soporte por WhatsApp.
+- Pro: $49.000 por mes, o $441.000 al año. Para el que además hace mecánica y quiere que los clientes vuelvan solos. Todo lo de Basic, más trabajos de mecánica y pendientes, premios, presupuestos con tu marca, página del cliente personalizable, 250 calcos QR al arrancar y hasta 3 sucursales.
+- Ultra: $99.000 por mes, o $891.000 al año. Para el taller que quiere que todo lo que sale de su local se vea impecable. Todo lo de Pro, más tu mensaje al cliente cuando escanea, botón de WhatsApp a tu taller en la página, 500 calcos QR con diseño a medida, sucursales ilimitadas, lugar preferente en la fila de instalación y soporte prioritario.
+
+Garantía de 30 días: si a los 30 días no te sirve, te devolvemos la plata. Solo te pedimos que lo hayas usado.
 
 ## Cómo se contrata
 
 Por WhatsApp: https://wa.me/5493513736028
 
-Instalamos en tu local, en persona. 5 lugares por mes.
+En Córdoba capital vamos a tu local y lo dejamos funcionando el mismo día. Abrimos 5 instalaciones presenciales por mes. Si estás en otra provincia, lo dejamos funcionando por videollamada el mismo día, sin lista de espera.
 
 ## Caso real
 

@@ -8,6 +8,8 @@ type Sucursal = { id: string; nombre: string };
 export type FiltrosListado = {
   q?: string;
   sucursal?: string;
+  /** "service" | "mecanica". Sin valor, los dos. */
+  tipo?: string;
   desde?: string;
   hasta?: string;
 };
@@ -33,6 +35,7 @@ export function FiltrosServices({
     const params = new URLSearchParams();
     if (siguiente.q) params.set("q", siguiente.q);
     if (siguiente.sucursal) params.set("sucursal", siguiente.sucursal);
+    if (siguiente.tipo) params.set("tipo", siguiente.tipo);
     if (siguiente.desde) params.set("desde", siguiente.desde);
     if (siguiente.hasta) params.set("hasta", siguiente.hasta);
     // Cambiar un filtro siempre vuelve a la página 1: la página vieja
@@ -47,6 +50,26 @@ export function FiltrosServices({
 
   return (
     <div className="flex flex-wrap items-end gap-2.5">
+      {/* EL TIPO, PRIMERO. Brothers Oil ya pasa los 260 registros con los
+          dos tipos mezclados: "¿qué mecánicas hicimos en mayo?" no se
+          podía contestar sin leer la lista entera. Va antes que la
+          sucursal porque parte la lista en dos mitades, que es el corte
+          más grueso. */}
+      <label className="flex flex-col gap-1">
+        <span className="text-label font-semibold tracking-[0.06em] text-ink-60 uppercase">
+          Tipo
+        </span>
+        <select
+          value={filtros.tipo ?? ""}
+          onChange={(e) => aplicar({ tipo: e.target.value || undefined })}
+          className={CLASE_CAMPO}
+        >
+          <option value="">Todos</option>
+          <option value="service">Services</option>
+          <option value="mecanica">Mecánica</option>
+        </select>
+      </label>
+
       <label className="flex flex-col gap-1">
         <span className="text-label font-semibold tracking-[0.06em] text-ink-60 uppercase">
           Sucursal
@@ -89,7 +112,7 @@ export function FiltrosServices({
         />
       </label>
 
-      {(filtros.sucursal || filtros.desde || filtros.hasta || filtros.q) && (
+      {(filtros.sucursal || filtros.tipo || filtros.desde || filtros.hasta || filtros.q) && (
         <button
           type="button"
           onClick={() => router.replace("/panel/services", { scroll: false })}

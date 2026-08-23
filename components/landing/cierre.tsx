@@ -37,15 +37,19 @@ export function Cierre() {
         {/* La escasez NO va en rojo: el rojo es acción, nunca estado. Va en
             la tinta terciaria, que es lo que corresponde a una bajada.
 
-            Deriva de CUPOS —la misma fuente que el módulo del precio— y
-            con la MISMA condición: con menos de dos tomados no se muestra
-            ningún número. Una cifra recién arrancada no comunica escasez,
-            comunica que nadie está comprando. No es un bug: no la
-            borres. */}
+            Deriva de CUPOS y con la MISMA condición de siempre: con menos
+            de dos tomados no se muestra ningún número. Una cifra recién
+            arrancada no comunica escasez, comunica que nadie está
+            comprando. No es un bug: no la borres.
+
+            EL LÍMITE DICE DE QUÉ ES. Antes decía "lugares" a secas y le
+            anunciaba a un taller de Rosario que no había lugar, cuando el
+            cupo es solo de las instalaciones presenciales en Córdoba. */}
           {CUPOS.tomados >= 2 && (
             <p className="mt-4 text-ui text-inverso-40 tabular-nums">
-              Quedan {CUPOS.total - CUPOS.tomados} de {CUPOS.total} lugares
-              para {CUPOS.mes}.
+              Quedan {CUPOS.total - CUPOS.tomados} de {CUPOS.total}{" "}
+              instalaciones presenciales en Córdoba para {CUPOS.mes}. En otras
+              provincias, sin lista de espera.
             </p>
           )}
         </Revelar>

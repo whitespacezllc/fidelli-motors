@@ -20,6 +20,8 @@ export type ItemCarton = {
   detalle: string | null;
   /** true = se cambió; false = se revisó y estaba bien ("OK"). */
   cambiado: boolean;
+  /** Cuántos se pusieron. 1 no se muestra; 2 o más sí, como "×2". */
+  cantidad: number;
 };
 
 export type TipoTrabajo = "service" | "mecanica";
@@ -59,6 +61,8 @@ export type Fidelizacion = {
   servicesCiclo: number;
   metaServices: number;
   descripcion: string | null;
+  /** Qué avanza el ciclo. El cartel nombra lo que de verdad suma. */
+  alcance: "services" | "todos";
 };
 
 export type Carton = {
@@ -125,6 +129,7 @@ type CartonJson = {
     services_ciclo: number;
     meta_services: number;
     descripcion: string | null;
+    alcance?: string;
   } | null;
   services?: {
     tipo?: TipoTrabajo;
@@ -210,6 +215,8 @@ export async function obtenerCarton(
             servicesCiclo: json.fidelizacion.services_ciclo,
             metaServices: json.fidelizacion.meta_services,
             descripcion: json.fidelizacion.descripcion,
+            alcance:
+              json.fidelizacion.alcance === "todos" ? "todos" : "services",
           }
         : null,
       // Vienen ordenados por fecha descendente desde la base: el primero es
@@ -239,7 +246,10 @@ export async function obtenerCarton(
 // tilde era "se cambió".
 export function marcadosDe(
   service: ServiceCarton,
-): Record<string, { detalle: string | null; cambiado: boolean }> {
+): Record<
+  string,
+  { detalle: string | null; cambiado: boolean; cantidad: number }
+> {
   return Object.fromEntries(
     service.items
       // Solo los 11 renglones del cartón: los libres (tipo null) son de
@@ -247,7 +257,12 @@ export function marcadosDe(
       .filter((i) => i.tipo !== null)
       .map((i) => [
         i.tipo as string,
-        { detalle: i.detalle, cambiado: i.cambiado ?? true },
+        {
+          detalle: i.detalle,
+          cambiado: i.cambiado ?? true,
+          // Un JSON viejo no trae la clave: era siempre uno.
+          cantidad: Number(i.cantidad ?? 1),
+        },
       ]),
   );
 }

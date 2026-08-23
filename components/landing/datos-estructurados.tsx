@@ -6,15 +6,23 @@ import {
   TELEFONO_VENTAS,
 } from "@/lib/seo";
 import { CTA_WHATSAPP } from "@/lib/landing";
+import { PLANES } from "@/lib/planes-landing";
 
 // JSON-LD de la landing comercial: quiénes somos (Organization) y qué se
 // vende (SoftwareApplication). El FAQPage vive en preguntas.tsx, al lado
 // de las preguntas que describe — acá solo lo que es de la página entera.
 //
-// LOS PRECIOS TIENEN QUE COINCIDIR EXACTO CON LA SECCIÓN 09: 46.750 por
-// mes y 420.750 por año son los mismos números de selector-plan.tsx. Si
-// cambia el precio, se cambia en los dos lados o Google marca el rich
-// result como inconsistente.
+// LOS PRECIOS SALEN DE lib/planes-landing.ts, la misma fuente que pintan
+// las tarjetas y la tabla de comparación. No se escriben acá: así no hay
+// forma de que el JSON-LD y la sección se contradigan, que es lo que
+// Google marca como rich result inconsistente.
+//
+// CÓMO SE REPRESENTAN TRES PLANES: un AggregateOffer con el rango
+// (lowPrice/highPrice) y adentro las tres ofertas mensuales, cada una con
+// su nombre. Las anuales NO entran como ofertas separadas a propósito —
+// serían seis ofertas para tres productos, y el precio que se compara en
+// un resultado de búsqueda es el de entrada. El descuento anual se
+// describe en la oferta de cada plan.
 //
 // PROHIBIDO ACÁ: AggregateRating, Review o cualquier schema de reseñas.
 // No tenemos reseñas verificables, y un schema de reseñas inventado es
@@ -52,32 +60,26 @@ const APLICACION = {
   description: DESCRIPCION_PORTADA,
   applicationCategory: "BusinessApplication",
   operatingSystem: "Web",
-  offers: [
-    {
+  offers: {
+    "@type": "AggregateOffer",
+    priceCurrency: "ARS",
+    offerCount: PLANES.length,
+    lowPrice: String(PLANES[0].mensual),
+    highPrice: String(PLANES[PLANES.length - 1].mensual),
+    offers: PLANES.map((plan) => ({
       "@type": "Offer",
-      price: "46750",
+      name: plan.nombre,
+      price: String(plan.mensual),
       priceCurrency: "ARS",
-      description: "Plan mensual, sin permanencia",
+      description: `Plan ${plan.nombre}, por mes y sin permanencia. Pagándolo por año, $${plan.anual.toLocaleString("es-AR")} (pagás 9 meses, usás 12).`,
       priceSpecification: {
         "@type": "UnitPriceSpecification",
-        price: 46750,
+        price: plan.mensual,
         priceCurrency: "ARS",
         unitText: "por mes",
       },
-    },
-    {
-      "@type": "Offer",
-      price: "420750",
-      priceCurrency: "ARS",
-      description: "Plan anual: pagás 9 meses, usás 12",
-      priceSpecification: {
-        "@type": "UnitPriceSpecification",
-        price: 420750,
-        priceCurrency: "ARS",
-        unitText: "por año",
-      },
-    },
-  ],
+    })),
+  },
 };
 
 /** Escapado igual que el FAQPage: un `<` dentro de un <script> puede

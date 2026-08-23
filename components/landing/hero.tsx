@@ -58,10 +58,10 @@ export function Hero() {
           {/* Espacio duro entre "sus" y "autos". No cambia el copy: impide
               un solo punto de corte. Sin él, los tres modos de wrap dejan
               algo colgando — balance corta en "sus / autos", pretty en
-              "y / cada service.", y el normal deja "service." solo. Con
+              "y / cada trabajo.", y el normal deja "trabajo." solo. Con
               "sus autos" pegado, el corte cae en la coma, que es donde la
               frase respira. */}
-          Todos tus clientes, sus{"\u00A0"}autos y cada service.{" "}
+          Todos tus clientes, sus{"\u00A0"}autos y cada trabajo.{" "}
           {/* El remate en su propio renglón, pero solo desde md: `block`
               fuerza el corte donde el spec lo quiere y en mobile lo suelta
               para que el titular rompa natural.

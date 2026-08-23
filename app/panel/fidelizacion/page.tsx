@@ -87,7 +87,7 @@ export default async function PaginaFidelizacion() {
               Todavía no tenés un programa de premios
             </p>
             <p className="mt-1 text-ui text-ink-60">
-              Definí cada cuántos services le regalás algo a tus clientes. Con
+              Definí cada cuántos trabajos le regalás algo a tus clientes. Con
               el programa activo, cada auto empieza a acumular desde su próximo
               service, el cliente ve cuánto le falta en su cartón digital, y el
               mecánico aplica el premio en el mostrador cuando llega la meta.

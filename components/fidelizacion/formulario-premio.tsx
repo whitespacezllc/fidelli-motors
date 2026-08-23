@@ -40,6 +40,14 @@ export function FormularioPremio({
 
   const metaOriginal = premio?.metaServices ?? 3;
   const [meta, setMeta] = useState(metaOriginal);
+  // Controlado y no `defaultChecked`: la etiqueta de arriba ("cada cuántos
+  // services / trabajos") tiene que seguir a esta elección en vivo. Si no,
+  // el dueño elige "todos los trabajos" y el campo de al lado le sigue
+  // hablando de services — que es justo el desajuste que este bloque
+  // vino a arreglar, pero adentro del mismo formulario.
+  const [alcance, setAlcance] = useState<"services" | "todos">(
+    premio?.alcance ?? "services",
+  );
 
   const disponiblesHoy = impactoPorMeta[metaOriginal] ?? 0;
   const disponiblesConLaNueva = impactoPorMeta[meta] ?? 0;
@@ -81,7 +89,7 @@ export function FormularioPremio({
       <div className="grid gap-4 sm:grid-cols-[10rem_1fr] sm:items-start">
         <div>
           <label htmlFor="meta" className={CLASE_LABEL}>
-            Cada cuántos services
+            Cada cuántos {alcance === "todos" ? "trabajos" : "services"}
           </label>
           <input
             id="meta"
@@ -169,7 +177,8 @@ export function FormularioPremio({
                 type="radio"
                 name="alcance"
                 value={valor}
-                defaultChecked={(premio?.alcance ?? "services") === valor}
+                checked={alcance === valor}
+                onChange={() => setAlcance(valor)}
                 className="mt-1 size-4 shrink-0 cursor-pointer accent-ink"
               />
               <span>

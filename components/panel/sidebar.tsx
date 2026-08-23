@@ -1,7 +1,21 @@
 import Link from "next/link";
 import { Logo } from "@/components/marca/logo";
 import { NavLink } from "@/components/panel/nav-link";
-import { IconoPlus, IconoCandado } from "@/components/iconos";
+import {
+  IconoPlus,
+  IconoCandado,
+  IconoInicio,
+  IconoReloj,
+  IconoClientes,
+  IconoTrabajos,
+  IconoCaja,
+  IconoPremio,
+  IconoPresupuesto,
+  IconoDiseno,
+  IconoMensajes,
+  IconoLubricentro,
+  IconoCuenta,
+} from "@/components/iconos";
 import { cerrarSesion } from "@/lib/auth/actions";
 import { urlWhatsappSoporte } from "@/lib/config";
 import { MOTIVO_SUSPENSION } from "@/components/panel/aviso-suspension";
@@ -10,22 +24,40 @@ import type { FeaturePlan } from "@/lib/planes";
 // Los grupos y el orden vienen del hi-fi (pantalla 2 · Inicio — panel del lubri).
 // `feature` = qué tiene que habilitar el plan para que el item exista. La
 // resolución viene con la sesión (plan_capacidades); acá solo se filtra.
-const GRUPOS: { titulo: string; items: { href: string; nombre: string; exacto?: boolean; feature?: FeaturePlan }[] }[] = [
+// LOS ONCE LLEVAN ÍCONO. Antes lo tenían cuatro y la lista quedaba a
+// mitad de camino entre una barra con íconos y una de solo texto — que es
+// peor que cualquiera de las dos, porque el ojo busca la marca visual
+// donde no está y la fila salta de sangría.
+const GRUPOS: {
+  titulo: string;
+  items: {
+    href: string;
+    nombre: string;
+    exacto?: boolean;
+    feature?: FeaturePlan;
+    Icono: typeof IconoInicio;
+  }[];
+}[] = [
   {
     titulo: "Operación",
     items: [
-      { href: "/panel", nombre: "Inicio", exacto: true },
-      { href: "/panel/proximos", nombre: "Próximos services" },
-      { href: "/panel/clientes", nombre: "Clientes" },
-      { href: "/panel/services", nombre: "Services" },
+      { href: "/panel", nombre: "Inicio", exacto: true, Icono: IconoInicio },
+      // El nombre es el TÍTULO de la pantalla, no una descripción de lo
+      // que había en el bloque 1: desde los pendientes, esa lista tiene
+      // dos fuentes y ninguna es "próximos services" a secas.
+      { href: "/panel/proximos", nombre: "A quién llamar", Icono: IconoReloj },
+      { href: "/panel/clientes", nombre: "Clientes", Icono: IconoClientes },
+      // "Trabajos" y no "Services": la lista mezcla los dos tipos desde
+      // el bloque 2, y el filtro por tipo lo hace evidente.
+      { href: "/panel/services", nombre: "Trabajos", Icono: IconoTrabajos },
     ],
   },
   {
     titulo: "Negocio",
     items: [
-      { href: "/panel/productos", nombre: "Productos" },
-      { href: "/panel/fidelizacion", nombre: "Fidelización", feature: "premios" },
-      { href: "/panel/presupuestos", nombre: "Presupuestos", feature: "presupuestos" },
+      { href: "/panel/productos", nombre: "Productos", Icono: IconoCaja },
+      { href: "/panel/fidelizacion", nombre: "Fidelización", feature: "premios", Icono: IconoPremio },
+      { href: "/panel/presupuestos", nombre: "Presupuestos", feature: "presupuestos", Icono: IconoPresupuesto },
     ],
   },
   {
@@ -34,16 +66,16 @@ const GRUPOS: { titulo: string; items: { href: string; nombre: string; exacto?: 
       // Sin feature a propósito (Bloque 7): la hoja de calcos QR vive en
       // esta pantalla y es de LOS TRES planes. Sin la feature, la pantalla
       // muestra el BloqueoPlan de personalización + los calcos igual.
-      { href: "/panel/experiencia", nombre: "Diseño de experiencia" },
-      { href: "/panel/mensajes", nombre: "Mensajes" },
-      { href: "/panel/sucursales", nombre: "Sucursales" },
-      { href: "/panel/cuenta", nombre: "Mi cuenta" },
+      { href: "/panel/experiencia", nombre: "Diseño de experiencia", Icono: IconoDiseno },
+      { href: "/panel/mensajes", nombre: "Mensajes", Icono: IconoMensajes },
+      { href: "/panel/sucursales", nombre: "Sucursales", Icono: IconoLubricentro },
+      { href: "/panel/cuenta", nombre: "Mi cuenta", Icono: IconoCuenta },
     ],
   },
 ];
 
 const CLASE_ITEM =
-  "flex h-11 items-center rounded-md px-3 text-ui transition-colors";
+  "flex h-11 items-center gap-2.5 rounded-md px-3 text-ui transition-colors";
 
 export function Sidebar({
   lubricentroNombre,
@@ -78,7 +110,7 @@ export function Sidebar({
             className="flex h-11 w-full cursor-not-allowed items-center justify-center gap-1.5 rounded-md bg-surface font-brand text-ui font-bold text-ink-40"
           >
             <IconoCandado className="size-4" />
-            Nuevo service
+            Nuevo trabajo
           </span>
         ) : (
           <Link
@@ -86,7 +118,7 @@ export function Sidebar({
             className="flex h-11 w-full items-center justify-center gap-1.5 rounded-md bg-brand font-brand text-ui font-bold text-white transition-colors hover:bg-brand-deep"
           >
             <IconoPlus className="size-4" />
-            Nuevo service
+            Nuevo trabajo
           </Link>
         )}
       </div>
@@ -104,6 +136,7 @@ export function Sidebar({
                 exacto={item.exacto}
                 className={CLASE_ITEM}
               >
+                <item.Icono aria-hidden className="size-5 shrink-0" />
                 {item.nombre}
               </NavLink>
             ))}

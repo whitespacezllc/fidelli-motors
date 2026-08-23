@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { BuscadorPresupuestos } from "@/components/presupuestos/buscador-presupuestos";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { obtenerSesion, featureHabilitada, panelSuspendido } from "@/lib/auth/session";
@@ -19,7 +20,7 @@ const POR_PAGINA = 30;
 export default async function PaginaPresupuestos({
   searchParams,
 }: {
-  searchParams: Promise<{ pagina?: string }>;
+  searchParams: Promise<{ pagina?: string; q?: string }>;
 }) {
   const sesion = await obtenerSesion();
   if (!featureHabilitada(sesion, "presupuestos")) {
@@ -28,10 +29,11 @@ export default async function PaginaPresupuestos({
 
   const params = await searchParams;
   const pagina = Math.max(1, Number(params.pagina) || 1);
+  const q = params.q?.trim() || undefined;
   const suspendido = await panelSuspendido();
   const supabase = await createClient();
 
-  const { data, count } = await supabase
+  let consulta = supabase
     .from("presupuestos")
     .select(
       `id, numero, fecha, destinatario_nombre, destinatario_vehiculo,
@@ -39,8 +41,25 @@ export default async function PaginaPresupuestos({
        presupuesto_items(cantidad, precio_unitario)`,
       { count: "exact" },
     )
-    .order("numero", { ascending: false })
-    .range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1);
+    .order("numero", { ascending: false });
+
+  // Buscar por NÚMERO o por NOMBRE, que son las dos formas en que el
+  // mostrador pide un presupuesto. Si lo escrito son solo dígitos se
+  // busca el número exacto: "47" tiene que traer el 47 y no los 30 que
+  // contienen un 4 y un 7. Si no, va por el nombre suelto del
+  // destinatario — el de un cliente de la base no se puede filtrar acá
+  // porque vive en la tabla del join, así que ese caso queda para cuando
+  // haga falta y se dice en el vacío.
+  if (q) {
+    consulta = /^\d+$/.test(q)
+      ? consulta.eq("numero", Number(q))
+      : consulta.ilike("destinatario_nombre", `%${q}%`);
+  }
+
+  const { data, count } = await consulta.range(
+    (pagina - 1) * POR_PAGINA,
+    pagina * POR_PAGINA - 1,
+  );
 
   const filas = (data ?? []).map((p) => ({
     id: p.id,
@@ -76,6 +95,15 @@ export default async function PaginaPresupuestos({
           </Link>
         )}
       </CabeceraSeccion>
+
+      {/* El buscador se muestra siempre que haya presupuestos cargados o
+          una búsqueda activa: si desapareciera con cero resultados, el que
+          buscó mal quedaría sin forma de corregir. */}
+      {(total > 0 || q) && (
+        <div className="mb-4">
+          <BuscadorPresupuestos q={q} />
+        </div>
+      )}
 
       {filas.length > 0 ? (
         <>
@@ -140,6 +168,20 @@ export default async function PaginaPresupuestos({
             </nav>
           )}
         </>
+      ) : q ? (
+        // Un filtro sin resultados NO es lo mismo que no tener nada: el
+        // vacío por búsqueda ofrece limpiar, no crear.
+        <EstadoVacio
+          titulo={`Ningún presupuesto coincide con "${q}"`}
+          descripcion="Probá con el número exacto, o con el nombre tal como lo escribiste en el presupuesto."
+        >
+          <Link
+            href="/panel/presupuestos"
+            className={clasesBoton("secundario", "md")}
+          >
+            Ver todos
+          </Link>
+        </EstadoVacio>
       ) : (
         <EstadoVacio
           titulo="Todavía no generaste presupuestos"

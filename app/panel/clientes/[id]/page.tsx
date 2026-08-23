@@ -240,6 +240,9 @@ export default async function FichaCliente({
                   servicesCiclo: p.services_ciclo ?? 0,
                   metaServices: p.meta_services,
                   descripcion: p.descripcion ?? "",
+                  alcance: (p.alcance === "todos" ? "todos" : "services") as
+                    | "todos"
+                    | "services",
                 }
               : null;
           })(),

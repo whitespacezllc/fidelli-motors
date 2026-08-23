@@ -18,7 +18,7 @@ import type { FeaturePlan } from "@/lib/planes";
 // Secciones que no entran en la barra: viven en la hoja "Más". `feature` =
 // qué tiene que habilitar el plan para que el item exista.
 const SECCIONES_MAS: { href: string; nombre: string; feature?: FeaturePlan }[] = [
-  { href: "/panel/services", nombre: "Services" },
+  { href: "/panel/services", nombre: "Trabajos" },
   { href: "/panel/productos", nombre: "Productos" },
   { href: "/panel/fidelizacion", nombre: "Fidelización", feature: "premios" },
   { href: "/panel/presupuestos", nombre: "Presupuestos", feature: "presupuestos" },
@@ -92,7 +92,10 @@ export function BarraMobile({
         />
         <ItemBarra
           href="/panel/proximos"
-          nombre="Próximos"
+          // Forma corta de "A quién llamar", que es como se llama la
+          // pantalla y como figura en el sidebar: entero no entra en una
+          // pestaña de 75px sin partirse en dos renglones.
+          nombre="Llamar"
           activo={pathname.startsWith("/panel/proximos")}
           icono={<IconoReloj className="size-5" />}
         />
@@ -113,7 +116,7 @@ export function BarraMobile({
             <span className="flex size-9 -mt-4 items-center justify-center rounded-full bg-line text-ink-40 shadow-md">
               <IconoCandado className="size-5" />
             </span>
-            <span className="text-label">Service</span>
+            <span className="text-label">Trabajo</span>
           </span>
         ) : (
           <Link
@@ -123,7 +126,7 @@ export function BarraMobile({
             <span className="flex size-9 -mt-4 items-center justify-center rounded-full bg-brand text-white shadow-md">
               <IconoPlus className="size-5" />
             </span>
-            <span className="text-label">Service</span>
+            <span className="text-label">Trabajo</span>
           </Link>
         )}
         <button

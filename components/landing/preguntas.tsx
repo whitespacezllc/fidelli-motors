@@ -1,4 +1,5 @@
 import { AcordeonPreguntas } from "@/components/landing/acordeon-preguntas";
+import { RespuestaFaq } from "@/components/landing/respuesta-faq";
 import { Revelar } from "@/components/landing/revelar";
 import { CTA_WHATSAPP } from "@/lib/landing";
 
@@ -55,11 +56,15 @@ const ABIERTAS: readonly Abierta[] = [
   },
 ] as const;
 
-const ACORDEON = [
+const ACORDEON: readonly Abierta[] = [
   {
+    // Antes decía "vamos nosotros a tu local" sin condición, que dejó de
+    // ser cierto: presencial es Córdoba capital, el resto por videollamada
+    // el mismo día. Tiene que decir lo mismo que la banda de la sección
+    // de precio, o una de las dos miente.
     pregunta: "¿Quién me lo instala?",
     respuesta:
-      "Vamos nosotros a tu local. Lo dejamos funcionando el mismo día, capacitamos a tu equipo y te dejamos el manual de usuario.",
+      "Nosotros. En Córdoba capital vamos a tu local; en el resto del país lo dejamos funcionando por videollamada. En los dos casos queda andando el mismo día, capacitamos a tu equipo y te dejamos el manual de usuario.",
   },
   {
     pregunta: "¿Mi cliente tiene que bajar una app?",
@@ -76,7 +81,7 @@ const ACORDEON = [
     // política de cancelación cuando se escriba /terminos.
     pregunta: "¿Qué pasa con mis datos si me doy de baja?",
     respuesta:
-      "Seguís entrando en modo lector: ves todos tus services, clientes y vehículos cuando quieras. Lo único que no vas a poder es cargar nuevos ni editar los que están.",
+      "Seguís entrando en modo lector: ves todos tus trabajos, clientes y vehículos cuando quieras. Lo único que no vas a poder es cargar nuevos ni editar los que están.",
   },
   {
     // Sin promesa de modo offline: no hay borradores locales, y es una
@@ -86,30 +91,34 @@ const ACORDEON = [
       "El sistema necesita conexión. Como cargás desde el celular, si se cae el wifi del local seguís trabajando con los datos del teléfono.",
   },
   {
-    // ⚠ RESPUESTA RECORTADA RESPECTO DEL PEDIDO, a propósito.
-    //
-    // El texto pedido decía "al cargar un trabajo elegís entre service o
-    // mecánica y otros". Eso hoy no existe: `services` no tiene ninguna
-    // columna de tipo de trabajo, no hay un enum que lo represente y el
-    // formulario no ofrece esa opción. Lo único que hay para lo que no es
-    // service es el campo de observaciones.
-    //
-    // Queda escrito con lo que el producto sí hace. Si la función entra
-    // antes de publicar, se cambia esta línea y nada más.
+    // La respuesta anterior decía que la versión para talleres "está en el
+    // roadmap". Es FALSA desde el bloque 2: `services.tipo` existe, el
+    // formulario abre eligiendo el tipo de trabajo, la mecánica tiene su
+    // propia orden de trabajo con renglones libres y NO desplaza al último
+    // service en la retención. Verificado contra producción antes de
+    // reescribirla; si algo de esto cambia, se cambia acá también.
     pregunta: "¿Sirve si también hago mecánica?",
     respuesta:
-      "Hoy está hecho para el service: cargás el aceite, los filtros y los líquidos, y tenés un campo de observaciones para dejar anotado el resto del trabajo. La versión completa para talleres mecánicos está en el roadmap del producto.",
+      "Sí. Al cargar elegís si es un service o un trabajo de mecánica, y en la mecánica anotás lo que hiciste y los repuestos que pusiste. El historial del auto los muestra juntos, y el próximo cambio de aceite se sigue calculando aparte.",
+  },
+  {
+    // La objeción que nace con tres planes. UNA sola, y remite a la
+    // comparación en vez de enumerar funciones: el FAQ contesta objeciones.
+    pregunta: "¿En qué se diferencian los tres planes?",
+    respuesta:
+      "Los tres traen trabajos ilimitados, los avisos por kilómetros y la página con QR. Pro suma mecánica, pendientes, presupuestos y premios; Ultra suma la página premium y sucursales ilimitadas. Están los tres comparados fila por fila en Precio.",
+    enlace: { texto: "Precio", href: "#precio" },
   },
   {
     // La comparación es contra la CATEGORÍA, no contra una marca. Nombrar a
     // un competidor en tu propia landing es regalarle una búsqueda.
     pregunta: "¿Esto es como los otros sistemas que ya vi?",
     respuesta:
-      "Los sistemas de gestión te piden cargar todo antes de servirte para algo. Este hace una cosa sola: ordena tus services y te dice a quién llamar esta semana. Funciona desde el primer día.",
+      "Los sistemas de gestión te piden cargar todo antes de servirte para algo. Este hace una cosa sola: ordena tus trabajos y te dice a quién llamar esta semana. Funciona desde el primer día.",
   },
 ] as const;
 
-// Marcado FAQPage con las DIEZ, y el texto sale de las mismas constantes
+// Marcado FAQPage con las once, y el texto sale de las mismas constantes
 // que se renderizan: si mañana cambia una respuesta en pantalla y no en el
 // schema, Google marca el rich result como contenido que no coincide.
 const SCHEMA_FAQ = {
@@ -121,39 +130,6 @@ const SCHEMA_FAQ = {
     acceptedAnswer: { "@type": "Answer", text: f.respuesta },
   })),
 };
-
-/**
- * Renderiza una respuesta que lleva un enlace adentro, partiendo el MISMO
- * string que usa el JSON-LD. Guardar el texto dos veces —uno con JSX y otro
- * plano para el schema— es la forma segura de que terminen diciendo cosas
- * distintas.
- */
-function Respuesta({
-  texto,
-  enlace,
-}: {
-  texto: string;
-  enlace?: { texto: string; href: string };
-}) {
-  if (!enlace) return texto;
-  const corte = texto.lastIndexOf(enlace.texto);
-  if (corte === -1) return texto;
-
-  return (
-    <>
-      {texto.slice(0, corte)}
-      {/* En tinta plena y subrayado, NO en rojo: el único rojo de esta
-          sección es el WhatsApp del cierre. */}
-      <a
-        href={enlace.href}
-        className="font-semibold text-ink underline decoration-ink-40 underline-offset-2 transition-colors hover:decoration-ink"
-      >
-        {enlace.texto}
-      </a>
-      {texto.slice(corte + enlace.texto.length)}
-    </>
-  );
-}
 
 export function Preguntas() {
   return (
@@ -196,7 +172,7 @@ export function Preguntas() {
             >
               <h3 className="text-lead font-bold text-ink">{f.pregunta}</h3>
               <p className="mt-2 max-w-[46ch] text-pretty text-body text-ink-60">
-                <Respuesta texto={f.respuesta} enlace={f.enlace} />
+                <RespuestaFaq texto={f.respuesta} enlace={f.enlace} />
               </p>
             </Revelar>
           ))}

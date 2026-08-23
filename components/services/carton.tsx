@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Boton } from "@/components/ui/boton";
@@ -103,6 +104,9 @@ export type ServiceEnEdicion = {
   aceiteLitros?: number | null;
   // tipo → cantidad guardada (ausente = 1)
   cantidades?: Record<string, string>;
+  /** ¿Alguno de los productos de este trabajo lleva stock? Lo resuelve el
+   *  servidor, que tiene los producto_id: acá el renglón es texto. */
+  usaProductosConStock?: boolean;
 };
 
 // CLASE_CAMPO y CLASE_LABEL viven en campos-carton.tsx, junto con los
@@ -382,10 +386,26 @@ export function Carton({
     marcados: Object.fromEntries(
       Object.entries(marcados).map(([tipo, detalle]) => [
         tipo,
-        { detalle: detalle.trim() || null, cambiado: Boolean(cambiados[tipo]) },
+        {
+          detalle: detalle.trim() || null,
+          cambiado: Boolean(cambiados[tipo]),
+          // La previsualización dice "así lo va a ver el cliente": si el
+          // papel del cliente muestra el ×2, acá también.
+          cantidad: Number(cantidades[tipo]?.replace(",", ".")) || 1,
+        },
       ]),
     ),
   };
+
+  // ¿Este trabajo toca algún producto que lleva stock? Solo con eso el
+  // aviso de edición tiene sentido: `stock` en null significa "no llevo
+  // stock de esto" y ahí no hay nada que se pueda desajustar.
+  // Lo resuelve el servidor con los producto_id reales (ver la página de
+  // edición). Acá se suma el aceite, que sí se elige por id en vivo y
+  // puede cambiar sin recargar.
+  const hayProductosConStock =
+    Boolean(edicion?.usaProductosConStock) ||
+    datos.productos.some((p) => p.id === aceiteProductoId && p.stock != null);
 
   // Un pendiente escrito sin objetivo no puede pasar: el compromiso ES el
   // vencimiento. (Las filas totalmente vacías se ignoran solas.)
@@ -483,6 +503,25 @@ export function Carton({
           </div>
         )}
 
+        {/* LA SUCURSAL, OTRA VEZ Y ANTES DE GUARDAR. Es el último punto
+            donde el error se puede atrapar gratis: después queda escrito
+            en la métrica del local equivocado. Va primero en la columna,
+            arriba del aviso de las 24 horas. */}
+        <div className="mb-4 rounded-md border border-line bg-surface px-4 py-3.5">
+          <p className="font-brand text-ui font-bold text-ink">
+            Se guarda en {datos.sucursales.find((s) => s.id === sucursalId)?.nombre}
+          </p>
+          {datos.sucursales.length > 1 && (
+            <button
+              type="button"
+              onClick={() => setPaso("carton")}
+              className="mt-0.5 text-ui text-ink-60 underline underline-offset-4 hover:text-ink"
+            >
+              Cambiar de sucursal
+            </button>
+          )}
+        </div>
+
         <div className="rounded-md border border-line bg-surface px-4 py-3.5">
           <p className="font-brand text-ui font-bold text-ink">
             Editable por 24 horas
@@ -549,22 +588,43 @@ export function Carton({
         vehiculoNombre={datos.vehiculoNombre}
         clienteNombre={datos.clienteNombre}
       >
-        <select
-          value={sucursalId}
-          onChange={(e) => {
-            setSucursalId(e.target.value);
-            // Queda recordada en este dispositivo para el próximo service.
-            recordarSucursal(e.target.value);
-          }}
-          aria-label="Sucursal"
-          className="h-11 max-w-[45%] rounded-md border border-line bg-base px-2 text-ui text-ink"
-        >
-          {datos.sucursales.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.nombre}
-            </option>
-          ))}
-        </select>
+        {/* LA SUCURSAL, CON PESO. Con una cuenta compartida entre dos
+            locales, el celular de Boulevares puede estar apuntando a Casa
+            Central y el trabajo queda etiquetado en el local equivocado —
+            y eso ensucia la métrica por sucursal para siempre, porque
+            nadie lo nota.
+            
+            No se resuelve moviendo la sucursal a la base: un dato en base
+            con cuenta compartida sincroniza TODOS los dispositivos al
+            último que la cambió, que es peor. Se resuelve haciendo que sea
+            imposible equivocarse en silencio: se ve en tinta plena y en
+            negrita —no como control gris de chrome—, se cambia en un
+            toque, y vuelve a aparecer en la previsualización.
+            
+            Con una sola sucursal no hay selector: no hay nada que elegir
+            ni, por lo tanto, nada que errar. */}
+        {datos.sucursales.length > 1 ? (
+          <select
+            value={sucursalId}
+            onChange={(e) => {
+              setSucursalId(e.target.value);
+              // Queda recordada en este dispositivo para el próximo service.
+              recordarSucursal(e.target.value);
+            }}
+            aria-label="Sucursal donde se hace el trabajo"
+            className="h-11 max-w-[48%] rounded-md border border-ink bg-base px-2 font-brand text-ui font-bold text-ink"
+          >
+            {datos.sucursales.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.nombre}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="max-w-[48%] truncate text-ui font-semibold text-ink-60">
+            {datos.sucursales[0]?.nombre}
+          </span>
+        )}
       </CabeceraCarton>
 
       {/* EL TIPO DE TRABAJO, lo primero: es la bifurcación del cartón
@@ -600,6 +660,30 @@ export function Carton({
       {edicion?.tipo === "mecanica" && (
         <p className="mb-4 rounded-md border border-line bg-surface px-3.5 py-2.5 text-ui text-ink-60">
           Trabajo de mecánica — el tipo no se cambia al editar.
+        </p>
+      )}
+
+      {/* EL STOCK NO SE AJUSTA AL EDITAR, y eso es la decisión correcta:
+          el descuento pasa una sola vez, al crear, y volver a tocarlo al
+          editar llevaría a descontar dos veces o a inventar
+          compensaciones. Lo que estaba mal era el SILENCIO: el que corrige
+          el aceite de un service deja el stock mal en dos productos —el
+          que sacó y el que puso— y no se entera nunca.
+          
+          Solo aparece si este trabajo usa productos que de verdad llevan
+          stock: con stock en null no hay nada que ajustar y el aviso
+          sería ruido. */}
+      {edicion && hayProductosConStock && (
+        <p className="mb-4 rounded-md border border-line bg-urgente-soft px-3.5 py-2.5 text-ui text-overdue">
+          El stock no se ajusta al editar. Si cambiás un producto por otro,
+          corregí las dos cantidades en{" "}
+          <Link
+            href="/panel/productos"
+            className="font-semibold underline underline-offset-4"
+          >
+            Productos
+          </Link>
+          .
         </p>
       )}
 
