@@ -2,16 +2,18 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CATEGORIAS, type CategoriaProducto } from "@/lib/categorias";
+import type { Categoria } from "@/lib/categorias";
 import { Buscador } from "@/components/ui/buscador";
 
 // Los filtros viven en la URL: el estado lo maneja el servidor, que ya tiene
 // el catálogo, y la pantalla queda compartible y con historial.
 export function FiltrosProductos({
+  categorias,
   categoria,
   q,
 }: {
-  categoria?: CategoriaProducto;
+  categorias: Categoria[];
+  categoria?: string;
   q?: string;
 }) {
   const router = useRouter();
@@ -59,7 +61,7 @@ export function FiltrosProductos({
         >
           Todas
         </button>
-        {CATEGORIAS.map((c) => {
+        {categorias.map((c) => {
           const activa = categoria === c.valor;
           return (
             <button

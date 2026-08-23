@@ -149,6 +149,33 @@ export type Database = {
           },
         ]
       }
+      categorias_producto: {
+        Row: {
+          activa: boolean
+          clave: string
+          created_at: string
+          nombre: string
+          orden: number
+          plural: string
+        }
+        Insert: {
+          activa?: boolean
+          clave: string
+          created_at?: string
+          nombre: string
+          orden: number
+          plural: string
+        }
+        Update: {
+          activa?: boolean
+          clave?: string
+          created_at?: string
+          nombre?: string
+          orden?: number
+          plural?: string
+        }
+        Relationships: []
+      }
       clientes: {
         Row: {
           created_at: string
@@ -847,32 +874,54 @@ export type Database = {
       productos: {
         Row: {
           activo: boolean
-          categoria: Database["public"]["Enums"]["categoria_producto"]
+          categoria: string
           created_at: string
           id: string
+          litros_sugeridos: number | null
           lubricentro_id: string
           marca: string | null
           nombre: string
+          precio_venta: number | null
+          stock: number | null
+          stock_minimo: number | null
+          unidad: string
         }
         Insert: {
           activo?: boolean
-          categoria: Database["public"]["Enums"]["categoria_producto"]
+          categoria: string
           created_at?: string
           id?: string
+          litros_sugeridos?: number | null
           lubricentro_id: string
           marca?: string | null
           nombre: string
+          precio_venta?: number | null
+          stock?: number | null
+          stock_minimo?: number | null
+          unidad?: string
         }
         Update: {
           activo?: boolean
-          categoria?: Database["public"]["Enums"]["categoria_producto"]
+          categoria?: string
           created_at?: string
           id?: string
+          litros_sugeridos?: number | null
           lubricentro_id?: string
           marca?: string | null
           nombre?: string
+          precio_venta?: number | null
+          stock?: number | null
+          stock_minimo?: number | null
+          unidad?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "categoria_existe"
+            columns: ["categoria"]
+            isOneToOne: false
+            referencedRelation: "categorias_producto"
+            referencedColumns: ["clave"]
+          },
           {
             foreignKeyName: "productos_lubricentro_id_fkey"
             columns: ["lubricentro_id"]
@@ -885,6 +934,7 @@ export type Database = {
       service_items: {
         Row: {
           cambiado: boolean
+          cantidad: number
           created_at: string
           detalle: string | null
           id: string
@@ -895,6 +945,7 @@ export type Database = {
         }
         Insert: {
           cambiado?: boolean
+          cantidad?: number
           created_at?: string
           detalle?: string | null
           id?: string
@@ -905,6 +956,7 @@ export type Database = {
         }
         Update: {
           cambiado?: boolean
+          cantidad?: number
           created_at?: string
           detalle?: string | null
           id?: string
@@ -946,6 +998,7 @@ export type Database = {
       }
       services: {
         Row: {
+          aceite_litros: number | null
           aceite_nombre: string | null
           aceite_producto_id: string | null
           aceite_tipo: string | null
@@ -967,6 +1020,7 @@ export type Database = {
           vehiculo_id: string
         }
         Insert: {
+          aceite_litros?: number | null
           aceite_nombre?: string | null
           aceite_producto_id?: string | null
           aceite_tipo?: string | null
@@ -988,6 +1042,7 @@ export type Database = {
           vehiculo_id: string
         }
         Update: {
+          aceite_litros?: number | null
           aceite_nombre?: string | null
           aceite_producto_id?: string | null
           aceite_tipo?: string | null
@@ -1616,6 +1671,7 @@ export type Database = {
       }
       actualizar_service: {
         Args: {
+          p_aceite_litros?: number
           p_aceite_nombre?: string
           p_aceite_producto_id?: string
           p_aceite_tipo: string
@@ -1748,6 +1804,7 @@ export type Database = {
       }
       guardar_service: {
         Args: {
+          p_aceite_litros?: number
           p_aceite_nombre?: string
           p_aceite_producto_id?: string
           p_aceite_tipo: string
@@ -1863,6 +1920,17 @@ export type Database = {
         }[]
       }
       soy_superadmin: { Args: never; Returns: boolean }
+      stock_bajo: {
+        Args: { p_limite?: number }
+        Returns: {
+          marca: string
+          nombre: string
+          producto_id: string
+          stock: number
+          stock_minimo: number
+          unidad: string
+        }[]
+      }
       sucursales_dentro_del_limite: {
         Args: { p_lubricentro: string; p_sucursal: string }
         Returns: boolean
@@ -1884,7 +1952,6 @@ export type Database = {
     Enums: {
       alcance_premio: "services" | "todos"
       canal_contacto: "whatsapp" | "manual"
-      categoria_producto: "aceite" | "filtro" | "liquido" | "aditivo" | "otro"
       estado_contacto: "urgente" | "proximo" | "vencido" | "pendiente"
       estado_pendiente: "pendiente" | "resuelto" | "descartado"
       estado_suscripcion: "trial" | "activa" | "vencida" | "cancelada"
@@ -2036,7 +2103,6 @@ export const Constants = {
     Enums: {
       alcance_premio: ["services", "todos"],
       canal_contacto: ["whatsapp", "manual"],
-      categoria_producto: ["aceite", "filtro", "liquido", "aditivo", "otro"],
       estado_contacto: ["urgente", "proximo", "vencido", "pendiente"],
       estado_pendiente: ["pendiente", "resuelto", "descartado"],
       estado_suscripcion: ["trial", "activa", "vencida", "cancelada"],

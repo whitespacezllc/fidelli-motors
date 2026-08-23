@@ -58,7 +58,7 @@ export default async function PaginaCarton({
         .order("nombre"),
       supabase
         .from("productos")
-        .select("id, nombre, marca, categoria")
+        .select("id, nombre, marca, categoria, precio_venta, stock, unidad, litros_sugeridos")
         .eq("activo", true)
         .order("nombre"),
       supabase
@@ -169,6 +169,10 @@ export default async function PaginaCarton({
             id: p.id,
             nombre: [p.nombre, p.marca].filter(Boolean).join(" · "),
             categoria: p.categoria,
+            precioVenta: p.precio_venta,
+            stock: p.stock,
+            unidad: p.unidad,
+            litrosSugeridos: p.litros_sugeridos,
           })),
           ultimoService:
             ultimo && ultimo.kilometros != null

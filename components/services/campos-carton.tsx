@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { clasesBoton } from "@/components/ui/boton";
 import { formatearFecha } from "@/lib/fechas";
@@ -347,5 +348,127 @@ export function RenglonInterruptor({
         />
       </span>
     </button>
+  );
+}
+
+// ---------- Producto de aceite, con buscador — SOLO el panel ----------
+// La landing sigue usando el select de arriba: su simulación no se toca.
+// Acá el catálogo real puede tener decenas de aceites, y el mecánico
+// escribe tres letras en vez de scrollear una lista. Elegirlo muestra el
+// precio y el stock, y precarga los litros del service (litros_sugeridos)
+// sin pedir un toque más.
+export type ProductoAceite = {
+  id: string;
+  nombre: string;
+  precioVenta: number | null;
+  stock: number | null;
+  unidad: string;
+  litrosSugeridos: number | null;
+};
+
+export function SelectorProductoBuscable({
+  productoId,
+  alElegir,
+  aceites,
+  alPedirAlta,
+}: {
+  productoId: string;
+  /** null = sin producto. */
+  alElegir: (producto: ProductoAceite | null) => void;
+  aceites: ProductoAceite[];
+  alPedirAlta?: () => void;
+}) {
+  const elegido = aceites.find((p) => p.id === productoId) ?? null;
+  const [texto, setTexto] = useState(elegido?.nombre ?? "");
+  const [abierto, setAbierto] = useState(false);
+
+  const filtrados = texto.trim()
+    ? aceites.filter((p) =>
+        p.nombre.toLowerCase().includes(texto.trim().toLowerCase()),
+      )
+    : aceites;
+
+  return (
+    <div className="relative">
+      <label htmlFor="aceite-producto" className={CLASE_LABEL}>
+        Producto <span className="text-ink-40 normal-case">(opcional)</span>
+      </label>
+      <input
+        id="aceite-producto"
+        value={texto}
+        onChange={(e) => {
+          setTexto(e.target.value);
+          setAbierto(true);
+          // Escribir de nuevo invalida la elección anterior.
+          if (elegido && e.target.value !== elegido.nombre) alElegir(null);
+        }}
+        onFocus={() => setAbierto(true)}
+        onBlur={() => setTimeout(() => setAbierto(false), 150)}
+        placeholder="Buscar en el catálogo…"
+        autoComplete="off"
+        className={CLASE_CAMPO}
+      />
+      {abierto && (
+        <ul className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-line bg-base shadow-lg">
+          <li>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setTexto("");
+                setAbierto(false);
+                alElegir(null);
+              }}
+              className="flex min-h-11 w-full items-center px-3.5 text-left text-ui text-ink-60 hover:bg-surface"
+            >
+              Sin producto
+            </button>
+          </li>
+          {filtrados.map((p) => (
+            <li key={p.id}>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setTexto(p.nombre);
+                  setAbierto(false);
+                  alElegir(p);
+                }}
+                className="flex min-h-11 w-full flex-wrap items-center gap-x-2 px-3.5 py-1.5 text-left text-ui text-ink hover:bg-surface"
+              >
+                <span className="min-w-0 flex-1 truncate">{p.nombre}</span>
+                <span className="shrink-0 text-label text-ink-60 tabular-nums">
+                  {[
+                    p.precioVenta != null
+                      ? `$${p.precioVenta.toLocaleString("es-AR")}`
+                      : null,
+                    p.stock != null
+                      ? `stock ${p.stock} ${p.unidad === "litro" ? "L" : "u."}`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              </button>
+            </li>
+          ))}
+          {alPedirAlta && (
+            <li className="border-t border-line">
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setAbierto(false);
+                  alPedirAlta();
+                }}
+                className="flex min-h-11 w-full items-center px-3.5 text-left text-ui font-semibold text-brand hover:bg-surface"
+              >
+                + Agregar producto…
+              </button>
+            </li>
+          )}
+        </ul>
+      )}
+    </div>
   );
 }
