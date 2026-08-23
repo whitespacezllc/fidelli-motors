@@ -37,13 +37,18 @@ export default async function PaginaInicio({
   // retención y últimos services— más la lista de sucursales del filtro,
   // que es chica y va en paralelo. El resumen se arma en Postgres: ocho
   // agregados en ocho viajes sería el error a evitar.
-  const [resumenRes, sucursalesRes] = await Promise.all([
+  const [resumenRes, sucursalesRes, stockBajoRes] = await Promise.all([
     supabase.rpc("resumen_inicio", { p_sucursal_id: sucursal || undefined }),
     supabase
       .from("sucursales")
       .select("id, nombre")
       .eq("activa", true)
       .order("nombre"),
+    // El aviso que hace que el stock sirva: sin esto es tipeo muerto.
+    // Va aparte de resumen_inicio a propósito — es una consulta chica en
+    // paralelo, y evita reescribir por cuarta vez la función más tocada
+    // del schema.
+    supabase.rpc("stock_bajo", { p_limite: 8 }),
   ]);
 
   const crudo = resumenRes.data as (Omit<Resumen, "series"> & {
@@ -117,7 +122,19 @@ export default async function PaginaInicio({
         {nombreSucursal && ` · ${nombreSucursal}`}
       </p>
 
-      <Dashboard datos={resumen} hoy={hoy} vista={vistaInicial} />
+      <Dashboard
+        datos={resumen}
+        hoy={hoy}
+        vista={vistaInicial}
+        stockBajo={(stockBajoRes.data ?? []).map((p) => ({
+          id: p.producto_id ?? "",
+          nombre: p.nombre ?? "",
+          marca: p.marca,
+          stock: Number(p.stock),
+          minimo: Number(p.stock_minimo),
+          unidad: p.unidad === "litro" ? "L" : "u.",
+        }))}
+      />
     </div>
   );
 }

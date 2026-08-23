@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useState } from "react";
 import { Dialog, DialogTrigger, DialogContenido } from "@/components/ui/dialog";
 import { Boton, clasesBoton } from "@/components/ui/boton";
-import { CATEGORIAS, type CategoriaProducto } from "@/lib/categorias";
+import type { Categoria } from "@/lib/categorias";
 import {
   crearProducto,
   editarProducto,
@@ -12,9 +12,14 @@ import {
 
 type Producto = {
   id: string;
-  categoria: CategoriaProducto;
+  categoria: string;
   nombre: string;
   marca: string | null;
+  precio_venta: number | null;
+  stock: number | null;
+  stock_minimo: number | null;
+  unidad: string;
+  litros_sugeridos: number | null;
 };
 
 const ESTADO_INICIAL: EstadoProducto = {};
@@ -26,9 +31,11 @@ const CLASE_LABEL =
 
 function FormularioProducto({
   producto,
+  categorias,
   alGuardar,
 }: {
   producto?: Producto;
+  categorias: Categoria[];
   alGuardar: () => void;
 }) {
   const [estado, accion, pendiente] = useActionState(
@@ -36,6 +43,9 @@ function FormularioProducto({
     ESTADO_INICIAL,
   );
   const [sinConexion, setSinConexion] = useState(false);
+  const [unidad, setUnidad] = useState(producto?.unidad ?? "unidad");
+  // El stock es OPCIONAL de verdad: apagado, los campos ni existen.
+  const [llevaStock, setLlevaStock] = useState(producto?.stock != null);
 
   useEffect(() => {
     if (estado.ok) alGuardar();
@@ -69,12 +79,12 @@ function FormularioProducto({
 
       {producto && <input type="hidden" name="id" value={producto.id} />}
 
-      {/* Cinco opciones de uso diario: se muestran todas, no escondidas en un
-          dropdown. Radios de verdad para que funcione con teclado y lector. */}
+      {/* Las categorías del catálogo global: se muestran todas, no
+          escondidas en un dropdown. Radios de verdad para teclado y lector. */}
       <fieldset>
         <legend className={CLASE_LABEL}>Categoría</legend>
         <div className="flex flex-wrap gap-2">
-          {CATEGORIAS.map((c, i) => (
+          {categorias.map((c, i) => (
             <label
               key={c.valor}
               className="cursor-pointer rounded-md border border-line px-3.5 py-2.5 text-ui text-ink-60 transition-colors has-checked:border-ink has-checked:bg-ink has-checked:font-semibold has-checked:text-white"
@@ -121,6 +131,113 @@ function FormularioProducto({
         />
       </div>
 
+      {/* Precio y unidad. Nulables: sin precio, el producto funciona
+          idéntico a siempre. SIN COSTO — esa frontera no se cruza. */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label htmlFor="precio_venta" className={CLASE_LABEL}>
+            Precio de venta{" "}
+            <span className="text-ink-40 normal-case">(opcional)</span>
+          </label>
+          <div className="relative">
+            <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-body text-ink-40">
+              $
+            </span>
+            <input
+              id="precio_venta"
+              name="precio_venta"
+              inputMode="decimal"
+              defaultValue={producto?.precio_venta ?? ""}
+              className={`${CLASE_CAMPO} pl-8 text-right tabular-nums`}
+            />
+          </div>
+        </div>
+        <div>
+          <label htmlFor="unidad" className={CLASE_LABEL}>
+            Se mide en
+          </label>
+          <select
+            id="unidad"
+            name="unidad"
+            value={unidad}
+            onChange={(e) => setUnidad(e.target.value)}
+            className={`${CLASE_CAMPO} cursor-pointer`}
+          >
+            <option value="unidad">Unidades</option>
+            <option value="litro">Litros</option>
+          </select>
+        </div>
+      </div>
+
+      {/* El stock, detrás de un interruptor: NULO significa "no llevo
+          stock" y el que no lo usa no ve nada de esto molestando. */}
+      <label className="flex min-h-11 cursor-pointer items-center gap-3">
+        <input
+          type="checkbox"
+          name="lleva_stock"
+          checked={llevaStock}
+          onChange={() => setLlevaStock((v) => !v)}
+          className="size-5 shrink-0 cursor-pointer accent-ink"
+        />
+        <span className="text-body text-ink">Llevo stock de este producto</span>
+      </label>
+
+      {llevaStock && (
+        <div className="grid grid-cols-2 gap-3 rounded-md border border-line bg-surface/60 p-3">
+          <div>
+            <label htmlFor="stock" className={CLASE_LABEL}>
+              Stock actual
+            </label>
+            <input
+              id="stock"
+              name="stock"
+              inputMode="decimal"
+              defaultValue={producto?.stock ?? ""}
+              className={`${CLASE_CAMPO} tabular-nums`}
+            />
+            <p className="mt-1 text-label text-ink-60">
+              En {unidad === "litro" ? "litros" : "unidades"}. El ajuste es
+              editar este número.
+            </p>
+          </div>
+          <div>
+            <label htmlFor="stock_minimo" className={CLASE_LABEL}>
+              Avisar debajo de
+            </label>
+            <input
+              id="stock_minimo"
+              name="stock_minimo"
+              inputMode="decimal"
+              defaultValue={producto?.stock_minimo ?? ""}
+              className={`${CLASE_CAMPO} tabular-nums`}
+            />
+            <p className="mt-1 text-label text-ink-60">
+              En o debajo de esto, aparece en Inicio.
+            </p>
+          </div>
+          {unidad === "litro" && (
+            <div className="col-span-2">
+              <label htmlFor="litros_sugeridos" className={CLASE_LABEL}>
+                Litros por service{" "}
+                <span className="text-ink-40 normal-case">(sugerido)</span>
+              </label>
+              <input
+                id="litros_sugeridos"
+                name="litros_sugeridos"
+                inputMode="decimal"
+                defaultValue={producto?.litros_sugeridos ?? ""}
+                placeholder="4"
+                className={`${CLASE_CAMPO} max-w-[120px] tabular-nums`}
+              />
+              <p className="mt-1 text-label text-ink-60">
+                El cartón lo precarga solo: en el caso normal el mecánico no
+                toca nada. Vacío = el stock no se mueve.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
       <Boton type="submit" tam="lg" disabled={pendiente} className="mt-1 w-full">
         {pendiente ? "Guardando…" : "Guardar"}
       </Boton>
@@ -131,9 +248,11 @@ function FormularioProducto({
 // Un solo dialog para crear y editar: cambia el título y la action.
 export function DialogProducto({
   producto,
+  categorias,
   etiquetaTrigger,
 }: {
   producto?: Producto;
+  categorias: Categoria[];
   etiquetaTrigger?: string;
 }) {
   const [abierto, setAbierto] = useState(false);
@@ -152,6 +271,7 @@ export function DialogProducto({
       <DialogContenido titulo={producto ? "Editar producto" : "Nuevo producto"}>
         <FormularioProducto
           producto={producto}
+          categorias={categorias}
           alGuardar={() => setAbierto(false)}
         />
       </DialogContenido>

@@ -45,11 +45,16 @@ export default async function PaginaNuevoPresupuesto({
   const params = await searchParams;
   const supabase = await createClient();
 
-  const [sucursalesRes, clienteRes, vehiculoRes, desdeRes] = await Promise.all([
+  const [sucursalesRes, productosRes, clienteRes, vehiculoRes, desdeRes] = await Promise.all([
     supabase
       .from("sucursales")
       .select("id, nombre")
       .eq("activa", true)
+      .order("nombre"),
+    supabase
+      .from("productos")
+      .select("nombre, marca, precio_venta")
+      .eq("activo", true)
       .order("nombre"),
     params.cliente
       ? supabase
@@ -138,6 +143,10 @@ export default async function PaginaNuevoPresupuesto({
         sucursalInicial={sucursalInicial}
         hoy={hoyISO()}
         inicial={inicial}
+        productos={(productosRes.data ?? []).map((p) => ({
+          nombre: [p.nombre, p.marca].filter(Boolean).join(" · "),
+          precio: p.precio_venta,
+        }))}
       />
     </div>
   );

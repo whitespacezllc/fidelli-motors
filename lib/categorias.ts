@@ -1,21 +1,22 @@
-import type { Database } from "@/lib/database.types";
+// Las categorías del catálogo viven en la BASE (tabla categorias_producto,
+// administrada por Fidelli): una categoría nueva es un INSERT, no una
+// migración. Este módulo solo tipa la forma y ordena lo que llega.
 
-export type CategoriaProducto = Database["public"]["Enums"]["categoria_producto"];
+export type CategoriaProducto = string;
 
-// El orden es el del enum en la base: "order by categoria" devuelve este mismo
-// orden, así que la pantalla y la consulta no se pueden desincronizar.
-export const CATEGORIAS: {
-  valor: CategoriaProducto;
+export type Categoria = {
+  valor: string;
   singular: string;
   plural: string;
-}[] = [
-  { valor: "aceite", singular: "Aceite", plural: "Aceites" },
-  { valor: "filtro", singular: "Filtro", plural: "Filtros" },
-  { valor: "liquido", singular: "Líquido", plural: "Líquidos" },
-  { valor: "aditivo", singular: "Aditivo", plural: "Aditivos" },
-  { valor: "otro", singular: "Otro", plural: "Otros" },
-];
+};
 
-export function esCategoria(valor: string): valor is CategoriaProducto {
-  return CATEGORIAS.some((c) => c.valor === valor);
+/** La fila de la base → la forma que consumen filtros y formularios. */
+export function aCategorias(
+  filas: { clave: string; nombre: string; plural: string }[] | null,
+): Categoria[] {
+  return (filas ?? []).map((c) => ({
+    valor: c.clave,
+    singular: c.nombre,
+    plural: c.plural,
+  }));
 }

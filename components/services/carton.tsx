@@ -23,7 +23,7 @@ import {
   CabeceraCarton,
   CampoKilometros,
   SelectorViscosidad,
-  SelectorProductoAceite,
+  SelectorProductoBuscable,
   RenglonInterruptor,
 } from "@/components/services/campos-carton";
 import { recordarSucursal } from "@/lib/preferencias";
@@ -35,7 +35,15 @@ import {
 } from "@/app/panel/services/nuevo/[vehiculoId]/actions";
 import { actualizarService } from "@/app/panel/services/[serviceId]/editar/actions";
 
-type Producto = { id: string; nombre: string; categoria: string };
+type Producto = {
+  id: string;
+  nombre: string;
+  categoria: string;
+  precioVenta?: number | null;
+  stock?: number | null;
+  unidad?: string;
+  litrosSugeridos?: number | null;
+};
 type Sucursal = { id: string; nombre: string };
 
 export type DatosCarton = {
@@ -92,6 +100,9 @@ export type ServiceEnEdicion = {
   marcados: Record<string, string>;
   // tipo → true si fue cambio (vs. revisado OK)
   cambiados: Record<string, boolean>;
+  aceiteLitros?: number | null;
+  // tipo → cantidad guardada (ausente = 1)
+  cantidades?: Record<string, string>;
 };
 
 // CLASE_CAMPO y CLASE_LABEL viven en campos-carton.tsx, junto con los
@@ -146,6 +157,18 @@ export function Carton({
   const [aceiteProductoId, setAceiteProductoId] = useState(
     edicion?.aceiteProductoId ?? "",
   );
+  // Los litros del service: los precarga litros_sugeridos del producto al
+  // elegirlo. Sin dato, el stock del aceite NO se mueve — el stock es
+  // opcional; la velocidad no.
+  const [litros, setLitros] = useState(
+    edicion?.aceiteLitros != null ? String(edicion.aceiteLitros) : "",
+  );
+  // tipo de renglón → cantidad ("2 filtros"). Ausente = 1: el caso normal
+  // no pide ni un toque más.
+  const [cantidades, setCantidades] = useState<Record<string, string>>(
+    edicion?.cantidades ?? {},
+  );
+  const [cantidadesLibres, setCantidadesLibres] = useState<Record<number, string>>({});
   // tipo → detalle escrito (string vacío = marcado sin detalle)
   const [marcados, setMarcados] = useState<Record<string, string>>(
     edicion?.marcados ?? {},
@@ -203,6 +226,19 @@ export function Carton({
   }, [proxModo, proxLegado, kmCargado, kmNum]);
 
   const aceitesDelCatalogo = productos.filter((p) => p.categoria === "aceite");
+  const aceiteElegido =
+    productos.find((p) => p.id === aceiteProductoId) ?? null;
+
+  // Elegir el producto precarga los litros EN EL EVENTO (nunca en un
+  // efecto): sugeridos si lleva stock, vacío si no.
+  function elegirAceite(p: { id: string; stock?: number | null; litrosSugeridos?: number | null } | null) {
+    setAceiteProductoId(p?.id ?? "");
+    if (p && p.stock != null) {
+      setLitros(p.litrosSugeridos != null ? String(p.litrosSugeridos) : "");
+    } else {
+      setLitros("");
+    }
+  }
   const nombreAceite =
     productos.find((p) => p.id === aceiteProductoId)?.nombre ?? null;
   // El detalle de cada renglón sugiere todo el catálogo; el mecánico escribe
@@ -256,12 +292,13 @@ export function Carton({
     // el nombre coincide.
     const items: ItemCargado[] = esMecanica
       ? libres
-          .map((texto) => texto.trim())
-          .filter(Boolean)
-          .map((texto) => ({
+          .map((texto, i) => ({ texto: texto.trim(), i }))
+          .filter(({ texto }) => Boolean(texto))
+          .map(({ texto, i }) => ({
             producto_id: productos.find((p) => p.nombre === texto)?.id ?? null,
             detalle: texto,
             cambiado: true,
+            cantidad: Number(cantidadesLibres[i]?.replace(",", ".")) || 1,
           }))
       : Object.entries(marcados).map(([tipo, detalle]) => {
           const limpio = detalle.trim();
@@ -271,6 +308,7 @@ export function Carton({
             producto_id: producto?.id ?? null,
             detalle: producto ? null : limpio || null,
             cambiado: Boolean(cambiados[tipo]),
+            cantidad: Number(cantidades[tipo]?.replace(",", ".")) || 1,
           };
         });
 
@@ -285,6 +323,10 @@ export function Carton({
       aceiteTipo: esMecanica ? "" : normalizarViscosidad(aceiteTipo),
       aceiteProductoId: esMecanica ? null : aceiteProductoId || null,
       aceiteNombre: esMecanica ? null : nombreAceite,
+      aceiteLitros:
+        !esMecanica && aceiteElegido?.stock != null && litros.trim() !== ""
+          ? Number(litros.replace(",", ".")) || null
+          : null,
       proxServiceKm: esMecanica ? 0 : proxKm,
       observaciones: observaciones.trim() || null,
       items,
@@ -682,6 +724,18 @@ export function Carton({
                           ariaLabel={`Repuesto o tarea ${i + 1}`}
                         />
                       </div>
+                      <input
+                        value={cantidadesLibres[i] ?? "1"}
+                        onChange={(e) =>
+                          setCantidadesLibres((prev) => ({
+                            ...prev,
+                            [i]: e.target.value,
+                          }))
+                        }
+                        inputMode="decimal"
+                        aria-label={`Cantidad del repuesto ${i + 1}`}
+                        className="h-11 w-13 shrink-0 rounded-md border border-line bg-base text-center text-ui text-ink tabular-nums"
+                      />
                       <button
                         type="button"
                         onClick={() =>
@@ -719,13 +773,38 @@ export function Carton({
               <SelectorViscosidad valor={aceiteTipo} alCambiar={setAceiteTipo} />
             </div>
             <div className="sm:flex-[1.4]">
-              <SelectorProductoAceite
-                valor={aceiteProductoId}
-                alCambiar={setAceiteProductoId}
-                aceites={aceitesDelCatalogo}
+              <SelectorProductoBuscable
+                productoId={aceiteProductoId}
+                alElegir={(p) => elegirAceite(p)}
+                aceites={aceitesDelCatalogo.map((p) => ({
+                  id: p.id,
+                  nombre: p.nombre,
+                  precioVenta: p.precioVenta ?? null,
+                  stock: p.stock ?? null,
+                  unidad: p.unidad ?? "unidad",
+                  litrosSugeridos: p.litrosSugeridos ?? null,
+                }))}
                 alPedirAlta={() => setAltaProducto(true)}
               />
             </div>
+
+            {/* Los litros SOLO existen si el producto lleva stock: el que
+                no lo usa no ve el campo molestando. Precargados: en el
+                caso normal, cero toques. */}
+            {aceiteElegido && aceiteElegido.stock != null && (
+              <div className="sm:w-28">
+                <label htmlFor="aceite-litros" className={CLASE_LABEL}>
+                  Litros
+                </label>
+                <input
+                  id="aceite-litros"
+                  inputMode="decimal"
+                  value={litros}
+                  onChange={(e) => setLitros(e.target.value)}
+                  className={`${CLASE_CAMPO} text-center tabular-nums`}
+                />
+              </div>
+            )}
           </div>
 
           {viscosidadRara && (
@@ -828,14 +907,32 @@ export function Carton({
                       </button>
 
                       {abiertos[r.tipo] || marcados[r.tipo] ? (
-                        <Combobox
-                          value={marcados[r.tipo]}
-                          onChange={(v) =>
-                            setMarcados((p) => ({ ...p, [r.tipo]: v }))
-                          }
-                          opciones={nombresProductos}
-                          ariaLabel={`Detalle de ${r.corto}`}
-                        />
+                        <div className="flex items-start gap-2">
+                          <div className="min-w-0 flex-1">
+                            <Combobox
+                              value={marcados[r.tipo]}
+                              onChange={(v) =>
+                                setMarcados((p) => ({ ...p, [r.tipo]: v }))
+                              }
+                              opciones={nombresProductos}
+                              ariaLabel={`Detalle de ${r.corto}`}
+                            />
+                          </div>
+                          {/* "×2 filtros" sin que el caso normal pida un
+                              toque: prellenado en 1. */}
+                          <input
+                            value={cantidades[r.tipo] ?? "1"}
+                            onChange={(e) =>
+                              setCantidades((prev) => ({
+                                ...prev,
+                                [r.tipo]: e.target.value,
+                              }))
+                            }
+                            inputMode="decimal"
+                            aria-label={`Cantidad de ${r.corto}`}
+                            className="h-11 w-13 shrink-0 rounded-md border border-line bg-base text-center text-ui text-ink tabular-nums"
+                          />
+                        </div>
                       ) : (
                         <button
                           type="button"

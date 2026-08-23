@@ -501,6 +501,85 @@ begin
   delete from presupuestos where id in (v_p1, v_p2);
 end $$;
 
+-- ---------- R9 · Precio y stock: opcionalidad y descuento (Bloque 5) ----------
+-- Tres invariantes: un producto SIN nada funciona idéntico a siempre; el
+-- descuento baja solo lo que lleva stock (renglón por cantidad, aceite
+-- por litros); y el aviso aparece bajo el mínimo y calla sin nada abajo.
+do $$
+declare
+  v_lub    uuid;
+  v_owner  uuid;
+  v_suc    uuid;
+  v_veh    uuid;
+  v_pelado uuid;
+  v_conteo uuid;
+  v_aceite uuid;
+  v_serv   uuid;
+  v_n      numeric;
+begin
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+  select u.id into v_owner from usuarios u where u.lubricentro_id = v_lub and u.rol = 'owner' limit 1;
+  select su.id into v_suc from sucursales su where su.lubricentro_id = v_lub and su.activa limit 1;
+  select v.id into v_veh from vehiculos v where v.lubricentro_id = v_lub limit 1;
+
+  if exists (select 1 from pg_type where typname = 'categoria_producto') then
+    raise exception 'REGRESIÓN 5: el enum categoria_producto sigue vivo — la migración a tabla quedó a medias.';
+  end if;
+  if exists (select 1 from productos p where not exists (
+    select 1 from categorias_producto c where c.clave = p.categoria)) then
+    raise exception 'REGRESIÓN 5: hay productos con una categoría fuera del catálogo.';
+  end if;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  insert into productos (lubricentro_id, categoria, nombre)
+  values (v_lub, 'repuesto', 'Regresión pelado') returning id into v_pelado;
+  insert into productos (lubricentro_id, categoria, nombre, stock, stock_minimo)
+  values (v_lub, 'filtro', 'Regresión con stock', 10, 2) returning id into v_conteo;
+  insert into productos (lubricentro_id, categoria, nombre, unidad, stock, stock_minimo, litros_sugeridos)
+  values (v_lub, 'aceite', 'Regresión aceite', 'litro', 20, 5, 4) returning id into v_aceite;
+
+  v_serv := guardar_service(
+    p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => current_date,
+    p_kilometros => 999100, p_aceite_tipo => '10W40', p_prox_service_km => 999600,
+    p_aceite_producto_id => v_aceite, p_aceite_litros => 4,
+    p_items => jsonb_build_array(
+      jsonb_build_object('tipo', 'filtro_aceite', 'producto_id', v_conteo, 'cantidad', 2),
+      jsonb_build_object('tipo', 'filtro_aire',   'producto_id', v_pelado)
+    ));
+
+  select stock into v_n from productos where id = v_conteo;
+  if v_n is distinct from 8 then
+    raise exception 'REGRESIÓN 5: el renglón con cantidad 2 dejó el stock en % (esperaba 8).', v_n;
+  end if;
+  select stock into v_n from productos where id = v_aceite;
+  if v_n is distinct from 16 then
+    raise exception 'REGRESIÓN 5: el aceite con 4 litros dejó el stock en % (esperaba 16).', v_n;
+  end if;
+  select stock into v_n from productos where id = v_pelado;
+  if v_n is not null then
+    raise exception 'REGRESIÓN 5: un producto SIN stock terminó con stock % — dejó de ser opcional.', v_n;
+  end if;
+
+  -- el aviso: nada bajo el mínimo → silencio; bajo el mínimo → aparece
+  if exists (select 1 from stock_bajo(8) sb where sb.producto_id in (v_conteo, v_aceite)) then
+    raise exception 'REGRESIÓN 5: el aviso suena con stock por encima del mínimo.';
+  end if;
+  update productos set stock = 1 where id = v_conteo;
+  if not exists (select 1 from stock_bajo(8) sb where sb.producto_id = v_conteo) then
+    raise exception 'REGRESIÓN 5: un producto bajo el mínimo no aparece en el aviso.';
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  delete from service_items where service_id = v_serv;
+  delete from services where id = v_serv;
+  delete from productos where id in (v_pelado, v_conteo, v_aceite);
+end $$;
+
 -- ---------- R10 · El piso de anonimato de los modelos (Bloque 6) ----------
 -- El nivel global de modelos_sugeridos cruza tenants: un string que
 -- existe en un solo lubricentro puede ser el dato de un cliente de la
