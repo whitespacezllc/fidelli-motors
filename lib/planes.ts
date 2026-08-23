@@ -47,6 +47,7 @@ export const ETIQUETA_FEATURE: Record<FeaturePlan, string> = {
 export const RUTA_FEATURE: Partial<Record<FeaturePlan, string>> = {
   premios: "/panel/fidelizacion",
   personalizacion_pagina: "/panel/experiencia",
+  presupuestos: "/panel/presupuestos",
 };
 
 /**

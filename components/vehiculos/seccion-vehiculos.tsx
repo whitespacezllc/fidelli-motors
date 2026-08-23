@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { DialogVehiculo } from "@/components/vehiculos/dialog-vehiculo";
+import { InsigniaMarca } from "@/components/vehiculos/insignia-marca";
+// (el link de presupuesto por vehículo vive abajo, gateado por plan)
 import {
   NotasVehiculo,
   type NotaDelVehiculo,
@@ -57,6 +59,9 @@ type Vehiculo = {
   notas?: NotaDelVehiculo[];
   /** undefined = el plan no trae pendientes: la sección no existe. */
   pendientes?: PendienteDelVehiculo[];
+  /** El plan trae presupuestos: aparece el atajo con el destino cargado. */
+  puedePresupuestos?: boolean;
+  clienteId?: string;
 };
 
 // El progreso del ciclo y los canjes ya hechos. El dorado es el único
@@ -123,12 +128,15 @@ function Fidelizacion({ vehiculo }: { vehiculo: Vehiculo }) {
 function TarjetaVehiculo({
   vehiculo,
   clienteId,
+  marcas,
 }: {
   vehiculo: Vehiculo;
   clienteId: string;
+  marcas: string[];
 }) {
-  const nombre =
-    [vehiculo.marca, vehiculo.modelo].filter(Boolean).join(" ") || "Vehículo";
+  // Con marca: la insignia tipográfica + el modelo. Sin marca, el nombre
+  // de siempre — un auto sin marca funciona idéntico a hoy.
+  const nombre = vehiculo.modelo || (vehiculo.marca ? "" : "Vehículo");
 
   const identificacion = [
     // La patente se guarda como la escribió el mecánico; se muestra siempre
@@ -163,8 +171,9 @@ function TarjetaVehiculo({
     <li className="rounded-lg border border-line bg-base px-5 py-4">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
         <div className="min-w-0">
-          <p className="truncate font-brand text-body font-bold text-ink">
-            {nombre}
+          <p className="flex items-center gap-2 truncate font-brand text-body font-bold text-ink">
+            <InsigniaMarca marca={vehiculo.marca} />
+            <span className="truncate">{nombre}</span>
           </p>
           <p className="plate mt-0.5 truncate text-ui text-ink-60">
             {identificacion}
@@ -178,7 +187,19 @@ function TarjetaVehiculo({
               <span className="block text-label text-ink-60">{visita}</span>
             )}
           </span>
-          <DialogVehiculo clienteId={clienteId} vehiculo={vehiculo} />
+          {vehiculo.puedePresupuestos && (
+            <Link
+              href={`/panel/presupuestos/nuevo?cliente=${clienteId}&vehiculo=${vehiculo.id}`}
+              className="flex min-h-9 items-center rounded-md border border-line px-2.5 text-ui font-semibold text-ink-60 hover:bg-surface hover:text-ink"
+            >
+              Presupuesto
+            </Link>
+          )}
+          <DialogVehiculo
+            clienteId={clienteId}
+            vehiculo={vehiculo}
+            marcas={marcas}
+          />
         </div>
       </div>
 
@@ -243,9 +264,11 @@ function TarjetaVehiculo({
 export function SeccionVehiculos({
   clienteId,
   vehiculos,
+  marcas = [],
 }: {
   clienteId: string;
   vehiculos: Vehiculo[];
+  marcas?: string[];
 }) {
   return (
     <section>
@@ -259,18 +282,23 @@ export function SeccionVehiculos({
             Este cliente todavía no tiene vehículos cargados.
           </p>
           <div className="mt-4 flex justify-center">
-            <DialogVehiculo clienteId={clienteId} variante="primario" />
+            <DialogVehiculo clienteId={clienteId} marcas={marcas} variante="primario" />
           </div>
         </div>
       ) : (
         <>
           <ul className="flex flex-col gap-3">
             {vehiculos.map((v) => (
-              <TarjetaVehiculo key={v.id} vehiculo={v} clienteId={clienteId} />
+              <TarjetaVehiculo
+                key={v.id}
+                vehiculo={v}
+                clienteId={clienteId}
+                marcas={marcas}
+              />
             ))}
           </ul>
           <div className="mt-3">
-            <DialogVehiculo clienteId={clienteId} />
+            <DialogVehiculo clienteId={clienteId} marcas={marcas} />
           </div>
         </>
       )}

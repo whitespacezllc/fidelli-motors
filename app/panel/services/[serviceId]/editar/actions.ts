@@ -85,6 +85,7 @@ export async function actualizarService(
     p_trabajo_descripcion: esMecanica
       ? (payload.trabajoDescripcion ?? "").trim()
       : undefined,
+    p_aceite_litros: esMecanica ? undefined : (payload.aceiteLitros ?? undefined),
   });
 
   if (error) return { error: traducirError(error) };

@@ -149,6 +149,33 @@ export type Database = {
           },
         ]
       }
+      categorias_producto: {
+        Row: {
+          activa: boolean
+          clave: string
+          created_at: string
+          nombre: string
+          orden: number
+          plural: string
+        }
+        Insert: {
+          activa?: boolean
+          clave: string
+          created_at?: string
+          nombre: string
+          orden: number
+          plural: string
+        }
+        Update: {
+          activa?: boolean
+          clave?: string
+          created_at?: string
+          nombre?: string
+          orden?: number
+          plural?: string
+        }
+        Relationships: []
+      }
       clientes: {
         Row: {
           created_at: string
@@ -453,6 +480,30 @@ export type Database = {
         }
         Relationships: []
       }
+      marcas_vehiculo: {
+        Row: {
+          activa: boolean
+          alias: string[]
+          created_at: string
+          nombre: string
+          orden: number
+        }
+        Insert: {
+          activa?: boolean
+          alias?: string[]
+          created_at?: string
+          nombre: string
+          orden: number
+        }
+        Update: {
+          activa?: boolean
+          alias?: string[]
+          created_at?: string
+          nombre?: string
+          orden?: number
+        }
+        Relationships: []
+      }
       mensaje_templates: {
         Row: {
           activo: boolean
@@ -688,35 +739,213 @@ export type Database = {
           },
         ]
       }
+      presupuesto_items: {
+        Row: {
+          cantidad: number
+          descripcion: string
+          id: string
+          lubricentro_id: string
+          orden: number
+          precio_unitario: number
+          presupuesto_id: string
+        }
+        Insert: {
+          cantidad?: number
+          descripcion: string
+          id?: string
+          lubricentro_id: string
+          orden: number
+          precio_unitario: number
+          presupuesto_id: string
+        }
+        Update: {
+          cantidad?: number
+          descripcion?: string
+          id?: string
+          lubricentro_id?: string
+          orden?: number
+          precio_unitario?: number
+          presupuesto_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "presupuesto_items_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "presupuesto_items_presupuesto_id_fkey"
+            columns: ["presupuesto_id"]
+            isOneToOne: false
+            referencedRelation: "presupuestos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      presupuestos: {
+        Row: {
+          cliente_id: string | null
+          created_at: string
+          destinatario_nombre: string | null
+          destinatario_telefono: string | null
+          destinatario_vehiculo: string | null
+          fecha: string
+          id: string
+          lubricentro_id: string
+          numero: number
+          observaciones: string | null
+          sucursal_id: string
+          updated_at: string
+          usuario_id: string
+          validez_dias: number | null
+          vehiculo_id: string | null
+        }
+        Insert: {
+          cliente_id?: string | null
+          created_at?: string
+          destinatario_nombre?: string | null
+          destinatario_telefono?: string | null
+          destinatario_vehiculo?: string | null
+          fecha?: string
+          id?: string
+          lubricentro_id: string
+          numero: number
+          observaciones?: string | null
+          sucursal_id: string
+          updated_at?: string
+          usuario_id: string
+          validez_dias?: number | null
+          vehiculo_id?: string | null
+        }
+        Update: {
+          cliente_id?: string | null
+          created_at?: string
+          destinatario_nombre?: string | null
+          destinatario_telefono?: string | null
+          destinatario_vehiculo?: string | null
+          fecha?: string
+          id?: string
+          lubricentro_id?: string
+          numero?: number
+          observaciones?: string | null
+          sucursal_id?: string
+          updated_at?: string
+          usuario_id?: string
+          validez_dias?: number | null
+          vehiculo_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "presupuestos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "presupuestos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "presupuestos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_service"
+            referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "presupuestos_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "presupuestos_sucursal_id_fkey"
+            columns: ["sucursal_id"]
+            isOneToOne: false
+            referencedRelation: "sucursales"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "presupuestos_usuario_id_fkey"
+            columns: ["usuario_id"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "presupuestos_vehiculo_id_fkey"
+            columns: ["vehiculo_id"]
+            isOneToOne: false
+            referencedRelation: "vehiculos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "presupuestos_vehiculo_id_fkey"
+            columns: ["vehiculo_id"]
+            isOneToOne: false
+            referencedRelation: "vista_vehiculos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       productos: {
         Row: {
           activo: boolean
-          categoria: Database["public"]["Enums"]["categoria_producto"]
+          categoria: string
           created_at: string
           id: string
+          litros_sugeridos: number | null
           lubricentro_id: string
           marca: string | null
           nombre: string
+          precio_venta: number | null
+          stock: number | null
+          stock_minimo: number | null
+          unidad: string
         }
         Insert: {
           activo?: boolean
-          categoria: Database["public"]["Enums"]["categoria_producto"]
+          categoria: string
           created_at?: string
           id?: string
+          litros_sugeridos?: number | null
           lubricentro_id: string
           marca?: string | null
           nombre: string
+          precio_venta?: number | null
+          stock?: number | null
+          stock_minimo?: number | null
+          unidad?: string
         }
         Update: {
           activo?: boolean
-          categoria?: Database["public"]["Enums"]["categoria_producto"]
+          categoria?: string
           created_at?: string
           id?: string
+          litros_sugeridos?: number | null
           lubricentro_id?: string
           marca?: string | null
           nombre?: string
+          precio_venta?: number | null
+          stock?: number | null
+          stock_minimo?: number | null
+          unidad?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "categoria_existe"
+            columns: ["categoria"]
+            isOneToOne: false
+            referencedRelation: "categorias_producto"
+            referencedColumns: ["clave"]
+          },
           {
             foreignKeyName: "productos_lubricentro_id_fkey"
             columns: ["lubricentro_id"]
@@ -729,6 +958,7 @@ export type Database = {
       service_items: {
         Row: {
           cambiado: boolean
+          cantidad: number
           created_at: string
           detalle: string | null
           id: string
@@ -739,6 +969,7 @@ export type Database = {
         }
         Insert: {
           cambiado?: boolean
+          cantidad?: number
           created_at?: string
           detalle?: string | null
           id?: string
@@ -749,6 +980,7 @@ export type Database = {
         }
         Update: {
           cambiado?: boolean
+          cantidad?: number
           created_at?: string
           detalle?: string | null
           id?: string
@@ -790,6 +1022,7 @@ export type Database = {
       }
       services: {
         Row: {
+          aceite_litros: number | null
           aceite_nombre: string | null
           aceite_producto_id: string | null
           aceite_tipo: string | null
@@ -811,6 +1044,7 @@ export type Database = {
           vehiculo_id: string
         }
         Insert: {
+          aceite_litros?: number | null
           aceite_nombre?: string | null
           aceite_producto_id?: string | null
           aceite_tipo?: string | null
@@ -832,6 +1066,7 @@ export type Database = {
           vehiculo_id: string
         }
         Update: {
+          aceite_litros?: number | null
           aceite_nombre?: string | null
           aceite_producto_id?: string | null
           aceite_tipo?: string | null
@@ -1442,8 +1677,25 @@ export type Database = {
         Args: { p_nombre: string }
         Returns: undefined
       }
+      actualizar_presupuesto: {
+        Args: {
+          p_cliente_id?: string
+          p_destinatario_nombre?: string
+          p_destinatario_telefono?: string
+          p_destinatario_vehiculo?: string
+          p_fecha: string
+          p_id: string
+          p_items: Json
+          p_observaciones?: string
+          p_sucursal_id: string
+          p_validez_dias?: number
+          p_vehiculo_id?: string
+        }
+        Returns: undefined
+      }
       actualizar_service: {
         Args: {
+          p_aceite_litros?: number
           p_aceite_nombre?: string
           p_aceite_producto_id?: string
           p_aceite_tipo: string
@@ -1559,8 +1811,24 @@ export type Database = {
       fm_unaccent: { Args: { "": string }; Returns: string }
       get_carton: { Args: { p_patente: string; p_slug: string }; Returns: Json }
       get_landing: { Args: { p_slug: string }; Returns: Json }
+      guardar_presupuesto: {
+        Args: {
+          p_cliente_id?: string
+          p_destinatario_nombre?: string
+          p_destinatario_telefono?: string
+          p_destinatario_vehiculo?: string
+          p_fecha?: string
+          p_items: Json
+          p_observaciones?: string
+          p_sucursal_id: string
+          p_validez_dias?: number
+          p_vehiculo_id?: string
+        }
+        Returns: string
+      }
       guardar_service: {
         Args: {
+          p_aceite_litros?: number
           p_aceite_nombre?: string
           p_aceite_producto_id?: string
           p_aceite_tipo: string
@@ -1618,10 +1886,19 @@ export type Database = {
           ultimo_service: string
         }[]
       }
+      marca_canonica: { Args: { p_texto: string }; Returns: string }
       metricas_plataforma: { Args: never; Returns: Json }
       metricas_tenant: { Args: { p_lubricentro_id: string }; Returns: Json }
       mi_lubricentro_id: { Args: never; Returns: string }
+      modelos_sugeridos: {
+        Args: { p_marca?: string }
+        Returns: {
+          modelo: string
+          propio: boolean
+        }[]
+      }
       normalizar_patente: { Args: { entrada: string }; Returns: string }
+      normalizar_texto_vehiculo: { Args: { p: string }; Returns: string }
       orden_atencion: { Args: { p_atencion: string }; Returns: number }
       overrides_plan_bien_formados: { Args: { p: Json }; Returns: boolean }
       plan_capacidades: {
@@ -1676,6 +1953,17 @@ export type Database = {
         }[]
       }
       soy_superadmin: { Args: never; Returns: boolean }
+      stock_bajo: {
+        Args: { p_limite?: number }
+        Returns: {
+          marca: string
+          nombre: string
+          producto_id: string
+          stock: number
+          stock_minimo: number
+          unidad: string
+        }[]
+      }
       sucursales_dentro_del_limite: {
         Args: { p_lubricentro: string; p_sucursal: string }
         Returns: boolean
@@ -1697,7 +1985,6 @@ export type Database = {
     Enums: {
       alcance_premio: "services" | "todos"
       canal_contacto: "whatsapp" | "manual"
-      categoria_producto: "aceite" | "filtro" | "liquido" | "aditivo" | "otro"
       estado_contacto: "urgente" | "proximo" | "vencido" | "pendiente"
       estado_pendiente: "pendiente" | "resuelto" | "descartado"
       estado_suscripcion: "trial" | "activa" | "vencida" | "cancelada"
@@ -1849,7 +2136,6 @@ export const Constants = {
     Enums: {
       alcance_premio: ["services", "todos"],
       canal_contacto: ["whatsapp", "manual"],
-      categoria_producto: ["aceite", "filtro", "liquido", "aditivo", "otro"],
       estado_contacto: ["urgente", "proximo", "vencido", "pendiente"],
       estado_pendiente: ["pendiente", "resuelto", "descartado"],
       estado_suscripcion: ["trial", "activa", "vencida", "cancelada"],

@@ -438,3 +438,203 @@ begin
   delete from services where id = v_serv;
   delete from trabajos_pendientes where id in (v_p1, v_p2, v_p3);
 end $$;
+
+-- ---------- R8 · Presupuestos: gating y numeración (Bloque 4) ----------
+-- Un Basic no escribe presupuestos ni por SQL, y la numeración es
+-- correlativa por tenant (el lock de concurrencia real se prueba con dos
+-- sesiones en paralelo fuera del reset; acá se vigila la correlatividad).
+do $$
+declare
+  v_lub   uuid;
+  v_owner uuid;
+  v_suc   uuid;
+  v_plan  uuid;
+  v_basic uuid;
+  v_p1    uuid;
+  v_p2    uuid;
+  v_n1    integer;
+  v_n2    integer;
+begin
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+  select u.id into v_owner from usuarios u where u.lubricentro_id = v_lub and u.rol = 'owner' limit 1;
+  select su.id into v_suc from sucursales su where su.lubricentro_id = v_lub and su.activa limit 1;
+  select s.plan_id into v_plan from suscripciones s where s.lubricentro_id = v_lub
+    order by s.inicio desc, s.created_at desc limit 1;
+  select p.id into v_basic from planes p where p.nombre = 'Basic';
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  -- correlativa: dos altas seguidas salen N y N+1
+  v_p1 := guardar_presupuesto(p_sucursal_id => v_suc,
+    p_items => '[{"descripcion":"Regresión A","cantidad":1,"precio_unitario":1000}]'::jsonb);
+  v_p2 := guardar_presupuesto(p_sucursal_id => v_suc,
+    p_items => '[{"descripcion":"Regresión B","cantidad":1,"precio_unitario":2000}]'::jsonb);
+  select numero into v_n1 from presupuestos where id = v_p1;
+  select numero into v_n2 from presupuestos where id = v_p2;
+  if v_n2 <> v_n1 + 1 then
+    raise exception 'REGRESIÓN 4: la numeración no es correlativa (% y %).', v_n1, v_n2;
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- Basic bloqueado por RLS
+  update suscripciones set plan_id = v_basic where lubricentro_id = v_lub;
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  begin
+    perform guardar_presupuesto(p_sucursal_id => v_suc,
+      p_items => '[{"descripcion":"no debería entrar","cantidad":1,"precio_unitario":1}]'::jsonb);
+    raise exception 'REGRESIÓN 4: un Basic generó un presupuesto — el gating por plan no rige.';
+  exception
+    when insufficient_privilege then null;
+  end;
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+  update suscripciones set plan_id = v_plan where lubricentro_id = v_lub;
+
+  -- limpieza
+  delete from presupuesto_items where presupuesto_id in (v_p1, v_p2);
+  delete from presupuestos where id in (v_p1, v_p2);
+end $$;
+
+-- ---------- R9 · Precio y stock: opcionalidad y descuento (Bloque 5) ----------
+-- Tres invariantes: un producto SIN nada funciona idéntico a siempre; el
+-- descuento baja solo lo que lleva stock (renglón por cantidad, aceite
+-- por litros); y el aviso aparece bajo el mínimo y calla sin nada abajo.
+do $$
+declare
+  v_lub    uuid;
+  v_owner  uuid;
+  v_suc    uuid;
+  v_veh    uuid;
+  v_pelado uuid;
+  v_conteo uuid;
+  v_aceite uuid;
+  v_serv   uuid;
+  v_n      numeric;
+begin
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+  select u.id into v_owner from usuarios u where u.lubricentro_id = v_lub and u.rol = 'owner' limit 1;
+  select su.id into v_suc from sucursales su where su.lubricentro_id = v_lub and su.activa limit 1;
+  select v.id into v_veh from vehiculos v where v.lubricentro_id = v_lub limit 1;
+
+  if exists (select 1 from pg_type where typname = 'categoria_producto') then
+    raise exception 'REGRESIÓN 5: el enum categoria_producto sigue vivo — la migración a tabla quedó a medias.';
+  end if;
+  if exists (select 1 from productos p where not exists (
+    select 1 from categorias_producto c where c.clave = p.categoria)) then
+    raise exception 'REGRESIÓN 5: hay productos con una categoría fuera del catálogo.';
+  end if;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  insert into productos (lubricentro_id, categoria, nombre)
+  values (v_lub, 'repuesto', 'Regresión pelado') returning id into v_pelado;
+  insert into productos (lubricentro_id, categoria, nombre, stock, stock_minimo)
+  values (v_lub, 'filtro', 'Regresión con stock', 10, 2) returning id into v_conteo;
+  insert into productos (lubricentro_id, categoria, nombre, unidad, stock, stock_minimo, litros_sugeridos)
+  values (v_lub, 'aceite', 'Regresión aceite', 'litro', 20, 5, 4) returning id into v_aceite;
+
+  v_serv := guardar_service(
+    p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => current_date,
+    p_kilometros => 999100, p_aceite_tipo => '10W40', p_prox_service_km => 999600,
+    p_aceite_producto_id => v_aceite, p_aceite_litros => 4,
+    p_items => jsonb_build_array(
+      jsonb_build_object('tipo', 'filtro_aceite', 'producto_id', v_conteo, 'cantidad', 2),
+      jsonb_build_object('tipo', 'filtro_aire',   'producto_id', v_pelado)
+    ));
+
+  select stock into v_n from productos where id = v_conteo;
+  if v_n is distinct from 8 then
+    raise exception 'REGRESIÓN 5: el renglón con cantidad 2 dejó el stock en % (esperaba 8).', v_n;
+  end if;
+  select stock into v_n from productos where id = v_aceite;
+  if v_n is distinct from 16 then
+    raise exception 'REGRESIÓN 5: el aceite con 4 litros dejó el stock en % (esperaba 16).', v_n;
+  end if;
+  select stock into v_n from productos where id = v_pelado;
+  if v_n is not null then
+    raise exception 'REGRESIÓN 5: un producto SIN stock terminó con stock % — dejó de ser opcional.', v_n;
+  end if;
+
+  -- el aviso: nada bajo el mínimo → silencio; bajo el mínimo → aparece
+  if exists (select 1 from stock_bajo(8) sb where sb.producto_id in (v_conteo, v_aceite)) then
+    raise exception 'REGRESIÓN 5: el aviso suena con stock por encima del mínimo.';
+  end if;
+  update productos set stock = 1 where id = v_conteo;
+  if not exists (select 1 from stock_bajo(8) sb where sb.producto_id = v_conteo) then
+    raise exception 'REGRESIÓN 5: un producto bajo el mínimo no aparece en el aviso.';
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  delete from service_items where service_id = v_serv;
+  delete from services where id = v_serv;
+  delete from productos where id in (v_pelado, v_conteo, v_aceite);
+end $$;
+
+-- ---------- R10 · El piso de anonimato de los modelos (Bloque 6) ----------
+-- El nivel global de modelos_sugeridos cruza tenants: un string que
+-- existe en un solo lubricentro puede ser el dato de un cliente de la
+-- competencia. Este chequeo crea un tenant fantasma y verifica los dos
+-- lados del piso: lo único NO se ve; lo compartido (>=3 vehículos en
+-- >=2 lubricentros) sí.
+do $$
+declare
+  v_lub      uuid;
+  v_owner    uuid;
+  v_fantasma uuid;
+  v_cli_f    uuid;
+  v_cli_d    uuid;
+  v_veh_d    uuid;
+begin
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+  select u.id into v_owner from usuarios u where u.lubricentro_id = v_lub and u.rol = 'owner' limit 1;
+
+  -- El tenant fantasma, con un modelo ÚNICO y uno compartible.
+  insert into lubricentros (nombre, slug) values ('Fantasma R10', 'fantasma-r10')
+  returning id into v_fantasma;
+  insert into clientes (lubricentro_id, nombre, telefono)
+  values (v_fantasma, 'Cliente Fantasma', '351555000') returning id into v_cli_f;
+  insert into vehiculos (lubricentro_id, cliente_id, patente, patente_normalizada, marca, modelo) values
+    (v_fantasma, v_cli_f, 'ZZZ 901', 'ZZZ901', 'Fiat', 'ModeloSecretoR10'),
+    (v_fantasma, v_cli_f, 'ZZZ 902', 'ZZZ902', 'Fiat', 'CompartidoR10'),
+    (v_fantasma, v_cli_f, 'ZZZ 903', 'ZZZ903', 'Fiat', 'CompartidoR10');
+  -- Y el demo aporta el tercer vehículo del compartido (2º lubricentro).
+  select c.id into v_cli_d from clientes c where c.lubricentro_id = v_lub limit 1;
+  insert into vehiculos (lubricentro_id, cliente_id, patente, patente_normalizada, marca, modelo)
+  values (v_lub, v_cli_d, 'ZZZ 904', 'ZZZ904', 'Fiat', 'CompartidoR10')
+  returning id into v_veh_d;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  -- El modelo único del fantasma NO puede aparecerle al demo.
+  if exists (select 1 from modelos_sugeridos('Fiat') s where s.modelo = 'ModeloSecretoR10') then
+    raise exception 'REGRESIÓN 6: el piso de anonimato se rompió — un modelo de UN solo tenant se filtró a otro.';
+  end if;
+  -- El compartido (3 vehículos, 2 lubricentros) SÍ, como global.
+  if not exists (select 1 from modelos_sugeridos('Fiat') s where s.modelo = 'CompartidoR10') then
+    raise exception 'REGRESIÓN 6: un modelo que cumple el piso (3 veh, 2 tenants) no se sugiere.';
+  end if;
+  -- Y jamás una fila con conteos: la función devuelve (modelo, propio) y
+  -- nada más — lo garantiza el tipo de retorno, que este SELECT compila.
+  perform s.modelo, s.propio from modelos_sugeridos('Fiat') s limit 1;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- limpieza total del fantasma
+  delete from vehiculos where id = v_veh_d;
+  delete from vehiculos where lubricentro_id = v_fantasma;
+  delete from clientes where id = v_cli_f;
+  delete from lubricentros where id = v_fantasma;
+end $$;
