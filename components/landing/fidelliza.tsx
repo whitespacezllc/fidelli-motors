@@ -18,7 +18,9 @@ import { Revelar } from "@/components/landing/revelar";
 
 const PUNTOS = [
   "El premio lo definís vos: un descuento, un service, lo que quieras",
-  "La cuenta se lleva sola, service por service",
+  // Desde el bloque 2B el alcance es configurable: services solamente, o
+  // todos los trabajos. El copy no puede prometer uno de los dos.
+  "La cuenta se lleva sola, trabajo por trabajo",
   "Ya lo estás haciendo a mano. Esto lo hace solo.",
 ] as const;
 
@@ -40,7 +42,7 @@ export function Fidelliza() {
           </h2>
 
           <p className="mt-(--espacio-h2-lead) max-w-[46ch] text-pretty text-body text-ink-60 sm:text-lead">
-            Definís el premio y cada cuántos services se gana. El sistema lleva
+            Definís el premio y cada cuántos trabajos se gana. El sistema lleva
             la cuenta solo, y tu cliente ve cuánto le falta cada vez que escanea
             el parasol.
           </p>

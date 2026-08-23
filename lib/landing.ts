@@ -37,9 +37,13 @@ export const ID_CTA_HERO = "cta-hero";
 /**
  * LOS CUPOS DEL MES — la única fuente de verdad.
  *
- * El módulo de la sección de precio Y la línea del cierre salen de acá:
- * antes el número estaba escrito a mano en dos lugares con dos
- * redacciones distintas, y en algún momento se iban a contradecir solos.
+ * SON LAS INSTALACIONES PRESENCIALES EN CÓRDOBA CAPITAL, no los clientes
+ * que podemos tomar. Fuera de Córdoba se instala por videollamada el mismo
+ * día y no hay lista de espera: cualquier copy que use este número tiene
+ * que decir de qué es el límite, o le está diciendo a un taller de otra
+ * provincia que no hay lugar cuando sí lo hay.
+ *
+ * Hoy lo usa el cierre; la sección de precio lo explica en prosa.
  *
  * ⚠ MANTENIMIENTO HUMANO: `tomados` se actualiza a mano con cada venta y
  * `mes` con cada mes nuevo. Si esto deja de actualizarse, EL MÓDULO SE

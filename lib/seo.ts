@@ -20,12 +20,16 @@ export const SITIO_URL =
 export const NOMBRE_SITIO = "Fidelli Motors";
 
 export const TITULO_PORTADA =
-  "Fidelli Motors: sistema de gestión de services para lubricentros";
+  "Fidelli Motors: sistema para lubricentros y talleres mecánicos";
 
-// 146 caracteres — el tope es 155. Los dos números que más se citan (90
+// 146 caracteres — el tope es 155. Los números que más se citan (90
 // segundos, Argentina) van acá adentro y en texto plano en la página.
+// Nombra a los talleres mecánicos además de a los lubricentros: el 25-30%
+// de los que escriben hacen las dos cosas, y desde el bloque 2 el producto
+// también. Se cayó "olvidate del cartón" por el tope de caracteres; la
+// frase sigue viva en el hero, que es donde pega.
 export const DESCRIPCION_PORTADA =
-  "Fidelli Motors es el sistema para lubricentros en Argentina: cargá un service en 90 segundos, olvidate del cartón y traé a tus clientes de vuelta.";
+  "Fidelli Motors es el sistema para lubricentros y talleres mecánicos de Argentina: cargá un trabajo en 90 segundos y traé a tus clientes de vuelta.";
 
 // La tarjeta que ve WhatsApp al compartir el link. JPEG y no PNG a
 // propósito: es una fotografía, y la misma imagen en PNG pesaba 947KB —

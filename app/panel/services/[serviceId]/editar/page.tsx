@@ -43,7 +43,7 @@ export default async function PaginaEditarService({ params }: Props) {
            prox_service_km, observaciones, anulado, desbloqueado_hasta,
            sucursal_id, vehiculo_id,
            vehiculos(patente, marca, modelo, clientes(nombre)),
-           service_items(item_tipo, detalle, cambiado, cantidad, productos(nombre, marca))`,
+           service_items(item_tipo, detalle, cambiado, cantidad, producto_id, productos(nombre, marca))`,
         )
         .eq("id", serviceId)
         .maybeSingle(),
@@ -117,6 +117,21 @@ export default async function PaginaEditarService({ params }: Props) {
 
   const cambiados = Object.fromEntries(
     renglonesCarton.map((i) => [i.item_tipo as string, i.cambiado]),
+  );
+
+  // ¿Este trabajo usa productos que llevan stock? Se resuelve ACÁ, donde
+  // están los producto_id reales de cada renglón, y no en el cliente
+  // comparando el texto contra el catálogo: el renglón se muestra como
+  // "nombre · marca" y esa comparación fallaría en silencio justo para
+  // los productos que tienen marca cargada.
+  const idsProductos = new Set(
+    service.service_items
+      .map((i) => i.producto_id)
+      .filter((id): id is string => Boolean(id)),
+  );
+  if (service.aceite_producto_id) idsProductos.add(service.aceite_producto_id);
+  const usaProductosConStock = (productosRes.data ?? []).some(
+    (p) => idsProductos.has(p.id) && p.stock != null,
   );
 
   const libres = service.service_items
@@ -202,6 +217,7 @@ export default async function PaginaEditarService({ params }: Props) {
               .filter((i) => Number(i.cantidad) !== 1)
               .map((i) => [i.item_tipo as string, String(i.cantidad)]),
           ),
+          usaProductosConStock,
         }}
       />
     </div>

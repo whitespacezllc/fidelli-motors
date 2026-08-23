@@ -165,7 +165,25 @@ suelto solo donde el comportamiento accesible es difícil (dialog, combobox).
 No usamos librerías de componentes con su propio design system.
 
 **Íconos: Phosphor** (`@phosphor-icons/react`), peso `thin` o `light` — stroke
-de 0.5 a 1px, nunca más grueso. NO usamos Lucide (lo usa todo sitio hecho con IA).
+de 0.5 a 1px, nunca más grueso. **En el panel y en la superficie del cliente,
+Phosphor y nada más.**
+
+**La excepción de Lucide, acotada y con su razón.** La landing comercial usa
+doce íconos de `lucide-react` (menú, los pasos del simulador, la sección de
+precio, el acordeón y los pasos del calco). La razón es de escala: son
+señalización a tamaño grande y necesitan stroke 2, que Phosphor light no da.
+Los límites, que sí son la regla:
+
+- **Viven todos en `components/iconos.tsx`**, en un bloque marcado, y en
+  ningún otro lado. Volver a Phosphor es cambiar ese bloque y nada más.
+- **No se propagan al panel ni a la superficie del cliente.** Ahí el
+  instrumento es Phosphor light, y mezclar dos familias en la misma pantalla
+  se nota aunque nadie sepa nombrar por qué.
+- Un ícono nuevo se busca **primero** en Phosphor. Lucide solo si el
+  equivalente no existe y es para la landing.
+
+El reflejo original ("lo usa todo sitio hecho con IA") sigue siendo válido y
+es exactamente lo que estos límites protegen.
 
 **Todo lo clickeable lleva `cursor: pointer`.** Resuelto una vez en globals.css
 para botones, roles de botón, tabs y triggers de Radix — no pantalla por pantalla.
@@ -286,6 +304,112 @@ un comentario— que solo lee.
 
 **La suspensión sigue sin tocar RLS**: a nivel base el owner puede operar, y así
 tiene que quedar. Bloquearlo ahí complicaría el desbloqueo y el histórico.
+
+---
+
+## Las diez reglas del sprint de agosto — se rompen y no avisan
+
+Cada una existe porque romperla **no da error**: el build pasa, los tests no
+dicen nada y el daño aparece semanas después en los datos de un cliente.
+Están ordenadas por lo que cuesta el descuido.
+
+**1 · El control por plan vive en dos capas o no vive.** RLS rechaza en
+silencio y la aplicación sola se evade con una llamada directa a la API. Las
+dos, siempre, contra `plan_permite()`. Una feature nueva que solo se chequea
+en React no está gateada.
+
+**2 · Un cambio de plan nunca borra datos.** Se apaga la ESCRITURA, nunca la
+lectura. Por eso el gating va en `WITH CHECK` y jamás en `USING`: con `USING`
+un downgrade haría desaparecer de la pantalla lo que el tenant ya tenía.
+
+**3 · `plan_permite()` revienta con un nombre desconocido** en vez de
+devolver `false`. Un feature mal tipeado que devuelve `false` es una función
+apagada para todo el mundo, en silencio y para siempre.
+
+**4 · Ninguna vista se reemplaza sin volver a fijar `security_invoker`.**
+`create or replace view` resetea las `reloptions`, y una vista sin esa opción
+corre con los permisos de su dueño: un owner ve los datos de TODOS los
+lubricentros. Ya pasó dos veces. Toda migración que toque una vista termina
+con `alter view <la_vista> set (security_invoker = on);`.
+
+**5 · `vista_proximos_service` filtra por tipo.** Si pierde ese filtro, una
+mecánica pasa a contar como "último service" y los autos con mecánica
+desaparecen de la retención **sin ningún error**. Es el peor bug posible del
+producto: la pantalla que trae la plata se vacía sola. Lo vigila R2.
+
+**6 · No hay importes en el modelo operativo.** Ni en `services`, ni en
+`service_items`, ni en los pendientes. Los precios viven SOLO en
+`presupuestos` y en `productos.precio_venta`. El día que un service tenga un
+total, esto pasa a ser un sistema de facturación y hay que sostener IVA,
+notas de crédito y numeración fiscal.
+
+**7 · El modo oscuro es elección del LUBRICENTRO, no del visitante.** Es un
+campo de `config_experiencia`, no `prefers-color-scheme`. Con la preferencia
+del sistema, la página de un taller oscuro se vería clara para la mitad de
+sus clientes y el pedido queda sin resolver. **Los documentos nunca van en
+oscuro**: presupuesto, cartón impreso y hoja de calcos salen siempre claros,
+también el PNG que va por WhatsApp.
+
+**8 · La superficie del cliente sobrevive a la suspensión; el panel no.** Un
+tenant suspendido conserva su página pública —apagarla mataría todos los
+calcos pegados en los parasoles de sus clientes— pero no puede escribir. El
+premio y el mensaje al escanear sí se apagan: no se promete un beneficio que
+el local no puede entregar. Está comentado en `get_carton`/`get_landing` y lo
+vigila R4. **No "arreglar" esto devolviéndole el `and l.activo` al where.**
+
+**9 · Cero logos de automotrices.** Ninguna de las fuentes evaluadas otorga
+licencia: todas licencian la colección y desligan la marca registrada. La
+marca se muestra como insignia tipográfica. Si algún día hay una licencia por
+escrito, el logo entra en el contenedor de `InsigniaMarca` sin tocar layout.
+
+**10 · El copy nunca revela el tamaño del equipo.** Ni "somos dos", ni "el
+equipo", ni "nuestro CTO". El lubricentro está comprando continuidad.
+
+---
+
+## La red de regresión — qué protege cada cosa
+
+`supabase/verificaciones.sql` corre al final de **cada `supabase db reset`**
+(declarado en `config.toml` → `db.seed.sql_paths`) y hace fallar el comando
+con exit 1 si algo se rompió. **Si el reset falla, no se pushea.**
+
+**Si ves una de estas en rojo, NO la borres para que pase el build.** Cada
+una tapa un agujero que ya existió o que costaría muy caro descubrir en
+producción. El mensaje de la excepción dice qué invariante se rompió.
+
+| # | Qué protege | Qué significa que falle |
+|---|---|---|
+| **R1** | Un plan sin `premios` no puede escribir un premio ni por SQL directo | El gating de RLS se cayó: la capa de aplicación quedó sola y se evade por API |
+| **R2** | Una mecánica **no** altera la fila de retención del vehículo (campo por campo) | La regla 5. Los autos con mecánica están por desaparecer de "A quién llamar" |
+| **R3** | Un plan Basic carga un service común y **no** una mecánica | El gating condicional al tipo se rompió — o Basic quedó sin poder trabajar |
+| **R4** | La página pública de un tenant suspendido responde, con el premio oculto | La regla 8. O se apagó la vidriera de un suspendido, o se le está ofreciendo un premio que no puede entregar |
+| **R5** | Los estados del pendiente por fecha y por kilómetros (vencido/urgente/próximo) | El cálculo de urgencia cambió: la lista de a quién llamar está mintiendo |
+| **R6** | Tildar un pendiente y guardar el trabajo ocurren en la MISMA transacción | Se puede guardar un service y perder la resolución del pendiente, o al revés |
+| **R7** | Un plan sin `pendientes` no puede crear uno | Ídem R1, para pendientes |
+| **R8** | La numeración de presupuestos es correlativa por tenant bajo concurrencia | Dos presupuestos con el mismo número, que es un documento que el cliente ya tiene en la mano |
+| **R9** | Un producto sin stock sigue funcionando; el descuento baja lo correcto (renglón × cantidad, aceite × litros); el aviso suena y calla | El stock opcional dejó de serlo, o el descuento se aplica dos veces |
+| **R10** | El piso de anonimato de los modelos: ≥3 vehículos en ≥2 lubricentros | Un modelo cargado por UN solo tenant se le está filtrando a otro. Es una fuga entre clientes |
+| **R11** | Un tenant sin configurar rinde igual que siempre; el mensaje al escanear respeta feature, vigencia y suspensión en las dos capas | Un tenant cambió de aspecto sin pedirlo, o se está mostrando un mensaje que no corresponde |
+
+Además, fuera del reset:
+
+```bash
+./scripts/regresion-retencion.sh
+```
+
+Rompe la vista de retención a propósito de dos formas —le saca el filtro de
+tipo y le saca `security_invoker`— y verifica que la red **atrape las dos**.
+Es la prueba de que R2 y el chequeo de aislamiento sirven de verdad. Se corre
+antes de un release, no en cada cambio.
+
+Y en cualquier momento, a mano:
+
+```sql
+select * from verificar_seguridad_vistas();
+```
+
+Sin filas = está bien. Con filas = hay un agujero, y cada fila trae el SQL
+exacto para taparlo.
 
 ---
 

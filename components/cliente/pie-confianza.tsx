@@ -73,7 +73,8 @@ export function PieConfianza({ lubricentro }: { lubricentro: Lubricentro }) {
           <p className="flex items-center justify-center gap-2 text-center text-c-body text-ink-60">
             <IconoPremio aria-hidden className="size-6 shrink-0 text-tenant" />
             <span>
-              Cada {premio.metaServices} services,{" "}
+              Cada {premio.metaServices}{" "}
+              {premio.alcance === "todos" ? "trabajos" : "services"},{" "}
               <span className="text-ink">{premio.descripcion.toLowerCase()}</span>
             </span>
           </p>

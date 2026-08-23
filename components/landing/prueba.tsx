@@ -12,6 +12,16 @@ import { SimuladorCarga } from "@/components/landing/simulador-carga";
 // La sección en sí es Server Component; lo interactivo vive adentro de
 // SimuladorCarga, que además renderiza su estado final completo desde el
 // servidor: sin JavaScript se ve la carga terminada, nunca un hueco.
+//
+// ⚠ LA BAJADA ES UNA AFIRMACIÓN VERIFICABLE Y HAY QUE MANTENERLA CIERTA.
+// Decía "es el flujo real del producto, tal cual lo ve tu mecánico" y
+// había dejado de serlo dos veces: el bloque 2 puso el tipo de trabajo
+// como primer paso —eso se agregó a la simulación— y el bloque 5 le dio
+// al panel un selector de producto buscable, mientras acá quedó el select
+// de siempre (a propósito: son cuatro aceites de ejemplo, un buscador
+// sobre cuatro opciones es peor). Como esa diferencia queda, la frase
+// ahora dice lo que sí es exacto: los pasos son los mismos. Si mañana el
+// panel cambia un paso, o se cambia la simulación o se cambia esta línea.
 
 // Los tres pasos ya no viven acá: son components/landing/pasos-guia.tsx,
 // que los renderiza SimuladorCarga junto al teléfono. Se marcan solos a
@@ -31,10 +41,11 @@ export function Prueba() {
             id="como-funciona-titulo"
             className="text-balance text-h3 font-bold sm:text-h2"
           >
-            Cargá un service ahora mismo. Sin instalar nada.
+            Cargá un trabajo ahora mismo. Sin instalar nada.
           </h2>
           <p className="mt-(--espacio-h2-lead) text-pretty text-body text-ink-60 sm:text-lead">
-            Es el flujo real del producto, tal cual lo ve tu mecánico.
+            Los mismos pasos que hace tu mecánico, con los campos reales
+            del sistema.
           </p>
         </Revelar>
 

@@ -31,6 +31,8 @@ type Fidelizacion = {
   disponible: boolean;
   servicesCiclo: number;
   metaServices: number;
+  /** Qué avanza el ciclo: el contador nombra lo que de verdad suma. */
+  alcance?: "services" | "todos";
   descripcion: string;
 };
 
@@ -80,8 +82,8 @@ function Fidelizacion({ vehiculo }: { vehiculo: Vehiculo }) {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <span className="text-ui font-semibold text-ink tabular-nums">
           {f.disponible
-            ? `${f.servicesCiclo} de ${f.metaServices} services`
-            : `Vas ${f.servicesCiclo} de ${f.metaServices} services`}
+            ? `${f.servicesCiclo} de ${f.metaServices} ${f.alcance === "todos" ? "trabajos" : "services"}`
+            : `Vas ${f.servicesCiclo} de ${f.metaServices} ${f.alcance === "todos" ? "trabajos" : "services"}`}
         </span>
         <span className="h-2 min-w-24 flex-1 overflow-hidden rounded-sm border border-line bg-surface">
           <span
