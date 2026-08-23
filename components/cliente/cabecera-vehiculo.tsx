@@ -1,5 +1,6 @@
 import { formatearPatente } from "@/lib/texto";
 import type { Lubricentro } from "@/lib/cliente/landing";
+import { CLASE_LOGO_CABECERA } from "@/lib/cliente/tema";
 
 // La marca del lubri acá es chica y va al costado: en la landing confirmaba
 // "estoy en el lugar correcto", pero una vez adentro el protagonista es el
@@ -32,7 +33,7 @@ export function CabeceraVehiculo({
           <img
             src={lubricentro.logoUrl}
             alt=""
-            className="h-11 w-auto shrink-0 rounded-md object-contain"
+            className={`w-auto shrink-0 rounded-md object-contain ${CLASE_LOGO_CABECERA[lubricentro.logoTamano]}`}
           />
         ) : (
           <span
