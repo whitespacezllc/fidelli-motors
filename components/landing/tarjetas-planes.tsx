@@ -128,12 +128,27 @@ function Tarjeta({ plan, modo }: { plan: PlanLanding; modo: Modo }) {
       </p>
 
       {/* `flex-1` empuja el botón al pie: las tres tarjetas terminan con el
-          botón alineado aunque las listas midan distinto. */}
-      <ul className="mb-7 flex flex-1 flex-col">
+          botón alineado aunque las listas midan distinto. Cuando hay línea
+          de "lo que no incluye", el aire de abajo lo pone ella. */}
+      <ul className={`flex flex-1 flex-col ${plan.noIncluye ? "" : "mb-7"}`}>
         {plan.incluye.map((item) => (
           <Renglon key={item} texto={item} oscuro={oscuro} />
         ))}
       </ul>
+
+      {/* LO QUE EL PLAN NO INCLUYE — deliberado, ver el porqué completo en
+          lib/planes-landing.ts. Resumen para el que pase por acá: decir lo
+          que falta hace que el que hace mecánica descarte Basic solo, en
+          dos segundos, en vez de enterarse cuando ya lo contrató. */}
+      {plan.noIncluye && (
+        <p
+          className={`mt-4 mb-6 border-t pt-4 text-ui ${
+            oscuro ? "border-inverso-line text-inverso-40" : "border-line text-ink-40"
+          }`}
+        >
+          {plan.noIncluye}
+        </p>
+      )}
 
       <a
         href={CTA_WHATSAPP}
