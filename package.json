@@ -16,6 +16,7 @@
     "@supabase/ssr": "^0.12.3",
     "@supabase/supabase-js": "^2.110.8",
     "@visx/visx": "^4.0.0",
+    "html-to-image": "^1.11.13",
     "lucide-react": "^1.31.0",
     "next": "16.2.10",
     "react": "19.2.4",

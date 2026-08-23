@@ -21,6 +21,7 @@ const SECCIONES_MAS: { href: string; nombre: string; feature?: FeaturePlan }[] =
   { href: "/panel/services", nombre: "Services" },
   { href: "/panel/productos", nombre: "Productos" },
   { href: "/panel/fidelizacion", nombre: "Fidelización", feature: "premios" },
+  { href: "/panel/presupuestos", nombre: "Presupuestos", feature: "presupuestos" },
   { href: "/panel/experiencia", nombre: "Diseño de experiencia", feature: "personalizacion_pagina" },
   { href: "/panel/mensajes", nombre: "Mensajes" },
   { href: "/panel/sucursales", nombre: "Sucursales" },

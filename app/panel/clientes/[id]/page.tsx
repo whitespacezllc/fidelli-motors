@@ -21,6 +21,7 @@ export default async function FichaCliente({
   const supabase = await createClient();
   const sesion = await obtenerSesion();
   const puedePendientes = featureHabilitada(sesion, "pendientes");
+  const puedePresupuestos = featureHabilitada(sesion, "presupuestos");
 
   // Dos consultas para dos conjuntos distintos, ninguna con N+1: los datos
   // del cliente y sus vehículos, cada una con sus agregados ya resueltos en
@@ -259,6 +260,7 @@ export default async function FichaCliente({
             (servicesPorVehiculo.get(v.id) ?? [])
               .filter((s) => !s.anulado)
               .at(-1)?.created_at ?? null,
+          puedePresupuestos,
           pendientes: puedePendientes
             ? (pendientesPorVehiculo.get(v.id) ?? []).map((tp) => ({
                 id: tp.id,

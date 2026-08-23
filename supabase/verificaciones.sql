@@ -438,3 +438,65 @@ begin
   delete from services where id = v_serv;
   delete from trabajos_pendientes where id in (v_p1, v_p2, v_p3);
 end $$;
+
+-- ---------- R8 · Presupuestos: gating y numeración (Bloque 4) ----------
+-- Un Basic no escribe presupuestos ni por SQL, y la numeración es
+-- correlativa por tenant (el lock de concurrencia real se prueba con dos
+-- sesiones en paralelo fuera del reset; acá se vigila la correlatividad).
+do $$
+declare
+  v_lub   uuid;
+  v_owner uuid;
+  v_suc   uuid;
+  v_plan  uuid;
+  v_basic uuid;
+  v_p1    uuid;
+  v_p2    uuid;
+  v_n1    integer;
+  v_n2    integer;
+begin
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+  select u.id into v_owner from usuarios u where u.lubricentro_id = v_lub and u.rol = 'owner' limit 1;
+  select su.id into v_suc from sucursales su where su.lubricentro_id = v_lub and su.activa limit 1;
+  select s.plan_id into v_plan from suscripciones s where s.lubricentro_id = v_lub
+    order by s.inicio desc, s.created_at desc limit 1;
+  select p.id into v_basic from planes p where p.nombre = 'Basic';
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  -- correlativa: dos altas seguidas salen N y N+1
+  v_p1 := guardar_presupuesto(p_sucursal_id => v_suc,
+    p_items => '[{"descripcion":"Regresión A","cantidad":1,"precio_unitario":1000}]'::jsonb);
+  v_p2 := guardar_presupuesto(p_sucursal_id => v_suc,
+    p_items => '[{"descripcion":"Regresión B","cantidad":1,"precio_unitario":2000}]'::jsonb);
+  select numero into v_n1 from presupuestos where id = v_p1;
+  select numero into v_n2 from presupuestos where id = v_p2;
+  if v_n2 <> v_n1 + 1 then
+    raise exception 'REGRESIÓN 4: la numeración no es correlativa (% y %).', v_n1, v_n2;
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- Basic bloqueado por RLS
+  update suscripciones set plan_id = v_basic where lubricentro_id = v_lub;
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  begin
+    perform guardar_presupuesto(p_sucursal_id => v_suc,
+      p_items => '[{"descripcion":"no debería entrar","cantidad":1,"precio_unitario":1}]'::jsonb);
+    raise exception 'REGRESIÓN 4: un Basic generó un presupuesto — el gating por plan no rige.';
+  exception
+    when insufficient_privilege then null;
+  end;
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+  update suscripciones set plan_id = v_plan where lubricentro_id = v_lub;
+
+  -- limpieza
+  delete from presupuesto_items where presupuesto_id in (v_p1, v_p2);
+  delete from presupuestos where id in (v_p1, v_p2);
+end $$;

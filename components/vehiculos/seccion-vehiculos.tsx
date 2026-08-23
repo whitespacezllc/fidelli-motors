@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { DialogVehiculo } from "@/components/vehiculos/dialog-vehiculo";
+// (el link de presupuesto por vehículo vive abajo, gateado por plan)
 import {
   NotasVehiculo,
   type NotaDelVehiculo,
@@ -57,6 +58,9 @@ type Vehiculo = {
   notas?: NotaDelVehiculo[];
   /** undefined = el plan no trae pendientes: la sección no existe. */
   pendientes?: PendienteDelVehiculo[];
+  /** El plan trae presupuestos: aparece el atajo con el destino cargado. */
+  puedePresupuestos?: boolean;
+  clienteId?: string;
 };
 
 // El progreso del ciclo y los canjes ya hechos. El dorado es el único
@@ -178,6 +182,14 @@ function TarjetaVehiculo({
               <span className="block text-label text-ink-60">{visita}</span>
             )}
           </span>
+          {vehiculo.puedePresupuestos && (
+            <Link
+              href={`/panel/presupuestos/nuevo?cliente=${clienteId}&vehiculo=${vehiculo.id}`}
+              className="flex min-h-9 items-center rounded-md border border-line px-2.5 text-ui font-semibold text-ink-60 hover:bg-surface hover:text-ink"
+            >
+              Presupuesto
+            </Link>
+          )}
           <DialogVehiculo clienteId={clienteId} vehiculo={vehiculo} />
         </div>
       </div>
