@@ -35,7 +35,7 @@ export default async function PaginaEditarPresupuesto({ params }: Props) {
   }
 
   const supabase = await createClient();
-  const [presupuestoRes, sucursalesRes] = await Promise.all([
+  const [presupuestoRes, sucursalesRes, productosRes] = await Promise.all([
     supabase
       .from("presupuestos")
       .select(
@@ -50,6 +50,11 @@ export default async function PaginaEditarPresupuesto({ params }: Props) {
       .from("sucursales")
       .select("id, nombre")
       .eq("activa", true)
+      .order("nombre"),
+    supabase
+      .from("productos")
+      .select("nombre, marca, precio_venta")
+      .eq("activo", true)
       .order("nombre"),
   ]);
 
@@ -97,6 +102,10 @@ export default async function PaginaEditarPresupuesto({ params }: Props) {
         sucursales={sucursales}
         sucursalInicial={sucursalInicial}
         hoy={hoyISO()}
+        productos={(productosRes.data ?? []).map((p) => ({
+          nombre: [p.nombre, p.marca].filter(Boolean).join(" · "),
+          precio: p.precio_venta,
+        }))}
         inicial={{
           id: p.id,
           fecha: p.fecha,

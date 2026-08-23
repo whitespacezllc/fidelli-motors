@@ -12,6 +12,8 @@ export type ItemCargado = {
   detalle: string | null;
   /** true = se cambió; false = se revisó y estaba bien ("OK"). */
   cambiado: boolean;
+  /** Cuántos. Ausente = 1: el caso normal no pide ni un toque más. */
+  cantidad?: number;
 };
 
 export type PendienteNuevo = {
@@ -32,6 +34,8 @@ export type PayloadService = {
   aceiteTipo: string;
   aceiteProductoId: string | null;
   aceiteNombre: string | null;
+  /** Litros usados: solo viaja si el producto lleva stock. */
+  aceiteLitros?: number | null;
   proxServiceKm: number;
   observaciones: string | null;
   items: ItemCargado[];
@@ -167,6 +171,7 @@ export async function guardarService(
     p_aceite_nombre: payload.aceiteNombre ?? undefined,
     p_observaciones: payload.observaciones ?? undefined,
     p_canjear_premio: payload.canjearPremio ?? false,
+    p_aceite_litros: esMecanica ? undefined : (payload.aceiteLitros ?? undefined),
     p_pendientes: pendientes.map((tp) => ({
       descripcion: tp.descripcion.trim(),
       objetivo_fecha: tp.objetivoFecha,
@@ -205,6 +210,10 @@ export async function crearProductoRapido(
     .insert({
       lubricentro_id: sesion.lubricentroId,
       categoria,
+      // El alta rápida del cartón es siempre de aceite: nace midiéndose
+      // en litros para que el stock (si después se activa) hable la
+      // misma unidad que el service.
+      unidad: categoria === "aceite" ? "litro" : "unidad",
       nombre: limpio,
       marca: marca.trim() || null,
     })

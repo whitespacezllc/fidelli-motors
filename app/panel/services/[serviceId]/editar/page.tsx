@@ -38,11 +38,12 @@ export default async function PaginaEditarService({ params }: Props) {
         .from("services")
         .select(
           `id, tipo, trabajo_descripcion, fecha, created_at, kilometros,
+           aceite_litros,
            aceite_tipo, aceite_producto_id,
            prox_service_km, observaciones, anulado, desbloqueado_hasta,
            sucursal_id, vehiculo_id,
            vehiculos(patente, marca, modelo, clientes(nombre)),
-           service_items(item_tipo, detalle, cambiado, productos(nombre, marca))`,
+           service_items(item_tipo, detalle, cambiado, cantidad, productos(nombre, marca))`,
         )
         .eq("id", serviceId)
         .maybeSingle(),
@@ -53,7 +54,7 @@ export default async function PaginaEditarService({ params }: Props) {
         .order("nombre"),
       supabase
         .from("productos")
-        .select("id, nombre, marca, categoria")
+        .select("id, nombre, marca, categoria, precio_venta, stock, unidad, litros_sugeridos")
         .eq("activo", true)
         .order("nombre"),
       supabase.from("config_experiencia").select("color_primario, color_carton").maybeSingle(),
@@ -165,6 +166,10 @@ export default async function PaginaEditarService({ params }: Props) {
             id: p.id,
             nombre: [p.nombre, p.marca].filter(Boolean).join(" · "),
             categoria: p.categoria,
+            precioVenta: p.precio_venta,
+            stock: p.stock,
+            unidad: p.unidad,
+            litrosSugeridos: p.litros_sugeridos,
           })),
           ultimoService:
             anterior && anterior.kilometros != null
@@ -191,6 +196,12 @@ export default async function PaginaEditarService({ params }: Props) {
           observaciones: service.observaciones,
           marcados,
           cambiados,
+          aceiteLitros: service.aceite_litros,
+          cantidades: Object.fromEntries(
+            renglonesCarton
+              .filter((i) => Number(i.cantidad) !== 1)
+              .map((i) => [i.item_tipo as string, String(i.cantidad)]),
+          ),
         }}
       />
     </div>

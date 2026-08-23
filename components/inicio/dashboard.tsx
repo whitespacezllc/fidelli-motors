@@ -85,11 +85,21 @@ export function Dashboard({
   datos,
   hoy,
   vista,
+  stockBajo = [],
 }: {
   datos: DatosInicio;
   hoy: string;
   /** La vista inicial del gráfico de services, validada en la page. */
   vista: VistaPanel;
+  /** Productos en o bajo su mínimo. Vacío = la tarjeta NO existe. */
+  stockBajo?: {
+    id: string;
+    nombre: string;
+    marca: string | null;
+    stock: number;
+    minimo: number;
+    unidad: string;
+  }[];
 }) {
   const { metricas, retencion, ultimos, landing } = datos;
   const desglose = datos.services_por_sucursal
@@ -105,6 +115,44 @@ export function Dashboard({
 
   return (
     <div className="flex flex-col gap-5">
+      {/* EL AVISO DE STOCK — solo existe cuando hay algo en o bajo el
+          mínimo: sin la alerta el stock es tipeo muerto, y con ruido de
+          más el Inicio deja de leerse. Ámbar de urgencia, jamás rojo. */}
+      {stockBajo.length > 0 && (
+        <div className="rounded-lg border border-urgente bg-urgente-soft p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="font-brand text-body font-bold text-ink">
+              Stock bajo — {stockBajo.length}{" "}
+              {stockBajo.length === 1 ? "producto para reponer" : "productos para reponer"}
+            </p>
+            <Link
+              href="/panel/productos"
+              className="text-ui font-semibold text-ink underline underline-offset-4 hover:text-ink-60"
+            >
+              Ver el catálogo
+            </Link>
+          </div>
+          <ul className="mt-2 flex flex-col gap-1">
+            {stockBajo.map((p) => (
+              <li key={p.id} className="text-ui text-ink tabular-nums">
+                <span className="font-semibold">
+                  {p.nombre}
+                  {p.marca ? ` · ${p.marca}` : ""}
+                </span>{" "}
+                — {p.stock <= 0 ? (
+                  <span className="font-semibold text-urgente">
+                    sin stock ({p.stock} {p.unidad})
+                  </span>
+                ) : (
+                  <>quedan {p.stock} {p.unidad}</>
+                )}{" "}
+                <span className="text-ink-60">· mínimo {p.minimo}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Cuatro métricas: dos filas de dos en el celular, una fila en desktop */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Metrica

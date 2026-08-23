@@ -3,6 +3,7 @@
 import { useActionState, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Boton } from "@/components/ui/boton";
+import { Combobox } from "@/components/ui/combobox";
 import {
   crearPresupuesto,
   editarPresupuesto,
@@ -16,6 +17,7 @@ import {
 } from "@/lib/presupuestos";
 
 type Sucursal = { id: string; nombre: string };
+type ProductoSugerido = { nombre: string; precio: number | null };
 
 export type PresupuestoInicial = {
   /** Presente solo al EDITAR. Duplicar llega sin id: es un alta. */
@@ -50,11 +52,15 @@ export function FormPresupuesto({
   sucursalInicial,
   hoy,
   inicial,
+  productos = [],
 }: {
   sucursales: Sucursal[];
   sucursalInicial: string;
   hoy: string;
   inicial?: PresupuestoInicial;
+  /** El catálogo, para sugerir. La sugerencia ahorra tipeo, no impone:
+   *  el renglón sigue siendo texto libre y todo queda editable. */
+  productos?: ProductoSugerido[];
 }) {
   const router = useRouter();
   const edicion = Boolean(inicial?.id);
@@ -126,6 +132,21 @@ export function FormPresupuesto({
   const editarFila = (i: number, cambio: Partial<Fila>) =>
     setFilas((prev) => prev.map((f, j) => (j === i ? { ...f, ...cambio } : f)));
 
+  const nombresProductos = productos.map((p) => p.nombre);
+
+  // Elegir una sugerencia precarga descripción E importe (si el producto
+  // tiene precio). El importe del presupuesto NO queda atado al catálogo:
+  // es una copia de este momento — si mañana cambia el precio, el
+  // presupuesto viejo no se mueve.
+  const escribirDescripcion = (i: number, texto: string) => {
+    const producto = productos.find((p) => p.nombre === texto);
+    if (producto && producto.precio != null) {
+      editarFila(i, { descripcion: texto, precio: String(producto.precio) });
+    } else {
+      editarFila(i, { descripcion: texto });
+    }
+  };
+
   return (
     <form action={enviar} className="flex flex-col gap-4">
       {/* Destino: TEXTO LIBRE. Un potencial cliente no tiene ficha y no
@@ -170,13 +191,14 @@ export function FormPresupuesto({
         <div className="flex flex-col gap-2.5">
           {filas.map((f, i) => (
             <div key={i} className="flex flex-wrap items-start gap-2">
-              <input
-                value={f.descripcion}
-                onChange={(e) => editarFila(i, { descripcion: e.target.value })}
-                placeholder="Cambio de pastillas delanteras"
-                aria-label={`Renglón ${i + 1}: descripción`}
-                className={`${CLASE_CAMPO} min-w-0 flex-1 basis-52`}
-              />
+              <div className="min-w-0 flex-1 basis-52">
+                <Combobox
+                  value={f.descripcion}
+                  onChange={(v) => escribirDescripcion(i, v)}
+                  opciones={nombresProductos}
+                  ariaLabel={`Renglón ${i + 1}: descripción`}
+                />
+              </div>
               <input
                 value={f.cantidad}
                 onChange={(e) => editarFila(i, { cantidad: e.target.value })}

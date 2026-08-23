@@ -10,7 +10,7 @@ import { IconoCaja } from "@/components/iconos";
 import { DialogProducto } from "@/components/productos/dialog-producto";
 import { FilaProducto } from "@/components/productos/fila-producto";
 import { FiltrosProductos } from "@/components/productos/filtros-productos";
-import { CATEGORIAS, esCategoria } from "@/lib/categorias";
+import { aCategorias } from "@/lib/categorias";
 import { normalizar } from "@/lib/texto";
 
 export const metadata: Metadata = { title: "Productos" };
@@ -21,6 +21,8 @@ export default async function PaginaProductos({
   searchParams: Promise<{ q?: string; categoria?: string }>;
 }) {
   const { q, categoria } = await searchParams;
+  // El catálogo global de categorías, de la base: una nueva es un INSERT
+  // de Fidelli, no una migración ni un deploy.
   const supabase = await createClient();
   const suspendido = await panelSuspendido();
 
@@ -28,17 +30,27 @@ export default async function PaginaProductos({
   // de filas. Filtrar en memoria evita una ida y vuelta por cada chip y deja
   // distinguir "catálogo vacío" de "el filtro no encontró nada", que son dos
   // pantallas distintas. RLS ya filtra por tenant.
-  const { data } = await supabase
-    .from("productos")
-    .select("id, categoria, nombre, marca, activo")
-    .order("categoria")
-    .order("activo", { ascending: false })
-    .order("nombre");
+  const [productosRes, categoriasRes] = await Promise.all([
+    supabase
+      .from("productos")
+      .select(
+        "id, categoria, nombre, marca, activo, precio_venta, stock, stock_minimo, unidad",
+      )
+      .order("activo", { ascending: false })
+      .order("nombre"),
+    supabase
+      .from("categorias_producto")
+      .select("clave, nombre, plural")
+      .eq("activa", true)
+      .order("orden"),
+  ]);
 
-  const todos = data ?? [];
+  const todos = productosRes.data ?? [];
+  const categorias = aCategorias(categoriasRes.data);
 
-  const filtroCategoria =
-    categoria && esCategoria(categoria) ? categoria : undefined;
+  const filtroCategoria = categorias.some((c) => c.valor === categoria)
+    ? categoria
+    : undefined;
   const busqueda = normalizar(q ?? "");
 
   const filtrados = todos.filter((p) => {
@@ -50,8 +62,8 @@ export default async function PaginaProductos({
     );
   });
 
-  // Grupos en el orden del enum; los vacíos no se dibujan.
-  const grupos = CATEGORIAS.map((c) => ({
+  // Grupos en el orden del catálogo; los vacíos no se dibujan.
+  const grupos = categorias.map((c) => ({
     ...c,
     productos: filtrados.filter((p) => p.categoria === c.valor),
   })).filter((g) => g.productos.length > 0);
@@ -63,7 +75,7 @@ export default async function PaginaProductos({
           (suspendido ? (
             <AccionBloqueada etiqueta="+ Nuevo producto" />
           ) : (
-            <DialogProducto />
+            <DialogProducto categorias={categorias} />
           ))}
       </CabeceraSeccion>
 
@@ -76,12 +88,16 @@ export default async function PaginaProductos({
           {suspendido ? (
             <AccionBloqueada etiqueta="+ Cargar el primer producto" />
           ) : (
-            <DialogProducto etiquetaTrigger="+ Cargar el primer producto" />
+            <DialogProducto categorias={categorias} etiquetaTrigger="+ Cargar el primer producto" />
           )}
         </EstadoVacio>
       ) : (
         <>
-          <FiltrosProductos categoria={filtroCategoria} q={q} />
+          <FiltrosProductos
+            categorias={categorias}
+            categoria={filtroCategoria}
+            q={q}
+          />
 
           {filtrados.length === 0 ? (
             <EstadoVacio
@@ -104,7 +120,7 @@ export default async function PaginaProductos({
                   </h2>
                   <ul className="surface-card px-4 sm:px-5">
                     {g.productos.map((p) => (
-                      <FilaProducto key={p.id} producto={p} suspendido={suspendido} />
+                      <FilaProducto key={p.id} producto={p} suspendido={suspendido} categorias={categorias} />
                     ))}
                   </ul>
                 </section>

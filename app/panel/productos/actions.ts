@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { sesionParaEscribir } from "@/lib/auth/session";
-import { esCategoria, type CategoriaProducto } from "@/lib/categorias";
+// La categoría la valida la BASE: es una FK contra el catálogo global.
 
 export type EstadoProducto = { error?: string; ok?: boolean };
 
@@ -23,21 +23,70 @@ function esErrorDeRed(error: { message?: string }): boolean {
 }
 
 type Campos =
-  | { ok: true; categoria: CategoriaProducto; nombre: string; marca: string | null }
+  | {
+      ok: true;
+      categoria: string;
+      nombre: string;
+      marca: string | null;
+      precio_venta: number | null;
+      stock: number | null;
+      stock_minimo: number | null;
+      unidad: string;
+      litros_sugeridos: number | null;
+    }
   | { ok: false; error: string };
+
+// "1.500,50" y "1500.50" valen igual: el mecánico tipea como piensa.
+function numeroONull(crudo: FormDataEntryValue | null): number | null {
+  const texto = String(crudo ?? "").trim();
+  if (texto === "") return null;
+  const n = Number(texto.replace(/\./g, "").replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
 
 function leerCampos(formData: FormData): Campos {
   const categoria = String(formData.get("categoria") ?? "");
   const nombre = String(formData.get("nombre") ?? "").trim();
   const marca = String(formData.get("marca") ?? "").trim() || null;
+  const unidad = formData.get("unidad") === "litro" ? "litro" : "unidad";
+  const llevaStock = formData.get("lleva_stock") === "on";
 
-  if (!esCategoria(categoria)) {
+  if (!categoria) {
     return { ok: false, error: "Elegí una categoría para el producto." };
   }
   if (nombre.length < 2) {
     return { ok: false, error: "El nombre necesita al menos 2 caracteres." };
   }
-  return { ok: true, categoria, nombre, marca };
+
+  const precio_venta = numeroONull(formData.get("precio_venta"));
+  if (precio_venta != null && precio_venta < 0) {
+    return { ok: false, error: "El precio no puede ser negativo." };
+  }
+
+  // Apagar el interruptor de stock LIMPIA los tres campos: nulo significa
+  // "no llevo stock", no "cero".
+  const stock = llevaStock ? numeroONull(formData.get("stock")) : null;
+  const stock_minimo = llevaStock ? numeroONull(formData.get("stock_minimo")) : null;
+  const litros_sugeridos =
+    llevaStock && unidad === "litro"
+      ? numeroONull(formData.get("litros_sugeridos"))
+      : null;
+
+  if (llevaStock && stock == null) {
+    return { ok: false, error: "Poné el stock actual, o apagá el interruptor de stock." };
+  }
+
+  return {
+    ok: true,
+    categoria,
+    nombre,
+    marca,
+    precio_venta,
+    stock,
+    stock_minimo,
+    unidad,
+    litros_sugeridos,
+  };
 }
 
 export async function crearProducto(
@@ -56,10 +105,16 @@ export async function crearProducto(
     categoria: campos.categoria,
     nombre: campos.nombre,
     marca: campos.marca,
+    precio_venta: campos.precio_venta,
+    stock: campos.stock,
+    stock_minimo: campos.stock_minimo,
+    unidad: campos.unidad,
+    litros_sugeridos: campos.litros_sugeridos,
   });
 
   if (error) {
     if (error.code === DUPLICADO) return { error: YA_EXISTE };
+    if (error.code === "23503") return { error: "Esa categoría ya no existe. Recargá la pantalla." };
     if (esErrorDeRed(error)) return { error: SIN_CONEXION };
     return { error: "No se pudo guardar el producto. Probá de nuevo en un momento." };
   }
@@ -82,6 +137,11 @@ export async function editarProducto(
   const { error } = await supabase
     .from("productos")
     .update({
+      precio_venta: campos.precio_venta,
+      stock: campos.stock,
+      stock_minimo: campos.stock_minimo,
+      unidad: campos.unidad,
+      litros_sugeridos: campos.litros_sugeridos,
       categoria: campos.categoria,
       nombre: campos.nombre,
       marca: campos.marca,
