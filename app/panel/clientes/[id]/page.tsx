@@ -6,6 +6,7 @@ import { clasesBoton } from "@/components/ui/boton";
 import { DialogCliente } from "@/components/clientes/dialog-cliente";
 import { SeccionVehiculos } from "@/components/vehiculos/seccion-vehiculos";
 import { estadoService } from "@/lib/servicios";
+import { obtenerSesion, featureHabilitada } from "@/lib/auth/session";
 import { formatearCuit } from "@/lib/cuit";
 import { formatearFecha, formatearMesAnio } from "@/lib/fechas";
 
@@ -18,6 +19,8 @@ export default async function FichaCliente({
 }) {
   const { id } = await params;
   const supabase = await createClient();
+  const sesion = await obtenerSesion();
+  const puedePendientes = featureHabilitada(sesion, "pendientes");
 
   // Dos consultas para dos conjuntos distintos, ninguna con N+1: los datos
   // del cliente y sus vehículos, cada una con sus agregados ya resueltos en
@@ -26,7 +29,7 @@ export default async function FichaCliente({
   const { data: cliente } = await supabase
     .from("vista_clientes")
     .select(
-      "id, nombre, telefono, email, cuit, created_at, cantidad_vehiculos, ultimo_service_fecha",
+      "id, nombre, telefono, email, cuit, created_at, cantidad_vehiculos, ultimo_service_fecha, ultima_visita_fecha",
     )
     .eq("id", id)
     .maybeSingle();
@@ -49,7 +52,7 @@ export default async function FichaCliente({
 
   const { data: filasVehiculos } = await supabase
     .from("vista_vehiculos")
-    .select("id, patente, marca, modelo, anio, cantidad_services, ultimo_service_fecha")
+    .select("id, patente, marca, modelo, anio, cantidad_services, ultimo_service_fecha, ultima_visita_fecha")
     .eq("cliente_id", cliente.id)
     .order("created_at");
 
@@ -66,6 +69,7 @@ export default async function FichaCliente({
             anio: v.anio,
             cantidad_services: v.cantidad_services ?? 0,
             ultimo_service_fecha: v.ultimo_service_fecha,
+            ultima_visita_fecha: v.ultima_visita_fecha,
           },
         ]
       : [],
@@ -77,7 +81,7 @@ export default async function FichaCliente({
   const { data: filasServices } = await supabase
     .from("services")
     .select(
-      "id, fecha, created_at, kilometros, aceite_tipo, aceite_nombre, anulado, desbloqueado_hasta, vehiculo_id, sucursales(nombre)",
+      "id, tipo, trabajo_descripcion, fecha, created_at, kilometros, aceite_tipo, aceite_nombre, anulado, desbloqueado_hasta, vehiculo_id, sucursales(nombre)",
     )
     .in(
       "vehiculo_id",
@@ -96,7 +100,7 @@ export default async function FichaCliente({
   // La fidelización de cada auto. premio_disponible() es por vehículo y un
   // cliente tiene uno o dos: se piden en paralelo, no en cascada. Los
   // canjes y las notas van en una sola consulta para todos.
-  const [premios, canjesRes, notasRes] = await Promise.all([
+  const [premios, canjesRes, notasRes, pendientesRes] = await Promise.all([
     Promise.all(
       vehiculos.map((v) =>
         supabase.rpc("premio_disponible", { p_vehiculo_id: v.id }),
@@ -120,7 +124,31 @@ export default async function FichaCliente({
         vehiculos.map((v) => v.id),
       )
       .order("created_at", { ascending: false }),
+  
+    puedePendientes
+      ? supabase
+          .from("trabajos_pendientes")
+          .select(
+            "id, vehiculo_id, descripcion, objetivo_fecha, objetivo_km, visible_cliente, created_at",
+          )
+          .in(
+            "vehiculo_id",
+            vehiculos.map((v) => v.id),
+          )
+          .eq("estado", "pendiente")
+          .order("created_at")
+      : Promise.resolve({ data: null }),
   ]);
+
+  const pendientesPorVehiculo = new Map<
+    string,
+    NonNullable<typeof pendientesRes.data>
+  >();
+  for (const tp of pendientesRes.data ?? []) {
+    const lista = pendientesPorVehiculo.get(tp.vehiculo_id) ?? [];
+    lista.push(tp);
+    pendientesPorVehiculo.set(tp.vehiculo_id, lista);
+  }
 
   const notasPorVehiculo = new Map<
     string,
@@ -169,6 +197,9 @@ export default async function FichaCliente({
             {cliente.ultimo_service_fecha
               ? `Último service ${formatearFecha(cliente.ultimo_service_fecha)}`
               : "Todavía no tiene services cargados"}
+            {cliente.ultima_visita_fecha &&
+              cliente.ultima_visita_fecha !== cliente.ultimo_service_fecha &&
+              ` · Última visita ${formatearFecha(cliente.ultima_visita_fecha)}`}
           </p>
         </div>
 
@@ -207,9 +238,14 @@ export default async function FichaCliente({
           })),
           services: (servicesPorVehiculo.get(v.id) ?? []).map((s) => ({
             id: s.id,
+            tipo: s.tipo,
             fecha: s.fecha,
             kilometros: s.kilometros,
-            aceite: [s.aceite_tipo, s.aceite_nombre].filter(Boolean).join(" · "),
+            // En mecánica la columna del aceite cuenta el trabajo.
+            aceite:
+              s.tipo === "mecanica"
+                ? (s.trabajo_descripcion ?? "")
+                : [s.aceite_tipo, s.aceite_nombre].filter(Boolean).join(" · "),
             sucursal: s.sucursales?.nombre ?? "",
             estado: estadoService(s),
           })),
@@ -223,6 +259,16 @@ export default async function FichaCliente({
             (servicesPorVehiculo.get(v.id) ?? [])
               .filter((s) => !s.anulado)
               .at(-1)?.created_at ?? null,
+          pendientes: puedePendientes
+            ? (pendientesPorVehiculo.get(v.id) ?? []).map((tp) => ({
+                id: tp.id,
+                descripcion: tp.descripcion,
+                objetivoFecha: tp.objetivo_fecha,
+                objetivoKm: tp.objetivo_km,
+                visibleCliente: tp.visible_cliente,
+                creado: tp.created_at,
+              }))
+            : undefined,
           notas: (notasPorVehiculo.get(v.id) ?? []).map((n) => ({
             id: n.id,
             contenido: n.contenido,

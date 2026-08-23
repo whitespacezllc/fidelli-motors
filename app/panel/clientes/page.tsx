@@ -31,7 +31,7 @@ export default async function PaginaClientes({
   // vehículos y último service) resueltos en Postgres. RLS filtra por tenant.
   let consulta = supabase
     .from("vista_clientes")
-    .select("id, nombre, telefono, cantidad_vehiculos, ultimo_service_fecha")
+    .select("id, nombre, telefono, cantidad_vehiculos, ultimo_service_fecha, ultima_visita_fecha")
     .order("nombre");
 
   if (filtros) consulta = consulta.or(filtros);
@@ -50,6 +50,7 @@ export default async function PaginaClientes({
             telefono: c.telefono ?? "",
             cantidad_vehiculos: c.cantidad_vehiculos ?? 0,
             ultimo_service_fecha: c.ultimo_service_fecha,
+            ultima_visita_fecha: c.ultima_visita_fecha,
           },
         ]
       : [],

@@ -26,7 +26,9 @@ type ServiceFila = {
   vehiculo: string | null;
   cliente: string | null;
   sucursal: string;
-  kilometros: number;
+  tipo?: "service" | "mecanica";
+  descripcion?: string | null;
+  kilometros: number | null;
   desbloqueadoPor: string | null;
 };
 
@@ -59,7 +61,9 @@ export function FilaServiceFidelli({
       </td>
       <td className={`${TD} whitespace-nowrap text-ink-60`}>{service.sucursal}</td>
       <td className={`${TD} text-right whitespace-nowrap text-ink`}>
-        {service.kilometros.toLocaleString("es-AR")}
+        {service.tipo === "mecanica"
+          ? "Mecánica"
+          : (service.kilometros ?? 0).toLocaleString("es-AR")}
       </td>
       <td className={TD}>
         <BadgeEdicion estado={estado} desbloqueadoPor={service.desbloqueadoPor} />
@@ -182,7 +186,9 @@ function DialogDesbloquear({
             <div className="flex justify-between gap-4 py-0.5">
               <dt className="text-ink-60">Kilómetros</dt>
               <dd className="text-right text-ink">
-                {service.kilometros.toLocaleString("es-AR")} km
+                {service.tipo === "mecanica"
+          ? "Mecánica"
+          : (service.kilometros ?? 0).toLocaleString("es-AR")} km
               </dd>
             </div>
             <div className="flex justify-between gap-4 py-0.5">

@@ -33,6 +33,8 @@ const MENSAJES: Record<string, string> = {
   nombre_vacio: "Escribí el nombre de la marca.",
   plan_vacio: "Elegí un plan.",
   sin_sucursales: "Cargá al menos una sucursal con nombre.",
+  limite_sucursales:
+    "Las sucursales cargadas superan el límite del plan elegido. Sacá alguna del paso 2 o elegí un plan con más lugares.",
   descuento_invalido: "El descuento va de 0 a 100.",
   trial_invalido: "El trial va de 0 a 365 días.",
   calcos_invalidas: "Las calcos entregadas no pueden ser un número negativo.",

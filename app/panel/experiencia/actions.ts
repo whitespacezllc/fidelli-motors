@@ -25,7 +25,7 @@ export async function guardarExperiencia(
   _previo: EstadoExperiencia,
   formData: FormData,
 ): Promise<EstadoExperiencia> {
-  const sesion = await sesionParaEscribir();
+  const sesion = await sesionParaEscribir("personalizacion_pagina");
 
   const color = String(formData.get("color") ?? "").trim().toUpperCase();
   if (!HEX.test(color)) {
@@ -155,7 +155,7 @@ export async function subirLogo(
   _previo: EstadoLogo,
   formData: FormData,
 ): Promise<EstadoLogo> {
-  const sesion = await sesionParaEscribir();
+  const sesion = await sesionParaEscribir("personalizacion_pagina");
 
   const archivo = formData.get("logo");
   if (!(archivo instanceof File) || archivo.size === 0) {
@@ -211,7 +211,7 @@ export async function subirLogo(
 }
 
 export async function quitarLogo(): Promise<EstadoLogo> {
-  const sesion = await sesionParaEscribir();
+  const sesion = await sesionParaEscribir("personalizacion_pagina");
 
   const supabase = await createClient();
   await supabase.storage

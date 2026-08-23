@@ -34,6 +34,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      cambios_override_plan: {
+        Row: {
+          cambiado_por: string
+          created_at: string
+          id: string
+          lubricentro_id: string
+          motivo: string
+          overrides_antes: Json
+          overrides_despues: Json
+        }
+        Insert: {
+          cambiado_por: string
+          created_at?: string
+          id?: string
+          lubricentro_id: string
+          motivo: string
+          overrides_antes: Json
+          overrides_despues: Json
+        }
+        Update: {
+          cambiado_por?: string
+          created_at?: string
+          id?: string
+          lubricentro_id?: string
+          motivo?: string
+          overrides_antes?: Json
+          overrides_despues?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cambios_override_plan_cambiado_por_fkey"
+            columns: ["cambiado_por"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cambios_override_plan_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       canjes: {
         Row: {
           created_at: string
@@ -385,6 +430,7 @@ export type Database = {
           created_at: string
           id: string
           nombre: string
+          plan_overrides: Json
           slug: string
         }
         Insert: {
@@ -393,6 +439,7 @@ export type Database = {
           created_at?: string
           id?: string
           nombre: string
+          plan_overrides?: Json
           slug: string
         }
         Update: {
@@ -401,6 +448,7 @@ export type Database = {
           created_at?: string
           id?: string
           nombre?: string
+          plan_overrides?: Json
           slug?: string
         }
         Relationships: []
@@ -409,6 +457,7 @@ export type Database = {
         Row: {
           activo: boolean
           contenido: string
+          contenido_pendiente: string | null
           created_at: string
           id: string
           lubricentro_id: string
@@ -417,6 +466,7 @@ export type Database = {
         Insert: {
           activo?: boolean
           contenido: string
+          contenido_pendiente?: string | null
           created_at?: string
           id?: string
           lubricentro_id: string
@@ -425,6 +475,7 @@ export type Database = {
         Update: {
           activo?: boolean
           contenido?: string
+          contenido_pendiente?: string | null
           created_at?: string
           id?: string
           lubricentro_id?: string
@@ -566,7 +617,10 @@ export type Database = {
           created_at: string
           descuento_anual_pct: number
           descuento_semestral_pct: number
+          features: Json
+          heredado: boolean
           id: string
+          limites: Json
           nombre: string
           precio_mensual: number
         }
@@ -575,7 +629,10 @@ export type Database = {
           created_at?: string
           descuento_anual_pct?: number
           descuento_semestral_pct?: number
+          features?: Json
+          heredado?: boolean
           id?: string
+          limites?: Json
           nombre: string
           precio_mensual: number
         }
@@ -584,7 +641,10 @@ export type Database = {
           created_at?: string
           descuento_anual_pct?: number
           descuento_semestral_pct?: number
+          features?: Json
+          heredado?: boolean
           id?: string
+          limites?: Json
           nombre?: string
           precio_mensual?: number
         }
@@ -593,6 +653,7 @@ export type Database = {
       premios: {
         Row: {
           activo: boolean
+          alcance: Database["public"]["Enums"]["alcance_premio"]
           created_at: string
           descripcion: string
           id: string
@@ -601,6 +662,7 @@ export type Database = {
         }
         Insert: {
           activo?: boolean
+          alcance?: Database["public"]["Enums"]["alcance_premio"]
           created_at?: string
           descripcion: string
           id?: string
@@ -609,6 +671,7 @@ export type Database = {
         }
         Update: {
           activo?: boolean
+          alcance?: Database["public"]["Enums"]["alcance_premio"]
           created_at?: string
           descripcion?: string
           id?: string
@@ -669,7 +732,7 @@ export type Database = {
           created_at: string
           detalle: string | null
           id: string
-          item_tipo: Database["public"]["Enums"]["item_tipo"]
+          item_tipo: Database["public"]["Enums"]["item_tipo"] | null
           lubricentro_id: string
           producto_id: string | null
           service_id: string
@@ -679,7 +742,7 @@ export type Database = {
           created_at?: string
           detalle?: string | null
           id?: string
-          item_tipo: Database["public"]["Enums"]["item_tipo"]
+          item_tipo?: Database["public"]["Enums"]["item_tipo"] | null
           lubricentro_id: string
           producto_id?: string | null
           service_id: string
@@ -689,7 +752,7 @@ export type Database = {
           created_at?: string
           detalle?: string | null
           id?: string
-          item_tipo?: Database["public"]["Enums"]["item_tipo"]
+          item_tipo?: Database["public"]["Enums"]["item_tipo"] | null
           lubricentro_id?: string
           producto_id?: string | null
           service_id?: string
@@ -729,18 +792,20 @@ export type Database = {
         Row: {
           aceite_nombre: string | null
           aceite_producto_id: string | null
-          aceite_tipo: string
+          aceite_tipo: string | null
           anulado: boolean
           created_at: string
           desbloqueado_hasta: string | null
           desbloqueado_por: string | null
           fecha: string
           id: string
-          kilometros: number
+          kilometros: number | null
           lubricentro_id: string
           observaciones: string | null
-          prox_service_km: number
+          prox_service_km: number | null
           sucursal_id: string
+          tipo: Database["public"]["Enums"]["tipo_trabajo"]
+          trabajo_descripcion: string | null
           updated_at: string
           usuario_id: string
           vehiculo_id: string
@@ -748,18 +813,20 @@ export type Database = {
         Insert: {
           aceite_nombre?: string | null
           aceite_producto_id?: string | null
-          aceite_tipo: string
+          aceite_tipo?: string | null
           anulado?: boolean
           created_at?: string
           desbloqueado_hasta?: string | null
           desbloqueado_por?: string | null
           fecha?: string
           id?: string
-          kilometros: number
+          kilometros?: number | null
           lubricentro_id: string
           observaciones?: string | null
-          prox_service_km: number
+          prox_service_km?: number | null
           sucursal_id: string
+          tipo?: Database["public"]["Enums"]["tipo_trabajo"]
+          trabajo_descripcion?: string | null
           updated_at?: string
           usuario_id: string
           vehiculo_id: string
@@ -767,18 +834,20 @@ export type Database = {
         Update: {
           aceite_nombre?: string | null
           aceite_producto_id?: string | null
-          aceite_tipo?: string
+          aceite_tipo?: string | null
           anulado?: boolean
           created_at?: string
           desbloqueado_hasta?: string | null
           desbloqueado_por?: string | null
           fecha?: string
           id?: string
-          kilometros?: number
+          kilometros?: number | null
           lubricentro_id?: string
           observaciones?: string | null
-          prox_service_km?: number
+          prox_service_km?: number | null
           sucursal_id?: string
+          tipo?: Database["public"]["Enums"]["tipo_trabajo"]
+          trabajo_descripcion?: string | null
           updated_at?: string
           usuario_id?: string
           vehiculo_id?: string
@@ -927,6 +996,111 @@ export type Database = {
           },
         ]
       }
+      trabajos_pendientes: {
+        Row: {
+          created_at: string
+          descripcion: string
+          estado: Database["public"]["Enums"]["estado_pendiente"]
+          id: string
+          lubricentro_id: string
+          objetivo_fecha: string | null
+          objetivo_km: number | null
+          origen_service_id: string | null
+          resuelto_en: string | null
+          resuelto_service_id: string | null
+          usuario_id: string
+          vehiculo_id: string
+          visible_cliente: boolean
+        }
+        Insert: {
+          created_at?: string
+          descripcion: string
+          estado?: Database["public"]["Enums"]["estado_pendiente"]
+          id?: string
+          lubricentro_id: string
+          objetivo_fecha?: string | null
+          objetivo_km?: number | null
+          origen_service_id?: string | null
+          resuelto_en?: string | null
+          resuelto_service_id?: string | null
+          usuario_id: string
+          vehiculo_id: string
+          visible_cliente?: boolean
+        }
+        Update: {
+          created_at?: string
+          descripcion?: string
+          estado?: Database["public"]["Enums"]["estado_pendiente"]
+          id?: string
+          lubricentro_id?: string
+          objetivo_fecha?: string | null
+          objetivo_km?: number | null
+          origen_service_id?: string | null
+          resuelto_en?: string | null
+          resuelto_service_id?: string | null
+          usuario_id?: string
+          vehiculo_id?: string
+          visible_cliente?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trabajos_pendientes_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trabajos_pendientes_origen_service_id_fkey"
+            columns: ["origen_service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trabajos_pendientes_origen_service_id_fkey"
+            columns: ["origen_service_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_service"
+            referencedColumns: ["ultimo_service_id"]
+          },
+          {
+            foreignKeyName: "trabajos_pendientes_resuelto_service_id_fkey"
+            columns: ["resuelto_service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trabajos_pendientes_resuelto_service_id_fkey"
+            columns: ["resuelto_service_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_service"
+            referencedColumns: ["ultimo_service_id"]
+          },
+          {
+            foreignKeyName: "trabajos_pendientes_usuario_id_fkey"
+            columns: ["usuario_id"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trabajos_pendientes_vehiculo_id_fkey"
+            columns: ["vehiculo_id"]
+            isOneToOne: false
+            referencedRelation: "vehiculos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trabajos_pendientes_vehiculo_id_fkey"
+            columns: ["vehiculo_id"]
+            isOneToOne: false
+            referencedRelation: "vista_vehiculos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       usuarios: {
         Row: {
           created_at: string
@@ -1042,6 +1216,7 @@ export type Database = {
           patentes: string | null
           patentes_lista: string | null
           telefono: string | null
+          ultima_visita_fecha: string | null
           ultimo_prox_service_km: number | null
           ultimo_service_fecha: string | null
           ultimo_service_km: number | null
@@ -1053,6 +1228,92 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "lubricentros"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      vista_pendientes: {
+        Row: {
+          cliente_id: string | null
+          cliente_nombre: string | null
+          cliente_telefono: string | null
+          contactado: boolean | null
+          creado: string | null
+          descripcion: string | null
+          dias_hasta: number | null
+          estado: Database["public"]["Enums"]["estado_contacto"] | null
+          fecha_estimada: string | null
+          km_faltantes: number | null
+          lubricentro_id: string | null
+          marca: string | null
+          modelo: string | null
+          objetivo_fecha: string | null
+          objetivo_km: number | null
+          origen_service_id: string | null
+          patente: string | null
+          patente_normalizada: string | null
+          pendiente_id: string | null
+          sucursal_id: string | null
+          sucursal_nombre: string | null
+          ultimo_km: number | null
+          vehiculo_id: string | null
+          visible_cliente: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trabajos_pendientes_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trabajos_pendientes_origen_service_id_fkey"
+            columns: ["origen_service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trabajos_pendientes_origen_service_id_fkey"
+            columns: ["origen_service_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_service"
+            referencedColumns: ["ultimo_service_id"]
+          },
+          {
+            foreignKeyName: "trabajos_pendientes_vehiculo_id_fkey"
+            columns: ["vehiculo_id"]
+            isOneToOne: false
+            referencedRelation: "vehiculos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trabajos_pendientes_vehiculo_id_fkey"
+            columns: ["vehiculo_id"]
+            isOneToOne: false
+            referencedRelation: "vista_vehiculos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vehiculos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vehiculos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vehiculos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_service"
+            referencedColumns: ["cliente_id"]
           },
         ]
       }
@@ -1117,6 +1378,7 @@ export type Database = {
         Row: {
           anio: number | null
           cantidad_services: number | null
+          cantidad_trabajos: number | null
           cliente_id: string | null
           created_at: string | null
           id: string | null
@@ -1125,6 +1387,7 @@ export type Database = {
           modelo: string | null
           patente: string | null
           patente_normalizada: string | null
+          ultima_visita_fecha: string | null
           ultimo_service_fecha: string | null
         }
         Relationships: [
@@ -1191,6 +1454,7 @@ export type Database = {
           p_prox_service_km: number
           p_service_id: string
           p_sucursal_id: string
+          p_trabajo_descripcion?: string
         }
         Returns: undefined
       }
@@ -1216,6 +1480,8 @@ export type Database = {
           vehiculo_id: string
         }[]
       }
+      catalogo_features_plan: { Args: never; Returns: string[] }
+      catalogo_limites_plan: { Args: never; Returns: string[] }
       ciclos_fidelizacion: {
         Args: never
         Returns: {
@@ -1280,6 +1546,16 @@ export type Database = {
           lubricentro_id: string
         }[]
       }
+      feature_de_tenant: {
+        Args: { p_feature: string; p_lubricentro: string }
+        Returns: boolean
+      }
+      feature_plan_valida: { Args: { p_feature: string }; Returns: boolean }
+      features_plan_bien_formadas: { Args: { p: Json }; Returns: boolean }
+      fijar_override_plan: {
+        Args: { p_lubricentro: string; p_motivo: string; p_overrides: Json }
+        Returns: undefined
+      }
       fm_unaccent: { Args: { "": string }; Returns: string }
       get_carton: { Args: { p_patente: string; p_slug: string }; Returns: Json }
       get_landing: { Args: { p_slug: string }; Returns: Json }
@@ -1293,12 +1569,26 @@ export type Database = {
           p_items?: Json
           p_kilometros: number
           p_observaciones?: string
+          p_pendientes?: Json
           p_prox_service_km: number
+          p_resolver_pendientes?: string[]
           p_sucursal_id: string
+          p_tipo?: Database["public"]["Enums"]["tipo_trabajo"]
+          p_trabajo_descripcion?: string
           p_vehiculo_id: string
         }
         Returns: string
       }
+      limite_de_tenant: {
+        Args: { p_limite: string; p_lubricentro: string }
+        Returns: number
+      }
+      limite_del_plan: {
+        Args: { p_limite: string; p_plan: string }
+        Returns: number
+      }
+      limite_plan_valido: { Args: { p_limite: string }; Returns: boolean }
+      limites_plan_bien_formados: { Args: { p: Json }; Returns: boolean }
       listado_lubricentros: {
         Args: never
         Returns: {
@@ -1333,9 +1623,17 @@ export type Database = {
       mi_lubricentro_id: { Args: never; Returns: string }
       normalizar_patente: { Args: { entrada: string }; Returns: string }
       orden_atencion: { Args: { p_atencion: string }; Returns: number }
+      overrides_plan_bien_formados: { Args: { p: Json }; Returns: boolean }
+      plan_capacidades: {
+        Args: { u: Database["public"]["Tables"]["usuarios"]["Row"] }
+        Returns: Json
+      }
+      plan_limite: { Args: { p_limite: string }; Returns: number }
+      plan_permite: { Args: { p_feature: string }; Returns: boolean }
       premio_disponible: {
         Args: { p_vehiculo_id: string }
         Returns: {
+          alcance: Database["public"]["Enums"]["alcance_premio"]
           descripcion: string
           disponible: boolean
           meta_services: number
@@ -1378,6 +1676,10 @@ export type Database = {
         }[]
       }
       soy_superadmin: { Args: never; Returns: boolean }
+      sucursales_dentro_del_limite: {
+        Args: { p_lubricentro: string; p_sucursal: string }
+        Returns: boolean
+      }
       telefono_de_contacto: {
         Args: { p_lubricentro_id: string }
         Returns: string
@@ -1393,9 +1695,11 @@ export type Database = {
       }
     }
     Enums: {
+      alcance_premio: "services" | "todos"
       canal_contacto: "whatsapp" | "manual"
       categoria_producto: "aceite" | "filtro" | "liquido" | "aditivo" | "otro"
-      estado_contacto: "urgente" | "proximo" | "vencido"
+      estado_contacto: "urgente" | "proximo" | "vencido" | "pendiente"
+      estado_pendiente: "pendiente" | "resuelto" | "descartado"
       estado_suscripcion: "trial" | "activa" | "vencida" | "cancelada"
       item_tipo:
         | "filtro_aceite"
@@ -1412,6 +1716,7 @@ export type Database = {
       motivo_contacto_fidelli: "trial" | "cobranza"
       periodo_suscripcion: "mensual" | "semestral" | "anual"
       rol_usuario: "owner" | "superadmin"
+      tipo_trabajo: "service" | "mecanica"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1542,9 +1847,11 @@ export const Constants = {
   },
   public: {
     Enums: {
+      alcance_premio: ["services", "todos"],
       canal_contacto: ["whatsapp", "manual"],
       categoria_producto: ["aceite", "filtro", "liquido", "aditivo", "otro"],
-      estado_contacto: ["urgente", "proximo", "vencido"],
+      estado_contacto: ["urgente", "proximo", "vencido", "pendiente"],
+      estado_pendiente: ["pendiente", "resuelto", "descartado"],
       estado_suscripcion: ["trial", "activa", "vencida", "cancelada"],
       item_tipo: [
         "filtro_aceite",
@@ -1562,6 +1869,7 @@ export const Constants = {
       motivo_contacto_fidelli: ["trial", "cobranza"],
       periodo_suscripcion: ["mensual", "semestral", "anual"],
       rol_usuario: ["owner", "superadmin"],
+      tipo_trabajo: ["service", "mecanica"],
     },
   },
 } as const

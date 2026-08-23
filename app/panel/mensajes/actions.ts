@@ -24,6 +24,8 @@ function leerCampos(formData: FormData) {
   return {
     tono: String(formData.get("tono") ?? "").trim(),
     contenido: String(formData.get("contenido") ?? "").trim(),
+    contenido_pendiente:
+      String(formData.get("contenido_pendiente") ?? "").trim() || null,
   };
 }
 
@@ -53,6 +55,7 @@ export async function crearMensaje(
     lubricentro_id: sesion.lubricentroId,
     tono: campos.tono,
     contenido: campos.contenido,
+    contenido_pendiente: campos.contenido_pendiente,
     activo: false,
   });
 
@@ -80,7 +83,11 @@ export async function editarMensaje(
   // El .select() distingue el rechazo silencioso de RLS de un guardado real.
   const { data, error } = await supabase
     .from("mensaje_templates")
-    .update({ tono: campos.tono, contenido: campos.contenido })
+    .update({
+      tono: campos.tono,
+      contenido: campos.contenido,
+      contenido_pendiente: campos.contenido_pendiente,
+    })
     .eq("id", id)
     .select("id");
 

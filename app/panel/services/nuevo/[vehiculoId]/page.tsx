@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { obtenerSesion, panelSuspendido } from "@/lib/auth/session";
+import { obtenerSesion, panelSuspendido, featureHabilitada } from "@/lib/auth/session";
 import { BloqueoSuspension } from "@/components/panel/bloqueo-suspension";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { clasesBoton } from "@/components/ui/boton";
@@ -44,6 +44,7 @@ export default async function PaginaCarton({
     serviciosRes,
     configRes,
     premioRes,
+    pendientesRes,
   ] = await Promise.all([
       supabase
         .from("vehiculos")
@@ -65,12 +66,29 @@ export default async function PaginaCarton({
         .select("fecha, kilometros, created_at, sucursales(nombre)")
         .eq("vehiculo_id", vehiculoId)
         .eq("anulado", false)
+        // Solo services: la referencia de kilómetros y el aviso de "ya hay
+        // uno hoy" son del cambio de aceite, no de la mecánica.
+        .eq("tipo", "service")
         .order("fecha", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(5),
       supabase.from("config_experiencia").select("color_primario, color_carton").maybeSingle(),
       // El ciclo con reset, calculado en vivo contra la meta vigente.
-      supabase.rpc("premio_disponible", { p_vehiculo_id: vehiculoId }),
+      // Sin la feature de premios ni se consulta: el checkbox de canje no
+      // aparece y el guardado nunca choca con la policy al final — que era
+      // exactamente el rechazo crudo que había que evitar.
+      featureHabilitada(sesion, "premios")
+        ? supabase.rpc("premio_disponible", { p_vehiculo_id: vehiculoId })
+        : Promise.resolve({ data: null }),
+      // Los pendientes abiertos, para tildarlos sin salir del flujo.
+      featureHabilitada(sesion, "pendientes")
+        ? supabase
+            .from("trabajos_pendientes")
+            .select("id, descripcion, created_at, objetivo_fecha, objetivo_km")
+            .eq("vehiculo_id", vehiculoId)
+            .eq("estado", "pendiente")
+            .order("created_at")
+        : Promise.resolve({ data: null }),
     ]);
 
   const vehiculo = vehiculoRes.data;
@@ -104,6 +122,7 @@ export default async function PaginaCarton({
   const servicios = serviciosRes.data ?? [];
   const ultimo = servicios[0] ?? null;
   const premio = premioRes.data?.[0] ?? null;
+  const puedeMecanica = featureHabilitada(sesion, "mecanica");
 
   // La sucursal es del dispositivo, no del usuario: en el MVP es probable que
   // el lubricentro comparta una sola cuenta entre sucursales, así que la
@@ -151,14 +170,27 @@ export default async function PaginaCarton({
             nombre: [p.nombre, p.marca].filter(Boolean).join(" · "),
             categoria: p.categoria,
           })),
-          ultimoService: ultimo
-            ? { fecha: ultimo.fecha, kilometros: ultimo.kilometros }
-            : null,
+          ultimoService:
+            ultimo && ultimo.kilometros != null
+              ? { fecha: ultimo.fecha, kilometros: ultimo.kilometros }
+              : null,
           serviceDeHoy,
           hoy,
           premioDisponible: premio?.disponible
-            ? { descripcion: premio.descripcion ?? "Premio del programa" }
+            ? {
+                descripcion: premio.descripcion ?? "Premio del programa",
+                alcance: premio.alcance === "todos" ? ("todos" as const) : ("services" as const),
+              }
             : null,
+          puedeMecanica,
+          puedePendientes: featureHabilitada(sesion, "pendientes"),
+          pendientesAbiertos: (pendientesRes.data ?? []).map((tp) => ({
+            id: tp.id,
+            descripcion: tp.descripcion,
+            creado: tp.created_at,
+            objetivoFecha: tp.objetivo_fecha,
+            objetivoKm: tp.objetivo_km,
+          })),
         }}
       />
     </div>

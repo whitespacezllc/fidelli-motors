@@ -7,6 +7,15 @@ import { formatearFecha } from "@/lib/fechas";
 import type { EstadoContacto } from "@/lib/contacto";
 
 export type ProximoServicio = {
+  /** De dónde viene la fila: el motor de retención o un pendiente. */
+  fuente?: "service" | "pendiente";
+  pendienteId?: string;
+  /** Qué quedó por hacer (solo pendientes). */
+  descripcion?: string;
+  /** Cuándo se anotó (solo pendientes). */
+  creado?: string;
+  objetivoKm?: number | null;
+  kmFaltantes?: number | null;
   vehiculoId: string;
   clienteId: string;
   clienteNombre: string;
@@ -36,6 +45,10 @@ export function FilaProximo({
   fila: ProximoServicio;
   suspendido?: boolean;
 }) {
+  const esPendiente = fila.fuente === "pendiente";
+  // El motivo que se registra al contactar: el anti-spam del pendiente es
+  // por motivo 'pendiente', separado de los tres estados del service.
+  const motivo = esPendiente ? ("pendiente" as const) : fila.estado;
   return (
     <li
       className={`border-b border-line px-4 py-4 last:border-b-0 sm:px-5 lg:grid lg:grid-cols-[minmax(9rem,1fr)_7.5rem_11rem_6rem_9.5rem_6.5rem_5rem_auto] lg:items-center lg:gap-x-4 lg:py-3 ${
@@ -63,14 +76,25 @@ export function FilaProximo({
         <span className="truncate text-ui text-ink-60 lg:block lg:text-label">
           {fila.vehiculo}
         </span>
+        {esPendiente && (
+          <span className="mt-0.5 block w-full truncate text-ui text-ink lg:text-label">
+            {fila.descripcion}
+          </span>
+        )}
       </div>
 
       {/* 3. Último service — en mobile es dato de respaldo, no de decisión */}
       <div className="mt-2 hidden lg:mt-0 lg:block">
-        <span className={`block ${CLASE_DATO}`}>
-          {formatearFecha(fila.ultimoServiceFecha)} ·{" "}
-          {formatearKm(fila.ultimoServiceKm)}
-        </span>
+        {esPendiente ? (
+          <span className={`block ${CLASE_DATO}`}>
+            anotado {fila.creado ? formatearFecha(fila.creado) : "—"}
+          </span>
+        ) : (
+          <span className={`block ${CLASE_DATO}`}>
+            {formatearFecha(fila.ultimoServiceFecha)} ·{" "}
+            {formatearKm(fila.ultimoServiceKm)}
+          </span>
+        )}
         <span className="block truncate text-label text-ink-40">
           {fila.sucursal}
         </span>
@@ -78,19 +102,48 @@ export function FilaProximo({
 
       {/* 4. Próximo service — el km declarado por el mecánico */}
       <div className="hidden lg:block">
-        <span className={CLASE_DATO}>{formatearKm(fila.proxServiceKm)}</span>
+        <span className={CLASE_DATO}>
+          {esPendiente
+            ? fila.objetivoKm
+              ? formatearKm(fila.objetivoKm)
+              : "—"
+            : formatearKm(fila.proxServiceKm)}
+        </span>
       </div>
 
       {/* 5. Retorno estimado */}
       <div className="mt-2 lg:mt-0">
         <span className="lg:hidden">
-          <span className="text-ui text-ink-60">Vuelve cerca del </span>
-          <span className="text-ui font-semibold text-ink tabular-nums">
-            {formatearFecha(fila.fechaEstimada)}
-          </span>
+          {esPendiente ? (
+            <>
+              <span className="text-ui text-ink-60">
+                {fila.descripcion} —{" "}
+              </span>
+              <span className="text-ui font-semibold text-ink tabular-nums">
+                {fila.fechaEstimada
+                  ? `para el ${formatearFecha(fila.fechaEstimada)}`
+                  : fila.objetivoKm
+                    ? `a los ${formatearKm(fila.objetivoKm)} km`
+                    : ""}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="text-ui text-ink-60">Vuelve cerca del </span>
+              <span className="text-ui font-semibold text-ink tabular-nums">
+                {formatearFecha(fila.fechaEstimada)}
+              </span>
+            </>
+          )}
         </span>
         <span className={`hidden lg:inline ${CLASE_DATO}`}>
-          {formatearFecha(fila.fechaEstimada)}
+          {esPendiente
+            ? fila.fechaEstimada
+              ? formatearFecha(fila.fechaEstimada)
+              : fila.kmFaltantes != null
+                ? `faltan ${formatearKm(Math.max(fila.kmFaltantes, 0))} km`
+                : "—"
+            : formatearFecha(fila.fechaEstimada)}
         </span>
         {/* Un solo service: el ritmo todavía no se puede medir y la fecha
             sale del default de 40 km/día. Se avisa para que el lubri sepa
@@ -105,13 +158,18 @@ export function FilaProximo({
       {/* 6. Estado */}
       <div className="mt-2 lg:mt-0">
         <BadgeUrgencia estado={fila.estado} />
+        {esPendiente && (
+          <span className="mt-1 block w-fit rounded-sm border border-line bg-surface px-2 py-0.5 text-label font-semibold tracking-[0.04em] text-ink-60 uppercase">
+            Pendiente
+          </span>
+        )}
       </div>
 
       {/* 7. Contactado */}
       <div className="mt-1 lg:mt-0 lg:justify-self-center">
         <CheckContactado
           vehiculoId={fila.vehiculoId}
-          estado={fila.estado}
+          estado={motivo}
           contactado={fila.contactado}
           etiqueta={`Contactado — ${fila.clienteNombre}, ${fila.patente.toUpperCase()}`}
         />
@@ -125,7 +183,7 @@ export function FilaProximo({
         {fila.linkWhatsapp ? (
           <BotonWhatsapp
             vehiculoId={fila.vehiculoId}
-            estado={fila.estado}
+            estado={motivo}
             link={fila.linkWhatsapp}
             contactado={fila.contactado}
             cliente={fila.clienteNombre}

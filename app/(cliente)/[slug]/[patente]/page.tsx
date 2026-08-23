@@ -7,12 +7,17 @@ import { CabeceraVehiculo } from "@/components/cliente/cabecera-vehiculo";
 import { ProximoService } from "@/components/cliente/proximo-service";
 import { ProgresoFidelizacion } from "@/components/cliente/progreso-fidelizacion";
 import { Recomendaciones } from "@/components/cliente/recomendaciones";
+import { PendientesTaller } from "@/components/cliente/pendientes-taller";
 import { HistorialCartones } from "@/components/cliente/historial-cartones";
 import { BotonTurno } from "@/components/cliente/boton-turno";
 import { SinHistorial } from "@/components/cliente/sin-historial";
 import { PatenteNoEncontrada } from "@/components/cliente/patente-no-encontrada";
 import { PieConfianza } from "@/components/cliente/pie-confianza";
-import { CartonPapel } from "@/components/services/carton-papel";
+import {
+  CartonPapel,
+  CartonPapelMecanica,
+} from "@/components/services/carton-papel";
+import { renglonesLibres } from "@/lib/cliente/carton";
 
 type Props = { params: Promise<{ slug: string; patente: string }> };
 
@@ -69,11 +74,17 @@ export default async function PaginaVehiculo({ params }: Props) {
     );
   }
 
-  const { lubricentro, vehiculo, notas, fidelizacion, services } =
+  const { lubricentro, vehiculo, notas, pendientes, fidelizacion, services } =
     resultado.carton;
   const paleta = paletaTenant(lubricentro.colorPrimario);
-  const ultimo = services[0] ?? null;
-  const anteriores = services.slice(1);
+  // El cartón destacado y la respuesta de "¿cuándo me toca?" salen del
+  // último SERVICE — es lo que gobierna el próximo cambio de aceite y lo
+  // que replica el papel del parasol. Si el auto solo tiene mecánica (el
+  // caso taller), el destacado es el último trabajo. El resto va todo
+  // junto al historial, en una sola línea de tiempo con los dos tipos.
+  const ultimoService = services.find((s) => s.tipo === "service") ?? null;
+  const ultimo = ultimoService ?? services[0] ?? null;
+  const anteriores = services.filter((s) => s !== ultimo);
 
   return (
     <div
@@ -92,8 +103,10 @@ export default async function PaginaVehiculo({ params }: Props) {
           {!ultimo ? (
             <div className="mt-6 flex flex-col gap-6 sm:mt-8 sm:gap-8">
               <SinHistorial />
-              {/* Una nota puede existir antes del primer service cargado. */}
+              {/* Una nota o un pendiente pueden existir antes del primer
+                  service cargado. */}
               <Recomendaciones notas={notas} />
+              <PendientesTaller pendientes={pendientes} />
               <BotonTurno lubricentro={lubricentro} patente={vehiculo.patente} />
             </div>
           ) : (
@@ -109,36 +122,54 @@ export default async function PaginaVehiculo({ params }: Props) {
             // orden de lectura ni el de tabulación.
             <div className="mt-6 grid gap-6 sm:mt-8 sm:gap-8 lg:grid-cols-[minmax(0,26rem)_1fr] lg:items-start">
               {/* 1. La única pregunta que Pedro trae, arriba de todo */}
-              <div className="lg:col-start-2 lg:row-start-1">
-                <ProximoService
-                  proxServiceKm={ultimo.proxServiceKm}
-                  kmUltimoService={ultimo.kilometros}
-                />
-              </div>
+              {ultimoService?.proxServiceKm != null &&
+                ultimoService.kilometros != null && (
+                  <div className="lg:col-start-2 lg:row-start-1">
+                    <ProximoService
+                      proxServiceKm={ultimoService.proxServiceKm}
+                      kmUltimoService={ultimoService.kilometros}
+                    />
+                  </div>
+                )}
 
               {/* 2. El cartón, tal cual el papel del parasol. Se topa el
                   ancho desde tablet: estirado a 576px dejaría de parecerse
                   a lo que cuelga del parasol y a lo que ve Pedro en la mano. */}
               <div className="sm:mx-auto sm:w-full sm:max-w-[26rem] lg:sticky lg:top-8 lg:col-start-1 lg:row-start-1 lg:row-span-2 lg:mx-0 lg:max-w-none">
-                <CartonPapel
-                  escala="cliente"
-                  datos={{
-                    lubricentroNombre: lubricentro.nombre,
-                    colorTenant: paleta.primary,
-                    fecha: ultimo.fecha,
-                    kilometros: ultimo.kilometros,
-                    aceiteTipo: ultimo.aceiteTipo,
-                    // El producto va EN el cartón (renglón "Aceite marca"):
-                    // pedido de Brothers — antes era una línea suelta acá
-                    // abajo y se perdía. Respeta campos_visibles sin lógica
-                    // propia: apagado, get_carton lo manda null y la fila
-                    // no se dibuja.
-                    aceiteNombre: ultimo.aceiteNombre,
-                    proxServiceKm: ultimo.proxServiceKm,
-                    colorPapel: lubricentro.colorCarton,
-                    marcados: marcadosDe(ultimo),
-                  }}
-                />
+                {ultimo.tipo === "mecanica" ? (
+                  <CartonPapelMecanica
+                    escala="cliente"
+                    datos={{
+                      lubricentroNombre: lubricentro.nombre,
+                      colorTenant: paleta.primary,
+                      colorPapel: lubricentro.colorCarton,
+                      fecha: ultimo.fecha,
+                      kilometros: ultimo.kilometros,
+                      descripcion: ultimo.trabajoDescripcion ?? "",
+                      renglones: renglonesLibres(ultimo),
+                    }}
+                  />
+                ) : (
+                  <CartonPapel
+                    escala="cliente"
+                    datos={{
+                      lubricentroNombre: lubricentro.nombre,
+                      colorTenant: paleta.primary,
+                      fecha: ultimo.fecha,
+                      kilometros: ultimo.kilometros ?? 0,
+                      aceiteTipo: ultimo.aceiteTipo ?? "",
+                      // El producto va EN el cartón (renglón "Aceite marca"):
+                      // pedido de Brothers — antes era una línea suelta acá
+                      // abajo y se perdía. Respeta campos_visibles sin lógica
+                      // propia: apagado, get_carton lo manda null y la fila
+                      // no se dibuja.
+                      aceiteNombre: ultimo.aceiteNombre,
+                      proxServiceKm: ultimo.proxServiceKm ?? 0,
+                      colorPapel: lubricentro.colorCarton,
+                      marcados: marcadosDe(ultimo),
+                    }}
+                  />
+                )}
                 {/* La sucursal sí queda afuera: en el cartón físico no
                     tiene renglón. Se muestra para que el último service no
                     quede asimétrico con el historial, que la indica en
@@ -157,6 +188,8 @@ export default async function PaginaVehiculo({ params }: Props) {
                   premio. */}
               <div className="flex flex-col gap-6 sm:gap-8 lg:col-start-2 lg:row-start-2">
                 <Recomendaciones notas={notas} />
+
+                <PendientesTaller pendientes={pendientes} />
 
                 {fidelizacion && (
                   <ProgresoFidelizacion fidelizacion={fidelizacion} />

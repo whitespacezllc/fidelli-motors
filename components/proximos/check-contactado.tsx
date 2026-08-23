@@ -3,7 +3,7 @@
 import { useOptimistic, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { alternarContacto } from "@/app/panel/proximos/actions";
-import type { EstadoContacto } from "@/lib/contacto";
+import type { MotivoContacto } from "@/lib/contacto";
 
 // El check es toggleable a mano y cubre dos casos reales: el llamado
 // telefónico hecho por afuera (se marca, canal 'manual') y el tap
@@ -25,7 +25,7 @@ export function CheckContactado({
   etiqueta,
 }: {
   vehiculoId: string;
-  estado: EstadoContacto;
+  estado: MotivoContacto;
   contactado: boolean;
   etiqueta: string;
 }) {

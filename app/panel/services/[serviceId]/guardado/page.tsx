@@ -21,7 +21,7 @@ export default async function PaginaGuardado({
   const { data: service } = await supabase
     .from("services")
     .select(
-      "id, fecha, kilometros, vehiculo_id, vehiculos(patente, marca, modelo, clientes(nombre))",
+      "id, tipo, trabajo_descripcion, fecha, kilometros, vehiculo_id, vehiculos(patente, marca, modelo, clientes(nombre))",
     )
     .eq("id", serviceId)
     .maybeSingle();
@@ -66,7 +66,7 @@ export default async function PaginaGuardado({
   return (
     <div className="mx-auto max-w-md lg:max-w-xl lg:pt-4">
       <p className="rounded-md bg-success-soft px-3.5 py-3 font-brand text-body font-bold text-success">
-        ✓ Service guardado
+        ✓ {service.tipo === "mecanica" ? "Trabajo guardado" : "Service guardado"}
       </p>
 
       <div className="surface-card mt-4 p-4">
@@ -74,7 +74,16 @@ export default async function PaginaGuardado({
           {vehiculo?.patente.toUpperCase()}
         </p>
         <p className="mt-0.5 text-ui text-ink-60 tabular-nums">
-          {nombreVehiculo} · {clienteNombre} · {formatearKm(service.kilometros)} km
+          {[
+            nombreVehiculo,
+            clienteNombre,
+            service.kilometros != null
+              ? `${formatearKm(service.kilometros)} km`
+              : null,
+            service.tipo === "mecanica" ? service.trabajo_descripcion : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         </p>
       </div>
 

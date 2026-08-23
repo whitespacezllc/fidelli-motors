@@ -2,22 +2,33 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { sesionParaEscribir } from "@/lib/auth/session";
+import { sesionParaEscribir, featureHabilitada } from "@/lib/auth/session";
 import type { CategoriaProducto } from "@/lib/categorias";
 
 export type ItemCargado = {
-  tipo: string;
+  /** Uno de los 11 renglones; ausente en un renglón libre de mecánica. */
+  tipo?: string;
   producto_id: string | null;
   detalle: string | null;
   /** true = se cambió; false = se revisó y estaba bien ("OK"). */
   cambiado: boolean;
 };
 
+export type PendienteNuevo = {
+  descripcion: string;
+  objetivoFecha: string | null;
+  objetivoKm: number | null;
+  visibleCliente: boolean;
+};
+
 export type PayloadService = {
   vehiculoId: string;
+  /** 'service' si falta: los llamadores viejos no lo mandan. */
+  tipo?: "service" | "mecanica";
+  trabajoDescripcion?: string | null;
   sucursalId: string;
   fecha: string;
-  kilometros: number;
+  kilometros: number | null;
   aceiteTipo: string;
   aceiteProductoId: string | null;
   aceiteNombre: string | null;
@@ -26,6 +37,10 @@ export type PayloadService = {
   items: ItemCargado[];
   /** El toggle del cartón. El canje se registra al confirmar, no después. */
   canjearPremio?: boolean;
+  /** Lo que quedó por hacer, anotado al cargar. */
+  pendientes?: PendienteNuevo[];
+  /** Los abiertos que se hicieron EN este trabajo. */
+  resolverPendientes?: string[];
 };
 
 export type ResultadoGuardado = { error?: string; serviceId?: string };
@@ -44,6 +59,15 @@ const PREMIO_YA_NO =
 
 function traducirError(error: { code?: string; message?: string }): string {
   if (/premio_no_disponible/.test(error.message ?? "")) return PREMIO_YA_NO;
+  if (/canje_solo_en_service/.test(error.message ?? "")) {
+    return "Tu programa de premios cuenta solo services: el canje va en un service, no en un trabajo de mecánica.";
+  }
+  if (/descripcion_requerida/.test(error.message ?? "")) {
+    return "Contá qué trabajo se hizo: es lo que va a ver tu cliente en su historial.";
+  }
+  if (/pendiente_sin_objetivo|pendiente_invalido/.test(error.message ?? "")) {
+    return "A cada pendiente ponele qué es y una fecha o kilómetros.";
+  }
   if (/fetch|network|conexión/i.test(error.message ?? "")) return SIN_CONEXION;
   if (error.code === "23514") {
     return "Algún dato quedó fuera de rango. Revisá los kilómetros y el próximo service.";
@@ -54,36 +78,102 @@ function traducirError(error: { code?: string; message?: string }): string {
 export async function guardarService(
   payload: PayloadService,
 ): Promise<ResultadoGuardado> {
-  await sesionParaEscribir();
+  const sesion = await sesionParaEscribir();
 
-  if (!payload.sucursalId) return { error: "Elegí la sucursal donde se hizo." };
-  if (!Number.isFinite(payload.kilometros) || payload.kilometros < 0) {
-    return { error: "Cargá los kilómetros del odómetro." };
-  }
-  if (payload.aceiteTipo.trim().length < 2) {
-    return { error: "Cargá la viscosidad del aceite de motor." };
-  }
-  if (payload.proxServiceKm <= payload.kilometros) {
+  // La UI ya no ofrece el canje sin la feature; esto atiende el payload
+  // armado a mano. Sin el chequeo, el rechazo lo daría la policy de canjes
+  // AL FINAL del guardado — perdiendo el service entero con un error crudo.
+  if (payload.canjearPremio && !featureHabilitada(sesion, "premios")) {
     return {
-      error: "El próximo service tiene que ser mayor a los kilómetros de hoy.",
+      error:
+        "Fidelliza no está en tu plan, así que el premio no se puede canjear. Guardá el service sin el canje.",
     };
   }
 
+  const esMecanica = payload.tipo === "mecanica";
+
+  // La feature la hace cumplir la base (policy condicional al tipo); esto
+  // pone el mensaje ANTES de perder lo tipeado en un error al final.
+  if (esMecanica && !featureHabilitada(sesion, "mecanica")) {
+    return {
+      error: "Los trabajos de mecánica no están en tu plan. Escribinos si los querés activar.",
+    };
+  }
+
+  const pendientes = (payload.pendientes ?? []).filter(
+    (tp) => tp.descripcion.trim().length >= 5,
+  );
+  const resolverPendientes = payload.resolverPendientes ?? [];
+  if (
+    (pendientes.length > 0 || resolverPendientes.length > 0) &&
+    !featureHabilitada(sesion, "pendientes")
+  ) {
+    return {
+      error: "Los trabajos pendientes no están en tu plan. Guardá sin pendientes, o escribinos si los querés activar.",
+    };
+  }
+  if (pendientes.some((tp) => !tp.objetivoFecha && !tp.objetivoKm)) {
+    return {
+      error: "A cada pendiente ponele una fecha o kilómetros: es lo que dispara el aviso.",
+    };
+  }
+
+  if (!payload.sucursalId) return { error: "Elegí la sucursal donde se hizo." };
+
+  if (esMecanica) {
+    if ((payload.trabajoDescripcion ?? "").trim().length < 5) {
+      return {
+        error: "Contá qué trabajo se hizo: es lo que va a ver tu cliente en su historial.",
+      };
+    }
+  } else {
+    if (
+      payload.kilometros == null ||
+      !Number.isFinite(payload.kilometros) ||
+      payload.kilometros < 0
+    ) {
+      return { error: "Cargá los kilómetros del odómetro." };
+    }
+    if (payload.aceiteTipo.trim().length < 2) {
+      return { error: "Cargá la viscosidad del aceite de motor." };
+    }
+    if (payload.proxServiceKm <= payload.kilometros) {
+      return {
+        error: "El próximo service tiene que ser mayor a los kilómetros de hoy.",
+      };
+    }
+  }
+
   const supabase = await createClient();
-  // El guardado va por la función de la base: service y renglones se
+  // El guardado va por la función de la base: trabajo y renglones se
   // escriben en una sola transacción.
   const { data, error } = await supabase.rpc("guardar_service", {
     p_vehiculo_id: payload.vehiculoId,
     p_sucursal_id: payload.sucursalId,
     p_fecha: payload.fecha,
-    p_kilometros: payload.kilometros,
-    p_aceite_tipo: payload.aceiteTipo,
-    p_prox_service_km: payload.proxServiceKm,
+    p_tipo: payload.tipo ?? "service",
+    p_trabajo_descripcion: esMecanica
+      ? (payload.trabajoDescripcion ?? "").trim()
+      : undefined,
+    // Los tres son argumentos SIN default en la función: viajan siempre,
+    // con null explícito en mecánica (los CHECK condicionales los admiten).
+    p_kilometros: payload.kilometros as number,
+    p_aceite_tipo: (esMecanica ? null : payload.aceiteTipo) as unknown as string,
+    p_prox_service_km: (esMecanica
+      ? null
+      : payload.proxServiceKm) as unknown as number,
     p_items: payload.items,
     p_aceite_producto_id: payload.aceiteProductoId ?? undefined,
     p_aceite_nombre: payload.aceiteNombre ?? undefined,
     p_observaciones: payload.observaciones ?? undefined,
     p_canjear_premio: payload.canjearPremio ?? false,
+    p_pendientes: pendientes.map((tp) => ({
+      descripcion: tp.descripcion.trim(),
+      objetivo_fecha: tp.objetivoFecha,
+      objetivo_km: tp.objetivoKm,
+      visible_cliente: tp.visibleCliente,
+    })),
+    p_resolver_pendientes: resolverPendientes,
   });
 
   if (error) return { error: traducirError(error) };

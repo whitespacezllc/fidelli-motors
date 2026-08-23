@@ -8,6 +8,7 @@ type ClienteListado = {
   telefono: string;
   cantidad_vehiculos: number;
   ultimo_service_fecha: string | null;
+  ultima_visita_fecha?: string | null;
 };
 
 export function FilaCliente({ cliente }: { cliente: ClienteListado }) {
@@ -36,7 +37,10 @@ export function FilaCliente({ cliente }: { cliente: ClienteListado }) {
         <span className="text-ui text-ink-60 sm:text-right">
           <span className="block">{vehiculos}</span>
           <span className="block text-label">
-            {cliente.ultimo_service_fecha
+            {cliente.ultima_visita_fecha &&
+            cliente.ultima_visita_fecha !== cliente.ultimo_service_fecha
+              ? `Última visita ${formatearFecha(cliente.ultima_visita_fecha)} · último service ${formatearFecha(cliente.ultimo_service_fecha ?? cliente.ultima_visita_fecha)}`
+              : cliente.ultimo_service_fecha
               ? `Último service ${formatearFecha(cliente.ultimo_service_fecha)}`
               : "Sin services"}
           </span>

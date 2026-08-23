@@ -14,6 +14,7 @@ type Mensaje = {
   id: string;
   tono: string;
   contenido: string;
+  contenido_pendiente: string | null;
   activo: boolean;
 };
 

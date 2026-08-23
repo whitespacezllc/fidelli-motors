@@ -1,0 +1,15 @@
+-- ============================================================
+-- El cuarto motivo de contacto: el trabajo pendiente.
+--
+-- Va en su PROPIA migración por una regla de Postgres: un valor nuevo de
+-- enum no se puede usar en la misma transacción que lo crea, y la
+-- migración siguiente (trabajos_pendientes) lo usa en la vista y en la
+-- red de verificación. Cada archivo de migración corre en su propia
+-- transacción, así que separarlos es la solución canónica.
+--
+-- El anti-spam de contactos sigue funcionando igual: un contacto por
+-- motivo. 'pendiente' registra que se le escribió al cliente POR SUS
+-- TRABAJOS PENDIENTES — es un motivo distinto de los tres estados del
+-- service, y por eso no pisa ni se pisa con ellos.
+-- ============================================================
+alter type estado_contacto add value if not exists 'pendiente';

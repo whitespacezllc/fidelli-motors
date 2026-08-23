@@ -121,6 +121,15 @@ export function WizardAlta({ planes }: { planes: PlanCompleto[] }) {
   // El alta pasa por esta envoltura de cliente para poder mover el wizard al
   // paso del campo que falló. Va acá y no en un efecto: es la consecuencia
   // directa de la acción, no una sincronización con nada externo.
+  // El tope de sucursales del plan elegido, para avisar antes del error.
+  const planElegido = planes.find((p) => p.id === plan.planId);
+  const limiteDelElegido = planElegido?.limites?.sucursales ?? null;
+  const sucursalesConNombre = sucursales.filter(
+    (s) => s.nombre.trim() !== "",
+  ).length;
+  const sobreElTope =
+    limiteDelElegido != null && sucursalesConNombre > limiteDelElegido;
+
   const [resultado, enviar, enviando] = useActionState(
     async (previo: ResultadoAlta, datos: DatosAlta) => {
       const r = await altaDeLubricentro(previo, datos);
@@ -251,6 +260,21 @@ export function WizardAlta({ planes }: { planes: PlanCompleto[] }) {
               prefijo="alta"
             />
 
+            {/* El tope lo hace cumplir crear_lubricentro() en la base
+                (limite_sucursales); este aviso solo lo cuenta ANTES del
+                error, con las dos salidas posibles. */}
+            {sobreElTope && (
+              <p className="rounded-md border border-urgente bg-urgente-soft px-3.5 py-2.5 text-ui text-ink">
+                El plan elegido permite {limiteDelElegido}{" "}
+                {limiteDelElegido === 1 ? "sucursal" : "sucursales"} y en el
+                paso 2 cargaste {sucursalesConNombre}. Sacá{" "}
+                {sucursalesConNombre - (limiteDelElegido ?? 0) === 1
+                  ? "una"
+                  : "alguna"}{" "}
+                o elegí un plan con más lugares.
+              </p>
+            )}
+
             <div>
               <label htmlFor="trial" className={CLASE_LABEL}>
                 Días de trial
@@ -310,7 +334,7 @@ export function WizardAlta({ planes }: { planes: PlanCompleto[] }) {
           <Boton
             type="button"
             onClick={enviarTodo}
-            disabled={enviando}
+            disabled={enviando || sobreElTope}
             className="min-w-[190px]"
           >
             {enviando ? "Creando…" : "Crear lubricentro"}
