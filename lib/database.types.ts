@@ -221,8 +221,12 @@ export type Database = {
           color_fondo: string | null
           color_primario: string
           datos_contacto: Json
+          logo_tamano: string
           logo_url: string | null
           lubricentro_id: string
+          mensaje_escaneo: string | null
+          mensaje_vigencia: string | null
+          tema: string
           updated_at: string
         }
         Insert: {
@@ -231,8 +235,12 @@ export type Database = {
           color_fondo?: string | null
           color_primario?: string
           datos_contacto?: Json
+          logo_tamano?: string
           logo_url?: string | null
           lubricentro_id: string
+          mensaje_escaneo?: string | null
+          mensaje_vigencia?: string | null
+          tema?: string
           updated_at?: string
         }
         Update: {
@@ -241,8 +249,12 @@ export type Database = {
           color_fondo?: string | null
           color_primario?: string
           datos_contacto?: Json
+          logo_tamano?: string
           logo_url?: string | null
           lubricentro_id?: string
+          mensaje_escaneo?: string | null
+          mensaje_vigencia?: string | null
+          tema?: string
           updated_at?: string
         }
         Relationships: [

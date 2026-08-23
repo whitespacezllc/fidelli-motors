@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { OG_IMAGEN, SITIO_URL, SLUGS_SIN_INDEXAR } from "@/lib/seo";
 import { obtenerLanding, type Lubricentro } from "@/lib/cliente/landing";
 import { paletaTenant, variablesTenant } from "@/lib/cliente/color";
+import { estilosTema } from "@/lib/cliente/tema";
 import { normalizarPatente } from "@/lib/texto";
 import { MarcaLubricentro } from "@/components/cliente/marca-lubricentro";
 import { GuiaPasos } from "@/components/cliente/guia-pasos";
@@ -124,20 +125,23 @@ export default async function PaginaLanding({ params, searchParams }: Props) {
   // no registra un segundo lead.
   const patenteSinResultado = nohay ? normalizarPatente(nohay) : null;
 
-  const paleta = paletaTenant(lubricentro.colorPrimario);
+  const paleta = paletaTenant(lubricentro.colorPrimario, lubricentro.tema);
 
   return (
     // El único lugar donde entra el color del lubri: de acá para abajo,
     // `bg-tenant`, `text-tenant` y el anillo de foco lo leen de las cuatro
     // variables. El shell de arriba es neutro.
+    //
+    // El tema lo elige EL LUBRICENTRO y vale para todos los que escanean:
+    // no hay prefers-color-scheme acá a propósito — con la preferencia
+    // del sistema, la página de un taller oscuro se vería clara para la
+    // mitad de sus clientes. En oscuro, estilosTema pisa las variables de
+    // tinta con la escala sobre grafito; en claro, aplica el fondo del
+    // lubri o no toca nada.
     <div
       style={{
         ...variablesTenant(paleta),
-        // El fondo elegido por el lubri. Sin configurar, el blanco de
-        // siempre — la clase no cambia, solo se pisa el color.
-        ...(lubricentro.colorFondo
-          ? { backgroundColor: lubricentro.colorFondo }
-          : {}),
+        ...estilosTema(lubricentro.tema, lubricentro.colorFondo),
       }}
       className="flex min-h-full flex-1 flex-col"
     >

@@ -638,3 +638,106 @@ begin
   delete from clientes where id = v_cli_f;
   delete from lubricentros where id = v_fantasma;
 end $$;
+
+-- ---------- R11 · La superficie del cliente no cambia sola (Bloque 7) ----------
+-- El contrato del bloque: un tenant SIN configuración nueva rinde exacto
+-- lo de siempre (tema claro, logo normal, sin mensaje), y el mensaje del
+-- taller respeta las tres llaves — feature, vigencia y tenant activo — en
+-- las DOS capas (mostrar en get_carton, escribir por trigger).
+do $$
+declare
+  v_lub    uuid;
+  v_plan   uuid;
+  v_basic  uuid;
+  v_json   jsonb;
+  v_tel    text;
+  v_bloqueado boolean;
+begin
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+  select s.plan_id into v_plan from suscripciones s where s.lubricentro_id = v_lub;
+  select p.id into v_basic from planes p where p.nombre = 'Basic' and not p.heredado;
+
+  -- Los defaults son el comportamiento de hoy.
+  v_json := get_landing('demo');
+  if v_json->>'tema' is distinct from 'claro'
+     or v_json->>'logo_tamano' is distinct from 'normal' then
+    raise exception 'REGRESIÓN 7: get_landing no arranca en claro/normal para un tenant sin configurar.';
+  end if;
+
+  v_json := get_carton('demo', 'ABC123');
+  if v_json->'lubricentro'->>'tema' is distinct from 'claro'
+     or v_json->'lubricentro'->>'logo_tamano' is distinct from 'normal' then
+    raise exception 'REGRESIÓN 7: get_carton no arranca en claro/normal.';
+  end if;
+  if v_json->>'mensaje_taller' is not null then
+    raise exception 'REGRESIÓN 7: hay mensaje del taller sin que nadie lo haya configurado.';
+  end if;
+
+  -- El WhatsApp premium apunta a la sucursal del ÚLTIMO trabajo del auto.
+  select su.telefono into v_tel
+  from services s join sucursales su on su.id = s.sucursal_id
+  where s.vehiculo_id = (select v.id from vehiculos v where v.lubricentro_id = v_lub and v.patente_normalizada = 'ABC123')
+    and not s.anulado and su.activa and su.telefono is not null
+  order by s.fecha desc, s.created_at desc limit 1;
+  if v_tel is not null and v_json->>'whatsapp_taller' is distinct from v_tel then
+    raise exception 'REGRESIÓN 7: whatsapp_taller no es el teléfono de la sucursal del último trabajo (esperaba %, vino %).',
+      v_tel, v_json->>'whatsapp_taller';
+  end if;
+
+  -- El mensaje con la vigencia viva se emite; vencida, se apaga solo.
+  update config_experiencia set mensaje_escaneo = 'Septiembre: revisión de frenos sin cargo', mensaje_vigencia = null
+  where lubricentro_id = v_lub;
+  v_json := get_carton('demo', 'ABC123');
+  if v_json->>'mensaje_taller' is distinct from 'Septiembre: revisión de frenos sin cargo' then
+    raise exception 'REGRESIÓN 7: el mensaje premium con vigencia abierta no se emite.';
+  end if;
+
+  update config_experiencia set mensaje_vigencia = current_date where lubricentro_id = v_lub;
+  if (get_carton('demo', 'ABC123'))->>'mensaje_taller' is null then
+    raise exception 'REGRESIÓN 7: la vigencia que vence HOY todavía vale — >= current_date.';
+  end if;
+
+  update config_experiencia set mensaje_vigencia = current_date - 1 where lubricentro_id = v_lub;
+  if (get_carton('demo', 'ABC123'))->>'mensaje_taller' is not null then
+    raise exception 'REGRESIÓN 7: un mensaje con la vigencia pasada sigue puesto — la vergüenza de marzo.';
+  end if;
+
+  -- Sin la feature (Basic): el mensaje guardado NO se emite y el WhatsApp
+  -- premium tampoco. La página del cliente, intacta.
+  update suscripciones set plan_id = v_basic where lubricentro_id = v_lub;
+  update config_experiencia set mensaje_vigencia = null where lubricentro_id = v_lub;
+  v_json := get_carton('demo', 'ABC123');
+  if v_json->>'mensaje_taller' is not null or v_json->>'whatsapp_taller' is not null then
+    raise exception 'REGRESIÓN 7: lo premium se emite sin pagina_premium.';
+  end if;
+
+  -- Escribir: cambiar el mensaje sin la feature se bloquea por trigger…
+  v_bloqueado := false;
+  begin
+    update config_experiencia set mensaje_escaneo = 'no debería poder' where lubricentro_id = v_lub;
+  exception when raise_exception then
+    v_bloqueado := true;
+  end;
+  if not v_bloqueado then
+    raise exception 'REGRESIÓN 7: un plan sin pagina_premium pudo CAMBIAR el mensaje.';
+  end if;
+
+  -- …pero BORRARLO se puede siempre, y editar el resto de la config
+  -- también (la lección de C2: el downgrade no puede trabar la pantalla).
+  update config_experiencia set tema = 'oscuro' where lubricentro_id = v_lub;
+  update config_experiencia set mensaje_escaneo = null, tema = 'claro' where lubricentro_id = v_lub;
+
+  -- Y el tema elegido viaja al público sea cual sea el plan.
+  update config_experiencia set tema = 'oscuro', logo_tamano = 'xl' where lubricentro_id = v_lub;
+  v_json := get_carton('demo', 'ABC123');
+  if v_json->'lubricentro'->>'tema' is distinct from 'oscuro'
+     or v_json->'lubricentro'->>'logo_tamano' is distinct from 'xl' then
+    raise exception 'REGRESIÓN 7: tema/tamaño configurados no llegan a get_carton.';
+  end if;
+
+  -- Restaurar todo.
+  update config_experiencia set tema = 'claro', logo_tamano = 'normal', mensaje_vigencia = null
+  where lubricentro_id = v_lub;
+  update suscripciones set plan_id = v_plan where lubricentro_id = v_lub;
+  delete from landing_busquedas where lubricentro_id = v_lub and patente = 'ABC123';
+end $$;

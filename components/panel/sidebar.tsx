@@ -31,7 +31,10 @@ const GRUPOS: { titulo: string; items: { href: string; nombre: string; exacto?: 
   {
     titulo: "Configuración",
     items: [
-      { href: "/panel/experiencia", nombre: "Diseño de experiencia", feature: "personalizacion_pagina" },
+      // Sin feature a propósito (Bloque 7): la hoja de calcos QR vive en
+      // esta pantalla y es de LOS TRES planes. Sin la feature, la pantalla
+      // muestra el BloqueoPlan de personalización + los calcos igual.
+      { href: "/panel/experiencia", nombre: "Diseño de experiencia" },
       { href: "/panel/mensajes", nombre: "Mensajes" },
       { href: "/panel/sucursales", nombre: "Sucursales" },
       { href: "/panel/cuenta", nombre: "Mi cuenta" },

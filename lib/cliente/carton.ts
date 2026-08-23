@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { normalizarPatente } from "@/lib/texto";
 import { hexONull } from "@/lib/cliente/color";
+import { aTema, aTamanoLogo } from "@/lib/cliente/tema";
 import type {
   DatosContacto,
   Lubricentro,
@@ -62,6 +63,10 @@ export type Fidelizacion = {
 
 export type Carton = {
   lubricentro: Lubricentro;
+  /** El mensaje del taller al escanear (pagina_premium, vigencia viva). */
+  mensajeTaller: string | null;
+  /** El WhatsApp de la sucursal del último trabajo (pagina_premium). */
+  whatsappTaller: string | null;
   vehiculo: {
     patente: string;
     marca: string | null;
@@ -89,6 +94,8 @@ type LubricentroJson = {
   color_primario?: string;
   color_fondo?: string | null;
   color_carton?: string | null;
+  tema?: string;
+  logo_tamano?: string;
   datos_contacto?: DatosContacto;
   sucursales?: SucursalPublica[];
 };
@@ -96,6 +103,8 @@ type LubricentroJson = {
 type CartonJson = {
   error?: string;
   lubricentro?: LubricentroJson;
+  mensaje_taller?: string | null;
+  whatsapp_taller?: string | null;
   vehiculo?: {
     patente: string;
     marca: string | null;
@@ -142,6 +151,8 @@ function aLubricentro(json: LubricentroJson | undefined): Lubricentro {
     colorPrimario: json?.color_primario ?? "#0A0A0A",
     colorFondo: hexONull(json?.color_fondo),
     colorCarton: hexONull(json?.color_carton),
+    tema: aTema(json?.tema),
+    logoTamano: aTamanoLogo(json?.logo_tamano),
     contacto: json?.datos_contacto ?? {},
     sucursales: json?.sucursales ?? [],
     premio: null,
@@ -175,6 +186,8 @@ export async function obtenerCarton(
     estado: "ok",
     carton: {
       lubricentro: aLubricentro(json.lubricentro),
+      mensajeTaller: json.mensaje_taller ?? null,
+      whatsappTaller: json.whatsapp_taller ?? null,
       vehiculo: {
         patente: json.vehiculo?.patente ?? patente,
         marca: json.vehiculo?.marca ?? null,

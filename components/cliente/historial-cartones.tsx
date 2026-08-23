@@ -10,6 +10,7 @@ import {
 } from "@/lib/cliente/carton";
 import { formatearKm } from "@/lib/renglones";
 import { formatearFecha } from "@/lib/fechas";
+import { ESTILO_PAPEL } from "@/lib/cliente/tema";
 
 // El historial cronológico, con LOS DOS tipos de trabajo en una sola
 // línea de tiempo — un cliente de taller que escanea tiene que ver todo
@@ -77,7 +78,10 @@ export function HistorialCartones({
                 />
               </summary>
 
-              <div className="px-3 pt-1 pb-4">
+              {/* El papel no se apaga: en modo oscuro el cartón sigue
+                  siendo un recibo claro sobre el mostrador — el reset
+                  devuelve los tokens de tinta dentro de este subárbol. */}
+              <div className="px-3 pt-1 pb-4" style={ESTILO_PAPEL}>
                 {s.tipo === "mecanica" ? (
                   <CartonPapelMecanica
                     escala="cliente"
