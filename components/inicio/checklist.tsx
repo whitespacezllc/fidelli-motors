@@ -113,8 +113,13 @@ export function Checklist({
         return (
           <div
             key={paso.titulo}
+            // EL PASO ACTUAL NO VA EN ROJO. `bg-brand-soft` acá estaba
+            // usando el color de marca para comunicar un ESTADO ("este es
+            // el que sigue"), que es exactamente lo que la regla de oro
+            // prohíbe. La posición y el número ya dicen cuál es el
+            // próximo; el realce lo da la superficie neutra.
             className={`flex items-center gap-3.5 border-b border-line px-4.5 py-3.5 last:border-b-0 ${
-              esElActual ? "bg-brand-soft" : ""
+              esElActual ? "bg-surface" : ""
             }`}
           >
             <span

@@ -21,6 +21,11 @@ import {
   EnvelopeSimpleIcon,
   WarningIcon,
   CheckIcon,
+  WrenchIcon,
+  ReceiptIcon,
+  PaletteIcon,
+  ChatCircleTextIcon,
+  UserCircleIcon,
 } from "@phosphor-icons/react/dist/ssr";
 // Solo tipos: se borran al compilar, así que traerlos del entry principal
 // (que sí lleva "use client") no arrastra nada al bundle.
@@ -51,11 +56,14 @@ export const IconoCaja = delSistema(PackageIcon);
 export const IconoCheck = delSistema(CheckIcon);
 
 // ============================================================
-// EXCEPCIÓN A LA REGLA DE ÍCONOS — pedida en sesión
+// LA EXCEPCIÓN DE LUCIDE — ahora documentada en CLAUDE.md
 //
-// `CLAUDE.md` dice, con todas las letras: "Íconos: Phosphor, peso thin o
-// light — stroke de 0.5 a 1px, nunca más grueso. NO usamos Lucide (lo usa
-// todo sitio hecho con IA)". Estos dos son Lucide y van con stroke 2.
+// Doce íconos de la LANDING COMERCIAL, y solo de ahí. La razón es de
+// escala: son señalización a tamaño grande y necesitan stroke 2, que
+// Phosphor light no da. La regla completa con sus límites está escrita en
+// CLAUDE.md → "Decisiones técnicas"; el resumen es que este bloque es el
+// único lugar donde Lucide puede aparecer, y que al panel y a la
+// superficie del cliente no se propagan nunca.
 //
 // Se aíslan acá, en la misma puerta que el resto, por una razón práctica:
 // volver a Phosphor es cambiar estas tres líneas y nada más. Si se
@@ -137,3 +145,13 @@ export const IconoCandado = delSistema(LockSimpleIcon);
 export const IconoLubricentro = delSistema(BuildingsIcon);
 export const IconoMail = delSistema(EnvelopeSimpleIcon);
 export const IconoAviso = delSistema(WarningIcon);
+
+// Los que completan los 11 ítems del sidebar. Faltaban siete y la lista
+// quedaba a medio camino entre una barra con íconos y una de solo texto,
+// que es peor que cualquiera de las dos: el ojo busca la marca visual
+// donde no está.
+export const IconoTrabajos = delSistema(WrenchIcon);
+export const IconoPresupuesto = delSistema(ReceiptIcon);
+export const IconoDiseno = delSistema(PaletteIcon);
+export const IconoMensajes = delSistema(ChatCircleTextIcon);
+export const IconoCuenta = delSistema(UserCircleIcon);

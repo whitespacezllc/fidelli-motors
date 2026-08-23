@@ -19,6 +19,7 @@ const POR_PAGINA = 30;
 type Params = {
   q?: string;
   sucursal?: string;
+  tipo?: string;
   desde?: string;
   hasta?: string;
   pagina?: string;
@@ -39,11 +40,16 @@ export default async function PaginaServices({
   const filtros = {
     q: params.q?.trim() || undefined,
     sucursal: params.sucursal || undefined,
+    // Valor cerrado: cualquier otra cosa en la URL no filtra nada, en vez
+    // de mandarle basura al enum de Postgres.
+    tipo: (params.tipo === "service" || params.tipo === "mecanica"
+      ? params.tipo
+      : undefined) as "service" | "mecanica" | undefined,
     desde: params.desde && FECHA.test(params.desde) ? params.desde : undefined,
     hasta: params.hasta && FECHA.test(params.hasta) ? params.hasta : undefined,
   };
   const filtrando = Boolean(
-    filtros.q || filtros.sucursal || filtros.desde || filtros.hasta,
+    filtros.q || filtros.sucursal || filtros.tipo || filtros.desde || filtros.hasta,
   );
   const pagina = Math.max(1, Number(params.pagina) || 1);
 
@@ -67,6 +73,7 @@ export default async function PaginaServices({
     consulta = consulta.like("vehiculos.patente_normalizada", `%${patente}%`);
   }
   if (filtros.sucursal) consulta = consulta.eq("sucursal_id", filtros.sucursal);
+  if (filtros.tipo) consulta = consulta.eq("tipo", filtros.tipo);
   if (filtros.desde) consulta = consulta.gte("fecha", filtros.desde);
   if (filtros.hasta) consulta = consulta.lte("fecha", filtros.hasta);
 
@@ -106,7 +113,7 @@ export default async function PaginaServices({
 
   return (
     <div>
-      <CabeceraSeccion titulo="Services">
+      <CabeceraSeccion titulo="Trabajos">
         <Link href="/panel/services/nuevo" className={clasesBoton("primario", "md")}>
           + Nuevo service
         </Link>
@@ -182,7 +189,7 @@ export default async function PaginaServices({
         <EstadoVacio
           icono={<IconoReloj className="size-6" />}
           titulo="Todavía no cargaste services"
-          descripcion="Acá va a estar el registro completo del taller: cada service con su fecha, su auto y su sucursal, para buscar qué se le hizo a cada vehículo."
+          descripcion="Acá va a estar el registro completo del taller: cada trabajo con su fecha, su auto y su sucursal, para buscar qué se le hizo a cada vehículo."
         >
           <Link
             href="/panel/services/nuevo"

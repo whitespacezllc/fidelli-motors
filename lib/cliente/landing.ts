@@ -36,6 +36,8 @@ export type SucursalPublica = {
 export type PremioVigente = {
   metaServices: number;
   descripcion: string;
+  /** Qué avanza el ciclo: el copy nombra lo que de verdad suma. */
+  alcance: "services" | "todos";
 };
 
 export type Lubricentro = {
@@ -64,7 +66,7 @@ type LandingJson = {
   logo_tamano?: string;
   datos_contacto?: DatosContacto;
   sucursales?: SucursalPublica[];
-  premio?: { meta_services: number; descripcion: string } | null;
+  premio?: { meta_services: number; descripcion: string; alcance?: string } | null;
 };
 
 /** El shell de la landing. `null` = el slug no existe o el lubri está inactivo. */
@@ -90,6 +92,7 @@ export async function obtenerLanding(slug: string): Promise<Lubricentro | null> 
       ? {
           metaServices: json.premio.meta_services,
           descripcion: json.premio.descripcion,
+          alcance: json.premio.alcance === "todos" ? "todos" : "services",
         }
       : null,
   };

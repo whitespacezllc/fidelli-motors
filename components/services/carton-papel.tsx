@@ -10,7 +10,13 @@ import { paletaTenant } from "@/lib/cliente/color";
 // Un renglón atendido: cambiado (el tilde de siempre) o revisado y en
 // buen estado ("OK"). El detalle puede venir en null por cargarse sin
 // producto o porque el lubri apagó "mostrar productos".
-export type RenglonMarcado = { detalle: string | null; cambiado: boolean };
+export type RenglonMarcado = {
+  detalle: string | null;
+  cambiado: boolean;
+  /** Cuántos se pusieron. Solo se dibuja de 2 para arriba: en el papel
+   *  nadie escribe "×1", y un renglón tildado ya significa uno. */
+  cantidad?: number;
+};
 
 export type CartonDatos = {
   lubricentroNombre: string;
@@ -126,9 +132,17 @@ function Renglon({
         </span>
       )}
       <span
-        className={`flex flex-1 items-center justify-end border-l border-ink ${e.celda} py-2 text-right ${e.detalle} text-ink-60`}
+        className={`flex flex-1 items-center justify-end gap-1.5 border-l border-ink ${e.celda} py-2 text-right ${e.detalle} text-ink-60`}
       >
         {marcado?.detalle ?? ""}
+        {/* El "×2": si el auto llevó dos filtros, el papel lo dice. En
+            tinta plena y negrita porque es una cantidad, no un detalle —
+            se lee de un vistazo aunque el nombre del producto sea largo. */}
+        {marcado && (marcado.cantidad ?? 1) > 1 && (
+          <b className="shrink-0 font-bold text-ink tabular-nums">
+            ×{marcado.cantidad}
+          </b>
+        )}
       </span>
     </div>
   );

@@ -37,12 +37,25 @@ export function HistorialCartones({
   return (
     <section>
       <h2 className="text-c-lead font-bold">Historial del auto</h2>
-      {/* El sello no se explica fila por fila: se explica una vez, acá, y
-          deja de ser jerga para pasar a ser lo que es — una garantía. */}
-      <p className="mt-1 text-c-body text-ink-60">
-        Pasadas las 24 horas un trabajo queda fijado: ni el lubricentro puede
-        modificarlo.
-      </p>
+
+      {/* EL SELLO SE EXPLICA UNA VEZ, ACÁ, Y CON PESO. Es el argumento de
+          confianza de primer orden del producto —este historial no lo
+          puede cambiar nadie, tampoco el taller que lo escribió— y estaba
+          dicho como una nota de sistema en gris al pie del título. Ahora
+          es un objeto: habla en segunda persona al dueño del auto, y
+          lleva el mismo candado que marca cada fila fijada, así el
+          símbolo queda explicado de entrada en vez de repetirse sin
+          significado. */}
+      <div className="mt-3 flex gap-3 rounded-lg border border-line bg-surface p-4">
+        <IconoCandado aria-hidden className="mt-0.5 size-6 shrink-0 text-ink-60" />
+        <p className="text-c-body text-ink-60">
+          <span className="font-bold text-ink">
+            Este historial no se puede editar.
+          </span>{" "}
+          Pasadas las 24 horas cada trabajo queda fijado para siempre: ni el
+          taller que lo cargó puede cambiarlo.
+        </p>
+      </div>
 
       <ul className="mt-4 flex flex-col gap-3">
         {services.map((s, i) => (

@@ -131,6 +131,7 @@ export function FilaProximo({
             <>
               <span className="text-ui text-ink-60">Vuelve cerca del </span>
               <span className="text-ui font-semibold text-ink tabular-nums">
+                {fila.estimacionInicial ? "~" : ""}
                 {formatearFecha(fila.fechaEstimada)}
               </span>
             </>
@@ -143,14 +144,22 @@ export function FilaProximo({
               : fila.kmFaltantes != null
                 ? `faltan ${formatearKm(Math.max(fila.kmFaltantes, 0))} km`
                 : "—"
-            : formatearFecha(fila.fechaEstimada)}
+            : `${fila.estimacionInicial ? "~" : ""}${formatearFecha(fila.fechaEstimada)}`}
         </span>
-        {/* Un solo service: el ritmo todavía no se puede medir y la fecha
-            sale del default de 40 km/día. Se avisa para que el lubri sepa
-            cuánto pesa el dato. */}
+        {/* CON UN SOLO SERVICE LA FECHA NO ESTÁ CALCULADA, ESTÁ SUPUESTA:
+            el ritmo del auto todavía no se puede medir y la vista asume 40
+            km/día. Antes eso se decía "estimación inicial" en ink-40 —12px
+            a 3.45:1, que no llega al AA de cuerpo— y quedaba igual de
+            discreto que cualquier metadato. El punto es exactamente el
+            contrario: que se note cuál fecha es medida y cuál no. Ahora lo
+            dice en tinta legible y NOMBRA el supuesto, que es el dato que
+            le permite al lubri decidir cuánto le cree. */}
         {fila.estimacionInicial && (
-          <span className="mt-1 block text-label text-ink-40">
-            estimación inicial
+          <span
+            title="Este auto tiene un solo service cargado, así que todavía no se puede medir cuánto usa el dueño. La fecha sale de suponer 40 km por día y se va a ajustar sola con el próximo service."
+            className="mt-1 block text-label text-ink-60"
+          >
+            estimada: 40 km/día supuestos
           </span>
         )}
       </div>
