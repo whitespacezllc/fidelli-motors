@@ -25,6 +25,7 @@ const GRUPOS: { titulo: string; items: { href: string; nombre: string; exacto?: 
     items: [
       { href: "/panel/productos", nombre: "Productos" },
       { href: "/panel/fidelizacion", nombre: "Fidelización", feature: "premios" },
+      { href: "/panel/presupuestos", nombre: "Presupuestos", feature: "presupuestos" },
     ],
   },
   {
