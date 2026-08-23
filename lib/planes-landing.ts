@@ -12,7 +12,7 @@
 // lugar. Antes de agregar una fila nueva: si no existe en producción, no va.
 //
 // Los precios y los límites replican la fila de `planes` en la base:
-//   Basic $35.000  · sucursales 1     · sin features
+//   Basic $39.000  · sucursales 1     · sin features
 //   Pro   $49.000  · sucursales 3     · mecanica, pendientes, premios,
 //                                       presupuestos, personalizacion_pagina
 //   Ultra $99.000  · sin tope         · todo lo anterior + pagina_premium
@@ -38,6 +38,19 @@ export type PlanLanding = {
   /** El texto del botón. Los tres van al mismo WhatsApp. */
   cta: string;
   destacado: boolean;
+  /**
+   * Lo que este plan NO trae, dicho en una línea.
+   *
+   * ⚠ NO ES UN DESCUIDO Y NO SE SACA. Va contra lo que hace la mayoría
+   * de las SaaS, que esconden lo que falta en el plan barato para que
+   * nadie lo descarte. Acá conviene exactamente lo contrario: lo que
+   * falta en Basic —mecánica, presupuestos, calcos impresas— es
+   * precisamente lo que más quiere el que hace mecánica, así que
+   * decirlo hace que descarte Basic en dos segundos y sin que nadie
+   * tenga que convencerlo. Es más honesto, que es la línea de toda esta
+   * landing, y ahorra la conversación incómoda del mes que viene.
+   */
+  noIncluye?: string;
 };
 
 function conDescuento(mensual: number) {
@@ -49,8 +62,8 @@ export const PLANES: readonly PlanLanding[] = [
   {
     clave: "basic",
     nombre: "Basic",
-    mensual: 35000,
-    ...conDescuento(35000),
+    mensual: 39000,
+    ...conDescuento(39000),
     paraQuien: "Para el lubricentro de una sucursal que quiere ordenarse.",
     encabezadoLista: "Incluye",
     incluye: [
@@ -65,6 +78,7 @@ export const PLANES: readonly PlanLanding[] = [
       "Soporte por WhatsApp",
     ],
     cta: "Empezar con Basic",
+    noIncluye: "Sin trabajos mecánicos, presupuestos ni calcos impresas.",
     destacado: false,
   },
   {
@@ -113,7 +127,7 @@ export const PLANES: readonly PlanLanding[] = [
 
 export const PLAN_DESTACADO = PLANES.find((p) => p.destacado) as PlanLanding;
 
-/** "$35.000" — el formato de toda la landing, sin decimales. */
+/** "$39.000" — el formato de toda la landing, sin decimales. */
 export function pesos(n: number): string {
   return `$${n.toLocaleString("es-AR")}`;
 }
