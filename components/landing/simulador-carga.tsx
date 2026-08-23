@@ -71,9 +71,11 @@ const VITRINA = {
   aceiteTipo: "10W40",
   aceiteProductoId: "shell-10w40",
   marcados: { filtro_aceite: true, filtro_aire: true } as Record<string, boolean>,
+  descripcion: "",
 };
 
 type Pantalla = "patente" | "carton" | "exito";
+type TipoTrabajo = "service" | "mecanica";
 
 function formatearTiempo(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -97,6 +99,12 @@ export function SimuladorCarga() {
     VITRINA.aceiteProductoId,
   );
   const [marcados, setMarcados] = useState(VITRINA.marcados);
+  // EL TIPO DE TRABAJO. Desde el bloque 2 es lo primero que toca el
+  // mecánico en el panel, así que también es lo primero acá: sin este
+  // paso, la frase "es el flujo real" había dejado de ser cierta. Y de
+  // paso, un taller ve en la demo que el producto lo contempla.
+  const [tipo, setTipo] = useState<TipoTrabajo>("service");
+  const [descripcion, setDescripcion] = useState(VITRINA.descripcion);
 
   // El cronómetro: arranca al tocar el primer campo, para al confirmar.
   const [inicio, setInicio] = useState<number | null>(null);
@@ -191,6 +199,8 @@ export function SimuladorCarga() {
     setAceiteTipo("");
     setAceiteProductoId("");
     setMarcados({});
+    setTipo("service");
+    setDescripcion("");
     setInicio(null);
     setFin(null);
   }
@@ -207,8 +217,12 @@ export function SimuladorCarga() {
   // confirmar y terminaba en un "· 0 km" en la pantalla de éxito.
   const kmCargado = Number.isFinite(kmNum) && kmNum > 0;
   // La misma condición del cartón real, sin el próximo service (que acá
-  // no se elige): kilómetros y viscosidad.
-  const listo = kmCargado && aceiteTipo.trim().length >= 2;
+  // no se elige). En mecánica los kilómetros son opcionales y lo que no
+  // puede faltar es qué se hizo — igual que en el panel.
+  const listo =
+    tipo === "mecanica"
+      ? descripcion.trim().length >= 3
+      : kmCargado && aceiteTipo.trim().length >= 2;
 
   const patenteLinda = formatearPatente(patente) || VITRINA.patente;
   const corriendo = inicio !== null && fin === null;
@@ -226,15 +240,23 @@ export function SimuladorCarga() {
   //
   // El paso 1 abarca patente Y kilómetros, que viven en dos pantallas
   // distintas: se da por hecho recién cuando los kilómetros están.
-  const aceiteListo = aceiteTipo.trim().length >= 2;
+  // "Marcás qué le hiciste" se cumple con la viscosidad en un service y
+  // con la descripción en una mecánica: es el mismo paso en los dos
+  // caminos, y sin esto la guía se quedaba trabada en mecánica.
+  const aceiteListo =
+    tipo === "mecanica"
+      ? descripcion.trim().length >= 3
+      : aceiteTipo.trim().length >= 2;
   const enExito = pantalla === "exito";
   const estadosPasos: EstadoPaso[] = vitrina
     ? ["pendiente", "pendiente", "pendiente"]
     : [
-        enExito || kmCargado ? "completado" : "activo",
+        // En mecánica los kilómetros son opcionales, igual que en el
+        // panel: el paso 1 se da por hecho con la patente.
+        enExito || kmCargado || tipo === "mecanica" ? "completado" : "activo",
         enExito || aceiteListo
           ? "completado"
-          : kmCargado
+          : kmCargado || tipo === "mecanica"
             ? "activo"
             : "pendiente",
         enExito ? "completado" : listo ? "activo" : "pendiente",
@@ -375,6 +397,65 @@ export function SimuladorCarga() {
                   clienteNombre={DEMO.clienteNombre}
                 />
 
+                {/* EL TIPO DE TRABAJO, lo primero: es la bifurcación del
+                    cartón entero, igual que en el panel. Mismo markup que
+                    components/services/carton.tsx — si allá cambia, esto
+                    queda desalineado y hay que venir a tocarlo. */}
+                <fieldset>
+                  <legend className="sr-only">Tipo de trabajo</legend>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(
+                      [
+                        ["service", "Service"],
+                        ["mecanica", "Mecánica"],
+                      ] as const
+                    ).map(([valor, etiqueta]) => (
+                      <button
+                        key={valor}
+                        type="button"
+                        onClick={() => {
+                          alTocar();
+                          setTipo(valor);
+                        }}
+                        aria-pressed={tipo === valor}
+                        className={`flex h-12 items-center justify-center rounded-md border font-brand text-body font-bold transition-colors ${
+                          tipo === valor
+                            ? "border-ink bg-ink text-white"
+                            : "border-line bg-base text-ink-60 hover:bg-surface"
+                        }`}
+                      >
+                        {etiqueta}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+
+                {tipo === "mecanica" && (
+                  <div>
+                    <label
+                      htmlFor="sim-trabajo"
+                      className="mb-1.5 block text-label font-semibold tracking-[0.06em] text-ink-60 uppercase"
+                    >
+                      Qué trabajo se hizo
+                    </label>
+                    <textarea
+                      id="sim-trabajo"
+                      value={descripcion}
+                      onChange={(e) => {
+                        alTocar();
+                        setDescripcion(e.target.value);
+                      }}
+                      rows={2}
+                      placeholder="Cambio de pastillas de freno delanteras"
+                      className="w-full rounded-md border border-line bg-base px-3.5 py-3 text-body text-ink placeholder:text-ink-40"
+                    />
+                    <p className="mt-1.5 text-label text-ink-60">
+                      En el panel además cargás los repuestos y las tareas,
+                      renglón por renglón.
+                    </p>
+                  </div>
+                )}
+
                 <CampoKilometros
                   km={km}
                   alCambiar={(v) => {
@@ -386,7 +467,12 @@ export function SimuladorCarga() {
 
                 {/* El bloque de aceite del cartón real. Acá las dos
                     columnas van apiladas siempre: es una pantalla de
-                    teléfono, no una tablet. */}
+                    teléfono, no una tablet.
+
+                    Solo en service: en mecánica el panel no pide aceite ni
+                    renglones del cartón, pide qué se hizo. */}
+                {tipo === "service" && (
+                <>
                 <div className="rounded-lg border border-line bg-surface/60 p-4">
                   <p className="mb-3 font-brand text-body font-bold text-ink">
                     Aceite de motor
@@ -432,6 +518,8 @@ export function SimuladorCarga() {
                     </div>
                   ))}
                 </div>
+                </>
+                )}
 
                 <div>
                   <Boton
@@ -440,11 +528,13 @@ export function SimuladorCarga() {
                     disabled={!listo}
                     onClick={confirmar}
                   >
-                    Confirmar service
+                    {tipo === "mecanica" ? "Confirmar trabajo" : "Confirmar service"}
                   </Boton>
                   {!listo && (
                     <p className="mt-1.5 text-center text-label text-ink-60">
-                      Faltan los kilómetros y la viscosidad del aceite.
+                      {tipo === "mecanica"
+                        ? "Falta anotar qué trabajo se hizo."
+                        : "Faltan los kilómetros y la viscosidad del aceite."}
                     </p>
                   )}
                 </div>
@@ -460,7 +550,7 @@ export function SimuladorCarga() {
               >
                 {/* El post-guardado real, con el tiempo propio abajo. */}
                 <p className="rounded-md bg-success-soft px-3.5 py-3 font-brand text-body font-bold text-success">
-                  ✓ Service guardado
+                  ✓ {tipo === "mecanica" ? "Trabajo guardado" : "Service guardado"}
                 </p>
 
                 <div className="surface-card mt-4 p-4">

@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { VideoFeature } from "@/components/landing/video-feature";
 import { Revelar } from "@/components/landing/revelar";
+import { PendientesTaller } from "@/components/landing/pendientes-taller";
 
 // 04 · Qué cambia en tu lubricentro — llevarlo a la situación deseada.
 //
@@ -132,6 +133,11 @@ export function QueCambia() {
             );
           })}
         </div>
+
+        {/* El remate: los pendientes son la 03 y la 04 extendidas —el mismo
+            motor, aplicado a lo que se dijo de palabra. Va acá y no como
+            quinta fila a propósito; el porqué está en el componente. */}
+        <PendientesTaller />
       </div>
     </section>
   );
