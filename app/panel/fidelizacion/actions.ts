@@ -23,6 +23,9 @@ export async function guardarPremio(
   const meta = Number(formData.get("meta"));
   const descripcion = String(formData.get("descripcion") ?? "").trim();
   const activo = formData.get("activo") === "on";
+  // El default es 'services': un valor raro cae al comportamiento clásico.
+  const alcance =
+    formData.get("alcance") === "todos" ? ("todos" as const) : ("services" as const);
 
   if (!Number.isInteger(meta) || meta < META_MINIMA || meta > META_MAXIMA) {
     return {
@@ -48,13 +51,14 @@ export async function guardarPremio(
   const { error } = existente
     ? await supabase
         .from("premios")
-        .update({ meta_services: meta, descripcion, activo })
+        .update({ meta_services: meta, descripcion, activo, alcance })
         .eq("id", existente.id)
     : await supabase.from("premios").insert({
         lubricentro_id: sesion.lubricentroId,
         meta_services: meta,
         descripcion,
         activo,
+        alcance,
       });
 
   if (error) {

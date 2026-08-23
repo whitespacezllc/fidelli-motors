@@ -12,8 +12,10 @@ import type { EstadoService } from "@/lib/servicios";
 
 type ServiceDelVehiculo = {
   id: string;
+  tipo: "service" | "mecanica";
   fecha: string;
-  kilometros: number;
+  kilometros: number | null;
+  /** El aceite del service, o la descripción del trabajo de mecánica. */
   aceite: string;
   sucursal: string;
   estado: EstadoService;
@@ -41,6 +43,9 @@ type Vehiculo = {
   anio: number | null;
   cantidad_services: number;
   ultimo_service_fecha: string | null;
+  /** El último trabajo de CUALQUIER tipo. Distinto del último service
+   *  cuando el auto pasó por mecánica después del cambio de aceite. */
+  ultima_visita_fecha?: string | null;
   services?: ServiceDelVehiculo[];
   fidelizacion?: Fidelizacion | null;
   canjes?: Canje[];
@@ -128,6 +133,10 @@ function TarjetaVehiculo({
     .filter(Boolean)
     .join(" · ");
 
+  // LAS DOS PREGUNTAS, con nombres distintos y sin ambigüedad: el último
+  // SERVICE gobierna el próximo cambio de aceite; la última VISITA es el
+  // último trabajo de cualquier tipo. Sin la segunda, un auto atendido
+  // ayer por frenos mostraría una fecha vieja y el sistema parecería roto.
   const services =
     vehiculo.cantidad_services === 0
       ? "Sin services"
@@ -135,9 +144,14 @@ function TarjetaVehiculo({
           vehiculo.cantidad_services === 1 ? "service" : "services"
         }${
           vehiculo.ultimo_service_fecha
-            ? ` · último ${formatearFecha(vehiculo.ultimo_service_fecha)}`
+            ? ` · último service ${formatearFecha(vehiculo.ultimo_service_fecha)}`
             : ""
         }`;
+  const visita =
+    vehiculo.ultima_visita_fecha &&
+    vehiculo.ultima_visita_fecha !== vehiculo.ultimo_service_fecha
+      ? `Última visita ${formatearFecha(vehiculo.ultima_visita_fecha)}`
+      : null;
 
   return (
     <li className="rounded-lg border border-line bg-base px-5 py-4">
@@ -152,7 +166,12 @@ function TarjetaVehiculo({
         </div>
 
         <div className="ml-auto flex items-center gap-4">
-          <span className="text-ui text-ink-60 tabular-nums">{services}</span>
+          <span className="text-right text-ui text-ink-60 tabular-nums">
+            {services}
+            {visita && (
+              <span className="block text-label text-ink-60">{visita}</span>
+            )}
+          </span>
           <DialogVehiculo clienteId={clienteId} vehiculo={vehiculo} />
         </div>
       </div>
@@ -177,9 +196,17 @@ function TarjetaVehiculo({
                 <span className="text-ui font-semibold text-ink tabular-nums">
                   {formatearFecha(s.fecha)}
                 </span>
-                <span className="text-ui text-ink-60 tabular-nums">
-                  {formatearKm(s.kilometros)} km
-                </span>
+                {s.tipo === "mecanica" ? (
+                  <span className="text-label text-ink-60">
+                    <span className="rounded-sm border border-line bg-surface px-2 py-0.5 font-semibold tracking-[0.04em] uppercase">
+                      Mecánica
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-ui text-ink-60 tabular-nums">
+                    {formatearKm(s.kilometros ?? 0)} km
+                  </span>
+                )}
                 <span className="hidden truncate text-ui text-ink-60 sm:inline">
                   {s.aceite}
                 </span>

@@ -20,6 +20,9 @@ const SE_FIJO =
 
 function traducirError(error: { code?: string; message?: string }): string {
   if (/service_no_editable/.test(error.message ?? "")) return SE_FIJO;
+  if (/descripcion_requerida/.test(error.message ?? "")) {
+    return "Contá qué trabajo se hizo: es lo que va a ver tu cliente en su historial.";
+  }
   if (/fetch|network|conexión/i.test(error.message ?? "")) return SIN_CONEXION;
   if (error.code === "23514") {
     return "Algún dato quedó fuera de rango. Revisá los kilómetros y el próximo service.";
@@ -36,31 +39,52 @@ export async function actualizarService(
 ): Promise<ResultadoGuardado> {
   await sesionParaEscribir();
 
+  const esMecanica = payload.tipo === "mecanica";
+
   if (!payload.sucursalId) return { error: "Elegí la sucursal donde se hizo." };
-  if (!Number.isFinite(payload.kilometros) || payload.kilometros < 0) {
-    return { error: "Cargá los kilómetros del odómetro." };
-  }
-  if (payload.aceiteTipo.trim().length < 2) {
-    return { error: "Cargá la viscosidad del aceite de motor." };
-  }
-  if (payload.proxServiceKm <= payload.kilometros) {
-    return {
-      error: "El próximo service tiene que ser mayor a los kilómetros de hoy.",
-    };
+  if (esMecanica) {
+    if ((payload.trabajoDescripcion ?? "").trim().length < 5) {
+      return {
+        error: "Contá qué trabajo se hizo: es lo que va a ver tu cliente en su historial.",
+      };
+    }
+  } else {
+    if (
+      payload.kilometros == null ||
+      !Number.isFinite(payload.kilometros) ||
+      payload.kilometros < 0
+    ) {
+      return { error: "Cargá los kilómetros del odómetro." };
+    }
+    if (payload.aceiteTipo.trim().length < 2) {
+      return { error: "Cargá la viscosidad del aceite de motor." };
+    }
+    if (payload.proxServiceKm <= payload.kilometros) {
+      return {
+        error: "El próximo service tiene que ser mayor a los kilómetros de hoy.",
+      };
+    }
   }
 
   const supabase = await createClient();
+  // actualizar_service NO recibe el tipo: lee el de la fila y valida
+  // según corresponda. Acá solo viajan los campos.
   const { error } = await supabase.rpc("actualizar_service", {
     p_service_id: serviceId,
     p_sucursal_id: payload.sucursalId,
     p_fecha: payload.fecha,
-    p_kilometros: payload.kilometros,
-    p_aceite_tipo: payload.aceiteTipo,
-    p_prox_service_km: payload.proxServiceKm,
+    p_kilometros: payload.kilometros as number,
+    p_aceite_tipo: (esMecanica ? null : payload.aceiteTipo) as unknown as string,
+    p_prox_service_km: (esMecanica
+      ? null
+      : payload.proxServiceKm) as unknown as number,
     p_items: payload.items,
     p_aceite_producto_id: payload.aceiteProductoId ?? undefined,
     p_aceite_nombre: payload.aceiteNombre ?? undefined,
     p_observaciones: payload.observaciones ?? undefined,
+    p_trabajo_descripcion: esMecanica
+      ? (payload.trabajoDescripcion ?? "").trim()
+      : undefined,
   });
 
   if (error) return { error: traducirError(error) };

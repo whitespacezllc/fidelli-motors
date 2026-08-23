@@ -189,7 +189,7 @@ export async function TabResumen({
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Metrica
             valor={String(m.services_mes ?? 0)}
-            etiqueta="Services del mes"
+            etiqueta="Services del mes (sin mecánica)"
           />
           <Metrica
             valor={String(m.clientes ?? 0)}

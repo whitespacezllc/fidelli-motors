@@ -30,7 +30,7 @@ export default async function PaginaFidelizacion() {
   const [premioRes, ciclosRes] = await Promise.all([
     supabase
       .from("premios")
-      .select("meta_services, descripcion, activo")
+      .select("meta_services, descripcion, activo, alcance")
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
@@ -43,6 +43,7 @@ export default async function PaginaFidelizacion() {
         metaServices: premioRes.data.meta_services,
         descripcion: premioRes.data.descripcion,
         activo: premioRes.data.activo,
+        alcance: premioRes.data.alcance === "todos" ? "todos" : "services",
       }
     : null;
 

@@ -650,6 +650,7 @@ export type Database = {
       premios: {
         Row: {
           activo: boolean
+          alcance: Database["public"]["Enums"]["alcance_premio"]
           created_at: string
           descripcion: string
           id: string
@@ -658,6 +659,7 @@ export type Database = {
         }
         Insert: {
           activo?: boolean
+          alcance?: Database["public"]["Enums"]["alcance_premio"]
           created_at?: string
           descripcion: string
           id?: string
@@ -666,6 +668,7 @@ export type Database = {
         }
         Update: {
           activo?: boolean
+          alcance?: Database["public"]["Enums"]["alcance_premio"]
           created_at?: string
           descripcion?: string
           id?: string
@@ -726,7 +729,7 @@ export type Database = {
           created_at: string
           detalle: string | null
           id: string
-          item_tipo: Database["public"]["Enums"]["item_tipo"]
+          item_tipo: Database["public"]["Enums"]["item_tipo"] | null
           lubricentro_id: string
           producto_id: string | null
           service_id: string
@@ -736,7 +739,7 @@ export type Database = {
           created_at?: string
           detalle?: string | null
           id?: string
-          item_tipo: Database["public"]["Enums"]["item_tipo"]
+          item_tipo?: Database["public"]["Enums"]["item_tipo"] | null
           lubricentro_id: string
           producto_id?: string | null
           service_id: string
@@ -746,7 +749,7 @@ export type Database = {
           created_at?: string
           detalle?: string | null
           id?: string
-          item_tipo?: Database["public"]["Enums"]["item_tipo"]
+          item_tipo?: Database["public"]["Enums"]["item_tipo"] | null
           lubricentro_id?: string
           producto_id?: string | null
           service_id?: string
@@ -786,18 +789,20 @@ export type Database = {
         Row: {
           aceite_nombre: string | null
           aceite_producto_id: string | null
-          aceite_tipo: string
+          aceite_tipo: string | null
           anulado: boolean
           created_at: string
           desbloqueado_hasta: string | null
           desbloqueado_por: string | null
           fecha: string
           id: string
-          kilometros: number
+          kilometros: number | null
           lubricentro_id: string
           observaciones: string | null
-          prox_service_km: number
+          prox_service_km: number | null
           sucursal_id: string
+          tipo: Database["public"]["Enums"]["tipo_trabajo"]
+          trabajo_descripcion: string | null
           updated_at: string
           usuario_id: string
           vehiculo_id: string
@@ -805,18 +810,20 @@ export type Database = {
         Insert: {
           aceite_nombre?: string | null
           aceite_producto_id?: string | null
-          aceite_tipo: string
+          aceite_tipo?: string | null
           anulado?: boolean
           created_at?: string
           desbloqueado_hasta?: string | null
           desbloqueado_por?: string | null
           fecha?: string
           id?: string
-          kilometros: number
+          kilometros?: number | null
           lubricentro_id: string
           observaciones?: string | null
-          prox_service_km: number
+          prox_service_km?: number | null
           sucursal_id: string
+          tipo?: Database["public"]["Enums"]["tipo_trabajo"]
+          trabajo_descripcion?: string | null
           updated_at?: string
           usuario_id: string
           vehiculo_id: string
@@ -824,18 +831,20 @@ export type Database = {
         Update: {
           aceite_nombre?: string | null
           aceite_producto_id?: string | null
-          aceite_tipo?: string
+          aceite_tipo?: string | null
           anulado?: boolean
           created_at?: string
           desbloqueado_hasta?: string | null
           desbloqueado_por?: string | null
           fecha?: string
           id?: string
-          kilometros?: number
+          kilometros?: number | null
           lubricentro_id?: string
           observaciones?: string | null
-          prox_service_km?: number
+          prox_service_km?: number | null
           sucursal_id?: string
+          tipo?: Database["public"]["Enums"]["tipo_trabajo"]
+          trabajo_descripcion?: string | null
           updated_at?: string
           usuario_id?: string
           vehiculo_id?: string
@@ -1099,6 +1108,7 @@ export type Database = {
           patentes: string | null
           patentes_lista: string | null
           telefono: string | null
+          ultima_visita_fecha: string | null
           ultimo_prox_service_km: number | null
           ultimo_service_fecha: string | null
           ultimo_service_km: number | null
@@ -1174,6 +1184,7 @@ export type Database = {
         Row: {
           anio: number | null
           cantidad_services: number | null
+          cantidad_trabajos: number | null
           cliente_id: string | null
           created_at: string | null
           id: string | null
@@ -1182,6 +1193,7 @@ export type Database = {
           modelo: string | null
           patente: string | null
           patente_normalizada: string | null
+          ultima_visita_fecha: string | null
           ultimo_service_fecha: string | null
         }
         Relationships: [
@@ -1248,6 +1260,7 @@ export type Database = {
           p_prox_service_km: number
           p_service_id: string
           p_sucursal_id: string
+          p_trabajo_descripcion?: string
         }
         Returns: undefined
       }
@@ -1364,6 +1377,8 @@ export type Database = {
           p_observaciones?: string
           p_prox_service_km: number
           p_sucursal_id: string
+          p_tipo?: Database["public"]["Enums"]["tipo_trabajo"]
+          p_trabajo_descripcion?: string
           p_vehiculo_id: string
         }
         Returns: string
@@ -1422,6 +1437,7 @@ export type Database = {
       premio_disponible: {
         Args: { p_vehiculo_id: string }
         Returns: {
+          alcance: Database["public"]["Enums"]["alcance_premio"]
           descripcion: string
           disponible: boolean
           meta_services: number
@@ -1483,6 +1499,7 @@ export type Database = {
       }
     }
     Enums: {
+      alcance_premio: "services" | "todos"
       canal_contacto: "whatsapp" | "manual"
       categoria_producto: "aceite" | "filtro" | "liquido" | "aditivo" | "otro"
       estado_contacto: "urgente" | "proximo" | "vencido"
@@ -1502,6 +1519,7 @@ export type Database = {
       motivo_contacto_fidelli: "trial" | "cobranza"
       periodo_suscripcion: "mensual" | "semestral" | "anual"
       rol_usuario: "owner" | "superadmin"
+      tipo_trabajo: "service" | "mecanica"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1632,6 +1650,7 @@ export const Constants = {
   },
   public: {
     Enums: {
+      alcance_premio: ["services", "todos"],
       canal_contacto: ["whatsapp", "manual"],
       categoria_producto: ["aceite", "filtro", "liquido", "aditivo", "otro"],
       estado_contacto: ["urgente", "proximo", "vencido"],
@@ -1652,6 +1671,7 @@ export const Constants = {
       motivo_contacto_fidelli: ["trial", "cobranza"],
       periodo_suscripcion: ["mensual", "semestral", "anual"],
       rol_usuario: ["owner", "superadmin"],
+      tipo_trabajo: ["service", "mecanica"],
     },
   },
 } as const

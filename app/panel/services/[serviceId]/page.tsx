@@ -4,7 +4,10 @@ import { createClient } from "@/lib/supabase/server";
 import { obtenerSesion } from "@/lib/auth/session";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { clasesBoton } from "@/components/ui/boton";
-import { CartonPapel } from "@/components/services/carton-papel";
+import {
+  CartonPapel,
+  CartonPapelMecanica,
+} from "@/components/services/carton-papel";
 import { BadgeEstado } from "@/components/services/badge-estado";
 import { AnularService } from "@/components/services/anular-service";
 import { estadoService, puedeEditarse } from "@/lib/servicios";
@@ -32,7 +35,8 @@ export default async function PaginaService({ params }: Props) {
     supabase
       .from("services")
       .select(
-        `id, fecha, created_at, kilometros, aceite_tipo, aceite_nombre,
+        `id, tipo, trabajo_descripcion, fecha, created_at, kilometros,
+         aceite_tipo, aceite_nombre,
          prox_service_km, observaciones, anulado, desbloqueado_hasta,
          vehiculos(patente, marca, modelo, cliente_id, clientes(nombre)),
          sucursales(nombre),
@@ -69,8 +73,19 @@ export default async function PaginaService({ params }: Props) {
 
   // El mismo criterio de get_carton: el detalle escrito manda, y si el
   // renglón se cargó con producto del catálogo, se muestra su nombre.
+  const esMecanica = service.tipo === "mecanica";
+  const renglonesLibres = service.service_items
+    .filter((i) => i.item_tipo === null)
+    .map(
+      (i) =>
+        i.detalle ??
+        (i.productos
+          ? [i.productos.nombre, i.productos.marca].filter(Boolean).join(" ")
+          : ""),
+    )
+    .filter(Boolean);
   const marcados = Object.fromEntries(
-    service.service_items.map((i) => [
+    service.service_items.filter((i) => i.item_tipo !== null).map((i) => [
       i.item_tipo,
       {
         detalle:
@@ -104,8 +119,13 @@ export default async function PaginaService({ params }: Props) {
       {/* Cabecera: el vehículo y su gente */}
       <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="font-brand text-h3 font-bold text-ink">
+          <h1 className="flex flex-wrap items-center gap-2.5 font-brand text-h3 font-bold text-ink">
             <span className="plate">{patente}</span> · {nombreVehiculo}
+            {esMecanica && (
+              <span className="rounded-sm border border-line bg-surface px-2 py-0.5 font-ui text-label font-semibold tracking-[0.04em] text-ink-60 uppercase">
+                Mecánica
+              </span>
+            )}
           </h1>
           <p className="mt-1 text-ui text-ink-60">
             {clienteId ? (
@@ -193,19 +213,33 @@ export default async function PaginaService({ params }: Props) {
       {/* El cartón + la metadata operativa, lado a lado en desktop */}
       <div className="grid gap-5 md:grid-cols-[minmax(0,22rem)_1fr] md:items-start">
         <div className={estado.tipo === "anulado" ? "opacity-55" : ""}>
-          <CartonPapel
-            datos={{
-              lubricentroNombre: sesion?.lubricentroNombre ?? "Tu lubricentro",
-              colorTenant: configRes.data?.color_primario ?? "#0A0A0A",
-              colorPapel: configRes.data?.color_carton ?? null,
-              fecha: service.fecha,
-              kilometros: service.kilometros,
-              aceiteTipo: service.aceite_tipo,
-              aceiteNombre: service.aceite_nombre,
-              proxServiceKm: service.prox_service_km,
-              marcados,
-            }}
-          />
+          {esMecanica ? (
+            <CartonPapelMecanica
+              datos={{
+                lubricentroNombre: sesion?.lubricentroNombre ?? "Tu lubricentro",
+                colorTenant: configRes.data?.color_primario ?? "#0A0A0A",
+                colorPapel: configRes.data?.color_carton ?? null,
+                fecha: service.fecha,
+                kilometros: service.kilometros,
+                descripcion: service.trabajo_descripcion ?? "",
+                renglones: renglonesLibres,
+              }}
+            />
+          ) : (
+            <CartonPapel
+              datos={{
+                lubricentroNombre: sesion?.lubricentroNombre ?? "Tu lubricentro",
+                colorTenant: configRes.data?.color_primario ?? "#0A0A0A",
+                colorPapel: configRes.data?.color_carton ?? null,
+                fecha: service.fecha,
+                kilometros: service.kilometros ?? 0,
+                aceiteTipo: service.aceite_tipo ?? "",
+                aceiteNombre: service.aceite_nombre,
+                proxServiceKm: service.prox_service_km ?? 0,
+                marcados,
+              }}
+            />
+          )}
         </div>
 
         {/* Lo que el cliente no ve: quién, cuándo, dónde */}
@@ -224,10 +258,14 @@ export default async function PaginaService({ params }: Props) {
               <dd className="text-ink">{service.aceite_nombre}</dd>
             </>
           )}
-          <dt className="text-ink-60">Kilómetros</dt>
-          <dd className="text-ink tabular-nums">
-            {formatearKm(service.kilometros)} km
-          </dd>
+          {service.kilometros != null && (
+            <>
+              <dt className="text-ink-60">Kilómetros</dt>
+              <dd className="text-ink tabular-nums">
+                {formatearKm(service.kilometros)} km
+              </dd>
+            </>
+          )}
           {service.observaciones && (
             <>
               <dt className="text-ink-60">Observaciones del service</dt>

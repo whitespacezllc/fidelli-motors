@@ -99,6 +99,20 @@ comment on column service_items.item_tipo is
   'Uno de los 11 renglones del cartón, o NULL: renglón libre de un trabajo mecánico (el texto va en detalle).';
 
 
+-- ---------- 3b · Qué cuenta para el premio ----------
+-- Para un lubricentro, "cada 5 services" son cambios de aceite. Para un
+-- taller, si la mecánica no avanza el ciclo, el programa no se dispara
+-- nunca y parece roto. Se vuelve configurable POR PREMIO, con default
+-- 'services': ningún tenant existente cambia de comportamiento.
+create type alcance_premio as enum ('services', 'todos');
+
+alter table premios
+  add column alcance alcance_premio not null default 'services';
+
+comment on column premios.alcance is
+  'Qué trabajos avanzan el ciclo: services = solo cambios de aceite (default histórico) · todos = también mecánica.';
+
+
 -- ---------- 4 · La policy: gating CONDICIONAL AL TIPO ----------
 -- Nace acá, llamando a la misma plan_permite() de 1A. La condición
 -- (tipo <> 'mecanica' or ...) es la diferencia entre gatear la mecánica
@@ -249,7 +263,13 @@ select
   v.anio,
   v.created_at,
   count(s.id) filter (where not s.anulado and s.tipo = 'service')::integer as cantidad_services,
-  max(s.fecha) filter (where not s.anulado and s.tipo = 'service') as ultimo_service_fecha
+  max(s.fecha) filter (where not s.anulado and s.tipo = 'service') as ultimo_service_fecha,
+  -- Las DOS preguntas de la ficha: el último service gobierna el próximo
+  -- cambio de aceite; la última visita es el último trabajo de cualquier
+  -- tipo. Sin esto, un auto atendido ayer por frenos mostraría una fecha
+  -- de hace meses y el sistema parecería roto.
+  max(s.fecha) filter (where not s.anulado) as ultima_visita_fecha,
+  count(s.id) filter (where not s.anulado)::integer as cantidad_trabajos
 from vehiculos v
 left join services s on s.vehiculo_id = v.id
 group by v.id;
@@ -271,7 +291,9 @@ select
   max(s.fecha) filter (where not s.anulado and s.tipo = 'service') as ultimo_service_fecha,
   coalesce(string_agg(distinct upper(v.patente), ', '), '') as patentes_lista,
   ult.kilometros      as ultimo_service_km,
-  ult.prox_service_km as ultimo_prox_service_km
+  ult.prox_service_km as ultimo_prox_service_km,
+  -- la última visita: cualquier tipo de trabajo (ver vista_vehiculos)
+  max(s.fecha) filter (where not s.anulado) as ultima_visita_fecha
 from clientes c
 left join vehiculos v on v.cliente_id = c.id
 left join services  s on s.vehiculo_id = v.id
@@ -290,16 +312,23 @@ group by c.id, ult.kilometros, ult.prox_service_km;
 alter view vista_clientes set (security_invoker = on);
 
 
--- ---------- 7 · Fidelliza cuenta cambios de aceite, no visitas ----------
--- "Cada 5 services, un premio" siempre significó cambios de aceite. Sin
--- el filtro, una mecánica avanzaba el ciclo en silencio.
-create or replace function premio_disponible(p_vehiculo_id uuid)
+-- ---------- 7 · Fidelliza cuenta lo que el premio DIGA que cuenta ----------
+-- Default histórico: solo cambios de aceite (una mecánica no avanza el
+-- ciclo en silencio). Con alcance = 'todos' —el caso taller— cualquier
+-- trabajo suma. La columna `alcance` viaja en el retorno para que el
+-- cartón sepa si el canje corresponde en este tipo de trabajo.
+-- DROP + CREATE porque cambia el tipo de retorno; los llamadores
+-- seleccionan por nombre, así que la columna extra es aditiva.
+drop function if exists premio_disponible(uuid);
+
+create function premio_disponible(p_vehiculo_id uuid)
 returns table (
   disponible        boolean,
   services_ciclo    integer,
   meta_services     integer,
   premio_id         uuid,
-  descripcion       text
+  descripcion       text,
+  alcance           alcance_premio
 )
 language sql
 stable
@@ -310,7 +339,7 @@ as $$
     where v.id = p_vehiculo_id
   ),
   premio_vigente as (
-    select p.id, p.meta_services, p.descripcion
+    select p.id, p.meta_services, p.descripcion, p.alcance
     from premios p
     join vehiculo ve on ve.lubricentro_id = p.lubricentro_id
     where p.activo
@@ -323,10 +352,14 @@ as $$
   ),
   conteo as (
     select count(*)::integer as n
-    from services s, ultimo_canje uc
+    from services s
+    cross join ultimo_canje uc
+    left join premio_vigente pv on true
     where s.vehiculo_id = p_vehiculo_id
       and not s.anulado
-      and s.tipo = 'service'
+      -- sin premio (pv null) o con alcance 'services': solo cambios de
+      -- aceite, el comportamiento de siempre.
+      and (pv.alcance = 'todos' or s.tipo = 'service')
       and (uc.fecha is null or s.created_at > uc.fecha)
   )
   select
@@ -334,10 +367,14 @@ as $$
     c.n                                       as services_ciclo,
     pv.meta_services,
     pv.id                                     as premio_id,
-    pv.descripcion
+    pv.descripcion,
+    pv.alcance
   from conteo c
   left join premio_vigente pv on true;
 $$;
+
+revoke all on function premio_disponible(uuid) from public, anon;
+grant execute on function premio_disponible(uuid) to authenticated, service_role;
 
 create or replace function ciclos_fidelizacion()
 returns table (
@@ -351,11 +388,20 @@ as $$
   select
     v.id,
     count(s.id) filter (
+      -- mismo criterio que premio_disponible: el alcance del premio
+      -- vigente decide si la mecánica suma (null o 'services' → no).
       where not s.anulado
-        and s.tipo = 'service'
+        and (pa.alcance = 'todos' or s.tipo = 'service')
         and (uc.fecha is null or s.created_at > uc.fecha)
     )::integer
   from vehiculos v
+  left join lateral (
+    select p.alcance
+    from premios p
+    where p.lubricentro_id = v.lubricentro_id and p.activo
+    order by p.created_at desc
+    limit 1
+  ) pa on true
   left join lateral (
     select max(c.created_at) as fecha
     from canjes c
@@ -406,18 +452,17 @@ begin
     raise exception 'La sesión no pertenece a ningún lubricentro';
   end if;
 
-  -- El premio es de los cambios de aceite: se canjea en un service, no
-  -- en un arreglo de frenos. Además la mecánica no avanza el ciclo
-  -- (premio_disponible filtra por tipo), así que un canje acá sería
-  -- regalar contra un contador que este trabajo ni movió.
-  if p_canjear_premio and p_tipo = 'mecanica' then
-    raise exception 'canje_solo_en_service';
-  end if;
-
   if p_canjear_premio then
     select * into v_premio from premio_disponible(p_vehiculo_id);
     if not coalesce(v_premio.disponible, false) then
       raise exception 'premio_no_disponible';
+    end if;
+    -- El canje va en el tipo de trabajo que el premio cuenta: con alcance
+    -- 'services' (el default histórico), canjear en una mecánica sería
+    -- regalar contra un contador que este trabajo ni movió. Con 'todos'
+    -- —el caso taller— el canje corresponde en cualquier trabajo.
+    if p_tipo = 'mecanica' and v_premio.alcance is distinct from 'todos' then
+      raise exception 'canje_solo_en_service';
     end if;
   end if;
 
@@ -677,7 +722,14 @@ declare
 begin
   v_patente_norm := normalizar_patente(p_patente);
 
-  select * into v_lubricentro from lubricentros where slug = p_slug and activo;
+  -- SIN filtro por activo, a propósito (2B). Apagar la página pública de
+  -- un suspendido castiga al dueño del auto —que no debe nada— y apaga de
+  -- golpe TODOS los calcos de ese lubricentro: el parque de QR es el
+  -- activo más difícil de reconstruir que tiene el producto. Y la página
+  -- caída lleva la marca del lubricentro, no la nuestra. La suspensión
+  -- vive en el PANEL (no se carga ni edita nada); la lectura del cliente
+  -- final no se corta. NO "arreglar" esto devolviéndole el filtro.
+  select * into v_lubricentro from lubricentros where slug = p_slug;
   if not found then
     return jsonb_build_object('error', 'lubricentro_no_encontrado');
   end if;
@@ -746,8 +798,12 @@ begin
       from notas_vehiculo n
       where n.vehiculo_id = v_vehiculo.id and n.visible_cliente
     ), '[]'::jsonb),
+    -- El premio NO se muestra con el lubricentro suspendido: el historial
+    -- sí (es del dueño del auto), pero no le prometemos al cliente un
+    -- beneficio que el local no puede entregar mientras esté bloqueado.
     'fidelizacion', case
-      when coalesce((v_config.campos_visibles->>'mostrar_fidelizacion')::boolean, true)
+      when v_lubricentro.activo
+       and coalesce((v_config.campos_visibles->>'mostrar_fidelizacion')::boolean, true)
       then jsonb_build_object(
         'disponible', v_premio.disponible,
         'services_ciclo', v_premio.services_ciclo,
@@ -802,7 +858,57 @@ end;
 $$;
 
 comment on function get_carton is
-  'Única puerta pública con patente. Una sola línea de tiempo con services y mecánica (cada entrada lleva tipo). Respeta campos_visibles, devuelve colores y notas visibles. Registra la búsqueda.';
+  'Única puerta pública con patente. Una sola línea de tiempo con services y mecánica (cada entrada lleva tipo). Respeta campos_visibles, sirve aunque el tenant esté suspendido (el premio no), devuelve colores y notas visibles. Registra la búsqueda.';
+
+
+-- ---------- 10b · get_landing sobrevive a la suspensión ----------
+-- Misma decisión y misma razón que get_carton: la vidriera responde
+-- siempre — es la marca del lubricentro ante SU cliente, y apagarla
+-- mata todos los calcos de golpe. El premio no se ofrece suspendido:
+-- no se promete un beneficio que el local no puede entregar.
+-- NO "arreglar" esto devolviéndole el `and l.activo` al where.
+create or replace function get_landing(p_slug text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select jsonb_build_object(
+    'nombre', l.nombre,
+    'logo_url', c.logo_url,
+    'color_primario', coalesce(c.color_primario, '#0A0A0A'),
+    'color_fondo', c.color_fondo,
+    'color_carton', c.color_carton,
+    'datos_contacto', coalesce(c.datos_contacto, '{}'::jsonb),
+    'sucursales', (
+      select coalesce(jsonb_agg(jsonb_build_object(
+        'nombre', su.nombre,
+        'direccion', su.direccion,
+        'telefono', su.telefono,
+        'horarios', su.horarios
+      ) order by su.created_at), '[]'::jsonb)
+      from sucursales su
+      where su.lubricentro_id = l.id and su.activa
+    ),
+    'premio', case when l.activo then (
+      select jsonb_build_object(
+        'meta_services', p.meta_services,
+        'descripcion', p.descripcion
+      )
+      from premios p
+      where p.lubricentro_id = l.id and p.activo
+      order by p.created_at desc
+      limit 1
+    ) else null end
+  )
+  from lubricentros l
+  left join config_experiencia c on c.lubricentro_id = l.id
+  where l.slug = p_slug;
+$$;
+
+comment on function get_landing is
+  'Shell público de la landing: marca, colores, contacto y sucursales. Sirve aunque el tenant esté suspendido (el premio no se ofrece). No escribe.';
 
 
 -- ---------- 11 · resumen_inicio: los conteos separan tipos ----------
@@ -975,13 +1081,14 @@ as $$
                     and (p_sucursal_id is null or sucursal_id = p_sucursal_id))
     ),
 
-    -- Los últimos SERVICES: la actividad de mecánica entra en 2B con su
-    -- propia presentación — metida acá hoy, el front desplegado la
-    -- pintaría con km en null y cara de bug.
+    -- La actividad reciente COMPLETA: los dos tipos, con 'tipo' y
+    -- 'descripcion' para que el front (2B) pinte cada uno como lo que es.
     'ultimos', coalesce((
       select jsonb_agg(
         jsonb_build_object(
           'id', u.id,
+          'tipo', u.tipo,
+          'descripcion', u.trabajo_descripcion,
           'fecha', u.fecha,
           'creado', u.created_at,
           'patente', u.patente,
@@ -990,7 +1097,8 @@ as $$
           'km', u.kilometros)
         order by u.fecha desc, u.created_at desc)
       from (
-        select s.id, s.fecha, s.created_at, s.kilometros,
+        select s.id, s.tipo, s.trabajo_descripcion, s.fecha, s.created_at,
+               s.kilometros,
                v.patente,
                nullif(trim(concat_ws(' ', v.marca, v.modelo)), '') as vehiculo,
                suc.nombre as sucursal
@@ -998,7 +1106,6 @@ as $$
         join vehiculos v on v.id = s.vehiculo_id
         join sucursales suc on suc.id = s.sucursal_id
         where not s.anulado
-          and s.tipo = 'service'
           and (p_sucursal_id is null or s.sucursal_id = p_sucursal_id)
         order by s.fecha desc, s.created_at desc
         limit 5
