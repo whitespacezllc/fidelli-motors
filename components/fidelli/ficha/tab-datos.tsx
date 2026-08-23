@@ -362,7 +362,7 @@ async function ListaServices({
   let consulta = supabase
     .from("services")
     .select(
-      `id, fecha, created_at, kilometros, anulado, desbloqueado_hasta,
+      `id, tipo, trabajo_descripcion, fecha, created_at, kilometros, anulado, desbloqueado_hasta,
        vehiculos!inner(patente, patente_normalizada, marca, modelo, clientes(nombre)),
        sucursales(nombre),
        desbloqueador:usuarios!desbloqueado_por(nombre)`,
@@ -510,6 +510,8 @@ async function ListaServices({
                         .join(" ") || null,
                     cliente: s.vehiculos.clientes?.nombre ?? null,
                     sucursal: s.sucursales?.nombre ?? "",
+                    tipo: s.tipo,
+                    descripcion: s.trabajo_descripcion,
                     kilometros: s.kilometros,
                     desbloqueadoPor: s.desbloqueador?.nombre ?? null,
                   }}

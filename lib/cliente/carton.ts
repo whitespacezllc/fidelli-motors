@@ -14,18 +14,25 @@ import type {
 // no se reimplementa nada de eso — se consume lo que llega.
 
 export type ItemCarton = {
-  tipo: string;
+  /** Uno de los 11 renglones del cartón, o null: renglón libre de mecánica. */
+  tipo: string | null;
   detalle: string | null;
   /** true = se cambió; false = se revisó y estaba bien ("OK"). */
   cambiado: boolean;
 };
 
+export type TipoTrabajo = "service" | "mecanica";
+
 export type ServiceCarton = {
+  tipo: TipoTrabajo;
+  /** Qué se hizo, en mecánica. null en un service: el cartón se describe solo. */
+  trabajoDescripcion: string | null;
   fecha: string;
-  kilometros: number;
-  aceiteTipo: string;
+  /** En mecánica es opcional: null si el mecánico no lo anotó. */
+  kilometros: number | null;
+  aceiteTipo: string | null;
   aceiteNombre: string | null;
-  proxServiceKm: number;
+  proxServiceKm: number | null;
   sucursal: string | null;
   observaciones: string | null;
   /** Pasaron 24 horas: nadie lo puede retocar. */
@@ -92,11 +99,13 @@ type CartonJson = {
     descripcion: string | null;
   } | null;
   services?: {
+    tipo?: TipoTrabajo;
+    trabajo_descripcion?: string | null;
     fecha: string;
-    kilometros: number;
-    aceite_tipo: string;
+    kilometros: number | null;
+    aceite_tipo: string | null;
     aceite_nombre: string | null;
-    prox_service_km: number;
+    prox_service_km: number | null;
     sucursal: string | null;
     observaciones: string | null;
     fijado: boolean;
@@ -168,6 +177,9 @@ export async function obtenerCarton(
       // Vienen ordenados por fecha descendente desde la base: el primero es
       // el último service, que es el cartón grande de arriba.
       services: (json.services ?? []).map((s) => ({
+        // Un JSON de antes de la migración no trae la clave: era un service.
+        tipo: s.tipo ?? "service",
+        trabajoDescripcion: s.trabajo_descripcion ?? null,
         fecha: s.fecha,
         kilometros: s.kilometros,
         aceiteTipo: s.aceite_tipo,
@@ -191,9 +203,20 @@ export function marcadosDe(
   service: ServiceCarton,
 ): Record<string, { detalle: string | null; cambiado: boolean }> {
   return Object.fromEntries(
-    service.items.map((i) => [
-      i.tipo,
-      { detalle: i.detalle, cambiado: i.cambiado ?? true },
-    ]),
+    service.items
+      // Solo los 11 renglones del cartón: los libres (tipo null) son de
+      // la orden de trabajo de mecánica y salen por renglonesLibres().
+      .filter((i) => i.tipo !== null)
+      .map((i) => [
+        i.tipo as string,
+        { detalle: i.detalle, cambiado: i.cambiado ?? true },
+      ]),
   );
+}
+
+/** Los renglones libres de una mecánica: repuestos y tareas, en texto. */
+export function renglonesLibres(service: ServiceCarton): string[] {
+  return service.items
+    .filter((i) => i.tipo === null && i.detalle)
+    .map((i) => i.detalle as string);
 }

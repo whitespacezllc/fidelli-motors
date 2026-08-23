@@ -65,6 +65,9 @@ export default async function PaginaCarton({
         .select("fecha, kilometros, created_at, sucursales(nombre)")
         .eq("vehiculo_id", vehiculoId)
         .eq("anulado", false)
+        // Solo services: la referencia de kilómetros y el aviso de "ya hay
+        // uno hoy" son del cambio de aceite, no de la mecánica.
+        .eq("tipo", "service")
         .order("fecha", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(5),
@@ -109,6 +112,7 @@ export default async function PaginaCarton({
   const servicios = serviciosRes.data ?? [];
   const ultimo = servicios[0] ?? null;
   const premio = premioRes.data?.[0] ?? null;
+  const puedeMecanica = featureHabilitada(sesion, "mecanica");
 
   // La sucursal es del dispositivo, no del usuario: en el MVP es probable que
   // el lubricentro comparta una sola cuenta entre sucursales, así que la
@@ -156,14 +160,19 @@ export default async function PaginaCarton({
             nombre: [p.nombre, p.marca].filter(Boolean).join(" · "),
             categoria: p.categoria,
           })),
-          ultimoService: ultimo
-            ? { fecha: ultimo.fecha, kilometros: ultimo.kilometros }
-            : null,
+          ultimoService:
+            ultimo && ultimo.kilometros != null
+              ? { fecha: ultimo.fecha, kilometros: ultimo.kilometros }
+              : null,
           serviceDeHoy,
           hoy,
           premioDisponible: premio?.disponible
-            ? { descripcion: premio.descripcion ?? "Premio del programa" }
+            ? {
+                descripcion: premio.descripcion ?? "Premio del programa",
+                alcance: premio.alcance === "todos" ? ("todos" as const) : ("services" as const),
+              }
             : null,
+          puedeMecanica,
         }}
       />
     </div>

@@ -6,12 +6,15 @@ import type { EstadoService } from "@/lib/servicios";
 
 export type ServiceListado = {
   id: string;
+  tipo: "service" | "mecanica";
+  /** Qué se hizo, en mecánica. */
+  descripcion: string | null;
   creado: string;
   patente: string;
   vehiculo: string | null;
   cliente: string | null;
   sucursal: string;
-  kilometros: number;
+  kilometros: number | null;
   estado: EstadoService;
 };
 
@@ -39,14 +42,26 @@ export function FilaService({ service }: { service: ServiceListado }) {
           {service.vehiculo ?? "Vehículo"}
         </span>
         <span className="order-4 hidden truncate text-ui text-ink-60 sm:inline lg:order-none">
-          {service.cliente ?? ""}
+          {service.tipo === "mecanica" && service.descripcion
+            ? service.descripcion
+            : (service.cliente ?? "")}
         </span>
         <span className="order-5 text-label text-ink-60 lg:order-none lg:text-ui">
           {service.sucursal}
         </span>
-        <span className="order-6 text-ui text-ink-60 tabular-nums lg:order-none lg:text-right">
-          {formatearKm(service.kilometros)} km
-        </span>
+        {/* La celda dice el TIPO de un vistazo: km para el service, el
+            sello de mecánica para el taller. */}
+        {service.tipo === "mecanica" ? (
+          <span className="order-6 lg:order-none lg:justify-self-end">
+            <span className="rounded-sm border border-line bg-surface px-2 py-0.5 text-label font-semibold tracking-[0.04em] text-ink-60 uppercase">
+              Mecánica
+            </span>
+          </span>
+        ) : (
+          <span className="order-6 text-ui text-ink-60 tabular-nums lg:order-none lg:text-right">
+            {formatearKm(service.kilometros ?? 0)} km
+          </span>
+        )}
         <span className="order-7 ml-auto lg:order-none lg:ml-0 lg:justify-self-end">
           <BadgeEstado estado={service.estado} />
         </span>

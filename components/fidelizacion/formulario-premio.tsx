@@ -19,6 +19,8 @@ export type Premio = {
   metaServices: number;
   descripcion: string;
   activo: boolean;
+  /** Qué avanza el ciclo: solo services (default) o todos los trabajos. */
+  alcance: "services" | "todos";
 } | null;
 
 export function FormularioPremio({
@@ -145,6 +147,39 @@ export function FormularioPremio({
           </p>
         )}
       </div>
+
+      {/* Qué cuenta para el premio. Para un lubricentro, "cada 5 services"
+          son cambios de aceite; para un taller, si la mecánica no suma, el
+          programa no se dispara nunca y parece roto. DEFAULT solo services:
+          nadie cambia de comportamiento sin elegirlo. */}
+      <fieldset>
+        <legend className={CLASE_LABEL}>Qué cuenta para el premio</legend>
+        <div className="flex flex-col gap-2">
+          {(
+            [
+              ["services", "Solo services", "Los cambios de aceite avanzan el contador."],
+              ["todos", "Todos los trabajos", "Services y mecánica: cada visita al taller suma."],
+            ] as const
+          ).map(([valor, titulo, detalle]) => (
+            <label
+              key={valor}
+              className="flex min-h-11 cursor-pointer items-start gap-3 rounded-md border border-line px-3.5 py-2.5"
+            >
+              <input
+                type="radio"
+                name="alcance"
+                value={valor}
+                defaultChecked={(premio?.alcance ?? "services") === valor}
+                className="mt-1 size-4 shrink-0 cursor-pointer accent-ink"
+              />
+              <span>
+                <span className="block text-body text-ink">{titulo}</span>
+                <span className="block text-ui text-ink-60">{detalle}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
 
       <label className="flex min-h-11 items-center gap-3">
         <input

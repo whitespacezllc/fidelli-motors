@@ -54,7 +54,7 @@ export default async function PaginaServices({
   let consulta = supabase
     .from("services")
     .select(
-      `id, fecha, created_at, kilometros, anulado, desbloqueado_hasta,
+      `id, tipo, trabajo_descripcion, fecha, created_at, kilometros, anulado, desbloqueado_hasta,
        vehiculos!inner(patente, patente_normalizada, marca, modelo, clientes(nombre)),
        sucursales(nombre)`,
       { count: "exact" },
@@ -80,6 +80,8 @@ export default async function PaginaServices({
   const paginas = Math.max(1, Math.ceil(total / POR_PAGINA));
   const services = (serviciosRes.data ?? []).map((s) => ({
     id: s.id,
+    tipo: s.tipo,
+    descripcion: s.trabajo_descripcion,
     creado: s.created_at,
     patente: s.vehiculos.patente,
     vehiculo:

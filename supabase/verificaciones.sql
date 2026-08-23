@@ -108,3 +108,227 @@ begin
         'el catálogo en feature_plan_valida() y su espejo en lib/planes.ts.';
   end if;
 end $$;
+
+-- ============================================================
+-- Trabajos mecánicos (Bloque 2A) — la red contra el fallo silencioso
+--
+-- La lista de "a quién llamar" es lo que renueva la suscripción, y su
+-- modo de falla es mudo: una mecánica que se cuele en el distinct on de
+-- vista_proximos_service saca al auto de la lista sin error ni log.
+-- Estos chequeos hacen fallar el RESET, que es el único lugar donde un
+-- fallo mudo se vuelve ruidoso.
+-- ============================================================
+
+-- ---------- El filtro y el security_invoker de la vista: LOS DOS ----------
+do $$
+declare
+  v_def    text;
+  v_veces  integer;
+  v_opts   text;
+begin
+  v_def := pg_get_viewdef('vista_proximos_service'::regclass);
+
+  -- El filtro tiene que estar en los DOS CTEs que leen services:
+  -- `ultimo` (que la mecánica no desplace al último service) y `ritmo`
+  -- (que el km/día se mida entre cambios de aceite).
+  v_veces := (length(v_def) - length(replace(v_def, '''service''::tipo_trabajo', '')))
+             / length('''service''::tipo_trabajo');
+  if v_veces < 2 then
+    raise exception
+      E'RETENCIÓN ROTA: vista_proximos_service tiene % filtro(s) de tipo y necesita 2 (ultimo y ritmo).\nUna mecánica posterior al último service SACA al auto de la lista de a quién llamar, sin error.',
+      v_veces
+      using hint = 'Reponé "and s.tipo = ''service''" en los dos CTEs de la vista (migración 20260822210000).';
+  end if;
+
+  select array_to_string(reloptions, ',') into v_opts
+  from pg_class where relname = 'vista_proximos_service';
+
+  if v_opts is null
+     or (v_opts not like '%security_invoker=on%' and v_opts not like '%security_invoker=true%') then
+    raise exception
+      'AISLAMIENTO ROTO: vista_proximos_service perdió el security_invoker — un owner vería la retención de TODOS los lubricentros.'
+      using hint = 'alter view vista_proximos_service set (security_invoker = on);';
+  end if;
+end $$;
+
+-- ---------- R1 + R3 · Las dos capas del gating, del lado de la base ----------
+-- R1: la capa RLS de 1B sola — un Basic no escribe premios ni llamando
+--     directo (la capa de aplicación acá NO EXISTE: esto es SQL puro).
+-- R3: el gating de services es CONDICIONAL AL TIPO — un Basic carga un
+--     service común (si esto falla, se rompió la carga para todos los
+--     planes chicos: el peor bug posible) y no carga una mecánica.
+do $$
+declare
+  v_lub    uuid;
+  v_owner  uuid;
+  v_veh    uuid;
+  v_suc    uuid;
+  v_plan   uuid;
+  v_basic  uuid;
+  v_id     uuid;
+begin
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+  select u.id into v_owner from usuarios u where u.lubricentro_id = v_lub and u.rol = 'owner' limit 1;
+  select s.plan_id into v_plan from suscripciones s where s.lubricentro_id = v_lub
+    order by s.inicio desc, s.created_at desc limit 1;
+  select p.id into v_basic from planes p where p.nombre = 'Basic';
+  select v.id into v_veh from vehiculos v where v.lubricentro_id = v_lub limit 1;
+  select su.id into v_suc from sucursales su where su.lubricentro_id = v_lub and su.activa limit 1;
+
+  if v_owner is null or v_basic is null or v_veh is null then
+    raise exception 'REGRESIÓN SIN PISO: falta demo/Basic/vehículo en el seed.';
+  end if;
+
+  update suscripciones set plan_id = v_basic where lubricentro_id = v_lub;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  -- R1 · premios: RLS sola tiene que rechazar
+  begin
+    insert into premios (lubricentro_id, meta_services, descripcion, activo)
+    values (v_lub, 9, 'no debería entrar', false);
+    raise exception 'REGRESIÓN 1B: un Basic escribió en premios — la capa RLS no sostiene sola.';
+  exception
+    when insufficient_privilege then null; -- exactamente lo esperado
+  end;
+
+  -- R3a · un service COMÚN tiene que pasar
+  begin
+    v_id := guardar_service(
+      p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => current_date,
+      p_kilometros => 999000, p_aceite_tipo => '10W40', p_prox_service_km => 999500);
+  exception when others then
+    raise exception
+      E'EL PEOR BUG DEL SPRINT: un tenant Basic no puede cargar un service común (%).\nEl gating de services dejó de ser condicional al tipo.', sqlerrm;
+  end;
+
+  -- R3b · una mecánica NO
+  begin
+    perform guardar_service(
+      p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => current_date,
+      p_kilometros => null, p_aceite_tipo => null, p_prox_service_km => null,
+      p_tipo => 'mecanica', p_trabajo_descripcion => 'no debería entrar en Basic');
+    raise exception 'REGRESIÓN 2A: un Basic cargó una mecánica — el gating por tipo no rige.';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- limpieza: el service de la prueba R3a y el plan original
+  delete from service_items where service_id = v_id;
+  delete from services where id = v_id;
+  update suscripciones set plan_id = v_plan where lubricentro_id = v_lub;
+end $$;
+
+-- ---------- R2 · Una mecánica posterior NO altera la retención ----------
+-- La prueba 1 del bloque, corriendo en CADA reset: se toma un auto que
+-- está en la lista, se le carga una mecánica de HOY (posterior a su
+-- último service), y la fila de la vista tiene que quedar IDÉNTICA.
+do $$
+declare
+  v_lub    uuid;
+  v_owner  uuid;
+  v_veh    uuid;
+  v_suc    uuid;
+  v_antes  text;
+  v_despues text;
+  v_mec    uuid;
+begin
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+  select u.id into v_owner from usuarios u where u.lubricentro_id = v_lub and u.rol = 'owner' limit 1;
+
+  select vp.vehiculo_id, vp.sucursal_id into v_veh, v_suc
+  from vista_proximos_service vp where vp.lubricentro_id = v_lub limit 1;
+
+  if v_veh is null then
+    raise exception 'REGRESIÓN SIN PISO: el seed no deja ningún auto en la lista de a quién llamar.';
+  end if;
+
+  select concat_ws('|', ultimo_service_fecha, ultimo_service_km, prox_service_km,
+                   km_faltantes, km_por_dia, fecha_estimada, estado)
+    into v_antes
+  from vista_proximos_service where vehiculo_id = v_veh;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  v_mec := guardar_service(
+    p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => current_date,
+    p_kilometros => null, p_aceite_tipo => null, p_prox_service_km => null,
+    p_observaciones => 'regresión 2A',
+    p_tipo => 'mecanica', p_trabajo_descripcion => 'Prueba de regresión: cambio de correa');
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  select concat_ws('|', ultimo_service_fecha, ultimo_service_km, prox_service_km,
+                   km_faltantes, km_por_dia, fecha_estimada, estado)
+    into v_despues
+  from vista_proximos_service where vehiculo_id = v_veh;
+
+  if v_despues is distinct from v_antes then
+    raise exception
+      E'RETENCIÓN ROTA: una mecánica posterior alteró la fila de la vista.\n  antes:   %\n  después: %',
+      v_antes, v_despues
+      using hint = 'El distinct on de vista_proximos_service está tomando la mecánica como último service.';
+  end if;
+
+  delete from service_items where service_id = v_mec;
+  delete from services where id = v_mec;
+end $$;
+
+-- ---------- R4 · La página pública sobrevive a la suspensión (2B) ----------
+-- DECISIÓN, no bug: apagar la vidriera de un suspendido castiga al dueño
+-- del auto (que no debe nada) y mata de golpe todos sus calcos — el
+-- parque de QR es el activo más difícil de reconstruir. El premio sí se
+-- esconde: no se promete lo que el local no puede entregar. Este chequeo
+-- existe porque es la clase de comportamiento que alguien "arregla" en
+-- seis meses devolviéndole el filtro de activo a get_carton/get_landing.
+do $$
+declare
+  v_lub     uuid;
+  v_pat     text;
+  v_marca   timestamptz;
+  v_landing jsonb;
+  v_carton  jsonb;
+begin
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+  select v.patente_normalizada into v_pat
+  from vehiculos v
+  where v.lubricentro_id = v_lub
+    and exists (select 1 from services s where s.vehiculo_id = v.id and not s.anulado)
+  limit 1;
+
+  update lubricentros set activo = false where id = v_lub;
+  v_marca := clock_timestamp();
+
+  v_landing := get_landing('demo');
+  v_carton  := get_carton('demo', v_pat);
+
+  -- restaurar ANTES de evaluar: si algo falla abajo, el raise aborta la
+  -- transacción entera y el update de arriba se deshace igual.
+  update lubricentros set activo = true where id = v_lub;
+  delete from landing_busquedas
+  where lubricentro_id = v_lub and patente = v_pat and created_at >= v_marca;
+
+  if v_landing is null or v_landing->>'nombre' is null then
+    raise exception 'REGRESIÓN 2B: get_landing dejó de responder con el tenant suspendido. Es una decisión, no un bug: ver el comentario de la migración 20260822210000.';
+  end if;
+  if v_landing->'premio' is not null and v_landing->'premio' <> 'null'::jsonb then
+    raise exception 'REGRESIÓN 2B: get_landing ofrece el premio de un tenant suspendido.';
+  end if;
+  if v_carton ? 'error' then
+    raise exception 'REGRESIÓN 2B: get_carton devolvió % con el tenant suspendido — el cliente final perdió su historial.', v_carton->>'error';
+  end if;
+  if jsonb_array_length(coalesce(v_carton->'services', '[]'::jsonb)) = 0 then
+    raise exception 'REGRESIÓN 2B: get_carton no trae historial con el tenant suspendido.';
+  end if;
+  if v_carton->'fidelizacion' is not null and v_carton->'fidelizacion' <> 'null'::jsonb then
+    raise exception 'REGRESIÓN 2B: get_carton muestra el progreso del premio de un tenant suspendido.';
+  end if;
+end $$;

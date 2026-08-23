@@ -255,3 +255,135 @@ export function CartonPapel({
     </div>
   );
 }
+
+
+// ============================================================
+// La orden de trabajo — el papel de la mecánica
+//
+// El escaneo del calco es el activo viral del producto: el trabajo
+// mecánico se tiene que ver TAN prolijo como un service, no como un caso
+// raro. Por eso habla el mismo idioma de papel que el cartón: troquel,
+// grilla con bordes, etiqueta vertical en el color del tenant y una banda
+// de cierre. Lo que cambia es el contenido: descripción del trabajo y
+// renglones libres, sin los 11 fijos y sin PROX. SERV. — eso es del
+// cambio de aceite.
+// ============================================================
+
+export type MecanicaDatos = {
+  lubricentroNombre: string;
+  colorTenant: string;
+  colorPapel?: string | null;
+  fecha: string;
+  /** Opcional en mecánica: se muestra solo si el mecánico lo anotó. */
+  kilometros: number | null;
+  descripcion: string;
+  /** Repuestos y tareas, texto libre. */
+  renglones: string[];
+};
+
+export function CartonPapelMecanica({
+  datos,
+  escala = "panel",
+}: {
+  datos: MecanicaDatos;
+  escala?: Escala;
+}) {
+  const e = ESCALAS[escala];
+  const paleta = paletaTenant(datos.colorTenant);
+  const estilo = {
+    "--tn": paleta.primary,
+    "--tn-ink": paleta.ink,
+    ...(datos.colorPapel ? { backgroundColor: datos.colorPapel } : {}),
+  } as React.CSSProperties;
+
+  return (
+    <div
+      style={estilo}
+      className={`rounded-t-[44px] rounded-b-lg border border-line bg-base ${e.caja} shadow-md`}
+    >
+      <div className="mx-auto mb-3.5 size-11 rounded-full border border-line bg-surface" />
+
+      <div className="mb-3.5 text-center">
+        <p className={`font-brand ${e.nombre} font-bold text-ink`}>
+          {datos.lubricentroNombre}
+        </p>
+        <p className={`${e.bajada} font-semibold tracking-[0.14em] uppercase`}>
+          Orden de trabajo
+        </p>
+      </div>
+
+      <div className="border-[1.5px] border-ink tabular-nums">
+        {[
+          ["Fecha", formatearFecha(datos.fecha)],
+          ...(datos.kilometros != null
+            ? [["Kilómetros", formatearKm(datos.kilometros)]]
+            : []),
+        ].map(([clave, valor]) => (
+          <div key={clave} className="flex items-stretch border-b border-ink">
+            <span
+              className={`${e.primeraColumna} ${e.celda} py-2.5 ${e.claveCabecera} font-semibold tracking-[0.03em] uppercase`}
+            >
+              {clave}
+            </span>
+            <span
+              className={`flex-1 border-l border-ink ${e.celda} py-2.5 text-right ${e.valorCabecera} font-semibold`}
+            >
+              {valor}
+            </span>
+          </div>
+        ))}
+
+        {/* La descripción: qué se le hizo al auto, a lo ancho. */}
+        <div className={`border-b border-ink ${e.celda} py-2.5`}>
+          <p
+            className={`${e.claveCabecera} font-semibold tracking-[0.03em] uppercase`}
+          >
+            Trabajo realizado
+          </p>
+          <p className={`mt-1 ${e.renglon} text-ink`}>{datos.descripcion}</p>
+        </div>
+
+        {/* Los repuestos y tareas, con la etiqueta vertical del cartón. */}
+        {datos.renglones.length > 0 && (
+          <div className="flex border-b border-ink">
+            <span
+              className={`flex ${e.etiqueta} items-center justify-center bg-[var(--tn)] font-bold tracking-[0.18em] text-[var(--tn-ink)]`}
+              style={{ writingMode: "vertical-rl", rotate: "180deg" }}
+            >
+              REP.
+            </span>
+            <div className="flex-1">
+              {datos.renglones.map((r, i) => (
+                <div
+                  key={`${r}-${i}`}
+                  className={`flex items-stretch ${
+                    i === datos.renglones.length - 1 ? "" : "border-b border-ink"
+                  }`}
+                >
+                  <span className={`flex-1 ${e.celda} py-2 ${e.renglon} text-ink`}>
+                    {r}
+                  </span>
+                  <span
+                    className={`flex ${e.tilde} items-center justify-center border-l border-ink font-bold text-[var(--tn)]`}
+                  >
+                    ✓
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* La banda de cierre, como el PROX. SERV. del cartón: le da el
+            mismo peso visual y dice qué es esta pieza. */}
+        <div className="flex items-center justify-center bg-[var(--tn)]/10">
+          <span
+            className={`${e.celda} py-2.5 ${e.claveCabecera} font-semibold tracking-[0.14em] uppercase`}
+          >
+            Trabajo de mecánica
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -26,7 +26,7 @@ export default async function FichaCliente({
   const { data: cliente } = await supabase
     .from("vista_clientes")
     .select(
-      "id, nombre, telefono, email, cuit, created_at, cantidad_vehiculos, ultimo_service_fecha",
+      "id, nombre, telefono, email, cuit, created_at, cantidad_vehiculos, ultimo_service_fecha, ultima_visita_fecha",
     )
     .eq("id", id)
     .maybeSingle();
@@ -49,7 +49,7 @@ export default async function FichaCliente({
 
   const { data: filasVehiculos } = await supabase
     .from("vista_vehiculos")
-    .select("id, patente, marca, modelo, anio, cantidad_services, ultimo_service_fecha")
+    .select("id, patente, marca, modelo, anio, cantidad_services, ultimo_service_fecha, ultima_visita_fecha")
     .eq("cliente_id", cliente.id)
     .order("created_at");
 
@@ -66,6 +66,7 @@ export default async function FichaCliente({
             anio: v.anio,
             cantidad_services: v.cantidad_services ?? 0,
             ultimo_service_fecha: v.ultimo_service_fecha,
+            ultima_visita_fecha: v.ultima_visita_fecha,
           },
         ]
       : [],
@@ -77,7 +78,7 @@ export default async function FichaCliente({
   const { data: filasServices } = await supabase
     .from("services")
     .select(
-      "id, fecha, created_at, kilometros, aceite_tipo, aceite_nombre, anulado, desbloqueado_hasta, vehiculo_id, sucursales(nombre)",
+      "id, tipo, trabajo_descripcion, fecha, created_at, kilometros, aceite_tipo, aceite_nombre, anulado, desbloqueado_hasta, vehiculo_id, sucursales(nombre)",
     )
     .in(
       "vehiculo_id",
@@ -169,6 +170,9 @@ export default async function FichaCliente({
             {cliente.ultimo_service_fecha
               ? `Último service ${formatearFecha(cliente.ultimo_service_fecha)}`
               : "Todavía no tiene services cargados"}
+            {cliente.ultima_visita_fecha &&
+              cliente.ultima_visita_fecha !== cliente.ultimo_service_fecha &&
+              ` · Última visita ${formatearFecha(cliente.ultima_visita_fecha)}`}
           </p>
         </div>
 
@@ -207,9 +211,14 @@ export default async function FichaCliente({
           })),
           services: (servicesPorVehiculo.get(v.id) ?? []).map((s) => ({
             id: s.id,
+            tipo: s.tipo,
             fecha: s.fecha,
             kilometros: s.kilometros,
-            aceite: [s.aceite_tipo, s.aceite_nombre].filter(Boolean).join(" · "),
+            // En mecánica la columna del aceite cuenta el trabajo.
+            aceite:
+              s.tipo === "mecanica"
+                ? (s.trabajo_descripcion ?? "")
+                : [s.aceite_tipo, s.aceite_nombre].filter(Boolean).join(" · "),
             sucursal: s.sucursales?.nombre ?? "",
             estado: estadoService(s),
           })),
