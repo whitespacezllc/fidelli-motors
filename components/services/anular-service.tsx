@@ -44,7 +44,7 @@ export function AnularService({
       </DialogTrigger>
       <DialogContenido titulo="¿Anular este service?">
         <p className="text-ui text-ink-60">
-          Vas a anular el service del{" "}
+          Vas a anular el trabajo del{" "}
           <span className="font-semibold text-ink tabular-nums">{fecha}</span> de{" "}
           <span className="plate font-semibold text-ink">{patente}</span>. El
           cliente dejará de verlo en su historial y no contará para su premio.

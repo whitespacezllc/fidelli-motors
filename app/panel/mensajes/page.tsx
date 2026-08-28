@@ -82,7 +82,7 @@ export default async function PaginaMensajes() {
         <EstadoVacio
           icono={<IconoWhatsapp className="size-6" />}
           titulo="No te queda ningún mensaje"
-          descripcion="Sin un mensaje activo, el botón de WhatsApp de Próximos services no funciona. Creá uno y activalo."
+          descripcion="Sin un mensaje activo, el botón de WhatsApp de A quién llamar no funciona. Creá uno y activalo."
         >
           {suspendido ? (
             <AccionBloqueada etiqueta="+ Crear el primero" />

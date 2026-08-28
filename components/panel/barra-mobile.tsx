@@ -14,6 +14,7 @@ import {
 import { urlWhatsappSoporte } from "@/lib/config";
 import { MOTIVO_SUSPENSION } from "@/components/panel/aviso-suspension";
 import type { FeaturePlan } from "@/lib/planes";
+import { BadgePorLlamar } from "@/components/panel/badge-por-llamar";
 
 // Secciones que no entran en la barra: viven en la hoja "Más". `feature` =
 // qué tiene que habilitar el plan para que el item exista.
@@ -33,11 +34,14 @@ function ItemBarra({
   nombre,
   activo,
   icono,
+  badge,
 }: {
   href: string;
   nombre: string;
   activo: boolean;
   icono: React.ReactNode;
+  /** El círculo de pendientes, flotando sobre el ícono como en WhatsApp. */
+  badge?: React.ReactNode;
 }) {
   return (
     <Link
@@ -47,7 +51,14 @@ function ItemBarra({
         activo ? "font-semibold text-ink" : "text-ink-60"
       }`}
     >
-      {icono}
+      <span className="relative">
+        {icono}
+        {badge && (
+          <span className="absolute -top-1.5 left-full -translate-x-2">
+            {badge}
+          </span>
+        )}
+      </span>
       <span className="text-label">{nombre}</span>
     </Link>
   );
@@ -57,10 +68,13 @@ export function BarraMobile({
   cerrarSesion,
   suspendido = false,
   features = {},
+  porLlamar = 0,
 }: {
   cerrarSesion: () => Promise<void>;
   suspendido?: boolean;
   features?: Partial<Record<FeaturePlan, boolean>>;
+  /** Contactos sin hacer en "A quién llamar" — pinta el círculo. */
+  porLlamar?: number;
 }) {
   const pathname = usePathname();
   const [abierta, setAbierta] = useState(false);
@@ -98,6 +112,7 @@ export function BarraMobile({
           nombre="Llamar"
           activo={pathname.startsWith("/panel/proximos")}
           icono={<IconoReloj className="size-5" />}
+          badge={<BadgePorLlamar cantidad={porLlamar} />}
         />
         <ItemBarra
           href="/panel/clientes"

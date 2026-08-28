@@ -37,7 +37,7 @@ export default async function PaginaSucursales() {
         <EstadoVacio
           icono={<span aria-hidden>📍</span>}
           titulo="Todavía no cargaste ninguna sucursal"
-          descripcion="Cada service se etiqueta con la sucursal donde se hizo. Cargá la primera para poder empezar."
+          descripcion="Cada trabajo se etiqueta con la sucursal donde se hizo. Cargá la primera para poder empezar."
         >
           {suspendido ? (
             <AccionBloqueada etiqueta="+ Cargar la primera sucursal" />

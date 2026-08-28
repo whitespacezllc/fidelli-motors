@@ -38,7 +38,7 @@ export function Checklist({
   const pasos = [
     {
       titulo: "Cargá tus sucursales",
-      pendiente: "Para saber en qué local se hizo cada service",
+      pendiente: "Para saber en qué local se hizo cada trabajo",
       // Cada paso hecho muestra el dato real conseguido, no un tilde abstracto.
       logro: plural(estado.sucursales, "sucursal activa", "sucursales activas"),
       hecho: estado.sucursales > 0,
@@ -53,15 +53,15 @@ export function Checklist({
     },
     {
       titulo: "Definí tu premio",
-      pendiente: "Cada cuántos services y qué beneficio das",
+      pendiente: "Qué premio das y cada cuánto se gana",
       logro: `Premio cada ${estado.premio_meta} services`,
       hecho: estado.premio_meta !== null,
       destino: "/panel/fidelizacion",
     },
     {
-      titulo: "Cargá tu primer service",
+      titulo: "Cargá tu primer trabajo",
       pendiente: "Probalo con el próximo auto que entre",
-      logro: `${plural(estado.services, "service cargado", "services cargados")}`,
+      logro: `${plural(estado.services, "trabajo cargado", "trabajos cargados")}`,
       hecho: estado.services > 0,
       destino: "/panel/services/nuevo",
     },

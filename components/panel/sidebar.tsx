@@ -16,6 +16,7 @@ import {
   IconoLubricentro,
   IconoCuenta,
 } from "@/components/iconos";
+import { BadgePorLlamar } from "@/components/panel/badge-por-llamar";
 import { cerrarSesion } from "@/lib/auth/actions";
 import { urlWhatsappSoporte } from "@/lib/config";
 import { MOTIVO_SUSPENSION } from "@/components/panel/aviso-suspension";
@@ -81,10 +82,13 @@ export function Sidebar({
   lubricentroNombre,
   suspendido = false,
   features = {},
+  porLlamar = 0,
 }: {
   lubricentroNombre: string;
   suspendido?: boolean;
   features?: Partial<Record<FeaturePlan, boolean>>;
+  /** Contactos sin hacer en "A quién llamar" — pinta el círculo. */
+  porLlamar?: number;
 }) {
   // Lo que el plan no incluye no aparece — la sección de URL directa la
   // atiende BloqueoPlan, pero el menú no ofrece lo que no se puede usar.
@@ -138,6 +142,13 @@ export function Sidebar({
               >
                 <item.Icono aria-hidden className="size-5 shrink-0" />
                 {item.nombre}
+                {/* El círculo va SOLO en "A quién llamar": es la única
+                    sección con una cola de tareas que se vacía. */}
+                {item.href === "/panel/proximos" && (
+                  <span className="ml-auto flex">
+                    <BadgePorLlamar cantidad={porLlamar} />
+                  </span>
+                )}
               </NavLink>
             ))}
           </div>

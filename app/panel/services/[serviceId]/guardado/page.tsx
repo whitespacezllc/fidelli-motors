@@ -6,7 +6,7 @@ import { clasesBoton } from "@/components/ui/boton";
 import { NotaPostGuardado } from "@/components/notas/nota-post-guardado";
 import { formatearKm } from "@/lib/renglones";
 
-export const metadata: Metadata = { title: "Service guardado" };
+export const metadata: Metadata = { title: "Trabajo guardado" };
 
 // Momento 3 — post-guardado. La calco y el premio aparecen en el momento
 // exacto en que el cliente está parado en el mostrador.
@@ -145,7 +145,7 @@ export default async function PaginaGuardado({
           href="/panel/services/nuevo"
           className={`${clasesBoton("primario", "lg")} w-full`}
         >
-          + Nuevo service
+          + Nuevo trabajo
         </Link>
         <div className="flex gap-2.5">
           <Link

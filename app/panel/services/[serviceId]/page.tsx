@@ -19,7 +19,7 @@ import {
 } from "@/lib/fechas";
 import { urlWhatsappSoporte } from "@/lib/config";
 
-export const metadata: Metadata = { title: "Service" };
+export const metadata: Metadata = { title: "Trabajo" };
 
 type Props = { params: Promise<{ serviceId: string }> };
 
@@ -52,7 +52,7 @@ export default async function PaginaService({ params }: Props) {
   if (!service) {
     return (
       <EstadoVacio
-        titulo="No encontramos ese service"
+        titulo="No encontramos ese trabajo"
         descripcion="Puede que el enlace esté mal. Desde el listado podés buscarlo por patente o por fecha."
       >
         <Link href="/panel/services" className={clasesBoton("secundario", "md")}>
@@ -194,7 +194,7 @@ export default async function PaginaService({ params }: Props) {
             Registro fijado
           </p>
           <p className="mt-1 text-ui text-ink-60">
-            Pasadas las 24 horas el service queda fijado en el historial y ni
+            Pasadas las 24 horas el trabajo queda fijado en el historial y ni
             el lubricentro puede modificarlo — es lo que hace confiable el
             cartón para tu cliente. Si hay un error grave,{" "}
             <a
@@ -268,7 +268,7 @@ export default async function PaginaService({ params }: Props) {
           )}
           {service.observaciones && (
             <>
-              <dt className="text-ink-60">Observaciones del service</dt>
+              <dt className="text-ink-60">Observaciones del trabajo</dt>
               <dd className="text-ink">{service.observaciones}</dd>
             </>
           )}
