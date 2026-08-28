@@ -4,7 +4,7 @@ import { panelSuspendido } from "@/lib/auth/session";
 import { IdentificarVehiculo } from "@/components/services/identificar-vehiculo";
 import { BloqueoSuspension } from "@/components/panel/bloqueo-suspension";
 
-export const metadata: Metadata = { title: "Nuevo service" };
+export const metadata: Metadata = { title: "Nuevo trabajo" };
 
 // Momento 0 del flow: un solo input y la búsqueda decide el camino. Todo
 // pasa en esta pantalla — el mecánico no navega ni elige entre caminos.
@@ -19,8 +19,8 @@ export default async function PaginaNuevoService() {
   if (await panelSuspendido()) {
     return (
       <BloqueoSuspension
-        titulo="No podés cargar services mientras la cuenta está suspendida"
-        descripcion="Todo lo que ya cargaste sigue acá y lo podés seguir consultando. Para volver a cargar services, escribinos y reactivamos la cuenta."
+        titulo="No podés cargar trabajos mientras la cuenta está suspendida"
+        descripcion="Todo lo que ya cargaste sigue acá y lo podés seguir consultando. Para volver a cargar trabajos, escribinos y reactivamos la cuenta."
       />
     );
   }

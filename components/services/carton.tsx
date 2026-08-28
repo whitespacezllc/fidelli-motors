@@ -527,7 +527,7 @@ export function Carton({
             Editable por 24 horas
           </p>
           <p className="mt-0.5 text-ui text-ink-60">
-            Este service podrá editarse solo durante las 24 horas posteriores.
+            Este trabajo podrá editarse solo durante las 24 horas posteriores.
             Después queda fijado en el historial y no se puede modificar.
           </p>
         </div>

@@ -66,7 +66,7 @@ export function GraficoServices({
             {total.toLocaleString("es-AR")}
           </p>
           <p className="text-label font-semibold tracking-[0.04em] text-ink-60 uppercase">
-            Services · {meta.descripcion}
+            Trabajos · {meta.descripcion}
           </p>
         </div>
 
@@ -85,7 +85,7 @@ export function GraficoServices({
           ultimoEnCurso
           vacio={{
             sinDatos:
-              "Cuando cargues el primer service, acá va a aparecer la evolución de tu taller.",
+              "Cuando cargues el primer trabajo, acá va a aparecer la evolución de tu taller.",
             unSoloPunto: "tu primer período. Con dos ya hay curva.",
           }}
         />

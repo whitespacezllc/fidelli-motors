@@ -37,7 +37,10 @@ export async function registrarContacto(
   }
 
   revalidatePath("/panel/proximos");
-  revalidatePath("/panel");
+  // "layout": el badge de contactos por hacer vive en el layout del panel
+  // y tiene que moverse apenas cambia un contacto, también en las rutas
+  // que el Router Cache tenga guardadas.
+  revalidatePath("/panel", "layout");
   return {};
 }
 
@@ -99,6 +102,9 @@ export async function alternarContacto(
   }
 
   revalidatePath("/panel/proximos");
-  revalidatePath("/panel");
+  // "layout": el badge de contactos por hacer vive en el layout del panel
+  // y tiene que moverse apenas cambia un contacto, también en las rutas
+  // que el Router Cache tenga guardadas.
+  revalidatePath("/panel", "layout");
   return {};
 }

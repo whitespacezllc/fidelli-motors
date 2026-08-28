@@ -11,7 +11,7 @@ import { FilaService } from "@/components/services/fila-service";
 import { estadoService } from "@/lib/servicios";
 import { normalizarPatente } from "@/lib/texto";
 
-export const metadata: Metadata = { title: "Services" };
+export const metadata: Metadata = { title: "Trabajos" };
 
 // Un lubricentro activo acumula miles: se pagina siempre, no se trae todo.
 const POR_PAGINA = 30;
@@ -115,7 +115,7 @@ export default async function PaginaServices({
     <div>
       <CabeceraSeccion titulo="Trabajos">
         <Link href="/panel/services/nuevo" className={clasesBoton("primario", "md")}>
-          + Nuevo service
+          + Nuevo trabajo
         </Link>
       </CabeceraSeccion>
 
@@ -178,7 +178,7 @@ export default async function PaginaServices({
         </>
       ) : filtrando ? (
         <EstadoVacio
-          titulo="Ningún service coincide con esos filtros"
+          titulo="Ningún trabajo coincide con esos filtros"
           descripcion="Probá con otro rango de fechas, otra sucursal, o revisá la patente."
         >
           <Link href="/panel/services" className={clasesBoton("secundario", "md")}>

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { createClient } from "@/lib/supabase/server";
 import { exigirRol } from "@/lib/auth/session";
 import { cerrarSesion } from "@/lib/auth/actions";
 import { Sidebar } from "@/components/panel/sidebar";
@@ -22,12 +23,23 @@ export default async function LayoutPanel({
   // Resueltas por la base y viajaron con la sesión: acá solo se reparten.
   const features = sesion.capacidades?.features ?? {};
 
+  // El badge de "A quién llamar": los contactos que están esperando, como
+  // los no leídos de una casilla. Se calcula en la MISMA función que
+  // definen las vistas de la pantalla (contactos_por_hacer, R12), así el
+  // número del círculo y las filas sin tildar no pueden divergir. El
+  // layout es dinámico —cada navegación lo re-renderiza— y la acción de
+  // registrar contacto ya revalida /panel, así que el número baja solo
+  // apenas contactás, sin polling ni estado en el cliente.
+  const supabase = await createClient();
+  const { data: porLlamar } = await supabase.rpc("contactos_por_hacer");
+
   return (
     <div className="min-h-dvh bg-surface/40">
       <Sidebar
         lubricentroNombre={sesion.lubricentroNombre ?? "Tu lubricentro"}
         suspendido={suspendido}
         features={features}
+        porLlamar={porLlamar ?? 0}
       />
       <div className="lg:pl-64">
         {/* pb extra en mobile para que la barra inferior no tape contenido */}
@@ -42,6 +54,7 @@ export default async function LayoutPanel({
         cerrarSesion={cerrarSesion}
         suspendido={suspendido}
         features={features}
+        porLlamar={porLlamar ?? 0}
       />
     </div>
   );

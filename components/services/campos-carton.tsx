@@ -129,14 +129,14 @@ export function MiniFicha({
           onClick={accionCargar}
           className={`${clasesBoton("primario", "lg")} mt-3.5 w-full`}
         >
-          Cargar service
+          Cargar trabajo
         </button>
       ) : (
         <Link
           href={`/panel/services/nuevo/${vehiculo.vehiculoId}`}
           className={`${clasesBoton("primario", "lg")} mt-3.5 w-full`}
         >
-          Cargar service
+          Cargar trabajo
         </Link>
       )}
     </div>

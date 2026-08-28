@@ -10,7 +10,7 @@ import { Carton } from "@/components/services/carton";
 import { formatearHora, hoyISO } from "@/lib/fechas";
 import { COOKIE_SUCURSAL } from "@/lib/preferencias";
 
-export const metadata: Metadata = { title: "Cargar service" };
+export const metadata: Metadata = { title: "Cargar trabajo" };
 
 // Momento 1 — el cartón. Espejo del papel, en una sola pantalla scrolleable.
 export default async function PaginaCarton({
@@ -25,8 +25,8 @@ export default async function PaginaCarton({
   if (await panelSuspendido()) {
     return (
       <BloqueoSuspension
-        titulo="No podés cargar services mientras la cuenta está suspendida"
-        descripcion="Todo lo que ya cargaste sigue acá y lo podés seguir consultando. Para volver a cargar services, escribinos y reactivamos la cuenta."
+        titulo="No podés cargar trabajos mientras la cuenta está suspendida"
+        descripcion="Todo lo que ya cargaste sigue acá y lo podés seguir consultando. Para volver a cargar trabajos, escribinos y reactivamos la cuenta."
       />
     );
   }
@@ -96,7 +96,7 @@ export default async function PaginaCarton({
     return (
       <EstadoVacio
         titulo="No encontramos ese vehículo"
-        descripcion="Puede que el enlace esté mal. Volvé a buscar la patente para cargar el service."
+        descripcion="Puede que el enlace esté mal. Volvé a buscar la patente para cargar el trabajo."
       >
         <Link href="/panel/services/nuevo" className={clasesBoton("secundario", "md")}>
           Buscar la patente
@@ -110,7 +110,7 @@ export default async function PaginaCarton({
     return (
       <EstadoVacio
         titulo="Necesitás una sucursal activa"
-        descripcion="Cada service se etiqueta con la sucursal donde se hizo. Activá una y volvé a cargar."
+        descripcion="Cada trabajo se etiqueta con la sucursal donde se hizo. Activá una y volvé a cargar."
       >
         <Link href="/panel/sucursales" className={clasesBoton("secundario", "md")}>
           Ir a Sucursales

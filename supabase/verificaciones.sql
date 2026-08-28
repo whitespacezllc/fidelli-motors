@@ -741,3 +741,99 @@ begin
   update suscripciones set plan_id = v_plan where lubricentro_id = v_lub;
   delete from landing_busquedas where lubricentro_id = v_lub and patente = 'ABC123';
 end $$;
+
+-- ---------- R12 · El badge de "A quién llamar" dice la verdad ----------
+-- contactos_por_hacer() alimenta el círculo del sidebar y la barra
+-- mobile. Su contrato: contar EXACTAMENTE las filas que la pantalla
+-- muestra sin tildar — services siempre, pendientes solo con la feature —
+-- y respetar la semántica por-estado del contacto (contactar en un
+-- estado apaga esa fila; que el auto escale de estado la vuelve a
+-- encender). Si esto se desalinea de las vistas, el badge marca 4 sobre
+-- una lista de 2 y el dueño deja de creerle para siempre.
+do $$
+declare
+  v_lub      uuid;
+  v_owner    uuid;
+  v_plan     uuid;
+  v_basic    uuid;
+  v_esp      integer;
+  v_badge    integer;
+  v_fila     record;
+  v_contacto uuid;
+  v_bloqueado boolean;
+begin
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+  select u.id into v_owner from usuarios u where u.lubricentro_id = v_lub and u.rol = 'owner' limit 1;
+  select s.plan_id into v_plan from suscripciones s where s.lubricentro_id = v_lub;
+  select p.id into v_basic from planes p where p.nombre = 'Basic' and not p.heredado;
+
+  -- Como el owner del demo (invoker + RLS de verdad).
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  -- 1 · Paridad exacta con las vistas que pintan la pantalla.
+  select (select count(*) from vista_proximos_service where not contactado)
+       + (select count(*) from vista_pendientes where not contactado)
+    into v_esp;
+  v_badge := contactos_por_hacer();
+  if v_badge is distinct from v_esp then
+    raise exception 'REGRESIÓN 8: el badge dice % y la pantalla muestra % filas sin contactar.', v_badge, v_esp;
+  end if;
+
+  -- 2 · Contactar UNA fila en su estado actual baja el badge en 1.
+  select vehiculo_id, estado into v_fila
+  from vista_proximos_service where not contactado limit 1;
+  if v_fila.vehiculo_id is null then
+    raise exception 'REGRESIÓN 8: el seed quedó sin filas por contactar y la prueba no prueba nada.';
+  end if;
+  insert into contactos (lubricentro_id, vehiculo_id, usuario_id, estado)
+  values (v_lub, v_fila.vehiculo_id, v_owner, v_fila.estado) returning id into v_contacto;
+  if contactos_por_hacer() is distinct from v_badge - 1 then
+    raise exception 'REGRESIÓN 8: contactar una fila no bajó el badge en 1.';
+  end if;
+
+  -- 3 · La semántica POR ESTADO: borrar ese contacto y registrar uno con
+  --     OTRO estado no apaga la fila — el contacto que el estado actual
+  --     pide sigue debido.
+  delete from contactos where id = v_contacto;
+  insert into contactos (lubricentro_id, vehiculo_id, usuario_id, estado)
+  values (v_lub, v_fila.vehiculo_id, v_owner,
+          case when v_fila.estado = 'vencido' then 'proximo' else 'vencido' end::estado_contacto)
+  returning id into v_contacto;
+  if contactos_por_hacer() is distinct from v_badge then
+    raise exception 'REGRESIÓN 8: un contacto de OTRO estado apagó la fila — se perdió la semántica por estado.';
+  end if;
+  delete from contactos where id = v_contacto;
+
+  -- 4 · Sin la feature de pendientes, esa pata no cuenta (la pantalla
+  --     se la oculta a Basic; el badge tiene que mirar lo mismo).
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+  update suscripciones set plan_id = v_basic where lubricentro_id = v_lub;
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  select (select count(*) from vista_proximos_service where not contactado) into v_esp;
+  if contactos_por_hacer() is distinct from v_esp then
+    raise exception 'REGRESIÓN 8: en Basic el badge cuenta pendientes que la pantalla no muestra.';
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+  update suscripciones set plan_id = v_plan where lubricentro_id = v_lub;
+
+  -- 5 · anon no puede ni ejecutarla: la única puerta pública es get_carton.
+  v_bloqueado := false;
+  begin
+    execute 'set local role anon';
+    perform contactos_por_hacer();
+    execute 'reset role';
+  exception when insufficient_privilege then
+    v_bloqueado := true;
+    execute 'reset role';
+  end;
+  if not v_bloqueado then
+    raise exception 'REGRESIÓN 8: anon puede ejecutar contactos_por_hacer().';
+  end if;
+end $$;
