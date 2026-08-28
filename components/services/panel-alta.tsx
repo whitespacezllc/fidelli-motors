@@ -104,7 +104,7 @@ function CasoB({
       <CamposVehiculo patente={patente} marcas={marcas} />
 
       <Boton type="submit" tam="lg" disabled={pendiente} className="w-full">
-        {pendiente ? "Guardando…" : "Guardar y cargar service"}
+        {pendiente ? "Guardando…" : "Guardar y cargar trabajo"}
       </Boton>
     </form>
   );
@@ -191,7 +191,7 @@ function CasoC({
       <CamposVehiculo patente={patente} marcas={marcas} />
 
       <Boton type="submit" tam="lg" disabled={pendiente} className="w-full">
-        {pendiente ? "Guardando…" : "Guardar y cargar service"}
+        {pendiente ? "Guardando…" : "Guardar y cargar trabajo"}
       </Boton>
 
       <button

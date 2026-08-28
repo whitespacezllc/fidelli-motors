@@ -83,7 +83,7 @@ export default async function PaginaProductos({
         <EstadoVacio
           icono={<IconoCaja className="size-6" />}
           titulo="Tu catálogo está vacío"
-          descripcion="Cargá los aceites, filtros y líquidos que usás siempre para elegirlos con un toque en cada service."
+          descripcion="Cargá los aceites, filtros y líquidos que usás siempre para elegirlos con un toque en cada trabajo."
         >
           {suspendido ? (
             <AccionBloqueada etiqueta="+ Cargar el primer producto" />

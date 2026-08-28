@@ -155,10 +155,12 @@ export function Dashboard({
 
       {/* Cuatro métricas: dos filas de dos en el celular, una fila en desktop */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {/* El número YA cuenta los dos tipos (services_mes no filtra por
+            tipo desde 2A): lo que mentía era la etiqueta. */}
         <Metrica
-          clave="Services del mes"
+          clave="Trabajos del mes"
           valor={metricas.services_mes}
-          detalle={desglose || "todavía sin services este mes"}
+          detalle={desglose || "todavía sin trabajos este mes"}
         />
         <Metrica
           clave="Clientes nuevos"
@@ -278,7 +280,7 @@ export function Dashboard({
         {ultimos.length === 0 ? (
           <EstadoVacio
             icono={<IconoReloj className="size-6" />}
-            titulo="Todavía no cargaste services"
+            titulo="Todavía no cargaste trabajos"
             descripcion="Cuando cargues el primero, acá vas a ver los últimos que pasaron por el taller."
           >
             <Link

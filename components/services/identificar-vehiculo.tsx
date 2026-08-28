@@ -71,7 +71,7 @@ export function IdentificarVehiculo({ marcas }: { marcas: string[] }) {
 
   return (
     <div>
-      <h1 className="font-brand text-h3 font-bold text-ink">Nuevo service</h1>
+      <h1 className="font-brand text-h3 font-bold text-ink">Nuevo trabajo</h1>
       <p className="mt-0.5 text-ui text-ink-60">Escribí la patente y listo</p>
 
       <div className="mt-4">

@@ -87,13 +87,13 @@ export default async function PaginaClientes({
       ) : buscando ? (
         <EstadoVacio
           titulo={`Ningún cliente coincide con “${termino}”`}
-          descripcion="Probá con el apellido, otro teléfono o la patente del auto. Si es la primera vez que viene, el cliente se crea solo al cargarle el service."
+          descripcion="Probá con el apellido, otro teléfono o la patente del auto. Si es la primera vez que viene, el cliente se crea solo al cargarle el primer trabajo."
         />
       ) : (
         <EstadoVacio
           icono={<IconoClientes className="size-6" />}
           titulo="Todavía no tenés clientes cargados"
-          descripcion="Acá vas a ver a quién le hacés los services, con sus autos y cuándo vino por última vez."
+          descripcion="Acá vas a ver a quién le hacés los trabajos, con sus autos y cuándo vino por última vez."
         >
           {suspendido ? (
             <AccionBloqueada etiqueta="+ Cargar el primer cliente" />

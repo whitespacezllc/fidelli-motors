@@ -49,7 +49,7 @@ type Vehiculo = {
   marca: string | null;
   modelo: string | null;
   anio: number | null;
-  cantidad_services: number;
+  cantidad_trabajos: number;
   ultimo_service_fecha: string | null;
   /** El último trabajo de CUALQUIER tipo. Distinto del último service
    *  cuando el auto pasó por mecánica después del cambio de aceite. */
@@ -153,11 +153,14 @@ function TarjetaVehiculo({
   // SERVICE gobierna el próximo cambio de aceite; la última VISITA es el
   // último trabajo de cualquier tipo. Sin la segunda, un auto atendido
   // ayer por frenos mostraría una fecha vieja y el sistema parecería roto.
+  // El conteo es de TRABAJOS (los dos tipos): en un taller, "2 services"
+  // con cinco visitas mentía por omisión. El "último service" se queda:
+  // es el que gobierna el próximo cambio de aceite.
   const services =
-    vehiculo.cantidad_services === 0
-      ? "Sin services"
-      : `${vehiculo.cantidad_services} ${
-          vehiculo.cantidad_services === 1 ? "service" : "services"
+    vehiculo.cantidad_trabajos === 0
+      ? "Sin trabajos"
+      : `${vehiculo.cantidad_trabajos} ${
+          vehiculo.cantidad_trabajos === 1 ? "trabajo" : "trabajos"
         }${
           vehiculo.ultimo_service_fecha
             ? ` · último service ${formatearFecha(vehiculo.ultimo_service_fecha)}`

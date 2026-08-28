@@ -1757,6 +1757,7 @@ export type Database = {
         Args: { p_lubricentro_id: string }
         Returns: boolean
       }
+      contactos_por_hacer: { Args: never; Returns: number }
       corregir_patente: {
         Args: {
           p_motivo: string

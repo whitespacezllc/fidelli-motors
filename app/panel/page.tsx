@@ -112,7 +112,7 @@ export default async function PaginaInicio({
             href="/panel/services/nuevo"
             className={clasesBoton("primario", "md")}
           >
-            + Nuevo service
+            + Nuevo trabajo
           </Link>
         </div>
       </CabeceraSeccion>

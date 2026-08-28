@@ -94,7 +94,7 @@ export const PLANES: readonly PlanLanding[] = [
       "Premios para que tus clientes vuelvan",
       "Presupuestos con tu marca",
       "Página del cliente personalizable",
-      "250 calcos QR al arrancar, con tu diseño",
+      "200 calcos QR al arrancar, con tu diseño",
       "Hasta 3 sucursales",
     ],
     cta: "Sumar mi lubricentro",
@@ -115,7 +115,7 @@ export const PLANES: readonly PlanLanding[] = [
       // premium, que se construyó en el bloque 7.
       "Tu mensaje al cliente cuando escanea",
       "Botón de WhatsApp a tu taller en la página",
-      "500 calcos QR al arrancar, con diseño a medida",
+      "400 calcos QR al arrancar, con diseño a medida",
       "Sucursales ilimitadas",
       "Entrás primero en la fila de instalación",
       "Soporte prioritario",
@@ -188,7 +188,7 @@ export const COMPARACION: readonly GrupoComparacion[] = [
     filas: [
       {
         concepto: "Al arrancar",
-        valores: ["Para imprimir", "250 impresos", "500 impresos"],
+        valores: ["Para imprimir", "200 impresos", "400 impresos"],
       },
       { concepto: "Diseño", valores: ["Estándar", "Con tu marca", "A medida"] },
     ],

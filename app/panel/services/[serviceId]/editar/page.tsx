@@ -9,7 +9,7 @@ import { clasesBoton } from "@/components/ui/boton";
 import { Carton } from "@/components/services/carton";
 import { estadoService, puedeEditarse } from "@/lib/servicios";
 
-export const metadata: Metadata = { title: "Editar service" };
+export const metadata: Metadata = { title: "Editar trabajo" };
 
 type Props = { params: Promise<{ serviceId: string }> };
 
@@ -23,7 +23,7 @@ export default async function PaginaEditarService({ params }: Props) {
   if (await panelSuspendido()) {
     return (
       <BloqueoSuspension
-        titulo="No podés editar services mientras la cuenta está suspendida"
+        titulo="No podés editar trabajos mientras la cuenta está suspendida"
         descripcion="El service quedó guardado tal cual está y se sigue viendo. Para poder corregirlo, escribinos y reactivamos la cuenta."
       />
     );
@@ -64,7 +64,7 @@ export default async function PaginaEditarService({ params }: Props) {
   if (!service) {
     return (
       <EstadoVacio
-        titulo="No encontramos ese service"
+        titulo="No encontramos ese trabajo"
         descripcion="Puede que el enlace esté mal. Desde el listado podés buscarlo por patente o por fecha."
       >
         <Link href="/panel/services" className={clasesBoton("secundario", "md")}>

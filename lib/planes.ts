@@ -32,7 +32,7 @@ export type LimitePlan = (typeof LIMITES_PLAN)[number];
 export const ETIQUETA_FEATURE: Record<FeaturePlan, string> = {
   mecanica: "Trabajos de mecánica",
   pendientes: "Trabajos pendientes",
-  premios: "Fidelliza — premios por services",
+  premios: "Fidelliza — premios",
   presupuestos: "Presupuestos",
   personalizacion_pagina: "Personalización de tu página",
   pagina_premium: "Página premium",
