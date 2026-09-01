@@ -185,7 +185,7 @@ export default async function PaginaPresupuestos({
       ) : (
         <EstadoVacio
           titulo="Todavía no generaste presupuestos"
-          descripcion="Cinco renglones con precio y sale un papel con tu marca, listo para mandar por WhatsApp o imprimir en el mostrador."
+          descripcion="Cinco renglones con precio y sale un papel con tu marca, listo para descargar en PDF o imprimir en el mostrador."
         >
           {!suspendido && (
             <Link

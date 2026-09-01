@@ -13,8 +13,31 @@ export const metadata: Metadata = { title: "Presupuesto" };
 
 type Props = { params: Promise<{ id: string }> };
 
-// El papel terminado, con sus tres salidas: WhatsApp, impresora y seguir
-// trabajando (editar/duplicar). Un suspendido LEE, imprime y comparte lo
+// El logo entra al documento como data URL y no como URL del storage. El
+// PDF lo dibuja pasándolo por un canvas (ver generar-pdf.ts), y un canvas
+// con una imagen de otro origen se "contamina" y no se puede exportar; un
+// data URL cuenta como propio y esquiva ese problema sin depender de los
+// headers CORS del bucket. Inlinearlo desde el server también acelera la
+// pantalla. Si el fetch falla o el archivo es raro, va la URL cruda: la
+// pantalla lo muestra igual.
+async function logoComoDataUrl(url: string): Promise<string> {
+  try {
+    const res = await fetch(url, { next: { revalidate: 3600 } });
+    if (!res.ok) return url;
+    const tipo = res.headers.get("content-type") ?? "";
+    if (!tipo.startsWith("image/")) return url;
+    const bytes = await res.arrayBuffer();
+    // Un logo de verdad pesa unos KB; un archivo enorme inflaría el HTML
+    // de la página entera. Ante uno así, mejor la URL de siempre.
+    if (bytes.byteLength > 1_000_000) return url;
+    return `data:${tipo};base64,${Buffer.from(bytes).toString("base64")}`;
+  } catch {
+    return url;
+  }
+}
+
+// El papel terminado, con sus tres salidas: PDF, impresora y seguir
+// trabajando (editar/duplicar). Un suspendido LEE, imprime y descarga lo
 // ya generado — lo que no puede es cotizar de nuevo.
 export default async function PaginaPresupuesto({ params }: Props) {
   const { id } = await params;
@@ -65,8 +88,45 @@ export default async function PaginaPresupuesto({ params }: Props) {
       precioUnitario: Number(i.precio_unitario),
     }));
 
+  const logoUrl = configRes.data?.logo_url
+    ? await logoComoDataUrl(configRes.data.logo_url)
+    : null;
+
+  // Un solo objeto para las dos salidas: el documento en pantalla (y su
+  // impresión) y el PDF que dibuja AccionesDocumento. Misma fuente, cero
+  // chance de que el papel y el archivo se desincronicen.
+  const datos = {
+    lubricentroNombre: sesion?.lubricentroNombre ?? "Tu lubricentro",
+    logoUrl,
+    colorTenant: configRes.data?.color_primario ?? "#0A0A0A",
+    colorPapel: configRes.data?.color_carton ?? null,
+    numero: p.numero,
+    fecha: p.fecha,
+    validezDias: p.validez_dias,
+    sucursal: p.sucursales?.nombre ?? null,
+    destinatarioNombre: p.destinatario_nombre,
+    destinatarioTelefono: p.destinatario_telefono,
+    destinatarioVehiculo: p.destinatario_vehiculo,
+    observaciones: p.observaciones,
+    items,
+  };
+
   return (
     <div className="mx-auto max-w-2xl">
+      {/* La impresión sale de esta misma página: el chrome propio y el del
+          layout llevan print:hidden, y esto define la hoja. El margen es el
+          mismo que usa el PDF descargado: las dos salidas entregan el mismo
+          papel. print-color-adjust conserva la banda del total y el color
+          de papel del tenant, que sin eso la impresora "ahorra". */}
+      <style>{`
+        @page { size: A4 portrait; margin: 12mm; }
+        @media print {
+          #documento-presupuesto, #documento-presupuesto * {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+        }
+      `}</style>
       <nav
         aria-label="Estás en"
         className="mb-4 text-ui text-ink-40 print:hidden"
@@ -81,7 +141,7 @@ export default async function PaginaPresupuesto({ params }: Props) {
       </nav>
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <AccionesDocumento numero={p.numero} />
+        <AccionesDocumento datos={datos} />
         {!suspendido && (
           <div className="flex gap-2.5">
             <Link
@@ -100,26 +160,11 @@ export default async function PaginaPresupuesto({ params }: Props) {
         )}
       </div>
 
-      {/* El id lo usa el botón de WhatsApp para serializar EXACTAMENTE
-          este nodo a imagen. Lo que ves es lo que viaja. */}
+      {/* El id ancla la impresión y da un objetivo estable en el DOM. El
+          PDF no sale de este nodo: lo dibuja AccionesDocumento con los
+          mismos datos. */}
       <div id="documento-presupuesto" className="print:shadow-none">
-        <DocumentoPresupuesto
-          datos={{
-            lubricentroNombre: sesion?.lubricentroNombre ?? "Tu lubricentro",
-            logoUrl: configRes.data?.logo_url ?? null,
-            colorTenant: configRes.data?.color_primario ?? "#0A0A0A",
-            colorPapel: configRes.data?.color_carton ?? null,
-            numero: p.numero,
-            fecha: p.fecha,
-            validezDias: p.validez_dias,
-            sucursal: p.sucursales?.nombre ?? null,
-            destinatarioNombre: p.destinatario_nombre,
-            destinatarioTelefono: p.destinatario_telefono,
-            destinatarioVehiculo: p.destinatario_vehiculo,
-            observaciones: p.observaciones,
-            items,
-          }}
-        />
+        <DocumentoPresupuesto datos={datos} />
       </div>
 
       <p className="mt-3 text-label text-ink-40 print:hidden">

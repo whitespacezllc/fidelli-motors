@@ -41,9 +41,12 @@ export default async function LayoutPanel({
         features={features}
         porLlamar={porLlamar ?? 0}
       />
-      <div className="lg:pl-64">
+      {/* En print se apagan el corrimiento del sidebar y los paddings: la
+          hoja la definen los márgenes de @page, y el pb-28 de la barra
+          llegaba a regalar una página en blanco al final. */}
+      <div className="lg:pl-64 print:pl-0">
         {/* pb extra en mobile para que la barra inferior no tape contenido */}
-        <main className="mx-auto max-w-6xl px-4 py-6 pb-28 lg:px-8 lg:py-8">
+        <main className="mx-auto max-w-6xl px-4 py-6 pb-28 lg:px-8 lg:py-8 print:p-0">
           {/* Arriba de todo y en todas las pantallas: la suspensión no es de
               una sección, es de la cuenta. */}
           {suspendido && <AvisoSuspension />}

@@ -98,7 +98,10 @@ export function Sidebar({
   })).filter((g) => g.items.length > 0);
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-line bg-base lg:flex">
+    // print:hidden explícito: en papel apaisado (≥1024px) lg:flex lo haría
+    // aparecer impreso. El ancho del papel decide los breakpoints, no la
+    // pantalla desde la que se imprime.
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-line bg-base lg:flex print:hidden">
       <div className="px-5 pt-5 pb-4">
         <Logo className="h-5 w-auto" priority />
         <p className="mt-0.5 truncate text-ui text-ink-60">{lubricentroNombre}</p>
