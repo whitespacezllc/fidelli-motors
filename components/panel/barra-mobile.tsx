@@ -96,7 +96,10 @@ export function BarraMobile({
     <>
       <nav
         aria-label="Navegación principal"
-        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-line bg-base pb-[env(safe-area-inset-bottom)] lg:hidden"
+        // print:hidden porque lg:hidden no alcanza: al imprimir, el viewport
+        // es el ancho del PAPEL (una A4 vertical mide ~794px), no el de la
+        // pantalla — y una barra fixed se repite al pie de cada hoja.
+        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-line bg-base pb-[env(safe-area-inset-bottom)] lg:hidden print:hidden"
       >
         <ItemBarra
           href="/panel"
@@ -159,7 +162,7 @@ export function BarraMobile({
 
       {abierta && (
         <div
-          className="fixed inset-0 z-50 lg:hidden"
+          className="fixed inset-0 z-50 lg:hidden print:hidden"
           role="dialog"
           aria-modal="true"
           aria-label="Más secciones"

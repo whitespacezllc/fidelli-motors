@@ -25,8 +25,8 @@ export type DatosDocumento = {
 // este papel lleva la marca del lubricentro, es SU documento.
 //
 // Es un componente de servidor puro a propósito: lo mismo que se ve en
-// pantalla es lo que sale impreso y lo que viaja en la imagen de
-// WhatsApp. Un solo render, tres salidas.
+// pantalla es lo que sale impreso y lo que viaja dentro del PDF
+// descargado. Un solo render, tres salidas.
 export function DocumentoPresupuesto({ datos }: { datos: DatosDocumento }) {
   const paleta = paletaTenant(datos.colorTenant);
   const total = totalDe(datos.items);
@@ -50,15 +50,17 @@ export function DocumentoPresupuesto({ datos }: { datos: DatosDocumento }) {
           ...(datos.colorPapel ? { backgroundColor: datos.colorPapel } : {}),
         } as React.CSSProperties
       }
-      className="rounded-lg border border-line bg-base px-5 pt-6 pb-5 shadow-md"
+      // En papel el documento ES la hoja: sin sombra, sin borde gris y sin
+      // esquinas de tarjeta — el marco lo ponen los márgenes de @page.
+      className="rounded-lg border border-line bg-base px-5 pt-6 pb-5 shadow-md print:rounded-none print:border-0 print:shadow-none"
     >
       {/* La cabecera: la marca del lubricentro y el número, frente a frente. */}
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           {datos.logoUrl ? (
-            /* El logo viene del storage del tenant y este nodo se
-               serializa a imagen para WhatsApp: next/image interpone un
-               loader que rompe esa serialización. */
+            /* El logo llega como data URL (lo inlinea la página) y este
+               nodo se serializa a imagen para el PDF: next/image
+               interpone un loader que rompe esa serialización. */
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={datos.logoUrl}

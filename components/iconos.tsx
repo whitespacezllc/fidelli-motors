@@ -26,6 +26,8 @@ import {
   PaletteIcon,
   ChatCircleTextIcon,
   UserCircleIcon,
+  DownloadSimpleIcon,
+  PrinterIcon,
 } from "@phosphor-icons/react/dist/ssr";
 // Solo tipos: se borran al compilar, así que traerlos del entry principal
 // (que sí lleva "use client") no arrastra nada al bundle.
@@ -152,6 +154,9 @@ export const IconoAviso = delSistema(WarningIcon);
 // donde no está.
 export const IconoTrabajos = delSistema(WrenchIcon);
 export const IconoPresupuesto = delSistema(ReceiptIcon);
+// Las dos salidas del presupuesto terminado.
+export const IconoDescargar = delSistema(DownloadSimpleIcon);
+export const IconoImprimir = delSistema(PrinterIcon);
 export const IconoDiseno = delSistema(PaletteIcon);
 export const IconoMensajes = delSistema(ChatCircleTextIcon);
 export const IconoCuenta = delSistema(UserCircleIcon);

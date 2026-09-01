@@ -26,7 +26,7 @@ export function AvisoSuspension() {
   return (
     <div
       role="status"
-      className="mb-6 rounded-lg border border-overdue bg-overdue-soft px-4 py-4 sm:px-5"
+      className="mb-6 rounded-lg border border-overdue bg-overdue-soft px-4 py-4 sm:px-5 print:hidden"
     >
       <p className="font-brand text-body font-bold text-overdue">
         Tu cuenta está suspendida
