@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { metadataPwa } from "@/lib/pwa";
 import { redirect } from "next/navigation";
 import { obtenerSesion } from "@/lib/auth/session";
 import { urlWhatsappSoporte } from "@/lib/config";
@@ -9,6 +10,11 @@ import { Logo } from "@/components/marca/logo";
 export const metadata: Metadata = {
   title: "Entrá a tu panel",
   robots: { index: false, follow: false },
+  // El login es la puerta del panel, y es la pantalla desde la que el
+  // lubricentro suele guardarse el acceso: le corresponde el manifest del
+  // panel, no el de la landing. Si todavía no hay sesión, /panel manda a
+  // esta misma pantalla y el flujo cierra igual.
+  ...metadataPwa("/panel/manifest.webmanifest", "Mi panel"),
 };
 
 export default async function PaginaLogin({

@@ -5,12 +5,16 @@ import { cerrarSesion } from "@/lib/auth/actions";
 import { Sidebar } from "@/components/panel/sidebar";
 import { BarraMobile } from "@/components/panel/barra-mobile";
 import { AvisoSuspension } from "@/components/panel/aviso-suspension";
+import { metadataPwa } from "@/lib/pwa";
 
 // La autorización vive acá, no en el proxy: /panel es del rol owner.
 // Superficie privada: nunca en el índice. El robots.txt además la
 // excluye del rastreo; esto cubre el caso de una URL llegada por link.
 export const metadata: Metadata = {
   robots: { index: false, follow: false },
+  // Su propio manifest: agregar el panel a la pantalla de inicio tiene que
+  // abrir el panel, no la landing comercial. Reemplaza al del layout raíz.
+  ...metadataPwa("/panel/manifest.webmanifest", "Mi panel"),
 };
 
 export default async function LayoutPanel({
