@@ -503,8 +503,10 @@ end $$;
 
 -- ---------- R9 · Precio y stock: opcionalidad y descuento (Bloque 5) ----------
 -- Tres invariantes: un producto SIN nada funciona idéntico a siempre; el
--- descuento baja solo lo que lleva stock (renglón por cantidad, aceite
--- por litros); y el aviso aparece bajo el mínimo y calla sin nada abajo.
+-- descuento baja solo lo que lleva stock, y baja LO CORRECTO (renglón por
+-- cantidad; aceite a granel por litros; aceite envasado UNA unidad por
+-- service, sin mirar los litros — un bidón x4 no puede perder 4 bidones);
+-- y el aviso aparece bajo el mínimo y calla sin nada abajo.
 do $$
 declare
   v_lub    uuid;
@@ -514,7 +516,11 @@ declare
   v_pelado uuid;
   v_conteo uuid;
   v_aceite uuid;
+  v_bidon  uuid;
   v_serv   uuid;
+  v_serv2  uuid;
+  v_serv3  uuid;
+  v_serv4  uuid;
   v_n      numeric;
 begin
   select l.id into v_lub from lubricentros l where l.slug = 'demo';
@@ -540,6 +546,9 @@ begin
   values (v_lub, 'filtro', 'Regresión con stock', 10, 2) returning id into v_conteo;
   insert into productos (lubricentro_id, categoria, nombre, unidad, stock, stock_minimo, litros_sugeridos)
   values (v_lub, 'aceite', 'Regresión aceite', 'litro', 20, 5, 4) returning id into v_aceite;
+  -- Envasado: el stock cuenta bidones, no litros.
+  insert into productos (lubricentro_id, categoria, nombre, unidad, stock, stock_minimo)
+  values (v_lub, 'aceite', 'Regresión bidón x4', 'unidad', 16, 5) returning id into v_bidon;
 
   v_serv := guardar_service(
     p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => current_date,
@@ -563,8 +572,38 @@ begin
     raise exception 'REGRESIÓN 5: un producto SIN stock terminó con stock % — dejó de ser opcional.', v_n;
   end if;
 
+  -- El aceite ENVASADO baja UN bidón por service, diga lo que diga el
+  -- campo de litros: con 4 litros anotados (lo que mandaba el front viejo)
+  -- pierde 1, no 4...
+  v_serv2 := guardar_service(
+    p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => current_date,
+    p_kilometros => 999200, p_aceite_tipo => '5W30', p_prox_service_km => 999700,
+    p_aceite_producto_id => v_bidon, p_aceite_litros => 4);
+  select stock into v_n from productos where id = v_bidon;
+  if v_n is distinct from 15 then
+    raise exception 'REGRESIÓN 5: el aceite envasado con 4 litros anotados dejó el stock en % (esperaba 15: un bidón por service, no cuatro).', v_n;
+  end if;
+  -- ...y sin litros baja igual, porque el service abrió un bidón de todos modos.
+  v_serv3 := guardar_service(
+    p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => current_date,
+    p_kilometros => 999300, p_aceite_tipo => '5W30', p_prox_service_km => 999800,
+    p_aceite_producto_id => v_bidon);
+  select stock into v_n from productos where id = v_bidon;
+  if v_n is distinct from 14 then
+    raise exception 'REGRESIÓN 5: el aceite envasado sin litros dejó el stock en % (esperaba 14: el bidón se abrió igual).', v_n;
+  end if;
+  -- El granel SIN litros sigue quieto: sin dato, ese stock no se mueve.
+  v_serv4 := guardar_service(
+    p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => current_date,
+    p_kilometros => 999400, p_aceite_tipo => '10W40', p_prox_service_km => 999900,
+    p_aceite_producto_id => v_aceite);
+  select stock into v_n from productos where id = v_aceite;
+  if v_n is distinct from 16 then
+    raise exception 'REGRESIÓN 5: el aceite a granel SIN litros movió el stock a % (esperaba 16, quieto).', v_n;
+  end if;
+
   -- el aviso: nada bajo el mínimo → silencio; bajo el mínimo → aparece
-  if exists (select 1 from stock_bajo(8) sb where sb.producto_id in (v_conteo, v_aceite)) then
+  if exists (select 1 from stock_bajo(8) sb where sb.producto_id in (v_conteo, v_aceite, v_bidon)) then
     raise exception 'REGRESIÓN 5: el aviso suena con stock por encima del mínimo.';
   end if;
   update productos set stock = 1 where id = v_conteo;
@@ -575,9 +614,9 @@ begin
   execute 'reset role';
   perform set_config('request.jwt.claims', '{}', true);
 
-  delete from service_items where service_id = v_serv;
-  delete from services where id = v_serv;
-  delete from productos where id in (v_pelado, v_conteo, v_aceite);
+  delete from service_items where service_id in (v_serv, v_serv2, v_serv3, v_serv4);
+  delete from services where id in (v_serv, v_serv2, v_serv3, v_serv4);
+  delete from productos where id in (v_pelado, v_conteo, v_aceite, v_bidon);
 end $$;
 
 -- ---------- R10 · El piso de anonimato de los modelos (Bloque 6) ----------

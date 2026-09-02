@@ -118,6 +118,15 @@ export type ServiceEnEdicion = {
 const SALTOS = ["8", "10", "15"] as const;
 type Salto = (typeof SALTOS)[number];
 
+// El stock del aceite baja según la UNIDAD del producto — la regla vive en
+// guardar_service y acá solo se refleja. A granel (litro) descuenta los
+// litros del service; envasado (unidad) descuenta un bidón por service y
+// los litros no existen: un "EDGE 5W30 X4L" con 16 en el estante no puede
+// perder 4 porque el mecánico anotó 4 litros.
+function descuentaPorLitros(p: { stock?: number | null; unidad?: string }) {
+  return p.stock != null && p.unidad === "litro";
+}
+
 // El próximo service guardado pudo salir de los atajos o —en services de
 // antes de sacar "Otro"— de un número a mano: al reabrir, se vuelve al
 // atajo si la cuenta coincide y, si no, el valor guardado se conserva
@@ -234,10 +243,12 @@ export function Carton({
     productos.find((p) => p.id === aceiteProductoId) ?? null;
 
   // Elegir el producto precarga los litros EN EL EVENTO (nunca en un
-  // efecto): sugeridos si lleva stock, vacío si no.
-  function elegirAceite(p: { id: string; stock?: number | null; litrosSugeridos?: number | null } | null) {
+  // efecto): sugeridos si lleva stock en litros, vacío si no.
+  function elegirAceite(
+    p: { id: string; stock?: number | null; unidad?: string; litrosSugeridos?: number | null } | null,
+  ) {
     setAceiteProductoId(p?.id ?? "");
-    if (p && p.stock != null) {
+    if (p && descuentaPorLitros(p)) {
       setLitros(p.litrosSugeridos != null ? String(p.litrosSugeridos) : "");
     } else {
       setLitros("");
@@ -328,7 +339,10 @@ export function Carton({
       aceiteProductoId: esMecanica ? null : aceiteProductoId || null,
       aceiteNombre: esMecanica ? null : nombreAceite,
       aceiteLitros:
-        !esMecanica && aceiteElegido?.stock != null && litros.trim() !== ""
+        !esMecanica &&
+        aceiteElegido != null &&
+        descuentaPorLitros(aceiteElegido) &&
+        litros.trim() !== ""
           ? Number(litros.replace(",", ".")) || null
           : null,
       proxServiceKm: esMecanica ? 0 : proxKm,
@@ -872,10 +886,12 @@ export function Carton({
               />
             </div>
 
-            {/* Los litros SOLO existen si el producto lleva stock: el que
-                no lo usa no ve el campo molestando. Precargados: en el
-                caso normal, cero toques. */}
-            {aceiteElegido && aceiteElegido.stock != null && (
+            {/* Los litros SOLO existen si el producto lleva stock EN
+                LITROS: el que no lo usa no ve el campo molestando, y con
+                un aceite envasado no hay nada que tipear — baja un bidón
+                por service y lo decide la base. Precargados: en el caso
+                normal, cero toques. */}
+            {aceiteElegido && descuentaPorLitros(aceiteElegido) && (
               <div className="sm:w-28">
                 <label htmlFor="aceite-litros" className={CLASE_LABEL}>
                   Litros
