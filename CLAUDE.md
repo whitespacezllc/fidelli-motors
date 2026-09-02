@@ -387,7 +387,7 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R6** | Tildar un pendiente y guardar el trabajo ocurren en la MISMA transacción | Se puede guardar un service y perder la resolución del pendiente, o al revés |
 | **R7** | Un plan sin `pendientes` no puede crear uno | Ídem R1, para pendientes |
 | **R8** | La numeración de presupuestos es correlativa por tenant bajo concurrencia | Dos presupuestos con el mismo número, que es un documento que el cliente ya tiene en la mano |
-| **R9** | Un producto sin stock sigue funcionando; el descuento baja lo correcto (renglón × cantidad, aceite × litros); el aviso suena y calla | El stock opcional dejó de serlo, o el descuento se aplica dos veces |
+| **R9** | Un producto sin stock sigue funcionando; el descuento baja lo correcto (renglón × cantidad, aceite a granel × litros, aceite envasado 1 por service); el aviso suena y calla | El stock opcional dejó de serlo, el descuento se aplica dos veces, o un bidón pierde tantas unidades como litros se anotaron |
 | **R10** | El piso de anonimato de los modelos: ≥3 vehículos en ≥2 lubricentros | Un modelo cargado por UN solo tenant se le está filtrando a otro. Es una fuga entre clientes |
 | **R11** | Un tenant sin configurar rinde igual que siempre; el mensaje al escanear respeta feature, vigencia y suspensión en las dos capas | Un tenant cambió de aspecto sin pedirlo, o se está mostrando un mensaje que no corresponde |
 
