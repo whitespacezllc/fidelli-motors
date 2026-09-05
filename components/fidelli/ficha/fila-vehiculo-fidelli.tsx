@@ -185,7 +185,7 @@ function DialogCorregir({
               className={`${CLASE_CAMPO} plate uppercase`}
             />
             <p className="mt-1.5 text-label text-ink-40">
-              Vieja (ABC 123) o Mercosur (AB 123 CD).
+              Auto: ABC 123 o AB 123 CD · Moto: 123 ABC o A 123 BCD.
             </p>
           </div>
 

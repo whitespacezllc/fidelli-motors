@@ -35,23 +35,45 @@ export function normalizarPatente(texto: string): string {
   return texto.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
 }
 
-// Los dos formatos que acepta el CHECK de vehiculos. Se repiten acá para
-// poder avisar en el formulario: es mejor que comerse el rechazo del server.
+// Los cuatro formatos que acepta el CHECK de vehiculos. La fuente única
+// vive en la base (patente_formato_valido); se repiten acá para poder
+// avisar en el formulario: es mejor que comerse el rechazo del server.
+//
+//   Auto 1995-2016  ABC123 · Auto Mercosur  AB123CD
+//   Moto 1995-2016  123ABC · Moto Mercosur  A123BCD
+//
+// La disposición de letras y números distingue auto de moto sin preguntar.
 const PATENTE_VIEJA = /^[A-Z]{3}[0-9]{3}$/; // ABC123
 const PATENTE_MERCOSUR = /^[A-Z]{2}[0-9]{3}[A-Z]{2}$/; // AB123CD
+const PATENTE_MOTO_VIEJA = /^[0-9]{3}[A-Z]{3}$/; // 123ABC
+const PATENTE_MOTO_MERCOSUR = /^[A-Z][0-9]{3}[A-Z]{3}$/; // A123BCD
 
-export const PATENTE_FORMATO = "La patente tiene que ser ABC 123 o AB 123 CD.";
+export const PATENTE_FORMATO =
+  "La patente tiene que ser ABC 123 o AB 123 CD. Si es una moto, 123 ABC o A 123 BCD.";
 
 export function esPatenteValida(texto: string): boolean {
-  const normalizada = normalizarPatente(texto);
-  return PATENTE_VIEJA.test(normalizada) || PATENTE_MERCOSUR.test(normalizada);
+  const n = normalizarPatente(texto);
+  return (
+    PATENTE_VIEJA.test(n) ||
+    PATENTE_MERCOSUR.test(n) ||
+    PATENTE_MOTO_VIEJA.test(n) ||
+    PATENTE_MOTO_MERCOSUR.test(n)
+  );
 }
 
-// Cómo se lee en la chapa: "ABC123" → "ABC 123", "AB123CD" → "AB 123 CD".
-// Lo que no entra en ninguno de los dos formatos se devuelve tal cual.
+// Cómo se lee en la chapa: "ABC123" → "ABC 123", "AB123CD" → "AB 123 CD",
+// "123ABC" → "123 ABC", "A123BCD" → "A 123 BCD".
+// Lo que no entra en ningún formato se devuelve tal cual.
 export function formatearPatente(texto: string): string {
   const n = normalizarPatente(texto);
-  if (PATENTE_VIEJA.test(n)) return `${n.slice(0, 3)} ${n.slice(3)}`;
-  if (PATENTE_MERCOSUR.test(n)) return `${n.slice(0, 2)} ${n.slice(2, 5)} ${n.slice(5)}`;
+  if (PATENTE_VIEJA.test(n) || PATENTE_MOTO_VIEJA.test(n)) {
+    return `${n.slice(0, 3)} ${n.slice(3)}`;
+  }
+  if (PATENTE_MERCOSUR.test(n)) {
+    return `${n.slice(0, 2)} ${n.slice(2, 5)} ${n.slice(5)}`;
+  }
+  if (PATENTE_MOTO_MERCOSUR.test(n)) {
+    return `${n.slice(0, 1)} ${n.slice(1, 4)} ${n.slice(4)}`;
+  }
   return n;
 }
