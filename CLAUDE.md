@@ -101,7 +101,9 @@ la resuelve.
 - **`recuperados_del_mes(lubricentro_id)`** cuenta los contactados que volvieron
   dentro de los 30 días.
 - **Las patentes se normalizan solas** por trigger. El front manda lo que escribió
-  el mecánico; la base guarda `AB123CD` para buscar.
+  el mecánico; la base guarda `AB123CD` para buscar. Se aceptan los cuatro formatos
+  argentinos: auto `ABC123` / `AB123CD` y moto `123ABC` / `A123BCD`. La fuente única
+  es `patente_formato_valido()`; el front la repite en `lib/texto.ts` solo para avisar.
 
 **Los datos históricos no se borran.** Todo es `on delete restrict`. Para dar de
 baja se usa `activo` o `anulado`, nunca `DELETE`.
@@ -390,6 +392,7 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R9** | Un producto sin stock sigue funcionando; el descuento baja lo correcto (renglón × cantidad, aceite a granel × litros, aceite envasado 1 por service); el aviso suena y calla | El stock opcional dejó de serlo, el descuento se aplica dos veces, o un bidón pierde tantas unidades como litros se anotaron |
 | **R10** | El piso de anonimato de los modelos: ≥3 vehículos en ≥2 lubricentros | Un modelo cargado por UN solo tenant se le está filtrando a otro. Es una fuga entre clientes |
 | **R11** | Un tenant sin configurar rinde igual que siempre; el mensaje al escanear respeta feature, vigencia y suspensión en las dos capas | Un tenant cambió de aspecto sin pedirlo, o se está mostrando un mensaje que no corresponde |
+| **R13** | Las patentes de moto (`123ABC`, `A123BCD`) entran por el CHECK, por `corregir_patente` y por `get_carton`; lo que no es patente sigue afuera | Alguien volvió a cerrar el formato a autos, o lo abrió a cualquier cosa |
 
 Además, fuera del reset:
 

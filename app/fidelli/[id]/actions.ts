@@ -26,7 +26,7 @@ const MENSAJES: Record<string, string> = {
   motivo_insuficiente:
     "Escribí el motivo con un poco más de detalle: es lo que queda registrado como justificación de la corrección.",
   patente_formato:
-    "Esa patente no tiene un formato válido. Vieja (ABC 123) o Mercosur (AB 123 CD).",
+    "Esa patente no tiene un formato válido. Auto: ABC 123 o AB 123 CD. Moto: 123 ABC o A 123 BCD.",
   patente_sin_cambio: "La patente nueva es la misma que ya tiene el vehículo.",
   patente_ocupada:
     "Este lubricentro ya tiene otro auto con esa patente. Corregir a esa chapa uniría dos historiales — revisalo con el lubricentro antes de seguir.",
