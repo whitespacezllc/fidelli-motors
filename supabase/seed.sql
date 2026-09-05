@@ -69,3 +69,19 @@ begin
 
   perform crear_identidad_email(v_id, 'santi@fidellimotors.app');
 end $$;
+
+-- ============================================================
+-- Una moto en el demo.
+--
+-- Para que listados, cartón, ficha y búsqueda pública muestren el caso
+-- desde el primer reset (formato Mercosur de moto: A 123 BCD). Va acá y
+-- no en seed_demo() porque las migraciones mergeadas no se editan. Solo
+-- local, como todo este archivo.
+-- ============================================================
+insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo, anio)
+select l.id, c.id, 'A 123 BCD', 'Honda', 'Wave 110', 2023
+from lubricentros l
+join clientes c on c.lubricentro_id = l.id
+where l.slug = 'demo'
+order by c.created_at
+limit 1;

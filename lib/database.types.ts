@@ -1914,6 +1914,7 @@ export type Database = {
       normalizar_texto_vehiculo: { Args: { p: string }; Returns: string }
       orden_atencion: { Args: { p_atencion: string }; Returns: number }
       overrides_plan_bien_formados: { Args: { p: Json }; Returns: boolean }
+      patente_formato_valido: { Args: { p: string }; Returns: boolean }
       plan_capacidades: {
         Args: { u: Database["public"]["Tables"]["usuarios"]["Row"] }
         Returns: Json

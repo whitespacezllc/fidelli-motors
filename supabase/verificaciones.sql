@@ -876,3 +876,90 @@ begin
     raise exception 'REGRESIÓN 8: anon puede ejecutar contactos_por_hacer().';
   end if;
 end $$;
+
+-- ---------- R13 · Las patentes de moto entran; lo que no es patente, no ----------
+-- Fidelli acepta cuatro formatos: auto ABC123 / AB123CD y moto 123ABC /
+-- A123BCD. La fuente única es patente_formato_valido(), que usan el CHECK
+-- de vehiculos y corregir_patente(). Este chequeo cubre las dos puertas de
+-- escritura y la puerta pública de lectura, y verifica que lo inválido
+-- siga rechazado: abrir el formato "a cualquier cosa" sería tan grave como
+-- cerrarlo a autos.
+do $$
+declare
+  v_lub     uuid;
+  v_cli     uuid;
+  v_super   uuid;
+  v_moto_v  uuid;
+  v_moto_m  uuid;
+  v_json    jsonb;
+  v_rechazo boolean;
+  v_pat     text;
+begin
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+  select c.id into v_cli from clientes c where c.lubricentro_id = v_lub order by c.created_at limit 1;
+  select u.id into v_super from usuarios u where u.rol = 'superadmin' limit 1;
+  if v_super is null then
+    raise exception 'REGRESIÓN 13: el seed local no dejó ningún superadmin (ver supabase/seed.sql).';
+  end if;
+
+  -- 1 · Las dos motos entran, y el trigger las normaliza como a los autos.
+  insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+  values (v_lub, v_cli, '789 rst', 'Honda', 'Wave R13') returning id into v_moto_v;
+  insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+  values (v_lub, v_cli, 'b-456-xyz', 'Gilera', 'Smash R13') returning id into v_moto_m;
+
+  if (select patente_normalizada from vehiculos where id = v_moto_v) <> '789RST'
+     or (select patente_normalizada from vehiculos where id = v_moto_m) <> 'B456XYZ' then
+    raise exception 'REGRESIÓN 13: una patente de moto no se normalizó como se esperaba.';
+  end if;
+
+  -- 2 · Lo que no es una patente sigue rechazado por el CHECK (23514).
+  foreach v_pat in array array['AB12CD', '12ABC3', 'ABCD123', '1234ABC', 'ZZ1ZZ', 'A12BCD'] loop
+    v_rechazo := false;
+    begin
+      insert into vehiculos (lubricentro_id, cliente_id, patente) values (v_lub, v_cli, v_pat);
+    exception when check_violation then
+      v_rechazo := true;
+    end;
+    if not v_rechazo then
+      raise exception 'REGRESIÓN 13: la base aceptó la patente inválida %.', v_pat;
+    end if;
+  end loop;
+
+  -- 3 · La puerta pública encuentra la moto (y registra la búsqueda, que se limpia).
+  v_json := get_carton('demo', '789 rst');
+  if v_json->>'error' is not null then
+    raise exception 'REGRESIÓN 13: get_carton no encuentra una moto cargada (%).', v_json->>'error';
+  end if;
+  delete from landing_busquedas where lubricentro_id = v_lub and patente = '789RST';
+
+  -- 4 · corregir_patente (superadmin) acepta una moto y sigue rechazando lo inválido.
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  perform corregir_patente(v_moto_v, 'C 777 QQQ', 'Regresión 13: la chapa era Mercosur de moto');
+  if (select patente_normalizada from vehiculos where id = v_moto_v) <> 'C777QQQ' then
+    raise exception 'REGRESIÓN 13: corregir_patente no aceptó una patente de moto.';
+  end if;
+
+  v_rechazo := false;
+  begin
+    perform corregir_patente(v_moto_m, 'ZZ1ZZ', 'Regresión 13: un formato inválido tiene que rechazarse');
+  exception when raise_exception then
+    if sqlerrm <> 'patente_formato' then
+      raise;
+    end if;
+    v_rechazo := true;
+  end;
+  if not v_rechazo then
+    raise exception 'REGRESIÓN 13: corregir_patente aceptó una patente inválida.';
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- limpieza total
+  delete from correcciones_patente where vehiculo_id in (v_moto_v, v_moto_m);
+  delete from vehiculos where id in (v_moto_v, v_moto_m);
+end $$;

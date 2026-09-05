@@ -9,7 +9,8 @@ import {
   type VehiculoIdentificado,
 } from "@/app/panel/services/nuevo/actions";
 
-// Una patente normalizada tiene 6 (ABC123) o 7 (AB123CD) caracteres: recién
+// Una patente normalizada tiene 6 (ABC123, 123ABC) o 7 (AB123CD, A123BCD)
+// caracteres: recién
 // ahí tiene sentido salir a buscar.
 const LARGO_MINIMO = 6;
 

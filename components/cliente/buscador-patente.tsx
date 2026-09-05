@@ -4,7 +4,9 @@ import { formatearPatente } from "@/lib/texto";
 
 // El protagonista absoluto de la pantalla. Está diseñado para no fallar:
 //
-//   · Los dos formatos visibles en el placeholder, sin que haya que elegir.
+//   · Los dos formatos de auto visibles en el placeholder, sin que haya que
+//     elegir. Los de moto (123 ABC · A 123 BCD) entran igual: la validación
+//     es la misma y tres formatos no caben a 32px en un celular.
 //   · Mayúsculas automáticas mientras escribe, resueltas con CSS
 //     (text-transform) en vez de JavaScript: es instantáneo, funciona sin
 //     hidratar y la base normaliza igual del otro lado.
@@ -25,7 +27,7 @@ export function BuscadorPatente({
         htmlFor="patente"
         className="block text-center text-c-lead font-bold sm:text-c-titulo"
       >
-        Escribí la patente de tu auto
+        Escribí la patente de tu auto o moto
       </label>
 
       <input
@@ -49,7 +51,7 @@ export function BuscadorPatente({
       />
 
       <p id="patente-ayuda" className="mt-3 text-center text-c-body text-ink-60 sm:text-c-lead">
-        Como figura en la chapa, con o sin espacios
+        Auto o moto, como figura en la chapa, con o sin espacios
       </p>
 
       <BotonBuscar />
