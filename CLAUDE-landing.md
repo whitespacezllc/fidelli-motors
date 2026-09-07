@@ -193,8 +193,11 @@ no romperlo.** Criterio propuesto, a confirmar:
   que corresponda si hay sesión activa. El navbar **no lee la sesión**: la landing es la
   página que más tráfico anónimo va a recibir y tiene que quedar estática. Un texto dinámico
   tipo "Ir a mi panel" no vale una consulta a Supabase por visita fría.
-- Rutas nuevas de la landing: **solo** `/terminos` y `/privacidad`.
-- Los links del navbar son anclas de la misma página, no subpáginas.
+- Rutas nuevas de la landing: `/terminos` y `/privacidad`, todavía sin hacer, y **`/blog`**,
+  que existe desde el 07/09/2026 (ver "El blog", más abajo).
+- Los links del navbar son anclas de la landing más el blog. **Van con la barra (`/#precio`,
+  no `#precio`)**: el navbar también se muestra en `/blog`, y un `#precio` a secas ahí no lleva
+  a ningún lado. En la landing, Next lo resuelve como salto de ancla sin recargar.
 
 ## Indexación — corregido
 
@@ -274,6 +277,7 @@ metadata, alt text y llms.txt. El copy de las secciones no se toca por SEO.
 | Ruta | Indexación |
 |---|---|
 | `/` | index |
+| `/blog` y `/blog/[slug]` | index — el blog, estático en build |
 | `/[slug]` | index — la vidriera del lubricentro |
 | `/[slug]/[patente]` | **noindex** — historial de un vehículo identificable, sin excepción |
 | `/panel`, `/fidelli`, `/login`, `/auth/*`, `/recuperar` | noindex + Disallow en robots |
@@ -308,6 +312,47 @@ citada ahí, llms.txt se actualiza en el mismo PR.
 - **PROHIBIDO: AggregateRating, Review o cualquier schema de reseñas.** No hay reseñas
   verificables y el schema falso es penalización directa. Con testimonios reales
   autorizados, entran como Review con autor identificado — no antes.
+
+## El blog — `/blog`
+
+Implementado el 07/09/2026 (rama `feat/public-blog`). Es parte de la superficie comercial:
+mismo navbar y mismo pie que la landing, el rojo Motors es identidad y acción. Lo que sigue
+es lo que se decidió y no se revisa en cada PR.
+
+- **El contenido vive en `content/blog/*.md`**, un archivo por artículo, con frontmatter
+  `title · description · slug · date · updated · author · tags · descarga` (opcional). El slug
+  del frontmatter tiene que ser el nombre del archivo. **Es copy aprobado: no se reescribe
+  por SEO ni por estilo.** La bio del autor va después de un `---` final y se renderiza como
+  tarjeta, no como párrafo. Las preguntas frecuentes van bajo `## Preguntas frecuentes`, cada
+  una como H3 con su respuesta en el párrafo siguiente: de ahí sale el FAQPage.
+- **Un artículo nuevo es un archivo nuevo** más una línea en `public/llms.txt` (sección
+  "## Blog", con la `description` literal). Todo lo demás —índice, `generateStaticParams`,
+  imagen OG, sitemap, `feed.xml`, `llms-full.txt`, relacionados— sale solo del archivo.
+- **El pipeline es `lib/blog/`**: gray-matter + remark (GFM) + rehype (ids en H2/H3, enlaces,
+  tablas envueltas en `.tabla` con scroll horizontal). Sin MDX, sin CMS, cero componentes de
+  cliente propios: el HTML se genera en build y llega entero del servidor.
+- **Tipografía del artículo, decidida en chat el 07/09/2026 y distinta de la tabla de arriba:**
+  el cuerpo va en **Public Sans** 16/1.6 (clase `prosa` en `globals.css`); H1, H2 y H3 en
+  Nunito. El *énfasis* de Markdown no se inclina: va en `ink-60`. Las tablas llevan línea
+  `line` y cabecera `surface`. Medida topada con `max-w-prose` (65ch).
+- **Una sola acción**: el WhatsApp de `CtaWhatsapp` al final del artículo, sobre grafito. El
+  botón de descarga de la planilla va en contorno, no en rojo. Sin barra fija de mobile en el
+  blog: el layout es `app/blog/layout.tsx`, no el de la landing.
+- **SEO**: `generateMetadata` por artículo (canonical absoluto, `og:type article` con fechas y
+  autor, twitter `summary_large_image`); imagen OG dinámica en
+  `app/blog/[slug]/opengraph-image.tsx` (rojo de marca, título en Nunito 700 desde
+  `lib/blog/nunito-700.woff`, OFL); JSON-LD BlogPosting + FAQPage + BreadcrumbList por
+  artículo y CollectionPage en el índice, todo desde `lib/blog/seo.ts`.
+- **GEO**: `public/llms.txt` lista los artículos a mano; `/llms-full.txt` es un route handler
+  estático con el texto completo. "Actualizado el {updated}" y el nombre del autor van
+  visibles en cada artículo.
+- **Las fotos son de Pexels**, fotos reales (ninguna persona generada por IA), recortadas a
+  16:9 y guardadas como WebP de 1920×1080 en `public/assets/blog/` con el nombre del artículo.
+  Cada artículo las declara en el frontmatter (`imagen`, `imagenAlt`, `imagenCredito`; sin
+  `imagenAlt` el build falla) y la portada del índice es `PORTADA` en `lib/blog/seo.ts`. La
+  licencia de Pexels no exige crédito; se da igual, en la leyenda de la foto.
+- **`descargas` está reservado en `slug_reservado()`** (migración `20260907120000`): es la
+  carpeta de `public/` de los archivos que se bajan desde los artículos. `blog` ya lo estaba.
 
 ## La tarjeta de WhatsApp
 

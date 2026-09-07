@@ -26,6 +26,7 @@ import {
   PaletteIcon,
   ChatCircleTextIcon,
   UserCircleIcon,
+  DownloadSimpleIcon,
 } from "@phosphor-icons/react/dist/ssr";
 // Solo tipos: se borran al compilar, así que traerlos del entry principal
 // (que sí lleva "use client") no arrastra nada al bundle.
@@ -155,3 +156,7 @@ export const IconoPresupuesto = delSistema(ReceiptIcon);
 export const IconoDiseno = delSistema(PaletteIcon);
 export const IconoMensajes = delSistema(ChatCircleTextIcon);
 export const IconoCuenta = delSistema(UserCircleIcon);
+
+// Blog: el botón de descarga de la planilla. Phosphor y no Lucide: existe
+// en la familia del sistema, así que no entra en la excepción de la landing.
+export const IconoDescargar = delSistema(DownloadSimpleIcon);
