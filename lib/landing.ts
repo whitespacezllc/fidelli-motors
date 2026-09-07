@@ -86,9 +86,18 @@ export const SECCIONES = [
   { id: "cierre", nombre: "Cierre" },
 ] as const;
 
-/** Los tres links del navbar. Cada link extra es una salida. */
+/**
+ * Los links del navbar y del pie. Cada link extra es una salida: los tres
+ * de la landing más el blog, y nada más.
+ *
+ * Las anclas van con la barra (`/#precio`, no `#precio`) desde que existe
+ * el blog: el navbar también se muestra en /blog, y un `#precio` a secas
+ * ahí no lleva a ningún lado. En la landing, Next resuelve `/#precio` como
+ * un salto de ancla dentro de la misma página, sin recargar.
+ */
 export const LINKS_NAVBAR = [
-  { href: "#como-funciona", texto: "Cómo funciona" },
-  { href: "#precio", texto: "Precio" },
-  { href: "#preguntas", texto: "Preguntas" },
+  { href: "/#como-funciona", texto: "Cómo funciona" },
+  { href: "/#precio", texto: "Precio" },
+  { href: "/#preguntas", texto: "Preguntas" },
+  { href: "/blog", texto: "Blog" },
 ] as const;

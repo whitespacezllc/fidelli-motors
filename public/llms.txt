@@ -13,9 +13,9 @@ Para el dueño de un lubricentro o de un taller mecánico. Todos tus clientes, s
 - Cargar un trabajo: elegís si es un service o un trabajo de mecánica, buscás por patente y aparece todo. El mismo gesto que hacías en el cartón, en 90 segundos.
 - Trabajos de mecánica: anotás lo que hiciste y los repuestos que pusiste. El historial del auto los muestra junto a los services, y el próximo cambio de aceite se sigue calculando aparte.
 - Trabajos pendientes: lo que le dijiste al cliente y nunca siguió nadie —las pastillas al 30%, la correa para 15.000 km—. Lo anotás con fecha o con kilómetros y, cuando llega el momento, ese auto aparece en la misma lista de a quién llamar.
-- Avisos por kilómetros: cada auto pasa por tres estados (próximo, urgente y vencido) y en cada uno le mandás un mensaje ya armado, hasta tres seguimientos.
+- Avisos por kilómetros: cada auto pasa por tres estados: próximo, urgente y vencido, y el mensaje de WhatsApp sale ya armado.
 - Página del cliente con QR y tu marca: una calco en el parasol, y tu cliente escanea, escribe su patente y ve su historial con fecha, kilómetros y tu logo. Sin apps, sin cuenta y sin contraseña.
-- Presupuestos con tu marca: los armás y los mandás por WhatsApp desde el celular.
+- Presupuestos con tu marca: los armás desde el celular, y los presupuestos se descargan en PDF o se imprimen.
 - Catálogo de tus productos, con precio y stock opcionales.
 - Premios: definís el premio y cada cuántos trabajos se gana. El sistema lleva la cuenta solo, y tu cliente ve cuánto le falta cada vez que escanea el parasol.
 - Trabajos, clientes y vehículos ilimitados en todos los planes. Soporte por WhatsApp.
@@ -51,3 +51,12 @@ Brothers Oil (Córdoba): 292 services cargados en 20 días de operación, con 2 
 - Cómo funciona: https://fidellimotors.app/#como-funciona
 - Precio: https://fidellimotors.app/#precio
 - Preguntas frecuentes: https://fidellimotors.app/#preguntas
+
+## Blog
+
+Guías para el dueño de un lubricentro o taller, escritas por Santiago Afur, cofundador de Fidelli Motors. Índice: https://fidellimotors.app/blog · Feed RSS: https://fidellimotors.app/blog/feed.xml · Texto completo de todos los artículos: https://fidellimotors.app/llms-full.txt
+
+- [Cómo hacer que tus clientes vuelvan al lubricentro](https://fidellimotors.app/blog/como-fidelizar-clientes-lubricentro): Fidelización para lubricentros y talleres en Argentina: cuándo avisarle a cada cliente, qué mandarle por WhatsApp, cómo armar un premio que funcione y por qué el historial tiene que vivir en el auto.
+- [Cuánto cuesta un sistema para lubricentro en Argentina (2026)](https://fidellimotors.app/blog/cuanto-cuesta-sistema-para-lubricentro): Precios reales de un sistema de gestión para lubricentro o taller mecánico en Argentina en 2026: pago único, suscripción, costos que no se ven, y cuánto cobra Fidelli Motors.
+- [Planilla de control de services para lubricentro: qué anotar, y dónde se te queda corta](https://fidellimotors.app/blog/planilla-control-de-services-lubricentro): Qué columnas tiene que tener una planilla de control de services para lubricentro o taller, una plantilla gratis para descargar, y las cuatro cosas que una planilla nunca va a hacer por vos.
+- [Sistema de gestión para lubricentro: qué tiene que tener, y qué no necesitás](https://fidellimotors.app/blog/sistema-de-gestion-para-lubricentro): Qué tiene que tener un sistema de gestión para lubricentro o taller mecánico en Argentina, qué podés ignorar al principio, y cómo probarlo antes de pagar.

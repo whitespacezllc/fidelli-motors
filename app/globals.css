@@ -434,3 +434,166 @@
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+/* ============================================================
+   La prosa del blog — el Markdown de content/blog, rendido
+   ============================================================
+   El cuerpo de un artículo llega como HTML generado en build (lib/blog).
+   Esta clase le pone las reglas del bloque, que no puede poner el
+   Markdown: Public Sans para el cuerpo y Nunito para H2/H3, cero
+   itálicas (el énfasis va en la tinta secundaria), tablas con la estética
+   de la landing —línea `line`, cabecera `surface`— adentro de un
+   contenedor con scroll horizontal, y nada por debajo de 12px.
+
+   Va en la capa `components` para que una utilidad de Tailwind en el
+   mismo elemento (por ejemplo `text-ink-60` en la bio) siga ganando. */
+@layer components {
+  .prosa {
+    font-family: var(--font-ui);
+    font-size: var(--text-body);
+    line-height: 1.6;
+    color: var(--color-ink);
+    text-wrap: pretty;
+  }
+
+  .prosa > * + * {
+    margin-top: 1.25rem;
+  }
+
+  .prosa > :first-child {
+    margin-top: 0;
+  }
+
+  .prosa h2,
+  .prosa h3 {
+    font-family: var(--font-brand);
+    color: var(--color-ink);
+    text-wrap: balance;
+    /* El navbar sticky mide 56/64px: un ancla no tiene que quedar abajo. */
+    scroll-margin-top: 4.5rem;
+  }
+
+  .prosa h2 {
+    margin-top: 3rem;
+    font-size: var(--text-h3);
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+  }
+
+  .prosa h3 {
+    margin-top: 2.25rem;
+    font-size: var(--text-lead);
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  .prosa :is(h2, h3) + * {
+    margin-top: 0.875rem;
+  }
+
+  .prosa h2 + h3 {
+    margin-top: 1.5rem;
+  }
+
+  @media (min-width: 640px) {
+    .prosa h2 {
+      font-size: var(--text-h2);
+    }
+
+    .prosa h3 {
+      font-size: var(--text-h3);
+      font-weight: 600;
+    }
+  }
+
+  .prosa strong {
+    font-weight: 600;
+    color: var(--color-ink);
+  }
+
+  /* Cero itálicas: el énfasis de Markdown se dice con la tinta secundaria,
+     que es lo que necesitan los mensajes de ejemplo de los artículos. */
+  .prosa em {
+    font-style: normal;
+    color: var(--color-ink-60);
+  }
+
+  .prosa a {
+    color: var(--color-ink);
+    font-weight: 600;
+    text-decoration: underline;
+    text-decoration-color: var(--color-ink-40);
+    text-underline-offset: 2px;
+    transition: text-decoration-color var(--default-transition-duration);
+  }
+
+  .prosa a:hover {
+    text-decoration-color: var(--color-ink);
+  }
+
+  .prosa ul,
+  .prosa ol {
+    padding-left: 1.375rem;
+  }
+
+  .prosa ul {
+    list-style: disc;
+  }
+
+  .prosa ol {
+    list-style: decimal;
+  }
+
+  .prosa li + li {
+    margin-top: 0.5rem;
+  }
+
+  .prosa li::marker {
+    color: var(--color-ink-40);
+  }
+
+  /* El código en línea de los artículos son patentes y aceites
+     (`AB123CD`, `10W40 · Elaion`): el mismo tratamiento que la utilidad
+     `plate`, sin recuadro — un fondo con padding deja un hueco antes de la
+     coma que sigue. 0.9375em de 16 son 15px. */
+  .prosa code {
+    font-family: var(--font-ui);
+    font-size: 0.9375em;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+  }
+
+  /* La tabla scrollea ella sola, nunca la página. El borde y el radio van
+     en el contenedor, así el scroll no los corta. */
+  .prosa .tabla {
+    margin-top: 1.5rem;
+    overflow-x: auto;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+  }
+
+  .prosa table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-ui);
+    line-height: 1.45;
+  }
+
+  .prosa th,
+  .prosa td {
+    padding: 0.75rem 0.875rem;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--color-line);
+  }
+
+  .prosa th {
+    background: var(--color-surface);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .prosa tbody tr:last-child td {
+    border-bottom: 0;
+  }
+}

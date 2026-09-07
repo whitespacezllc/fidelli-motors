@@ -75,6 +75,17 @@ export function formatearDiaLargo(iso: string): string {
   return `${dia.charAt(0).toUpperCase()}${dia.slice(1)} ${dato("day")} de ${dato("month")}, ${dato("year")}`;
 }
 
+// "8 de septiembre de 2026" — la fecha de un artículo del blog, escrita
+// entera. Va en la línea de metadatos (Public Sans, como las etiquetas de la
+// landing) y en tabular por la regla global del body.
+export function formatearFechaLarga(iso: string): string {
+  return new Intl.DateTimeFormat("es-AR", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(aFechaLocal(iso));
+}
+
 // "julio" — para el contexto de las métricas del mes.
 export function nombreDelMes(iso: string): string {
   return new Intl.DateTimeFormat("es-AR", { month: "long" }).format(
