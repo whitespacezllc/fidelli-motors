@@ -8,24 +8,22 @@ import { clasesBoton } from "@/components/ui/boton";
 import { IconoReloj } from "@/components/iconos";
 import { FiltrosServices } from "@/components/services/filtros-services";
 import { FilaService } from "@/components/services/fila-service";
+import { BotonExportar } from "@/components/panel/boton-exportar";
 import { estadoService } from "@/lib/servicios";
-import { normalizarPatente } from "@/lib/texto";
+import {
+  aplicarFiltrosTrabajos,
+  filtrosTrabajos,
+  hayFiltrosTrabajos,
+  queryTrabajos,
+  type ParamsTrabajos,
+} from "@/lib/trabajos";
 
 export const metadata: Metadata = { title: "Trabajos" };
 
 // Un lubricentro activo acumula miles: se pagina siempre, no se trae todo.
 const POR_PAGINA = 30;
 
-type Params = {
-  q?: string;
-  sucursal?: string;
-  tipo?: string;
-  desde?: string;
-  hasta?: string;
-  pagina?: string;
-};
-
-const FECHA = /^\d{4}-\d{2}-\d{2}$/;
+type Params = ParamsTrabajos & { pagina?: string };
 
 // El registro operativo del negocio: "¿qué le hicimos al Corsa en mayo?".
 // Filtros en la URL, como en clientes y productos.
@@ -37,27 +35,15 @@ export default async function PaginaServices({
   const params = await searchParams;
   const supabase = await createClient();
 
-  const filtros = {
-    q: params.q?.trim() || undefined,
-    sucursal: params.sucursal || undefined,
-    // Valor cerrado: cualquier otra cosa en la URL no filtra nada, en vez
-    // de mandarle basura al enum de Postgres.
-    tipo: (params.tipo === "service" || params.tipo === "mecanica"
-      ? params.tipo
-      : undefined) as "service" | "mecanica" | undefined,
-    desde: params.desde && FECHA.test(params.desde) ? params.desde : undefined,
-    hasta: params.hasta && FECHA.test(params.hasta) ? params.hasta : undefined,
-  };
-  const filtrando = Boolean(
-    filtros.q || filtros.sucursal || filtros.tipo || filtros.desde || filtros.hasta,
-  );
+  // Los filtros se leen y se aplican con lib/trabajos.ts, compartido con el
+  // export a Excel: lo que se ve filtrado es exactamente lo que se exporta.
+  const filtros = filtrosTrabajos(params);
+  const filtrando = hayFiltrosTrabajos(filtros);
   const pagina = Math.max(1, Number(params.pagina) || 1);
 
   // La patente entra por el join: !inner hace que el filtro sobre el
   // vehículo recorte los services, no que venga el vehículo en null.
-  const patente = filtros.q ? normalizarPatente(filtros.q) : null;
-
-  let consulta = supabase
+  const base = supabase
     .from("services")
     .select(
       `id, tipo, trabajo_descripcion, fecha, created_at, kilometros, anulado, desbloqueado_hasta,
@@ -69,13 +55,7 @@ export default async function PaginaServices({
     .order("created_at", { ascending: false })
     .range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1);
 
-  if (patente) {
-    consulta = consulta.like("vehiculos.patente_normalizada", `%${patente}%`);
-  }
-  if (filtros.sucursal) consulta = consulta.eq("sucursal_id", filtros.sucursal);
-  if (filtros.tipo) consulta = consulta.eq("tipo", filtros.tipo);
-  if (filtros.desde) consulta = consulta.gte("fecha", filtros.desde);
-  if (filtros.hasta) consulta = consulta.lte("fecha", filtros.hasta);
+  const consulta = aplicarFiltrosTrabajos(base, filtros);
 
   // Las sucursales del filtro: chica y en paralelo con la principal.
   const [serviciosRes, sucursalesRes] = await Promise.all([
@@ -114,9 +94,16 @@ export default async function PaginaServices({
   return (
     <div>
       <CabeceraSeccion titulo="Trabajos">
-        <Link href="/panel/services/nuevo" className={clasesBoton("primario", "md")}>
-          + Nuevo trabajo
-        </Link>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <BotonExportar
+            url={`/panel/services/exportar${queryTrabajos(filtros)}`}
+            cantidad={total}
+            filtrando={filtrando}
+          />
+          <Link href="/panel/services/nuevo" className={clasesBoton("primario", "md")}>
+            + Nuevo trabajo
+          </Link>
+        </div>
       </CabeceraSeccion>
 
       <div className="mb-5 flex flex-col gap-3">
