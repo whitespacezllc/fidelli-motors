@@ -5,12 +5,16 @@ import { cerrarSesion } from "@/lib/auth/actions";
 import { Sidebar } from "@/components/panel/sidebar";
 import { BarraMobile } from "@/components/panel/barra-mobile";
 import { AvisoSuspension } from "@/components/panel/aviso-suspension";
+import { metadataPwa } from "@/lib/pwa";
 
 // La autorización vive acá, no en el proxy: /panel es del rol owner.
 // Superficie privada: nunca en el índice. El robots.txt además la
 // excluye del rastreo; esto cubre el caso de una URL llegada por link.
 export const metadata: Metadata = {
   robots: { index: false, follow: false },
+  // Su propio manifest: agregar el panel a la pantalla de inicio tiene que
+  // abrir el panel, no la landing comercial. Reemplaza al del layout raíz.
+  ...metadataPwa("/panel/manifest.webmanifest", "Mi panel"),
 };
 
 export default async function LayoutPanel({
@@ -41,9 +45,12 @@ export default async function LayoutPanel({
         features={features}
         porLlamar={porLlamar ?? 0}
       />
-      <div className="lg:pl-64">
+      {/* En print se apagan el corrimiento del sidebar y los paddings: la
+          hoja la definen los márgenes de @page, y el pb-28 de la barra
+          llegaba a regalar una página en blanco al final. */}
+      <div className="lg:pl-64 print:pl-0">
         {/* pb extra en mobile para que la barra inferior no tape contenido */}
-        <main className="mx-auto max-w-6xl px-4 py-6 pb-28 lg:px-8 lg:py-8">
+        <main className="mx-auto max-w-6xl px-4 py-6 pb-28 lg:px-8 lg:py-8 print:p-0">
           {/* Arriba de todo y en todas las pantallas: la suspensión no es de
               una sección, es de la cuenta. */}
           {suspendido && <AvisoSuspension />}

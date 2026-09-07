@@ -10,6 +10,7 @@ import { GuiaPasos } from "@/components/cliente/guia-pasos";
 import { BuscadorPatente } from "@/components/cliente/buscador-patente";
 import { PatenteNoEncontrada } from "@/components/cliente/patente-no-encontrada";
 import { PieConfianza } from "@/components/cliente/pie-confianza";
+import { metadataPwa } from "@/lib/pwa";
 
 type Props = {
   params: Promise<{ slug: string }>;
@@ -67,6 +68,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       description: descripcion,
       images: [OG_IMAGEN.url],
     },
+    // El manifest del lubricentro: agregar esta página a la pantalla de
+    // inicio tiene que abrir SU página, no la landing comercial de
+    // Fidelli. Lleva su nombre, su color y su logo.
+    ...metadataPwa(`/${slug}/manifest.webmanifest`, lubricentro.nombre),
   };
 }
 

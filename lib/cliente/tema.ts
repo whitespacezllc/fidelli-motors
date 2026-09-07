@@ -24,7 +24,10 @@ export function aTamanoLogo(v: string | null | undefined): TamanoLogo {
 // el terciario, 14% los bordes. Lo único que el sistema no define es la
 // elevación (inputs y tarjetas necesitan despegarse del fondo): #141414
 // y #1D1D1D son el mínimo paso perceptible sobre #0A0A0A.
-const GRAFITO = "#0A0A0A";
+// Exportado porque el manifest de la PWA del tenant necesita el MISMO
+// fondo para su pantalla de arranque: si el splash saliera blanco en un
+// tenant oscuro, la app abriría con un flash antes de pintar la página.
+export const GRAFITO = "#0A0A0A";
 
 const VARIABLES_OSCURO = {
   "--color-ink": "#FFFFFF",

@@ -20,14 +20,26 @@ import {
   CartonPapelMecanica,
 } from "@/components/services/carton-papel";
 import { renglonesLibres } from "@/lib/cliente/carton";
+import { metadataPwa } from "@/lib/pwa";
 
 type Props = { params: Promise<{ slug: string; patente: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { patente } = await params;
+  const { slug, patente } = await params;
   return {
     // `absolute`: superficie del lubricentro, sin el template de marca.
     title: { absolute: `${formatearPatente(patente)} · Tu historial` },
+    // El acceso directo al cartón de ESTE auto: el QR del parasol se
+    // escanea una vez y el ícono queda en el teléfono. El manifest se
+    // arma solo con la URL —el nombre y el color del lubricentro los
+    // resuelve el route handler—, así esta pantalla sigue costando una
+    // sola consulta.
+    // La patente como nombre del ícono: es lo que distingue un auto de
+    // otro cuando el mismo cliente se guarda dos.
+    ...metadataPwa(
+      `/${slug}/${normalizarPatente(patente)}/manifest.webmanifest`,
+      formatearPatente(patente),
+    ),
     // Pública por diseño, indexable no: la patente está en la chapa a la
     // vista de cualquiera, pero que buscarla en Google devuelva el
     // historial de service del auto es otra cosa. El que la sabe entra;
