@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { metadataPwa } from "@/lib/pwa";
 import { exigirRol } from "@/lib/auth/session";
 import { cerrarSesion } from "@/lib/auth/actions";
 import { Logo } from "@/components/marca/logo";
@@ -11,6 +12,8 @@ import { NavLink } from "@/components/panel/nav-link";
 // excluye del rastreo; esto cubre el caso de una URL llegada por link.
 export const metadata: Metadata = {
   robots: { index: false, follow: false },
+  // Mismo criterio que el panel: el acceso directo abre /fidelli.
+  ...metadataPwa("/fidelli/manifest.webmanifest", "Fidelli Admin"),
 };
 
 export default async function LayoutFidelli({
