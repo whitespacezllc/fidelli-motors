@@ -2,13 +2,15 @@ import type { MetadataRoute } from "next";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { SITIO_URL, SLUGS_SIN_INDEXAR } from "@/lib/seo";
+import { obtenerArticulos } from "@/lib/blog/articulos";
+import { URL_BLOG, urlArticulo } from "@/lib/blog/seo";
 
 // Se rearma como mucho una vez por hora: los lubricentros no se dan de
 // alta a un ritmo que justifique más.
 export const revalidate = 3600;
 
-// El sitemap: la portada más una entrada por vidriera de lubricentro
-// activo. Las páginas de patente NO van nunca — son noindex por diseño
+// El sitemap: la portada, el blog con sus artículos, más una entrada por
+// vidriera de lubricentro activo. Las páginas de patente NO van nunca — son noindex por diseño
 // (historial de un vehículo identificable).
 //
 // El cliente es el de @supabase/supabase-js directo y no el de
@@ -17,6 +19,12 @@ export const revalidate = 3600;
 // de slugs_publicos(), la función mínima creada para esto — anon no puede
 // leer ninguna tabla.
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  // El blog sale de content/blog, sin red: si un artículo no se puede
+  // leer, el build falla ahí y no acá. lastModified es el `updated` del
+  // frontmatter, que es la fecha que también se muestra en la página.
+  const articulos = await obtenerArticulos();
+  const ultimaDelBlog = articulos.map((a) => a.actualizado).sort().at(-1);
+
   const portada: MetadataRoute.Sitemap = [
     {
       url: SITIO_URL,
@@ -24,6 +32,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "weekly",
       priority: 1,
     },
+    {
+      url: URL_BLOG,
+      lastModified: ultimaDelBlog ? new Date(ultimaDelBlog) : new Date(),
+      changeFrequency: "weekly",
+      priority: 0.8,
+    },
+    ...articulos.map((a) => ({
+      url: urlArticulo(a.slug),
+      lastModified: new Date(a.actualizado),
+      changeFrequency: "monthly" as const,
+      priority: 0.7,
+    })),
   ];
 
   // Si Supabase no contesta, el sitemap NO tira la build ni la ruta: se
