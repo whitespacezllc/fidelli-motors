@@ -8,7 +8,7 @@ import { Buscador } from "@/components/ui/buscador";
 import { IconoClientes } from "@/components/iconos";
 import { DialogCliente } from "@/components/clientes/dialog-cliente";
 import { FilaCliente } from "@/components/clientes/fila-cliente";
-import { BotonExportar } from "@/components/clientes/boton-exportar";
+import { BotonExportar } from "@/components/panel/boton-exportar";
 import { filtroClientes } from "@/lib/clientes";
 
 export const metadata: Metadata = { title: "Clientes" };
@@ -59,8 +59,12 @@ export default async function PaginaClientes({
   return (
     <div>
       <CabeceraSeccion titulo="Clientes">
-        <div className="flex items-center gap-2.5">
-          <BotonExportar q={q} hayResultados={clientes.length > 0} />
+        <div className="flex flex-wrap items-center gap-2.5">
+          <BotonExportar
+            url={`/panel/clientes/exportar${q ? `?q=${encodeURIComponent(q)}` : ""}`}
+            cantidad={clientes.length}
+            filtrando={buscando}
+          />
           {suspendido ? (
             <AccionBloqueada etiqueta="+ Nuevo cliente" />
           ) : (

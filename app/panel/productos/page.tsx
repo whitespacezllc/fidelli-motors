@@ -10,8 +10,14 @@ import { IconoCaja } from "@/components/iconos";
 import { DialogProducto } from "@/components/productos/dialog-producto";
 import { FilaProducto } from "@/components/productos/fila-producto";
 import { FiltrosProductos } from "@/components/productos/filtros-productos";
+import { BotonExportar } from "@/components/panel/boton-exportar";
 import { aCategorias } from "@/lib/categorias";
-import { normalizar } from "@/lib/texto";
+import {
+  categoriaValida,
+  filtrarProductos,
+  hayFiltrosProductos,
+  queryProductos,
+} from "@/lib/productos";
 
 export const metadata: Metadata = { title: "Productos" };
 
@@ -48,19 +54,14 @@ export default async function PaginaProductos({
   const todos = productosRes.data ?? [];
   const categorias = aCategorias(categoriasRes.data);
 
-  const filtroCategoria = categorias.some((c) => c.valor === categoria)
-    ? categoria
-    : undefined;
-  const busqueda = normalizar(q ?? "");
-
-  const filtrados = todos.filter((p) => {
-    if (filtroCategoria && p.categoria !== filtroCategoria) return false;
-    if (!busqueda) return true;
-    return (
-      normalizar(p.nombre).includes(busqueda) ||
-      normalizar(p.marca ?? "").includes(busqueda)
-    );
-  });
+  // El filtro es compartido con el export a Excel (lib/productos.ts): lo
+  // que se ve filtrado es exactamente lo que se exporta.
+  const filtroCategoria = categoriaValida(
+    categoria,
+    categorias.map((c) => c.valor),
+  );
+  const filtros = { q, categoria: filtroCategoria };
+  const filtrados = filtrarProductos(todos, filtros);
 
   // Grupos en el orden del catálogo; los vacíos no se dibujan.
   const grupos = categorias.map((c) => ({
@@ -71,12 +72,19 @@ export default async function PaginaProductos({
   return (
     <div>
       <CabeceraSeccion titulo="Productos">
-        {todos.length > 0 &&
-          (suspendido ? (
-            <AccionBloqueada etiqueta="+ Nuevo producto" />
-          ) : (
-            <DialogProducto categorias={categorias} />
-          ))}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <BotonExportar
+            url={`/panel/productos/exportar${queryProductos(filtros)}`}
+            cantidad={filtrados.length}
+            filtrando={hayFiltrosProductos(filtros)}
+          />
+          {todos.length > 0 &&
+            (suspendido ? (
+              <AccionBloqueada etiqueta="+ Nuevo producto" />
+            ) : (
+              <DialogProducto categorias={categorias} />
+            ))}
+        </div>
       </CabeceraSeccion>
 
       {todos.length === 0 ? (
