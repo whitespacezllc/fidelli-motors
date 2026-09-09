@@ -16,7 +16,7 @@ import {
   crearVehiculo,
   editarVehiculo,
   type EstadoVehiculo,
-} from "@/app/panel/clientes/[id]/actions";
+} from "@/app/panel/(tras-onboarding)/clientes/[id]/actions";
 
 type Vehiculo = {
   id: string;

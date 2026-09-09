@@ -7,7 +7,7 @@ import {
   activarMensaje,
   eliminarMensaje,
   type EstadoMensaje,
-} from "@/app/panel/mensajes/actions";
+} from "@/app/panel/(tras-onboarding)/mensajes/actions";
 import type { VariablesMensaje } from "@/lib/contacto";
 
 type Mensaje = {

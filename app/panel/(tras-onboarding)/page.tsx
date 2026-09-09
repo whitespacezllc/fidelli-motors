@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { panelSuspendido } from "@/lib/auth/session";
+import { featureHabilitada, obtenerSesion, panelSuspendido } from "@/lib/auth/session";
+import { Bienvenida } from "@/components/onboarding/bienvenida";
 import { clasesBoton } from "@/components/ui/boton";
 import { CabeceraSeccion } from "@/components/panel/cabecera-seccion";
 import {
@@ -32,6 +33,17 @@ export default async function PaginaInicio({
   // negocio con meses de historia. El guard valida lo que venga en la URL.
   const vistaInicial: VistaPanel = esVistaPanel(vista) ? vista : "mes";
   const supabase = await createClient();
+  // Memoizada por request: el layout ya la pidió.
+  const sesion = await obtenerSesion();
+  // Recién terminó el onboarding y todavía no vio la bienvenida: el telón
+  // va arriba de lo que sea que muestre el Inicio, una sola vez.
+  const bienvenida = sesion?.bienvenidaPendiente ? (
+    <Bienvenida nombre={sesion.lubricentroNombre ?? "Tu lubricentro"} />
+  ) : null;
+  const opcionesChecklist = {
+    aplicaPremio: featureHabilitada(sesion, "premios"),
+    premioOmitido: sesion?.premioOmitido ?? false,
+  };
 
   // Una sola consulta para toda la pantalla —métricas, landing, gráfico,
   // retención y últimos services— más la lista de sucursales del filtro,
@@ -89,14 +101,19 @@ export default async function PaginaInicio({
   }
 
   // Mientras el lubricentro esté a medio configurar, el checklist ocupa el
-  // lugar del dashboard. Cuando los cuatro pasos están hechos desaparece
-  // solo, sin celebración: simplemente ya no está.
-  if (!estaCompleto(resumen.checklist)) {
+  // lugar del dashboard. Cuando los pasos están hechos desaparece solo,
+  // sin celebración: simplemente ya no está. (La celebración, una sola, es
+  // la bienvenida al terminar el onboarding.)
+  if (!estaCompleto(resumen.checklist, opcionesChecklist)) {
     return (
-      <Checklist
-        estado={resumen.checklist}
-        suspendido={await panelSuspendido()}
-      />
+      <>
+        {bienvenida}
+        <Checklist
+          estado={resumen.checklist}
+          opciones={opcionesChecklist}
+          suspendido={await panelSuspendido()}
+        />
+      </>
     );
   }
 
@@ -104,6 +121,7 @@ export default async function PaginaInicio({
 
   return (
     <div>
+      {bienvenida}
       <CabeceraSeccion titulo="Inicio">
         <div className="flex items-center gap-2.5">
           <FiltroSucursal sucursales={sucursales} actual={sucursal} />

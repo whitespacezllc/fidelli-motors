@@ -963,3 +963,104 @@ begin
   delete from correcciones_patente where vehiculo_id in (v_moto_v, v_moto_m);
   delete from vehiculos where id in (v_moto_v, v_moto_m);
 end $$;
+
+-- ============================================================
+-- R14 · El onboarding de tres pasos (bloque de ayuda)
+--
+-- Cuatro invariantes que, rotos, bloquean a un cliente o le piden algo
+-- que su plan no incluye:
+--   1. Después del seed ninguna cuenta queda con onboarding_completado_at
+--      null: el backfill de la migración cubre a las existentes y seed.sql
+--      a las que nacen en el reset. Una cuenta vieja con null vería el
+--      onboarding y el panel bloqueado.
+--   2. Las funciones que escriben en lubricentros son SECURITY DEFINER:
+--      el owner no tiene UPDATE por RLS, así que sin definer el paso 2 y el
+--      3 fallan en silencio y el taller no sale nunca del onboarding.
+--   3. Los pasos siguen al plan: un Basic tiene DOS pasos, nunca se le
+--      pide el premio.
+--   4. El estado de un tenant ajeno no se lee: el guard rechaza.
+-- ============================================================
+do $$
+declare
+  v_lub     uuid;
+  v_owner   uuid;
+  v_plan    uuid;
+  v_basic   uuid;
+  v_ajeno   uuid;
+  v_nombre  text;
+  v_definer boolean;
+  v_sin     integer;
+  v_estado  jsonb;
+begin
+  -- 1 · el demo del seed nace con el onboarding completo (lo marca seed.sql,
+  --     porque nace después del backfill de la migración). Se mira el demo y
+  --     no "todas las cuentas": en una base local puede haber tenants de
+  --     prueba a mitad del onboarding, y eso es exactamente lo esperado.
+  select count(*) into v_sin from lubricentros where slug = 'demo' and onboarding_completado_at is null;
+  if v_sin > 0 then
+    raise exception
+      'R14: el demo del seed quedó sin onboarding_completado_at: vería el onboarding con el panel bloqueado.'
+      using hint = 'seed.sql lo marca después de seed_demo(); el backfill de 20260909180000 cubre a las cuentas existentes.';
+  end if;
+
+  -- 2 · definer donde hace falta
+  foreach v_nombre in array array[
+    'onboarding_estado', 'onboarding_estado_de', 'onboarding_completar_de',
+    'completar_onboarding', 'confirmar_diseno', 'omitir_premio',
+    'marcar_bienvenida_vista', 'onboarding_tras_cambio'
+  ] loop
+    select bool_and(p.prosecdef) into v_definer
+      from pg_proc p
+     where p.proname = v_nombre and p.pronamespace = 'public'::regnamespace;
+    if v_definer is distinct from true then
+      raise exception 'R14: falta %() o no es SECURITY DEFINER: el owner no puede escribir lubricentros por RLS.', v_nombre;
+    end if;
+  end loop;
+
+  -- 2b · los triggers que evalúan al escribir productos y premios
+  foreach v_nombre in array array['onboarding_productos', 'onboarding_premios'] loop
+    if not exists (select 1 from pg_trigger where tgname = v_nombre and not tgisinternal) then
+      raise exception 'R14: falta el trigger %: guardar el premio ya no completa el onboarding y el taller queda bloqueado.', v_nombre;
+    end if;
+  end loop;
+
+  -- 3 y 4 · como el owner del demo
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+  select u.id into v_owner from usuarios u where u.lubricentro_id = v_lub and u.rol = 'owner' limit 1;
+  select s.plan_id into v_plan from suscripciones s where s.lubricentro_id = v_lub
+    order by s.inicio desc, s.created_at desc limit 1;
+  select p.id into v_basic from planes p where p.nombre = 'Basic';
+
+  -- Un tenant ajeno, solo para el guard (sin config ni sucursales: se borra al final).
+  insert into lubricentros (nombre, slug) values ('R14 ajeno', 'r14-ajeno') returning id into v_ajeno;
+
+  update suscripciones set plan_id = v_basic where lubricentro_id = v_lub;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  v_estado := onboarding_estado(v_lub);
+  if (v_estado->>'pasos')::integer <> 2 or (v_estado->>'aplica_premio')::boolean then
+    raise exception 'R14: a un Basic se le piden % pasos (aplica_premio=%): el paso del premio no sigue al plan.',
+      v_estado->>'pasos', v_estado->>'aplica_premio';
+  end if;
+  if v_estado->>'paso_actual' is not null then
+    raise exception 'R14: una cuenta con el onboarding completo reporta paso actual %: /fidelli la mostraría a medias.',
+      v_estado->>'paso_actual';
+  end if;
+
+  begin
+    perform onboarding_estado(v_ajeno);
+    raise exception 'R14: un owner leyó el onboarding de otro lubricentro.';
+  exception
+    when insufficient_privilege then null; -- exactamente lo esperado
+  end;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- limpieza
+  update suscripciones set plan_id = v_plan where lubricentro_id = v_lub;
+  delete from lubricentros where id = v_ajeno;
+end $$;

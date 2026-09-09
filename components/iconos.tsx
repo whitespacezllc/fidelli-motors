@@ -28,6 +28,8 @@ import {
   UserCircleIcon,
   DownloadSimpleIcon,
   PrinterIcon,
+  PlayIcon,
+  QuestionIcon,
 } from "@phosphor-icons/react/dist/ssr";
 // Solo tipos: se borran al compilar, así que traerlos del entry principal
 // (que sí lleva "use client") no arrastra nada al bundle.
@@ -60,7 +62,7 @@ export const IconoCheck = delSistema(CheckIcon);
 // ============================================================
 // LA EXCEPCIÓN DE LUCIDE — ahora documentada en CLAUDE.md
 //
-// Doce íconos de la LANDING COMERCIAL, y solo de ahí. La razón es de
+// Trece íconos de la LANDING COMERCIAL, y solo de ahí. La razón es de
 // escala: son señalización a tamaño grande y necesitan stroke 2, que
 // Phosphor light no da. La regla completa con sus límites está escrita en
 // CLAUDE.md → "Decisiones técnicas"; el resumen es que este bloque es el
@@ -94,6 +96,10 @@ export {
   // Sección del calco · los pasos del cliente final.
   ScanLine as IconoEscanear,
   History as IconoVerHistorial,
+  // Sección 09 · el ícono de "ver cómo funciona" al lado de una función
+  // que tiene video. Relleno (fill) porque a 16px un triángulo de trazo
+  // no se lee como reproducir.
+  Play as IconoReproducirLanding,
 } from "lucide-react";
 
 // El paso 2 del cliente es "escribe la patente", y no existe un ícono de
@@ -160,3 +166,8 @@ export const IconoImprimir = delSistema(PrinterIcon);
 export const IconoDiseno = delSistema(PaletteIcon);
 export const IconoMensajes = delSistema(ChatCircleTextIcon);
 export const IconoCuenta = delSistema(UserCircleIcon);
+
+// Los videos de ayuda (bloque de ayuda): el botón de reproducir del panel
+// —relleno sobre el círculo rojo, con `weight="fill"`— y el ítem Ayuda.
+export const IconoReproducir = delSistema(PlayIcon);
+export const IconoAyuda = delSistema(QuestionIcon);

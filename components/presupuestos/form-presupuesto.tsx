@@ -8,7 +8,7 @@ import {
   crearPresupuesto,
   editarPresupuesto,
   type ResultadoPresupuesto,
-} from "@/app/panel/presupuestos/actions";
+} from "@/app/panel/(tras-onboarding)/presupuestos/actions";
 import { recordarSucursal } from "@/lib/preferencias";
 import {
   formatearPesos,

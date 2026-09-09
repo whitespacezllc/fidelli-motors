@@ -21,6 +21,16 @@ export type Sesion = {
   // plan vigente → cerrado). Viene del campo calculado plan_capacidades en
   // el mismo select de abajo: cero round trips extra. Null para superadmin.
   capacidades: CapacidadesPlan | null;
+  // El onboarding de tres pasos (migración 20260909180000). Viaja con la
+  // sesión porque el gate lo pregunta en CADA request del panel: una
+  // columna más en el mismo select sale gratis, una consulta aparte no.
+  // Un superadmin no tiene tenant: para él siempre está completo.
+  onboardingCompleto: boolean;
+  // Completó el onboarding y todavía no vio la animación de bienvenida.
+  bienvenidaPendiente: boolean;
+  // Paso 3 del onboarding: dejó el premio para después. Lo mira el
+  // checklist de Inicio para no seguir pidiéndoselo.
+  premioOmitido: boolean;
 };
 
 // El rol y el tenant salen de public.usuarios (RLS deja leer solo la fila propia).
@@ -40,7 +50,7 @@ export const obtenerSesion = cache(async (): Promise<Sesion | null> => {
   const { data: fila } = await supabase
     .from("usuarios")
     .select(
-      "id, rol, nombre, email, lubricentro_id, plan_capacidades, lubricentros(nombre, activo)",
+      "id, rol, nombre, email, lubricentro_id, plan_capacidades, lubricentros(nombre, activo, onboarding_completado_at, bienvenida_vista_at, premio_omitido_at)",
     )
     .eq("id", sub)
     .single();
@@ -52,7 +62,13 @@ export const obtenerSesion = cache(async (): Promise<Sesion | null> => {
     email: string;
     lubricentro_id: string | null;
     plan_capacidades: CapacidadesPlan | null;
-    lubricentros: { nombre: string; activo: boolean } | null;
+    lubricentros: {
+      nombre: string;
+      activo: boolean;
+      onboarding_completado_at: string | null;
+      bienvenida_vista_at: string | null;
+      premio_omitido_at: string | null;
+    } | null;
   } | null;
 
   if (!usuario) return null;
@@ -67,6 +83,13 @@ export const obtenerSesion = cache(async (): Promise<Sesion | null> => {
     // Un superadmin no tiene tenant: nunca está suspendido.
     lubricentroActivo: usuario.lubricentros?.activo ?? true,
     capacidades: usuario.plan_capacidades,
+    onboardingCompleto: usuario.lubricentros
+      ? usuario.lubricentros.onboarding_completado_at !== null
+      : true,
+    bienvenidaPendiente:
+      usuario.lubricentros?.onboarding_completado_at != null &&
+      usuario.lubricentros.bienvenida_vista_at === null,
+    premioOmitido: usuario.lubricentros?.premio_omitido_at != null,
   };
 });
 

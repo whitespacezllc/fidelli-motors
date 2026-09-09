@@ -2,7 +2,7 @@ import { FilaListado } from "@/components/ui/fila-listado";
 import { ToggleEstado } from "@/components/ui/toggle-estado";
 import { DialogSucursal } from "@/components/sucursales/dialog-sucursal";
 import { AccionBloqueada } from "@/components/panel/bloqueo-suspension";
-import { toggleSucursal } from "@/app/panel/sucursales/actions";
+import { toggleSucursal } from "@/app/panel/(tras-onboarding)/sucursales/actions";
 
 type Sucursal = {
   id: string;

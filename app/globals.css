@@ -597,3 +597,112 @@
     border-bottom: 0;
   }
 }
+
+/* ============================================================
+   La bienvenida — el final del onboarding, una sola vez por taller
+   ============================================================
+   Un telón blanco sobre el panel, menos de tres segundos, cuatro tiempos:
+     0 → 0,6 s   el isotipo aparece en el centro, escalando de 0,6 a 1
+     0,6 → 1,2 s el wordmark se despliega a su derecha, como si saliera de
+                 atrás del isotipo (clip + corrimiento)
+     1,2 → 2,2 s "Bienvenido, {local}." y la línea chica
+     2,2 → 3 s   el telón se levanta y se ve el panel; en la navegación, las
+                 solapas se desbloquean de arriba hacia abajo, 60 ms entre
+                 cada una: el candado se va y el ítem pasa de ink-40 a su
+                 color normal.
+
+   TODO ES CSS Y ARRANCA CON EL PINTADO. El telón y los ítems de la
+   navegación se renderizan juntos desde el servidor, así que sus retrasos
+   cuentan desde el mismo instante y quedan sincronizados sin ningún
+   temporizador de JavaScript. Un clic la salta: el componente pone
+   data-bienvenida="lista" en <html> y todo salta a su estado final.
+
+   Curva: la estándar del sistema. Sin rebote: es una marca, no un juguete.
+
+   Con prefers-reduced-motion nada de esto corre: el componente muestra una
+   tarjeta estática (logo, texto, botón) y la navegación nace desbloqueada. */
+
+@keyframes bienvenida-isotipo {
+  from { opacity: 0; scale: 0.6; }
+  to   { opacity: 1; scale: 1; }
+}
+
+@keyframes bienvenida-wordmark {
+  from { opacity: 0; clip-path: inset(0 100% 0 0); translate: -20px 0; }
+  to   { opacity: 1; clip-path: inset(0 0 0 0); translate: 0 0; }
+}
+
+@keyframes bienvenida-texto {
+  from { opacity: 0; translate: 0 8px; }
+  to   { opacity: 1; translate: 0 0; }
+}
+
+@keyframes bienvenida-levantar {
+  from { translate: 0 0; visibility: visible; }
+  to   { translate: 0 -100%; visibility: hidden; }
+}
+
+.bienvenida-telon {
+  animation: bienvenida-levantar 800ms var(--ease-standard) 2200ms both;
+}
+
+.bienvenida-isotipo {
+  animation: bienvenida-isotipo 600ms var(--ease-standard) both;
+}
+
+.bienvenida-wordmark {
+  animation: bienvenida-wordmark 600ms var(--ease-standard) 600ms both;
+}
+
+.bienvenida-texto {
+  animation: bienvenida-texto 500ms var(--ease-standard) 1200ms both;
+}
+
+/* El desbloqueo de cada ítem de la navegación. `--i` es su lugar de arriba
+   hacia abajo; el retraso arranca cuando el telón empieza a levantarse.
+   El keyframe solo declara `from`: el estado final es el color propio del
+   ítem (activo o inactivo), que no hace falta conocer acá. */
+.nav-desbloqueo {
+  --retraso-desbloqueo: calc(2200ms + var(--i, 0) * 60ms);
+  animation: nav-desbloquear 320ms var(--ease-standard) var(--retraso-desbloqueo) both;
+}
+
+.nav-desbloqueo .candado-nav {
+  animation: nav-candado 320ms var(--ease-standard) var(--retraso-desbloqueo) both;
+}
+
+@keyframes nav-desbloquear {
+  from { color: var(--color-ink-40); }
+}
+
+@keyframes nav-candado {
+  from { opacity: 1; width: 1rem; }
+  to   { opacity: 0; width: 0; }
+}
+
+/* Saltada o terminada: todo a su estado final, ya. */
+html[data-bienvenida="lista"] .bienvenida-telon {
+  display: none;
+}
+
+html[data-bienvenida="lista"] .nav-desbloqueo {
+  animation: none;
+}
+
+html[data-bienvenida="lista"] .candado-nav {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bienvenida-telon,
+  .bienvenida-isotipo,
+  .bienvenida-wordmark,
+  .bienvenida-texto,
+  .nav-desbloqueo {
+    animation: none;
+  }
+
+  .candado-nav {
+    display: none;
+  }
+}

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { IconoChevron, IconoIncluido } from "@/components/iconos";
+import { BotonVideoFuncion } from "@/components/landing/boton-video-funcion";
 import { COMPARACION, PLANES, pesos } from "@/lib/planes-landing";
 
 // 09b · La comparación de los tres planes.
@@ -126,11 +127,14 @@ export function ComparacionPlanes() {
                 </tr>
                 {grupo.filas.map((fila) => (
                   <tr key={fila.concepto}>
+                    {/* `relative` por el ícono de video de la función, en
+                        absoluto al borde derecho de la celda. */}
                     <th
                       scope="row"
-                      className="w-[40%] border-b border-line py-3 pr-2 pl-0 text-left text-ui font-normal text-ink sm:text-body"
+                      className="relative w-[40%] border-b border-line py-3 pr-2 pl-0 text-left text-ui font-normal text-ink sm:text-body"
                     >
                       {fila.concepto}
+                      <BotonVideoFuncion funcion={fila.concepto} />
                     </th>
                     {fila.valores.map((valor, i) => (
                       <td

@@ -7,7 +7,7 @@ import { esPatenteValida, normalizarPatente, PATENTE_FORMATO } from "@/lib/texto
 import {
   buscarPorPatente,
   type VehiculoIdentificado,
-} from "@/app/panel/services/nuevo/actions";
+} from "@/app/panel/(tras-onboarding)/services/nuevo/actions";
 
 // Una patente normalizada tiene 6 (ABC123, 123ABC) o 7 (AB123CD, A123BCD)
 // caracteres: recién

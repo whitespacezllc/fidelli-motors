@@ -3,6 +3,7 @@
 import { useId, useState } from "react";
 import { IconoIncluido } from "@/components/iconos";
 import { EnlaceWhatsapp } from "@/components/tracking/enlace-whatsapp";
+import { BotonVideoFuncion } from "@/components/landing/boton-video-funcion";
 import { PLANES, pesos, type PlanLanding } from "@/lib/planes-landing";
 
 // 09 · Las tres tarjetas y el control mensual/anual.
@@ -29,8 +30,10 @@ type Modo = "mensual" | "anual";
 
 function Renglon({ texto, oscuro }: { texto: string; oscuro: boolean }) {
   return (
+    // `relative` por el ícono de video de la función, que va en absoluto
+    // al borde derecho para no mover el texto (BotonVideoFuncion).
     <li
-      className={`flex items-start gap-2.5 py-[7px] text-body ${
+      className={`relative flex items-start gap-2.5 py-[7px] text-body ${
         oscuro ? "text-inverso-60" : "text-ink-60"
       }`}
     >
@@ -44,6 +47,7 @@ function Renglon({ texto, oscuro }: { texto: string; oscuro: boolean }) {
         }`}
       />
       {texto}
+      <BotonVideoFuncion funcion={texto} oscuro={oscuro} />
     </li>
   );
 }

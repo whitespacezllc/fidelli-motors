@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { IconoWhatsapp } from "@/components/iconos";
-import { registrarContacto } from "@/app/panel/proximos/actions";
+import { registrarContacto } from "@/app/panel/(tras-onboarding)/proximos/actions";
 import type { MotivoContacto } from "@/lib/contacto";
 import { MOTIVO_SUSPENSION } from "@/components/panel/aviso-suspension";
 

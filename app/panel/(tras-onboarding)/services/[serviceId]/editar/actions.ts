@@ -6,7 +6,7 @@ import { sesionParaEscribir } from "@/lib/auth/session";
 import type {
   PayloadService,
   ResultadoGuardado,
-} from "@/app/panel/services/nuevo/[vehiculoId]/actions";
+} from "@/app/panel/(tras-onboarding)/services/nuevo/[vehiculoId]/actions";
 
 const SIN_CONEXION =
   "Se cortó la conexión a internet. No cierres ni recargues esta pantalla: los cambios que hiciste siguen acá. Cuando vuelva la señal, tocá Guardar de nuevo.";

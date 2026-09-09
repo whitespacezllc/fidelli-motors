@@ -1,11 +1,11 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import {
   subirLogo,
   quitarLogo,
   type EstadoLogo,
-} from "@/app/panel/experiencia/actions";
+} from "@/app/panel/(tras-onboarding)/experiencia/actions";
 
 const ESTADO_INICIAL: EstadoLogo = {};
 
@@ -16,15 +16,22 @@ const DOS_MB = 2 * 1024 * 1024;
 export function SubirLogo({
   logoUrl,
   nombre,
+  alCambiar,
 }: {
   logoUrl: string | null;
   nombre: string;
+  /** Subió o quitó el logo: la pantalla que lo muestra se vuelve a pedir. */
+  alCambiar?: () => void;
 }) {
   const [estado, accion, subiendo] = useActionState(subirLogo, ESTADO_INICIAL);
   const [estadoQuitar, accionQuitar, quitando] = useActionState(
     quitarLogo,
     ESTADO_INICIAL,
   );
+
+  useEffect(() => {
+    if (estado.ok || estadoQuitar.ok) alCambiar?.();
+  }, [estado.ok, estadoQuitar.ok, alCambiar]);
   const formRef = useRef<HTMLFormElement>(null);
   const [errorLocal, setErrorLocal] = useState<string | null>(null);
 

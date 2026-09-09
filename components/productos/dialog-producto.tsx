@@ -8,7 +8,7 @@ import {
   crearProducto,
   editarProducto,
   type EstadoProducto,
-} from "@/app/panel/productos/actions";
+} from "@/app/panel/(tras-onboarding)/productos/actions";
 
 type Producto = {
   id: string;
@@ -29,14 +29,18 @@ const CLASE_CAMPO =
 const CLASE_LABEL =
   "mb-1.5 block text-label font-semibold tracking-[0.06em] text-ink-60 uppercase";
 
-function FormularioProducto({
+// Exportado porque el paso 1 del onboarding lo usa tal cual, fuera del
+// dialog: el mismo formulario, con los mismos campos.
+export function FormularioProducto({
   producto,
   categorias,
   alGuardar,
+  etiquetaGuardar = "Guardar",
 }: {
   producto?: Producto;
   categorias: Categoria[];
   alGuardar: () => void;
+  etiquetaGuardar?: string;
 }) {
   const [estado, accion, pendiente] = useActionState(
     producto ? editarProducto : crearProducto,
@@ -239,7 +243,7 @@ function FormularioProducto({
       )}
 
       <Boton type="submit" tam="lg" disabled={pendiente} className="mt-1 w-full">
-        {pendiente ? "Guardando…" : "Guardar"}
+        {pendiente ? "Guardando…" : etiquetaGuardar}
       </Boton>
     </form>
   );

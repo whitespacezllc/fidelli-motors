@@ -2,7 +2,7 @@
 
 import { useOptimistic, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { alternarContacto } from "@/app/panel/proximos/actions";
+import { alternarContacto } from "@/app/panel/(tras-onboarding)/proximos/actions";
 import type { MotivoContacto } from "@/lib/contacto";
 
 // El check es toggleable a mano y cubre dos casos reales: el llamado

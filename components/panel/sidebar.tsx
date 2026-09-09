@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Logo } from "@/components/marca/logo";
 import { NavLink } from "@/components/panel/nav-link";
+import { ItemBloqueado } from "@/components/panel/item-bloqueado";
 import {
   IconoPlus,
   IconoCandado,
@@ -15,20 +16,25 @@ import {
   IconoMensajes,
   IconoLubricentro,
   IconoCuenta,
+  IconoAyuda,
 } from "@/components/iconos";
 import { BadgePorLlamar } from "@/components/panel/badge-por-llamar";
 import { cerrarSesion } from "@/lib/auth/actions";
 import { urlWhatsappSoporte } from "@/lib/config";
 import { MOTIVO_SUSPENSION } from "@/components/panel/aviso-suspension";
+import { motivoBloqueo } from "@/components/panel/bloqueo-onboarding";
 import type { FeaturePlan } from "@/lib/planes";
 
 // Los grupos y el orden vienen del hi-fi (pantalla 2 · Inicio — panel del lubri).
 // `feature` = qué tiene que habilitar el plan para que el item exista. La
 // resolución viene con la sesión (plan_capacidades); acá solo se filtra.
-// LOS ONCE LLEVAN ÍCONO. Antes lo tenían cuatro y la lista quedaba a
+// LOS DOCE LLEVAN ÍCONO. Antes lo tenían cuatro y la lista quedaba a
 // mitad de camino entre una barra con íconos y una de solo texto — que es
 // peor que cualquiera de las dos, porque el ojo busca la marca visual
 // donde no está y la fila salta de sangría.
+//
+// "Ayuda" va al final: es la única solapa que sigue abierta mientras el
+// onboarding no terminó, y por eso nunca lleva candado.
 const GRUPOS: {
   titulo: string;
   items: {
@@ -71,9 +77,13 @@ const GRUPOS: {
       { href: "/panel/mensajes", nombre: "Mensajes", Icono: IconoMensajes },
       { href: "/panel/sucursales", nombre: "Sucursales", Icono: IconoLubricentro },
       { href: "/panel/cuenta", nombre: "Mi cuenta", Icono: IconoCuenta },
+      { href: "/panel/ayuda", nombre: "Ayuda", Icono: IconoAyuda },
     ],
   },
 ];
+
+/** Las solapas que siguen abiertas con el onboarding a medias. */
+const SIEMPRE_ABIERTAS = new Set(["/panel/ayuda"]);
 
 const CLASE_ITEM =
   "flex h-11 items-center gap-2.5 rounded-md px-3 text-ui transition-colors";
@@ -83,12 +93,25 @@ export function Sidebar({
   suspendido = false,
   features = {},
   porLlamar = 0,
+  bloqueado = false,
+  pasosOnboarding = 3,
+  desbloqueando = false,
 }: {
   lubricentroNombre: string;
   suspendido?: boolean;
   features?: Partial<Record<FeaturePlan, boolean>>;
   /** Contactos sin hacer en "A quién llamar" — pinta el círculo. */
   porLlamar?: number;
+  /** El onboarding no terminó: todo con candado salvo Ayuda. */
+  bloqueado?: boolean;
+  /** Cuántos pasos tiene el onboarding de esta cuenta (2 en Basic). */
+  pasosOnboarding?: number;
+  /**
+   * La bienvenida está en pantalla: los ítems nacen con candado y se
+   * desbloquean de arriba hacia abajo cuando el telón se levanta. Es puro
+   * CSS (globals.css · nav-desbloqueo) con el índice de cada ítem.
+   */
+  desbloqueando?: boolean;
 }) {
   // Lo que el plan no incluye no aparece — la sección de URL directa la
   // atiende BloqueoPlan, pero el menú no ofrece lo que no se puede usar.
@@ -96,6 +119,11 @@ export function Sidebar({
     ...g,
     items: g.items.filter((i) => !i.feature || features[i.feature]),
   })).filter((g) => g.items.length > 0);
+
+  const motivo = motivoBloqueo(pasosOnboarding);
+  // El índice corrido de cada ítem, de arriba hacia abajo: es el orden
+  // en que se desbloquean en la bienvenida.
+  let indice = 0;
 
   return (
     // print:hidden explícito: en papel apaisado (≥1024px) lg:flex lo haría
@@ -108,17 +136,15 @@ export function Sidebar({
       </div>
 
       <div className="px-4">
-        {suspendido ? (
+        {suspendido || bloqueado ? (
           // Apagado, en su lugar y con el motivo: el botón no desaparece
           // —eso haría pensar que se rompió algo— pero tampoco engaña.
-          <span
-            aria-disabled="true"
-            title={MOTIVO_SUSPENSION}
-            className="flex h-11 w-full cursor-not-allowed items-center justify-center gap-1.5 rounded-md bg-surface font-brand text-ui font-bold text-ink-40"
-          >
-            <IconoCandado className="size-4" />
-            Nuevo trabajo
-          </span>
+          <ItemBloqueado motivo={suspendido ? MOTIVO_SUSPENSION : motivo}>
+            <span className="flex h-11 w-full items-center justify-center gap-1.5 rounded-md bg-surface font-brand text-ui font-bold text-ink-40">
+              <IconoCandado className="size-4" />
+              Nuevo trabajo
+            </span>
+          </ItemBloqueado>
         ) : (
           <Link
             href="/panel/services/nuevo"
@@ -136,24 +162,51 @@ export function Sidebar({
             <p className="px-3 pt-4 pb-1 text-label font-semibold tracking-[0.06em] text-ink-40 uppercase">
               {grupo.titulo}
             </p>
-            {grupo.items.map((item) => (
-              <NavLink
-                key={item.href}
-                href={item.href}
-                exacto={item.exacto}
-                className={CLASE_ITEM}
-              >
-                <item.Icono aria-hidden className="size-5 shrink-0" />
-                {item.nombre}
-                {/* El círculo va SOLO en "A quién llamar": es la única
-                    sección con una cola de tareas que se vacía. */}
-                {item.href === "/panel/proximos" && (
-                  <span className="ml-auto flex">
-                    <BadgePorLlamar cantidad={porLlamar} />
-                  </span>
-                )}
-              </NavLink>
-            ))}
+            {grupo.items.map((item) => {
+              const abierta = SIEMPRE_ABIERTAS.has(item.href);
+              const i = indice++;
+
+              if (bloqueado && !abierta) {
+                return (
+                  <ItemBloqueado
+                    key={item.href}
+                    motivo={motivo}
+                    className={`${CLASE_ITEM} text-ink-40`}
+                  >
+                    <item.Icono aria-hidden className="size-5 shrink-0" />
+                    {item.nombre}
+                    <IconoCandado aria-hidden className="ml-auto size-4 shrink-0" />
+                  </ItemBloqueado>
+                );
+              }
+
+              return (
+                <NavLink
+                  key={item.href}
+                  href={item.href}
+                  exacto={item.exacto}
+                  className={`${CLASE_ITEM} ${desbloqueando && !abierta ? "nav-desbloqueo" : ""}`}
+                  style={desbloqueando ? ({ "--i": i } as React.CSSProperties) : undefined}
+                >
+                  <item.Icono aria-hidden className="size-5 shrink-0" />
+                  {item.nombre}
+                  {/* El círculo va SOLO en "A quién llamar": es la única
+                      sección con una cola de tareas que se vacía. */}
+                  {item.href === "/panel/proximos" && (
+                    <span className="ml-auto flex">
+                      <BadgePorLlamar cantidad={porLlamar} />
+                    </span>
+                  )}
+                  {/* El candado de la bienvenida: nace visible y se va
+                      cuando le toca el turno a este ítem. */}
+                  {desbloqueando && !abierta && (
+                    <span aria-hidden className="candado-nav ml-auto flex overflow-hidden">
+                      <IconoCandado className="size-4 shrink-0" />
+                    </span>
+                  )}
+                </NavLink>
+              );
+            })}
           </div>
         ))}
       </nav>

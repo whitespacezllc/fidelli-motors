@@ -11,6 +11,7 @@ export function NavLink({
   className = "",
   claseActiva = "bg-surface font-semibold text-ink",
   claseInactiva = "text-ink-60 hover:bg-surface/60",
+  style,
   children,
 }: {
   href: string;
@@ -18,6 +19,8 @@ export function NavLink({
   className?: string;
   claseActiva?: string;
   claseInactiva?: string;
+  /** Variables CSS del item, como el retraso del desbloqueo de la bienvenida. */
+  style?: React.CSSProperties;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -28,6 +31,7 @@ export function NavLink({
       href={href}
       aria-current={activo ? "page" : undefined}
       className={`${className} ${activo ? claseActiva : claseInactiva}`}
+      style={style}
     >
       {children}
     </Link>
