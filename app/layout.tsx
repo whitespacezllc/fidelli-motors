@@ -1,13 +1,18 @@
 import type { Metadata } from "next";
 import { Nunito, Public_Sans } from "next/font/google";
-import { GoogleTagManager } from "@next/third-parties/google";
 import {
   DESCRIPCION_PORTADA,
   NOMBRE_SITIO,
   SITIO_URL,
   TITULO_PORTADA,
 } from "@/lib/seo";
-import { GTM_ID, analiticaActiva } from "@/lib/analitica";
+import { analiticaActiva } from "@/lib/analitica";
+import {
+  EtiquetaGoogle,
+  PixelMeta,
+  PixelMetaSinJs,
+} from "@/components/tracking/etiquetas";
+import { Tracking } from "@/components/tracking/tracking";
 import "./globals.css";
 
 // Nunito: la voz de la marca y de todo lo que lee el cliente final.
@@ -67,38 +72,33 @@ export default function RootLayout({
       lang="es-AR"
       className={`${nunito.variable} ${publicSans.variable} h-full antialiased`}
     >
-      {/* Google Tag Manager, por el componente oficial de Next y no por el
-          <script> del asistente de instalación: ese es síncrono y bloquea
-          el parseo del head, que es exactamente lo que CLAUDE.md prohíbe
-          ("sin JS de terceros bloqueante; si hay analytics, que cargue con
-          la estrategia diferida de Next"). El componente lo carga después
-          de la hidratación, así que no toca el LCP.
-
-          Va en el layout raíz, así que mide TODAS las superficies: la
-          landing, la vidriera del lubricentro, el cartón del cliente y el
-          panel. Para dejar alguna afuera, este bloque baja al layout de
-          las que sí se miden. */}
-      {analiticaActiva && <GoogleTagManager gtmId={GTM_ID} />}
-
       <body className="min-h-full flex flex-col">
-        {/* El iframe del paso 2 del instalador: es lo único que registra
-            una visita cuando el visitante tiene JavaScript apagado. El
-            componente de Next no lo incluye, así que va a mano. Con JS
-            activo el navegador ni lo pide — el contenido de un <noscript>
-            no se descarga. */}
-        {analiticaActiva && (
-          <noscript>
-            <iframe
-              src={`https://www.googletagmanager.com/ns.html?id=${GTM_ID}`}
-              height="0"
-              width="0"
-              style={{ display: "none", visibility: "hidden" }}
-              title="Google Tag Manager"
-            />
-          </noscript>
-        )}
-
         {children}
+
+        {/* El origen del visitante (UTM, gclid, fbclid, artículo del blog)
+            se resuelve en cada carga y en cada navegación, en todos los
+            entornos: de eso sale el mensaje de WhatsApp. */}
+        <Tracking />
+
+        {/* Las etiquetas de Google (GA4 + Google Ads) y el Píxel de Meta,
+            con la estrategia diferida de next/script y no con los <script>
+            síncronos de los asistentes de instalación: esos bloquean el
+            parseo del head, que es exactamente lo que CLAUDE.md prohíbe
+            ("sin JS de terceros bloqueante; si hay analytics, que cargue
+            con la estrategia diferida de Next"). Cargan después de la
+            hidratación, así que no tocan el LCP.
+
+            Van en el layout raíz, así que miden TODAS las superficies: la
+            landing, el blog, la vidriera del lubricentro, el cartón del
+            cliente y el panel. Para dejar alguna afuera, este bloque baja
+            al layout de las que sí se miden. */}
+        {analiticaActiva && (
+          <>
+            <EtiquetaGoogle />
+            <PixelMeta />
+            <PixelMetaSinJs />
+          </>
+        )}
       </body>
     </html>
   );

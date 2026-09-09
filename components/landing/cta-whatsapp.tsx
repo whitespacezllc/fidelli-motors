@@ -1,5 +1,6 @@
 import { IconoWhatsapp } from "@/components/iconos";
-import { CTA_WHATSAPP, TEXTO_CTA } from "@/lib/landing";
+import { EnlaceWhatsapp } from "@/components/tracking/enlace-whatsapp";
+import { TEXTO_CTA } from "@/lib/landing";
 
 // El CTA de la landing. UNO SOLO, y de acá salen los cinco lugares donde
 // aparece: navbar, hero, precio, cierre y la barra fija de mobile.
@@ -8,6 +9,11 @@ import { CTA_WHATSAPP, TEXTO_CTA } from "@/lib/landing";
 // una convención que se respeta hasta que alguien tenga apuro. Antes el
 // mismo botón estaba escrito a mano cinco veces y el del cierre ya decía
 // otra cosa.
+//
+// El enlace en sí es EnlaceWhatsapp (components/tracking): el href de
+// respaldo, el mensaje según el origen al hacer clic y los eventos de GA4,
+// Google Ads y Meta. Acá solo va el aspecto del botón y el texto. `cta`
+// identifica cada botón en las plataformas (`hero`, `navbar`, `cierre`…).
 //
 // EL ÍCONO ES PHOSPHOR Y NO LUCIDE, y no es un olvido: Lucide no trae
 // logos de marca —ni uno entre sus 6068 íconos, es política del proyecto—
@@ -41,25 +47,26 @@ const VARIANTES: Record<Variante, string> = {
 };
 
 export function CtaWhatsapp({
+  cta,
   variante = "solido",
   className = "",
   id,
 }: {
+  /** Qué botón es, para el tracking: `hero`, `navbar`, `cierre`, `barra-movil`, `blog`. */
+  cta: string;
   variante?: Variante;
   /** Alto, padding y tipografía los pone cada lugar donde se usa. */
   className?: string;
   id?: string;
 }) {
   return (
-    <a
+    <EnlaceWhatsapp
+      cta={cta}
       id={id}
-      href={CTA_WHATSAPP}
-      target="_blank"
-      rel="noopener noreferrer"
       className={`${BASE} ${VARIANTES[variante]} ${className}`}
     >
       <IconoWhatsapp aria-hidden className="size-[1.1em] shrink-0" />
       {TEXTO_CTA}
-    </a>
+    </EnlaceWhatsapp>
   );
 }

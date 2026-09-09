@@ -22,6 +22,7 @@ import { ImagenDestacada } from "@/components/blog/imagen-articulo";
 import { TarjetaAutor } from "@/components/blog/tarjeta-autor";
 import { CierreBlog } from "@/components/blog/cierre-blog";
 import { Relacionados } from "@/components/blog/relacionados";
+import { ArticuloLeido } from "@/components/tracking/articulo-leido";
 
 // Un artículo del blog. Estático en build: los slugs salen de content/blog
 // y cualquier otro es 404, no una página generada al vuelo.
@@ -93,6 +94,10 @@ export default async function PaginaArticulo({ params }: Props) {
         <JsonLd datos={schemaPreguntas(articulo)} />
       )}
       <JsonLd datos={schemaMigas(articulo)} />
+
+      {/* Anota que se leyó este artículo: de acá sale el "leí el artículo
+          sobre…" del WhatsApp. No pinta nada. */}
+      <ArticuloLeido slug={articulo.slug} tema={articulo.whatsappTema} />
 
       <div className="contenedor aire-seccion">
         <div className="mx-auto max-w-2xl">

@@ -151,6 +151,7 @@ export function Navbar() {
               clase dependen del orden en que Tailwind los emita. */}
           <div className="ml-6 hidden md:block lg:ml-7">
             <CtaWhatsapp
+              cta="navbar"
               variante={ctaHeroVisible ? "outline" : "solido"}
               className="h-11 whitespace-nowrap px-4 text-ui"
             />

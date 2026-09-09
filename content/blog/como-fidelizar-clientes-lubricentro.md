@@ -2,6 +2,7 @@
 title: "Cómo hacer que tus clientes vuelvan al lubricentro"
 description: "Fidelización para lubricentros y talleres en Argentina: cuándo avisarle a cada cliente, qué mandarle por WhatsApp, cómo armar un premio que funcione y por qué el historial tiene que vivir en el auto."
 slug: como-fidelizar-clientes-lubricentro
+whatsappTema: "cómo hacer que los clientes vuelvan al lubricentro"
 date: 2026-09-08
 updated: 2026-09-08
 author: Santiago Afur

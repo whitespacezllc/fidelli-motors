@@ -43,8 +43,11 @@ export const OG_IMAGEN = {
   alt: "Un mecánico sirviendo aceite en un taller y la marca Fidelli Motors: tus clientes vuelven.",
 } as const;
 
-/** El WhatsApp de ventas en formato E.164, para el JSON-LD. */
-export const TELEFONO_VENTAS = "+5493513736028";
+/**
+ * El WhatsApp de ventas en formato E.164, para el JSON-LD. Es el mismo
+ * número que WHATSAPP_VENTAS en lib/landing.ts: si cambia uno, cambia el otro.
+ */
+export const TELEFONO_VENTAS = "+5493516136192";
 
 /** Las redes de la marca, para el `sameAs` del Organization. */
 export const REDES = ["https://instagram.com/fidelli.motors"] as const;

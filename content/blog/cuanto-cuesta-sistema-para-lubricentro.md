@@ -2,6 +2,7 @@
 title: "Cuánto cuesta un sistema para lubricentro en Argentina (2026)"
 description: "Precios reales de un sistema de gestión para lubricentro o taller mecánico en Argentina en 2026: pago único, suscripción, costos que no se ven, y cuánto cobra Fidelli Motors."
 slug: cuanto-cuesta-sistema-para-lubricentro
+whatsappTema: "cuánto cuesta un sistema para lubricentro"
 date: 2026-09-08
 updated: 2026-09-08
 author: Santiago Afur
