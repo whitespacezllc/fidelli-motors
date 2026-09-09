@@ -1,7 +1,7 @@
 import { AcordeonPreguntas } from "@/components/landing/acordeon-preguntas";
 import { RespuestaFaq } from "@/components/landing/respuesta-faq";
 import { Revelar } from "@/components/landing/revelar";
-import { CTA_WHATSAPP } from "@/lib/landing";
+import { EnlaceWhatsapp } from "@/components/tracking/enlace-whatsapp";
 
 // 10 · Preguntas frecuentes — desarmar las dudas.
 //
@@ -189,14 +189,12 @@ export function Preguntas() {
         <Revelar>
         <p className="mt-(--espacio-bloque) text-center text-pretty text-body text-ink sm:text-lead">
           ¿Tenés otra pregunta?{" "}
-          <a
-            href={CTA_WHATSAPP}
-            target="_blank"
-            rel="noopener noreferrer"
+          <EnlaceWhatsapp
+            cta="preguntas"
             className="font-semibold text-brand underline decoration-brand/40 underline-offset-2 transition-colors hover:decoration-brand"
           >
             Escribinos por WhatsApp
-          </a>
+          </EnlaceWhatsapp>
           .
         </p>
         </Revelar>

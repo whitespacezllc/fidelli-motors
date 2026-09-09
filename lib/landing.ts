@@ -2,18 +2,39 @@
 //
 // El número NO es el mismo que WHATSAPP_SOPORTE de lib/config.ts, y es a
 // propósito: aquel es soporte de clientes que ya compraron, este es ventas.
-// Si algún día se unifican, se unifican los dos lugares a la vez.
-const WHATSAPP_VENTAS = "5493513736028";
-
-const MENSAJE =
-  "Hola Santiago, tengo un lubricentro y quiero saber más de Fidelli Motors";
+// Si algún día se unifican, se unifican los dos lugares a la vez. También
+// está, en formato E.164, en TELEFONO_VENTAS de lib/seo.ts (el JSON-LD) y
+// en public/llms.txt: cambia en los tres lugares a la vez.
+//
+// Cambiado el 09/09/2026 (bloque de tracking): antes era 5493513736028.
+export const WHATSAPP_VENTAS = "5493516136192";
 
 /**
- * El href de TODOS los CTA de la landing: navbar, hero, precio, cierre y la
- * barra fija de mobile. Que se repita está bien; lo prohibido es que haya
- * dos acciones primarias distintas compitiendo.
+ * El mensaje prellenado cuando no se sabe de dónde vino el visitante. Es el
+ * que va en el HTML: sin JavaScript, y antes de que el tracking resuelva el
+ * origen, el botón abre WhatsApp con esto. Los otros mensajes —"vi Fidelli
+ * Motors en Google", "leí el artículo sobre…"— viven en lib/tracking/mensaje.ts
+ * y se eligen en el momento del clic.
  */
-export const CTA_WHATSAPP = `https://wa.me/${WHATSAPP_VENTAS}?text=${encodeURIComponent(MENSAJE)}`;
+export const MENSAJE_SIN_ORIGEN = "Hola, quiero saber más de Fidelli Motors.";
+
+/** La URL de wa.me del WhatsApp de ventas con un mensaje prellenado. */
+export function urlWhatsapp(mensaje: string): string {
+  return `https://wa.me/${WHATSAPP_VENTAS}?text=${encodeURIComponent(mensaje)}`;
+}
+
+/**
+ * El href que llevan en el HTML TODOS los CTA de la landing: navbar, hero,
+ * precio, cierre, la barra fija de mobile, el pie, las preguntas y el cierre
+ * del blog. Que se repita está bien; lo prohibido es que haya dos acciones
+ * primarias distintas compitiendo.
+ *
+ * Es el href de RESPALDO, con el mensaje sin origen. Al hacer clic,
+ * components/tracking/enlace-whatsapp.tsx lo reemplaza por el mensaje que
+ * corresponde al origen del visitante (lib/tracking). El JSON-LD de la
+ * landing también apunta acá.
+ */
+export const CTA_WHATSAPP = urlWhatsapp(MENSAJE_SIN_ORIGEN);
 
 /**
  * El texto del CTA, uno solo para toda la página: navbar, hero, precio,

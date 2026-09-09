@@ -55,6 +55,12 @@ export type Articulo = {
   readonly categoria: string;
   /** Ruta pública de un archivo para descargar, si el artículo trae uno. */
   readonly descarga: string | null;
+  /**
+   * Completa "Hola, leí el artículo sobre ___ y quiero saber más.", el
+   * mensaje de WhatsApp de quien llega por el blog (frontmatter
+   * `whatsappTema`, en minúscula y corto). Si falta, va el título tal cual.
+   */
+  readonly whatsappTema: string;
   /** La foto destacada (frontmatter `imagen`, `imagenAlt`, `imagenCredito`). */
   readonly imagen: ImagenBlog | null;
   readonly minutosLectura: number;
@@ -227,6 +233,10 @@ async function leerArticulo(archivo: string): Promise<Articulo> {
     etiquetas,
     categoria: capitalizar(etiquetas[0]),
     descarga: typeof data.descarga === "string" && data.descarga ? data.descarga : null,
+    whatsappTema:
+      typeof data.whatsappTema === "string" && data.whatsappTema.trim()
+        ? data.whatsappTema.trim()
+        : titulo,
     imagen: leerImagen(data, archivo),
     minutosLectura: Math.max(1, Math.round(palabras / PALABRAS_POR_MINUTO)),
     html: await aHtml(raizCuerpo),

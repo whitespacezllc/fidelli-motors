@@ -2,6 +2,7 @@
 title: "Sistema de gestión para lubricentro: qué tiene que tener, y qué no necesitás"
 description: "Qué tiene que tener un sistema de gestión para lubricentro o taller mecánico en Argentina, qué podés ignorar al principio, y cómo probarlo antes de pagar."
 slug: sistema-de-gestion-para-lubricentro
+whatsappTema: "qué tiene que tener un sistema de gestión para lubricentro"
 date: 2026-09-08
 updated: 2026-09-08
 author: Santiago Afur
