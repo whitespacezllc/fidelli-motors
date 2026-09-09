@@ -1,5 +1,10 @@
-// Número de soporte de Fidelli por WhatsApp, en formato internacional sin "+".
-export const WHATSAPP_SOPORTE = "5493515324087";
+// Número de soporte de Fidelli Motors por WhatsApp, en formato internacional
+// sin "+". Lo usan el centro de ayuda, el sidebar, el aviso de suspensión y
+// las pantallas de bloqueo por plan.
+//
+// Corregido el 09/09/2026: el anterior (5493515324087) era el de Fidelli app,
+// otro producto, y los mensajes de soporte de Motors caían ahí.
+export const WHATSAPP_SOPORTE = "5493513736028";
 
 export function urlWhatsappSoporte(): string {
   return `https://wa.me/${WHATSAPP_SOPORTE}`;
