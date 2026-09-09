@@ -97,7 +97,7 @@ export function Hero() {
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
           {/* Lleva el id que miran el navbar y la barra fija de mobile: los
               dos cambian de estado cuando este botón sale de pantalla. */}
-          <CtaWhatsapp id={ID_CTA_HERO} className="h-13 px-7 text-body" />
+          <CtaWhatsapp cta="hero" id={ID_CTA_HERO} className="h-13 px-7 text-body" />
           <Link
             href="#como-funciona"
             className="inline-flex h-13 items-center justify-center gap-2 rounded-md border border-ink px-7 text-body font-bold text-ink transition-colors hover:bg-surface"

@@ -195,6 +195,23 @@ para botones, roles de botón, tabs y triggers de Radix — no pantalla por pant
 **Tipos generados desde el schema**, no escritos a mano:
 `supabase gen types typescript --local > lib/database.types.ts`
 
+**Analítica y atribución de WhatsApp (09/09/2026).** Los IDs de GA4, Google
+Ads y el Píxel de Meta viven en `lib/analitica.ts`; los scripts, en
+`components/tracking/etiquetas.tsx`, cargados con `next/script`
+(`afterInteractive`) desde el layout raíz y solo con `analiticaActiva`.
+**Google Tag Manager ya no se carga:** GA4 va por gtag.js directo, y pegar el
+contenedor o el snippet del asistente de GA4 duplica cada visita. El origen
+del visitante (UTM, `gclid`, `fbclid`, artículo del blog) lo resuelve
+`lib/tracking/origen.ts` en cada carga y queda en `localStorage`
+(`fm_origin`, 30 días); el mensaje de WhatsApp se elige en el clic
+(`lib/tracking/mensaje.ts`) y todo enlace a WhatsApp de ventas pasa por
+`components/tracking/enlace-whatsapp.tsx`, que además manda `whatsapp_click`
+(GA4), la conversión de Ads y `Contact` (Meta) sin bloquear la navegación.
+`?fm_debug=1` cuenta todo en la consola. La verificación local es
+`scripts/verificar-tracking.mjs` contra `next start`. El número de ventas está en
+`WHATSAPP_VENTAS` (`lib/landing.ts`) y repetido en `TELEFONO_VENTAS`
+(`lib/seo.ts`) y en `public/llms.txt`: cambia en los tres a la vez.
+
 ---
 
 ## Entorno

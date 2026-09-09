@@ -22,6 +22,7 @@ export function CierreBlog({ className = "" }: { className?: string }) {
         Escribinos por WhatsApp y agendamos una demo.
       </p>
       <CtaWhatsapp
+        cta="blog"
         variante="solido-grafito"
         className="mt-6 h-12 px-6 text-body"
       />

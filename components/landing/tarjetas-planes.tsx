@@ -2,7 +2,7 @@
 
 import { useId, useState } from "react";
 import { IconoIncluido } from "@/components/iconos";
-import { CTA_WHATSAPP } from "@/lib/landing";
+import { EnlaceWhatsapp } from "@/components/tracking/enlace-whatsapp";
 import { PLANES, pesos, type PlanLanding } from "@/lib/planes-landing";
 
 // 09 · Las tres tarjetas y el control mensual/anual.
@@ -150,10 +150,11 @@ function Tarjeta({ plan, modo }: { plan: PlanLanding; modo: Modo }) {
         </p>
       )}
 
-      <a
-        href={CTA_WHATSAPP}
-        target="_blank"
-        rel="noopener noreferrer"
+      {/* Cada plan lleva su propio id de botón (`precio-basic`, `precio-pro`,
+          `precio-ultra`): es el mismo WhatsApp, pero en GA4 y en Meta se ve
+          desde qué tarjeta se escribió. */}
+      <EnlaceWhatsapp
+        cta={`precio-${plan.clave}`}
         className={`block min-h-13 content-center rounded-md px-4 text-center font-ui text-ui font-semibold transition-colors ${
           plan.destacado
             ? "bg-brand text-white hover:bg-brand-deep"
@@ -161,7 +162,7 @@ function Tarjeta({ plan, modo }: { plan: PlanLanding; modo: Modo }) {
         }`}
       >
         {plan.cta}
-      </a>
+      </EnlaceWhatsapp>
     </div>
   );
 }

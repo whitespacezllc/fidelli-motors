@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Logo } from "@/components/marca/logo";
-import { CTA_WHATSAPP, LINKS_NAVBAR } from "@/lib/landing";
+import { EnlaceWhatsapp } from "@/components/tracking/enlace-whatsapp";
+import { LINKS_NAVBAR } from "@/lib/landing";
 
 // El pie, sobre blanco — el cierre queda arriba, sobre grafito.
 //
@@ -36,14 +37,9 @@ export function Pie() {
           <p className={CLASE_TITULO}>Contacto</p>
           <ul className="mt-3 flex flex-col gap-2">
             <li>
-              <a
-                href={CTA_WHATSAPP}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={CLASE_LINK}
-              >
+              <EnlaceWhatsapp cta="footer" className={CLASE_LINK}>
                 WhatsApp
-              </a>
+              </EnlaceWhatsapp>
             </li>
             <li>
               <a

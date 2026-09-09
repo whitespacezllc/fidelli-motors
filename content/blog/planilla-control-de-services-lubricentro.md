@@ -2,6 +2,7 @@
 title: "Planilla de control de services para lubricentro: qué anotar, y dónde se te queda corta"
 description: "Qué columnas tiene que tener una planilla de control de services para lubricentro o taller, una plantilla gratis para descargar, y las cuatro cosas que una planilla nunca va a hacer por vos."
 slug: planilla-control-de-services-lubricentro
+whatsappTema: "la planilla de control de services"
 date: 2026-09-08
 updated: 2026-09-08
 author: Santiago Afur

@@ -31,7 +31,7 @@ export function BarraCtaMovil() {
         mostrar ? "translate-y-0" : "translate-y-full"
       }`}
     >
-      <CtaWhatsapp className="h-12 w-full text-body" />
+      <CtaWhatsapp cta="barra-movil" className="h-12 w-full text-body" />
     </div>
   );
 }

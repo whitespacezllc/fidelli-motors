@@ -32,7 +32,7 @@ export function Cierre() {
           Escribinos por WhatsApp y agendamos una demo.
         </p>
 
-        <CtaWhatsapp className="mt-8 h-13 px-7 text-body" />
+        <CtaWhatsapp cta="cierre" className="mt-8 h-13 px-7 text-body" />
 
         {/* La escasez NO va en rojo: el rojo es acción, nunca estado. Va en
             la tinta terciaria, que es lo que corresponde a una bajada.
