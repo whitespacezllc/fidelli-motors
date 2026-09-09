@@ -9,12 +9,15 @@ export function MarcoPaso({
   titulo,
   bajada,
   video,
+  etiquetaPlanVideo = null,
   lateral,
   children,
 }: {
   titulo: string;
   bajada: React.ReactNode;
   video: VideoAyuda | null;
+  /** "Plan Pro" sobre el video cuando la cuenta no tiene esa función. */
+  etiquetaPlanVideo?: string | null;
   lateral?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -32,7 +35,7 @@ export function MarcoPaso({
       </div>
 
       <aside className="order-1 flex flex-col gap-6 lg:order-2 lg:sticky lg:top-6">
-        <ColumnaVideo video={video} />
+        <ColumnaVideo video={video} etiquetaPlan={etiquetaPlanVideo} />
         {lateral}
       </aside>
     </section>

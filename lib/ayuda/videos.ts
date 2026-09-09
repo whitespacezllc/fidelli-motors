@@ -8,10 +8,11 @@ import type { ClavePlan } from "@/lib/planes-landing";
 // de la sección de precios de la landing.
 //
 // ⚠ SANTIAGO: LOS IDS DE YOUTUBE SE PEGAN ACÁ, en `youtubeId`, y en ningún
-// otro lado. Con `null` el video figura como "en preparación": la tarjeta
-// existe, sin miniatura ni botón, y en la landing no se muestra nada (una
-// landing no puede tener botones muertos). Al pegar el ID, corregí también
-// `duracion` con los segundos reales del video: hoy son estimaciones.
+// otro lado. El `id` de cada entrada es el nombre del archivo del video,
+// para que pegar el ID sea trivial. Con `null` el video figura como "en
+// preparación": la tarjeta existe, sin miniatura ni botón, y en la landing
+// no se muestra nada (una landing no puede tener botones muertos). Al
+// sumar un video, `duracion` son los segundos reales del video.
 //
 // Los videos se alojan en YouTube como NO LISTADOS. El reproductor no carga
 // nada de YouTube hasta que alguien toca reproducir.
@@ -46,14 +47,14 @@ export const SECCIONES_AYUDA: readonly SeccionAyuda[] = [
 export type PasoOnboarding = 1 | 2 | 3;
 
 export type VideoAyuda = {
-  /** El slug: identifica al video en los eventos y en las URLs. */
+  /** El nombre del archivo del video: identifica al video en los eventos. */
   id: string;
   titulo: string;
   /** Una línea, en el idioma del taller. */
   descripcion: string;
   /** El ID de YouTube. `null` = video en preparación. */
   youtubeId: string | null;
-  /** Segundos. Se muestra como m:ss. */
+  /** Segundos reales del video. Se muestra como m:ss. */
   duracion: number;
   seccion: SeccionAyuda;
   /** La ruta del panel a la que pertenece: ahí aparece "¿Cómo se usa?". */
@@ -63,21 +64,22 @@ export type VideoAyuda = {
   /** Si es el video de un paso del onboarding, cuál. */
   pasoOnboarding: PasoOnboarding | null;
   /**
-   * El texto EXACTO de la función tal como aparece en la sección de precios
-   * de la landing (lib/planes-landing.ts: las listas `incluye` de las
-   * tarjetas y los `concepto` de la comparación). Si acá no coincide letra
-   * por letra, el ícono no aparece: se ajusta acá, nunca en la landing.
+   * Los textos EXACTOS de las funciones que este video explica, tal como
+   * aparecen en la sección de precios de la landing (lib/planes-landing.ts:
+   * las listas `incluye` de las tarjetas y los `concepto` de la comparación).
+   * Un video puede cubrir más de una fila. Si acá no coincide letra por
+   * letra, el ícono no aparece: se ajusta acá, nunca en la landing.
    */
-  featureLanding: string | null;
+  featureLanding: readonly string[] | null;
 };
 
 export const VIDEOS: readonly VideoAyuda[] = [
   {
-    id: "bienvenida",
+    id: "recorrido-fidelli-motors",
     titulo: "Recorrido del panel en 90 segundos",
     descripcion: "Qué hay en cada solapa y por dónde empezar.",
-    youtubeId: null,
-    duracion: 90,
+    youtubeId: "ZbpK1etD71A",
+    duracion: 127,
     seccion: "Inicio",
     solapa: "/panel",
     plan: "basic",
@@ -85,23 +87,23 @@ export const VIDEOS: readonly VideoAyuda[] = [
     featureLanding: null,
   },
   {
-    id: "producto",
+    id: "carga-productos",
     titulo: "Cargar un producto con precio y stock",
     descripcion: "Categoría, nombre, marca y precio. El stock, solo si lo llevás.",
-    youtubeId: null,
-    duracion: 60,
+    youtubeId: "CByhgL56lgg",
+    duracion: 111,
     seccion: "Productos",
     solapa: "/panel/productos",
     plan: "basic",
     pasoOnboarding: 1,
-    featureLanding: "Catálogo de tus productos",
+    featureLanding: ["Catálogo de tus productos"],
   },
   {
-    id: "cliente-vehiculo",
-    titulo: "Cargar un cliente y su vehículo",
-    descripcion: "El cliente, su patente y el auto, en una sola alta.",
-    youtubeId: null,
-    duracion: 75,
+    id: "cargar-cliente",
+    titulo: "Cargar un cliente",
+    descripcion: "Nombre, teléfono y CUIT, para tener a quién avisarle.",
+    youtubeId: "w84c1zYeaK0",
+    duracion: 90,
     seccion: "Clientes",
     solapa: "/panel/clientes",
     plan: "basic",
@@ -109,148 +111,130 @@ export const VIDEOS: readonly VideoAyuda[] = [
     featureLanding: null,
   },
   {
-    id: "service",
-    titulo: "Cargar un service en menos de 90 segundos",
-    descripcion: "Patente, aceite, filtros y kilómetros: el cartón, sin papel.",
-    youtubeId: null,
-    duracion: 90,
-    seccion: "Trabajos",
-    solapa: "/panel/services",
-    plan: "basic",
-    pasoOnboarding: null,
-    featureLanding: "Carga en 90 segundos",
-  },
-  {
-    id: "mecanica",
-    titulo: "Cargar un trabajo mecánico",
-    descripcion: "Frenos, correas o lo que sea: queda en el historial del auto.",
-    youtubeId: null,
-    duracion: 80,
-    seccion: "Trabajos",
-    solapa: "/panel/services",
-    plan: "pro",
-    pasoOnboarding: null,
-    featureLanding: "Trabajos de mecánica",
-  },
-  {
-    id: "editar-24h",
-    titulo: "Editar un trabajo dentro de las 24 horas",
-    descripcion: "Corregir un dato antes de que el trabajo quede fijado.",
-    youtubeId: null,
-    duracion: 45,
-    seccion: "Trabajos",
-    solapa: "/panel/services",
-    plan: "basic",
-    pasoOnboarding: null,
-    featureLanding: null,
-  },
-  {
-    id: "proximos",
-    titulo: "A quién le toca volver: próximos, urgentes y vencidos",
-    descripcion: "La lista de la semana, ordenada por urgencia, con el aviso listo.",
-    youtubeId: null,
-    duracion: 90,
-    seccion: "Inicio",
-    solapa: "/panel/proximos",
-    plan: "basic",
-    pasoOnboarding: null,
-    featureLanding: "A quién llamar esta semana",
-  },
-  {
-    id: "whatsapp",
-    titulo: "Mandar el aviso por WhatsApp en tres tonos",
-    descripcion: "Cercano, formal o directo: el mensaje sale armado con los datos del auto.",
-    youtubeId: null,
-    duracion: 70,
-    seccion: "Inicio",
-    solapa: "/panel/mensajes",
-    plan: "basic",
-    pasoOnboarding: null,
-    featureLanding: "Mensajes ya armados",
-  },
-  {
-    id: "presupuestos",
-    titulo: "Presupuestos con tu logo en menos de un minuto",
-    descripcion: "Renglones, precios y tu logo en un PDF para mandar o imprimir.",
-    youtubeId: null,
-    duracion: 60,
-    seccion: "Presupuestos",
-    solapa: "/panel/presupuestos",
-    plan: "pro",
-    pasoOnboarding: null,
-    featureLanding: "Presupuestos con tu marca",
-  },
-  {
-    id: "premio",
-    titulo: "Definir el premio de fidelización y ver el avance",
-    descripcion: "Cada cuántos services hay premio y cómo lo ve cada cliente.",
-    youtubeId: null,
-    duracion: 75,
-    seccion: "Premios",
-    solapa: "/panel/fidelizacion",
-    plan: "pro",
-    pasoOnboarding: 3,
-    featureLanding: "Premios para que tus clientes vuelvan",
-  },
-  {
-    id: "pagina-calcos",
-    titulo: "Tu página y tus calcos: qué ve el cliente al escanear",
-    descripcion: "La página que abre el QR y la hoja de calcos para imprimir.",
-    youtubeId: null,
-    duracion: 80,
-    seccion: "Página y calcos",
-    solapa: "/panel/experiencia",
-    plan: "basic",
-    pasoOnboarding: 2,
-    featureLanding: "Página del cliente con QR",
-  },
-  {
-    id: "personalizacion",
-    titulo: "Personalizar tu página: logo, color y mensaje",
-    descripcion: "Tu logo, tu color y el modo de la página.",
-    youtubeId: null,
-    duracion: 70,
-    seccion: "Página y calcos",
-    solapa: "/panel/experiencia",
-    plan: "pro",
-    pasoOnboarding: null,
-    featureLanding: "Página del cliente personalizable",
-  },
-  {
-    id: "exportar",
-    titulo: "Exportar clientes, vehículos, productos y trabajos",
-    descripcion: "Todos tus datos en un Excel, con los filtros que tengas puestos.",
-    youtubeId: null,
-    duracion: 45,
-    seccion: "Exportar",
+    id: "cargar-vehiculo",
+    titulo: "Cargar un vehículo",
+    descripcion: "La patente, la marca y el modelo, colgados de su dueño.",
+    youtubeId: "RT7ZUKU_EIc",
+    duracion: 78,
+    seccion: "Clientes",
     solapa: "/panel/clientes",
     plan: "basic",
     pasoOnboarding: null,
     featureLanding: null,
   },
   {
-    id: "sucursales",
-    titulo: "Sucursales",
-    descripcion: "Sumar un local y ver qué se hizo en cada uno.",
-    youtubeId: null,
-    duracion: 50,
-    seccion: "Sucursales",
-    solapa: "/panel/sucursales",
-    plan: "ultra",
+    id: "cargar-service",
+    titulo: "Cargar un service en menos de 90 segundos",
+    descripcion: "Patente, aceite, filtros y kilómetros: el cartón, sin papel.",
+    youtubeId: "8VOdAtUmH3w",
+    duracion: 173,
+    seccion: "Trabajos",
+    solapa: "/panel/services",
+    plan: "basic",
     pasoOnboarding: null,
-    featureLanding: "Sucursales",
+    featureLanding: ["Carga en 90 segundos"],
   },
   {
-    id: "celular",
-    titulo: "Cargar desde el celular, al lado del pozo",
-    descripcion: "El panel en el teléfono: cargar el trabajo sin ir al escritorio.",
-    youtubeId: null,
-    duracion: 60,
+    id: "carga-trabajo-mecanico",
+    titulo: "Cargar un trabajo mecánico",
+    descripcion: "Frenos, correas o lo que sea: queda en el historial del auto.",
+    youtubeId: "uq0QZiiZiOg",
+    duracion: 123,
+    seccion: "Trabajos",
+    solapa: "/panel/services",
+    plan: "pro",
+    pasoOnboarding: null,
+    featureLanding: ["Trabajos de mecánica", "Trabajos de mecánica y pendientes"],
+  },
+  {
+    id: "editar-service-cargado",
+    titulo: "Editar un trabajo dentro de las 24 horas",
+    descripcion: "Corregir un dato antes de que el trabajo quede fijado.",
+    youtubeId: "licaGQVMqnU",
+    duracion: 97,
     seccion: "Trabajos",
     solapa: "/panel/services",
     plan: "basic",
     pasoOnboarding: null,
     featureLanding: null,
+  },
+  {
+    id: "seguimiento-clientes",
+    titulo: "A quién le toca volver y mandar el aviso por WhatsApp",
+    descripcion: "La lista de la semana por urgencia, y el aviso ya armado en tres tonos.",
+    youtubeId: "AKc-ZftasH0",
+    duracion: 131,
+    seccion: "Inicio",
+    solapa: "/panel",
+    plan: "basic",
+    pasoOnboarding: null,
+    featureLanding: [
+      "A quién llamar esta semana",
+      "Mensajes ya armados",
+      "Avisos por kilómetros y a quién llamar",
+    ],
+  },
+  {
+    id: "generar-presupuesto",
+    titulo: "Presupuestos con tu logo en menos de un minuto",
+    descripcion: "Renglones, precios y tu logo en un PDF para mandar o imprimir.",
+    youtubeId: "pu5XSyQnBME",
+    duracion: 117,
+    seccion: "Presupuestos",
+    solapa: "/panel/presupuestos",
+    plan: "pro",
+    pasoOnboarding: null,
+    featureLanding: ["Presupuestos con tu marca"],
+  },
+  {
+    id: "premio-fidelizacion",
+    titulo: "Definir el premio de fidelización y ver el avance",
+    descripcion: "Cada cuántos services hay premio y cómo lo ve cada cliente.",
+    youtubeId: "dWexBvVVbPU",
+    duracion: 105,
+    seccion: "Premios",
+    solapa: "/panel/fidelizacion",
+    plan: "pro",
+    pasoOnboarding: 3,
+    featureLanding: ["Premios para que tus clientes vuelvan", "Premios"],
+  },
+  {
+    id: "diseno-de-experiencia",
+    titulo: "Diseño de experiencia: cómo ven tu historial tus clientes",
+    descripcion: "Tu logo, tu color y el modo de la página que abre el QR.",
+    youtubeId: "a16WaMz1vrU",
+    duracion: 139,
+    seccion: "Página y calcos",
+    solapa: "/panel/experiencia",
+    plan: "pro",
+    pasoOnboarding: 2,
+    featureLanding: ["Página del cliente personalizable", "Personalizar la página"],
+  },
+  {
+    id: "exportar-datos",
+    titulo: "Exportar clientes, vehículos, productos y trabajos",
+    descripcion: "Todos tus datos en un Excel, con los filtros que tengas puestos.",
+    youtubeId: "bYAaonj2jwY",
+    duracion: 51,
+    seccion: "Exportar",
+    // Exportar no tiene solapa propia: el botón vive en Clientes, Productos
+    // y Trabajos. Cuelga de Trabajos, que es donde más se exporta.
+    solapa: "/panel/services",
+    plan: "basic",
+    pasoOnboarding: null,
+    featureLanding: null,
+  },
+  {
+    id: "carga-sucursales",
+    titulo: "Sucursales",
+    descripcion: "Sumar un local y ver qué se hizo en cada uno.",
+    youtubeId: "OefB7DqGjpg",
+    duracion: 66,
+    seccion: "Sucursales",
+    solapa: "/panel/sucursales",
+    plan: "ultra",
+    pasoOnboarding: null,
+    featureLanding: ["Sucursales", "Sucursales ilimitadas"],
   },
 ] as const;
 
@@ -289,12 +273,14 @@ export function videoDelPaso(paso: PasoOnboarding): VideoAyuda | null {
 
 /**
  * El video de una función de la landing, SOLO si ya tiene ID: sin ID no
- * hay ícono, porque la landing no puede tener botones muertos.
+ * hay ícono, porque la landing no puede tener botones muertos. Un mismo
+ * video puede cubrir varias filas.
  */
 export function videoDeFuncion(funcion: string): VideoAyuda | null {
   return (
-    VIDEOS.find((v) => v.featureLanding === funcion && v.youtubeId !== null) ??
-    null
+    VIDEOS.find(
+      (v) => v.featureLanding?.includes(funcion) && v.youtubeId !== null,
+    ) ?? null
   );
 }
 

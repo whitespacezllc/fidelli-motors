@@ -8,7 +8,14 @@ import { formatearDuracion, type VideoAyuda as Video } from "@/lib/ayuda/videos"
 // El video de cada paso. En escritorio va a la derecha del formulario,
 // siempre visible; en un celular va arriba y plegado, con un botón que
 // dice qué video es: el formulario es lo que importa y la pantalla es chica.
-export function ColumnaVideo({ video }: { video: Video | null }) {
+export function ColumnaVideo({
+  video,
+  etiquetaPlan = null,
+}: {
+  video: Video | null;
+  /** "Plan Pro" cuando la función del video no está en el plan de la cuenta. */
+  etiquetaPlan?: string | null;
+}) {
   const [abierto, setAbierto] = useState(false);
 
   if (!video) return null;
@@ -30,7 +37,7 @@ export function ColumnaVideo({ video }: { video: Video | null }) {
         </span>
       </button>
       <div className={`${abierto ? "mt-3 block" : "hidden"} lg:block`}>
-        <VideoAyuda video={video} lugar="onboarding" />
+        <VideoAyuda video={video} lugar="onboarding" etiquetaPlan={etiquetaPlan} />
       </div>
     </div>
   );

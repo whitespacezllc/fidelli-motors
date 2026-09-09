@@ -29,6 +29,7 @@ export function PasoDiseno({
   nombre,
   personalizable,
   video,
+  etiquetaPlanVideo,
 }: {
   config: ConfigExperiencia;
   slug: string;
@@ -36,6 +37,8 @@ export function PasoDiseno({
   nombre: string;
   personalizable: boolean;
   video: VideoAyuda | null;
+  /** En Basic el video de Diseño de experiencia se ve igual, con "Plan Pro". */
+  etiquetaPlanVideo: string | null;
 }) {
   const router = useRouter();
   const [pendiente, iniciar] = useTransition();
@@ -92,6 +95,7 @@ export function PasoDiseno({
         titulo="Así van a ver tu historial tus clientes"
         bajada="Esto es lo que aparece cuando escanean la calco."
         video={video}
+        etiquetaPlanVideo={etiquetaPlanVideo}
         lateral={preview}
       >
         <div className="flex flex-col gap-4">
@@ -109,6 +113,7 @@ export function PasoDiseno({
       titulo="Así van a ver tu historial tus clientes"
       bajada="Esto es lo que aparece cuando escanean la calco. Revisá el logo y elegí el color."
       video={video}
+      etiquetaPlanVideo={etiquetaPlanVideo}
       lateral={preview}
     >
       <div className="flex flex-col gap-6">

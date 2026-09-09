@@ -15,6 +15,7 @@ import { aCategorias } from "@/lib/categorias";
 import { aTema, aTamanoLogo } from "@/lib/cliente/tema";
 import { META_MINIMA, META_MAXIMA } from "@/lib/fidelizacion";
 import { videoDelPaso } from "@/lib/ayuda/videos";
+import { etiquetaPlan, planEfectivo } from "@/lib/ayuda/plan";
 import {
   leerEstadoOnboarding,
   pasosHechos,
@@ -89,6 +90,11 @@ export default async function PaginaOnboarding({
       : estado.pasoActual;
 
   const video = videoDelPaso(paso);
+  // El video del paso se ve aunque la función no esté en el plan (Basic en
+  // el paso 2): con la etiqueta del plan, como en la solapa Ayuda.
+  const etiquetaPlanVideo = video
+    ? etiquetaPlan(video.plan, planEfectivo(sesion.capacidades))
+    : null;
 
   let contenido: React.ReactNode;
 
@@ -104,6 +110,7 @@ export default async function PaginaOnboarding({
         titulo="Cargá tu primer producto"
         bajada="Empezá por el aceite que más vendés. El resto lo cargás después desde Productos."
         video={video}
+        etiquetaPlanVideo={etiquetaPlanVideo}
       >
         <PasoProducto categorias={aCategorias(filas)} />
       </MarcoPaso>
@@ -152,6 +159,7 @@ export default async function PaginaOnboarding({
           nombre={nombre}
           personalizable={estado.aplicaPersonalizacion}
           video={video}
+          etiquetaPlanVideo={etiquetaPlanVideo}
         />
       );
     }
@@ -192,6 +200,7 @@ export default async function PaginaOnboarding({
         titulo="Premio de fidelización"
         bajada="Cada X services, Y. Es lo que hace que vuelvan a vos y no al de la esquina. Si todavía no lo tenés decidido, omitilo: se configura después desde Fidelización."
         video={video}
+        etiquetaPlanVideo={etiquetaPlanVideo}
       >
         <PasoPremio premio={premio} impactoPorMeta={impactoPorMeta} enProgreso={enProgreso} />
       </MarcoPaso>
