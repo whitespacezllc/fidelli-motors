@@ -1,13 +1,13 @@
+import { WHATSAPP_SOPORTE } from "@/lib/config";
+
 // La landing comercial: una sola acción primaria en toda la página.
 //
-// El número NO es el mismo que WHATSAPP_SOPORTE de lib/config.ts, y es a
-// propósito: aquel es soporte de clientes que ya compraron, este es ventas.
-// Si algún día se unifican, se unifican los dos lugares a la vez. También
-// está, en formato E.164, en TELEFONO_VENTAS de lib/seo.ts (el JSON-LD) y
-// en public/llms.txt: cambia en los tres lugares a la vez.
-//
-// Cambiado el 09/09/2026 (bloque de tracking): antes era 5493513736028.
-export const WHATSAPP_VENTAS = "5493516136192";
+// UN SOLO NÚMERO PARA TODO FIDELLI MOTORS (ventas y soporte), decidido el
+// 09/09/2026: el de ventas deriva del de soporte para que no puedan volver
+// a separarse. La fuente es WHATSAPP_SOPORTE en lib/config.ts. El mismo
+// número está escrito en public/llms.txt, que es texto plano: si cambia el
+// de config.ts, cambia también ahí.
+export const WHATSAPP_VENTAS = WHATSAPP_SOPORTE;
 
 /**
  * El mensaje prellenado cuando no se sabe de dónde vino el visitante. Es el
