@@ -1,6 +1,14 @@
 -- Datos de desarrollo. Corre en cada `supabase db reset`.
 select seed_demo();
 
+-- El demo nace ACÁ, después de las migraciones, así que el backfill del
+-- onboarding (20260909180000) no llega a verlo. En dev y producción los
+-- tenants son datos previos y la migración los marca sola. Sin esto, el
+-- demo local vería el onboarding y la bienvenida en cada reset.
+update lubricentros
+   set onboarding_completado_at = coalesce(onboarding_completado_at, now()),
+       bienvenida_vista_at      = coalesce(bienvenida_vista_at, now());
+
 -- El plan del seed nace ACÁ, después de las migraciones — seed_demo() lo
 -- inserta recién en el reset. La migración de planes-con-control marca como
 -- heredado todo lo que existía al momento de aplicarse, así que a este no

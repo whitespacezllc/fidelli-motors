@@ -9,7 +9,7 @@ import {
   normalizarViscosidad,
   formatearKm,
 } from "@/lib/renglones";
-import type { VehiculoIdentificado } from "@/app/panel/services/nuevo/actions";
+import type { VehiculoIdentificado } from "@/app/panel/(tras-onboarding)/services/nuevo/actions";
 
 // ============================================================
 // Los campos del cartón, extraídos para que existan UNA sola vez

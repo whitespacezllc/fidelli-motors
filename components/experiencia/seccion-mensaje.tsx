@@ -10,7 +10,7 @@ import type { BorradorExperiencia } from "@/components/experiencia/pantalla-expe
 import {
   guardarMensajeTaller,
   type EstadoMensaje,
-} from "@/app/panel/experiencia/actions";
+} from "@/app/panel/(tras-onboarding)/experiencia/actions";
 
 const ESTADO_INICIAL: EstadoMensaje = {};
 

@@ -8,21 +8,37 @@ export type EstadoChecklist = {
   services: number;
 };
 
+// Lo que el checklist no puede saber por los datos del resumen: si el
+// plan incluye premios (sin la feature el paso no existe) y si el taller
+// dejó el premio para después en el onboarding (cuenta como hecho).
+export type OpcionesChecklist = {
+  aplicaPremio: boolean;
+  premioOmitido: boolean;
+};
+
 function plural(n: number, singular: string, plural: string) {
   return `${n} ${n === 1 ? singular : plural}`;
 }
 
-export function estaCompleto(c: EstadoChecklist): boolean {
+export function estaCompleto(c: EstadoChecklist, o: OpcionesChecklist): boolean {
   return (
-    c.sucursales > 0 && c.productos > 0 && c.premio_meta !== null && c.services > 0
+    c.sucursales > 0 &&
+    c.productos > 0 &&
+    (!o.aplicaPremio || c.premio_meta !== null || o.premioOmitido) &&
+    c.services > 0
   );
 }
 
 // El checklist de puesta en marcha. Reemplaza al dashboard hasta que los
-// cuatro pasos están hechos, y no se puede cerrar: es la guía, no un aviso.
+// pasos están hechos, y no se puede cerrar: es la guía, no un aviso.
+//
+// Desde el onboarding de tres pasos (bloque de ayuda), una cuenta nueva
+// llega acá con las sucursales, el catálogo y el premio (o su omisión) ya
+// resueltos: lo que le queda es cargar el primer trabajo, y ese paso es
+// el único botón rojo de la pantalla.
 //
 // Con la cuenta suspendida sigue mostrándose —el progreso conseguido es del
-// lubricentro y no se le esconde— pero deja de empujar: los cuatro pasos
+// lubricentro y no se le esconde— pero deja de empujar: los pasos
 // terminan en pantallas de carga que están bloqueadas, así que ofrecer
 // "Empezar" sería mandarlo a chocarse contra una puerta cerrada. Se cae el
 // botón, se cae la fila destacada en rojo y el encabezado dice dónde quedó
@@ -30,9 +46,11 @@ export function estaCompleto(c: EstadoChecklist): boolean {
 // el layout: acá no se repite.
 export function Checklist({
   estado,
+  opciones,
   suspendido = false,
 }: {
   estado: EstadoChecklist;
+  opciones: OpcionesChecklist;
   suspendido?: boolean;
 }) {
   const pasos = [
@@ -43,6 +61,7 @@ export function Checklist({
       logro: plural(estado.sucursales, "sucursal activa", "sucursales activas"),
       hecho: estado.sucursales > 0,
       destino: "/panel/sucursales",
+      cta: "Empezar",
     },
     {
       titulo: "Sumá tus productos",
@@ -50,20 +69,32 @@ export function Checklist({
       logro: `${plural(estado.productos, "producto", "productos")} en el catálogo`,
       hecho: estado.productos > 0,
       destino: "/panel/productos",
+      cta: "Empezar",
     },
-    {
-      titulo: "Definí tu premio",
-      pendiente: "Qué premio das y cada cuánto se gana",
-      logro: `Premio cada ${estado.premio_meta} services`,
-      hecho: estado.premio_meta !== null,
-      destino: "/panel/fidelizacion",
-    },
+    // Sin la feature no hay paso: a un Basic no se le pide lo que su plan
+    // no incluye. Omitido en el onboarding cuenta como hecho.
+    ...(opciones.aplicaPremio
+      ? [
+          {
+            titulo: "Definí tu premio",
+            pendiente: "Qué premio das y cada cuánto se gana",
+            logro:
+              estado.premio_meta !== null
+                ? `Premio cada ${estado.premio_meta} services`
+                : "Lo dejaste para después: se define desde Fidelización",
+            hecho: estado.premio_meta !== null || opciones.premioOmitido,
+            destino: "/panel/fidelizacion",
+            cta: "Empezar",
+          },
+        ]
+      : []),
     {
       titulo: "Cargá tu primer trabajo",
       pendiente: "Probalo con el próximo auto que entre",
       logro: `${plural(estado.services, "trabajo cargado", "trabajos cargados")}`,
       hecho: estado.services > 0,
       destino: "/panel/services/nuevo",
+      cta: "Cargar mi primer trabajo",
     },
   ];
 
@@ -71,6 +102,7 @@ export function Checklist({
   const faltan = pasos.length - hechos;
   // Sin acciones disponibles no hay "paso actual" que destacar.
   const proximo = suspendido ? -1 : pasos.findIndex((p) => !p.hecho);
+  const cuantos = pasos.length === 3 ? "Tres" : "Cuatro";
 
   const titulo = suspendido
     ? "Tu puesta en marcha queda donde la dejaste"
@@ -81,7 +113,7 @@ export function Checklist({
   const bajada = suspendido
     ? `${plural(hechos, "paso hecho", "pasos hechos")} de ${pasos.length}. Los que faltan te esperan: los vas a poder terminar apenas se reactive la cuenta.`
     : hechos === 0
-      ? "Cuatro pasos para dejar todo listo. Podés hacerlos ahora o cuando quieras."
+      ? `${cuantos} pasos para dejar todo listo. Podés hacerlos ahora o cuando quieras.`
       : `${plural(faltan, "paso", "pasos")} para terminar de configurar tu lubricentro.`;
 
   return (
@@ -154,7 +186,7 @@ export function Checklist({
                     : "flex min-h-11 items-center px-3 text-ui font-semibold text-ink-60"
                 }
               >
-                {esElActual ? "Empezar" : "Ir"}
+                {esElActual ? paso.cta : "Ir"}
               </Link>
             )}
 

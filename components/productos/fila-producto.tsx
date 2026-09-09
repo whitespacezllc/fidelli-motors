@@ -2,7 +2,7 @@ import { FilaListado } from "@/components/ui/fila-listado";
 import { ToggleEstado } from "@/components/ui/toggle-estado";
 import { DialogProducto } from "@/components/productos/dialog-producto";
 import { AccionBloqueada } from "@/components/panel/bloqueo-suspension";
-import { toggleProducto } from "@/app/panel/productos/actions";
+import { toggleProducto } from "@/app/panel/(tras-onboarding)/productos/actions";
 import type { Categoria } from "@/lib/categorias";
 import { formatearPesos } from "@/lib/presupuestos";
 

@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { Combobox } from "@/components/ui/combobox";
-import { sugerirModelos } from "@/app/panel/vehiculos/actions";
+import { sugerirModelos } from "@/app/panel/(tras-onboarding)/vehiculos/actions";
 
 const CLASE_LABEL =
   "mb-1.5 block text-label font-semibold tracking-[0.06em] text-ink-60 uppercase";

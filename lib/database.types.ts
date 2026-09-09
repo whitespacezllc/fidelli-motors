@@ -465,29 +465,41 @@ export type Database = {
       lubricentros: {
         Row: {
           activo: boolean
+          bienvenida_vista_at: string | null
           calcos_entregadas: number
           created_at: string
+          diseno_confirmado_at: string | null
           id: string
           nombre: string
+          onboarding_completado_at: string | null
           plan_overrides: Json
+          premio_omitido_at: string | null
           slug: string
         }
         Insert: {
           activo?: boolean
+          bienvenida_vista_at?: string | null
           calcos_entregadas?: number
           created_at?: string
+          diseno_confirmado_at?: string | null
           id?: string
           nombre: string
+          onboarding_completado_at?: string | null
           plan_overrides?: Json
+          premio_omitido_at?: string | null
           slug: string
         }
         Update: {
           activo?: boolean
+          bienvenida_vista_at?: string | null
           calcos_entregadas?: number
           created_at?: string
+          diseno_confirmado_at?: string | null
           id?: string
           nombre?: string
+          onboarding_completado_at?: string | null
           plan_overrides?: Json
+          premio_omitido_at?: string | null
           slug?: string
         }
         Relationships: []
@@ -1753,6 +1765,8 @@ export type Database = {
           vehiculo_id: string
         }[]
       }
+      completar_onboarding: { Args: never; Returns: Json }
+      confirmar_diseno: { Args: never; Returns: Json }
       contactado_fidelli: {
         Args: { p_lubricentro_id: string }
         Returns: boolean
@@ -1881,6 +1895,9 @@ export type Database = {
           creado: string
           id: string
           nombre: string
+          onboarding_avance: string
+          onboarding_paso: number
+          onboarding_pasos: number
           owner_estado: string
           owner_nombre: string
           plan_desc_anual: number
@@ -1900,6 +1917,7 @@ export type Database = {
         }[]
       }
       marca_canonica: { Args: { p_texto: string }; Returns: string }
+      marcar_bienvenida_vista: { Args: never; Returns: undefined }
       metricas_plataforma: { Args: never; Returns: Json }
       metricas_tenant: { Args: { p_lubricentro_id: string }; Returns: Json }
       mi_lubricentro_id: { Args: never; Returns: string }
@@ -1912,6 +1930,8 @@ export type Database = {
       }
       normalizar_patente: { Args: { entrada: string }; Returns: string }
       normalizar_texto_vehiculo: { Args: { p: string }; Returns: string }
+      omitir_premio: { Args: never; Returns: Json }
+      onboarding_estado: { Args: { p_lubricentro_id: string }; Returns: Json }
       orden_atencion: { Args: { p_atencion: string }; Returns: number }
       overrides_plan_bien_formados: { Args: { p: Json }; Returns: boolean }
       patente_formato_valido: { Args: { p: string }; Returns: boolean }

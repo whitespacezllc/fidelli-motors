@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import { Boton } from "@/components/ui/boton";
 import { CampoClave } from "@/components/auth/campo-clave";
-import { cambiarClave, type EstadoCuenta } from "@/app/panel/cuenta/actions";
+import { cambiarClave, type EstadoCuenta } from "@/app/panel/(tras-onboarding)/cuenta/actions";
 
 const INICIAL: EstadoCuenta = {};
 

@@ -5,7 +5,7 @@ import { Dialog, DialogTrigger, DialogContenido } from "@/components/ui/dialog";
 import { clasesBoton } from "@/components/ui/boton";
 import { IconoOjo, IconoCandado } from "@/components/iconos";
 import { FormNota } from "@/components/notas/form-nota";
-import { eliminarNota, type EstadoNota } from "@/app/panel/notas/actions";
+import { eliminarNota, type EstadoNota } from "@/app/panel/(tras-onboarding)/notas/actions";
 import { formatearFecha } from "@/lib/fechas";
 
 export type NotaDelVehiculo = {

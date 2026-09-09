@@ -1,11 +1,11 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { Boton } from "@/components/ui/boton";
 import {
   guardarPremio,
   type EstadoPremio,
-} from "@/app/panel/fidelizacion/actions";
+} from "@/app/panel/(tras-onboarding)/fidelizacion/actions";
 import { META_MINIMA, META_MAXIMA } from "@/lib/fidelizacion";
 
 const ESTADO_INICIAL: EstadoPremio = {};
@@ -28,15 +28,25 @@ export function FormularioPremio({
   /** Cuántos vehículos quedarían con premio disponible por cada meta. */
   impactoPorMeta,
   enProgreso,
+  etiquetaGuardar = "Guardar programa",
+  alGuardar,
 }: {
   premio: Premio;
   impactoPorMeta: Record<number, number>;
   enProgreso: number;
+  /** El paso 3 del onboarding dice "Guardar premio". */
+  etiquetaGuardar?: string;
+  /** Avisa cuando se guardó bien (el onboarding registra el paso con eso). */
+  alGuardar?: () => void;
 }) {
   const [estado, accion, pendiente] = useActionState(
     guardarPremio,
     ESTADO_INICIAL,
   );
+
+  useEffect(() => {
+    if (estado.ok) alGuardar?.();
+  }, [estado.ok, alGuardar]);
 
   const metaOriginal = premio?.metaServices ?? 3;
   const [meta, setMeta] = useState(metaOriginal);
@@ -201,7 +211,7 @@ export function FormularioPremio({
       </label>
 
       <Boton type="submit" tam="lg" disabled={pendiente} className="sm:self-start">
-        {pendiente ? "Guardando…" : "Guardar programa"}
+        {pendiente ? "Guardando…" : etiquetaGuardar}
       </Boton>
     </form>
   );

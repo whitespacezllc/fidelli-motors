@@ -38,7 +38,7 @@ export function TablaLubricentros({
     // su caja en lugar de apretarse: el caso principal de esta superficie es
     // desktop, y una tabla de 7 columnas plegada a 375px no se lee mejor.
     <div className="surface-card overflow-x-auto">
-      <table className="w-full min-w-[1240px] border-collapse text-ui">
+      <table className="w-full min-w-[1360px] border-collapse text-ui">
         <thead>
           <tr className="border-b border-line">
             {/* w-full en la identidad: el sobrante de ancho se lo queda esta
@@ -54,6 +54,9 @@ export function TablaLubricentros({
             <th scope="col" className={TH}>Último service</th>
             <th scope="col" className={TH}>Owner</th>
             <th scope="col" className={TH}>Salud</th>
+            {/* El onboarding: en qué paso está y cuándo avanzó por última
+                vez. Solo lectura — los pasos los da el taller. */}
+            <th scope="col" className={TH}>Onboarding</th>
             <th scope="col" className={TH}>
               <span className="sr-only">Acciones</span>
             </th>
@@ -168,6 +171,23 @@ export function TablaLubricentros({
                     vencimiento={l.sub_vencimiento}
                     ultimoService={l.ultimo_service}
                   />
+                </td>
+
+                <td className={`${TD} whitespace-nowrap`}>
+                  {l.onboarding_paso == null ? (
+                    <span className="text-ink-60">Completo</span>
+                  ) : (
+                    <>
+                      <span className="block font-semibold text-ink tabular-nums">
+                        Paso {l.onboarding_paso} de {l.onboarding_pasos}
+                      </span>
+                      <span className="block text-label text-ink-40">
+                        {l.onboarding_avance
+                          ? haceCuanto(l.onboarding_avance)
+                          : "sin avances"}
+                      </span>
+                    </>
+                  )}
                 </td>
 
                 <td className={`${TD} text-right`}>

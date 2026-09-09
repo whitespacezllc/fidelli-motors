@@ -7,7 +7,7 @@ import {
   crearSucursal,
   editarSucursal,
   type EstadoSucursal,
-} from "@/app/panel/sucursales/actions";
+} from "@/app/panel/(tras-onboarding)/sucursales/actions";
 
 type Sucursal = {
   id: string;

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Dialog, DialogTrigger, DialogContenido } from "@/components/ui/dialog";
 import { Boton, clasesBoton } from "@/components/ui/boton";
-import { anularService } from "@/app/panel/services/[serviceId]/actions";
+import { anularService } from "@/app/panel/(tras-onboarding)/services/[serviceId]/actions";
 
 // La confirmación es explícita porque no hay vuelta atrás: el service
 // anulado desaparece del cartón del cliente y deja de contar para la

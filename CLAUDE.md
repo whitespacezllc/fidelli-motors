@@ -212,6 +212,25 @@ del visitante (UTM, `gclid`, `fbclid`, artículo del blog) lo resuelve
 `WHATSAPP_VENTAS` (`lib/landing.ts`) y repetido en `TELEFONO_VENTAS`
 (`lib/seo.ts`) y en `public/llms.txt`: cambia en los tres a la vez.
 
+**Ayuda y onboarding (09/09/2026).** Los videos viven en UN archivo,
+`lib/ayuda/videos.ts` (`youtubeId: null` = "Video en preparación"; ahí se
+pegan los IDs). El reproductor (`components/ayuda/reproductor.tsx`) no carga
+nada de YouTube hasta el clic: miniatura de i.ytimg.com y recién después el
+iframe de youtube-nocookie. "¿Cómo se usa?" lo pone `CabeceraSeccion` por la
+ruta (`solapa` en la lista): una solapa nueva con videos no declara nada. El
+onboarding es `/panel/onboarding` con `app/panel/(tras-onboarding)/layout.tsx`
+como gate: todo lo que cuelga del grupo exige `onboarding_completado_at`
+(viaja en la sesión); afuera del grupo quedan el onboarding, Ayuda y el
+manifest. **El progreso son los datos** (`onboarding_estado()`: productos,
+`diseno_confirmado_at`, premio o `premio_omitido_at`, según el plan) y las
+escrituras del owner van por funciones definer (`confirmar_diseno`,
+`omitir_premio`, `marcar_bienvenida_vista`); guardar un producto o un premio
+lo evalúa la base sola (triggers `onboarding_productos` / `onboarding_premios`),
+así que el último paso completa el onboarding sin que el cliente avise. Las cuentas
+que existían recibieron el onboarding completo por backfill; las del seed las
+marca `seed.sql`. La bienvenida es CSS (`globals.css` · "La bienvenida") y se
+muestra una vez por taller (`bienvenida_vista_at`). Lo vigila R14.
+
 ---
 
 ## Entorno
@@ -410,6 +429,7 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R10** | El piso de anonimato de los modelos: ≥3 vehículos en ≥2 lubricentros | Un modelo cargado por UN solo tenant se le está filtrando a otro. Es una fuga entre clientes |
 | **R11** | Un tenant sin configurar rinde igual que siempre; el mensaje al escanear respeta feature, vigencia y suspensión en las dos capas | Un tenant cambió de aspecto sin pedirlo, o se está mostrando un mensaje que no corresponde |
 | **R13** | Las patentes de moto (`123ABC`, `A123BCD`) entran por el CHECK, por `corregir_patente` y por `get_carton`; lo que no es patente sigue afuera | Alguien volvió a cerrar el formato a autos, o lo abrió a cualquier cosa |
+| **R14** | Ninguna cuenta queda con `onboarding_completado_at` null tras el seed; las funciones del onboarding son definer; un Basic tiene dos pasos y nunca se le pide el premio; el estado de otro tenant no se lee | Una cuenta vieja vería el panel bloqueado, o un taller no podría salir nunca del onboarding, o se le pide una función que su plan no tiene |
 
 Además, fuera del reset:
 
