@@ -7,7 +7,7 @@ import {
   crearNota,
   editarNota,
   type EstadoNota,
-} from "@/app/panel/notas/actions";
+} from "@/app/panel/(tras-onboarding)/notas/actions";
 
 export type NotaEditable = {
   id: string;

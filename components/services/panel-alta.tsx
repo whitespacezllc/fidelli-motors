@@ -9,7 +9,7 @@ import {
   crearClienteYVehiculo,
   type ClienteSugerido,
   type EstadoAlta,
-} from "@/app/panel/services/nuevo/actions";
+} from "@/app/panel/(tras-onboarding)/services/nuevo/actions";
 import { CamposMarcaModelo } from "@/components/vehiculos/campos-marca-modelo";
 
 const ESTADO_INICIAL: EstadoAlta = {};

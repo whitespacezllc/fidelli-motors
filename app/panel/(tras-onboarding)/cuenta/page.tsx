@@ -14,7 +14,7 @@ import { CopiarLanding } from "@/components/cuenta/copiar-landing";
 import {
   actualizarMiNombre,
   actualizarNombreLubricentro,
-} from "@/app/panel/cuenta/actions";
+} from "@/app/panel/(tras-onboarding)/cuenta/actions";
 import { formatearFecha } from "@/lib/fechas";
 import {
   ETIQUETA_ESTADO,

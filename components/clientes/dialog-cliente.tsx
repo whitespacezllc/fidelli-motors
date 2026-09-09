@@ -7,7 +7,7 @@ import {
   crearCliente,
   editarCliente,
   type EstadoCliente,
-} from "@/app/panel/clientes/actions";
+} from "@/app/panel/(tras-onboarding)/clientes/actions";
 import {
   formatearCuit,
   normalizarCuit,

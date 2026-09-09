@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
-import { exigirRol } from "@/lib/auth/session";
+import { exigirRol, featureHabilitada } from "@/lib/auth/session";
 import { cerrarSesion } from "@/lib/auth/actions";
 import { Sidebar } from "@/components/panel/sidebar";
 import { BarraMobile } from "@/components/panel/barra-mobile";
@@ -27,6 +27,15 @@ export default async function LayoutPanel({
   // Resueltas por la base y viajaron con la sesión: acá solo se reparten.
   const features = sesion.capacidades?.features ?? {};
 
+  // El onboarding (migración 20260909180000). Mientras no terminó, la
+  // navegación va con candado salvo Ayuda, y el grupo (tras-onboarding)
+  // redirige a los pasos. Un suspendido no se bloquea: no podría escribir.
+  // Recién completado y con la bienvenida sin ver, los ítems nacen con
+  // candado y se desbloquean uno por uno cuando el telón se levanta.
+  const bloqueado = !suspendido && !sesion.onboardingCompleto;
+  const desbloqueando = sesion.bienvenidaPendiente;
+  const pasosOnboarding = featureHabilitada(sesion, "premios") ? 3 : 2;
+
   // El badge de "A quién llamar": los contactos que están esperando, como
   // los no leídos de una casilla. Se calcula en la MISMA función que
   // definen las vistas de la pantalla (contactos_por_hacer, R12), así el
@@ -44,6 +53,9 @@ export default async function LayoutPanel({
         suspendido={suspendido}
         features={features}
         porLlamar={porLlamar ?? 0}
+        bloqueado={bloqueado}
+        pasosOnboarding={pasosOnboarding}
+        desbloqueando={desbloqueando}
       />
       {/* En print se apagan el corrimiento del sidebar y los paddings: la
           hoja la definen los márgenes de @page, y el pb-28 de la barra
@@ -62,6 +74,9 @@ export default async function LayoutPanel({
         suspendido={suspendido}
         features={features}
         porLlamar={porLlamar ?? 0}
+        bloqueado={bloqueado}
+        pasosOnboarding={pasosOnboarding}
+        desbloqueando={desbloqueando}
       />
     </div>
   );

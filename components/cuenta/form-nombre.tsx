@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import { Boton } from "@/components/ui/boton";
-import type { EstadoCuenta } from "@/app/panel/cuenta/actions";
+import type { EstadoCuenta } from "@/app/panel/(tras-onboarding)/cuenta/actions";
 
 const INICIAL: EstadoCuenta = {};
 

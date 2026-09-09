@@ -13,11 +13,14 @@ import {
 } from "@/components/iconos";
 import { urlWhatsappSoporte } from "@/lib/config";
 import { MOTIVO_SUSPENSION } from "@/components/panel/aviso-suspension";
+import { motivoBloqueo } from "@/components/panel/bloqueo-onboarding";
+import { ItemBloqueado } from "@/components/panel/item-bloqueado";
 import type { FeaturePlan } from "@/lib/planes";
 import { BadgePorLlamar } from "@/components/panel/badge-por-llamar";
 
 // Secciones que no entran en la barra: viven en la hoja "Más". `feature` =
-// qué tiene que habilitar el plan para que el item exista.
+// qué tiene que habilitar el plan para que el item exista. "Ayuda" va al
+// final, y es la única que no lleva candado con el onboarding a medias.
 const SECCIONES_MAS: { href: string; nombre: string; feature?: FeaturePlan }[] = [
   { href: "/panel/services", nombre: "Trabajos" },
   { href: "/panel/productos", nombre: "Productos" },
@@ -27,7 +30,13 @@ const SECCIONES_MAS: { href: string; nombre: string; feature?: FeaturePlan }[] =
   { href: "/panel/mensajes", nombre: "Mensajes" },
   { href: "/panel/sucursales", nombre: "Sucursales" },
   { href: "/panel/cuenta", nombre: "Mi cuenta" },
+  { href: "/panel/ayuda", nombre: "Ayuda" },
 ];
+
+const SIEMPRE_ABIERTAS = new Set(["/panel/ayuda"]);
+
+const CLASE_ITEM_BARRA =
+  "flex min-h-11 flex-col items-center justify-center gap-0.5";
 
 function ItemBarra({
   href,
@@ -35,6 +44,8 @@ function ItemBarra({
   activo,
   icono,
   badge,
+  indice,
+  desbloqueando,
 }: {
   href: string;
   nombre: string;
@@ -42,14 +53,18 @@ function ItemBarra({
   icono: React.ReactNode;
   /** El círculo de pendientes, flotando sobre el ícono como en WhatsApp. */
   badge?: React.ReactNode;
+  /** Su lugar en el orden del desbloqueo de la bienvenida. */
+  indice: number;
+  desbloqueando: boolean;
 }) {
   return (
     <Link
       href={href}
       aria-current={activo ? "page" : undefined}
-      className={`flex min-h-11 flex-col items-center justify-center gap-0.5 ${
-        activo ? "font-semibold text-ink" : "text-ink-60"
+      className={`${CLASE_ITEM_BARRA} ${activo ? "font-semibold text-ink" : "text-ink-60"} ${
+        desbloqueando ? "nav-desbloqueo" : ""
       }`}
+      style={desbloqueando ? ({ "--i": indice } as React.CSSProperties) : undefined}
     >
       <span className="relative">
         {icono}
@@ -58,9 +73,45 @@ function ItemBarra({
             {badge}
           </span>
         )}
+        {desbloqueando && (
+          <span
+            aria-hidden
+            className="candado-nav absolute -top-1 left-full flex overflow-hidden"
+          >
+            <IconoCandado className="size-3.5 shrink-0" />
+          </span>
+        )}
       </span>
       <span className="text-label">{nombre}</span>
     </Link>
+  );
+}
+
+// El mismo ítem, con candado: mientras el onboarding no terminó, o con la
+// carga de trabajos apagada por la suspensión.
+function ItemBarraBloqueado({
+  nombre,
+  icono,
+  motivo,
+}: {
+  nombre: string;
+  icono: React.ReactNode;
+  motivo: string;
+}) {
+  return (
+    <ItemBloqueado
+      motivo={motivo}
+      posicion="arriba"
+      className={`${CLASE_ITEM_BARRA} text-ink-40`}
+    >
+      <span className="relative">
+        {icono}
+        <span className="absolute -top-1 left-full flex">
+          <IconoCandado className="size-3.5" />
+        </span>
+      </span>
+      <span className="text-label">{nombre}</span>
+    </ItemBloqueado>
   );
 }
 
@@ -69,18 +120,27 @@ export function BarraMobile({
   suspendido = false,
   features = {},
   porLlamar = 0,
+  bloqueado = false,
+  pasosOnboarding = 3,
+  desbloqueando = false,
 }: {
   cerrarSesion: () => Promise<void>;
   suspendido?: boolean;
   features?: Partial<Record<FeaturePlan, boolean>>;
   /** Contactos sin hacer en "A quién llamar" — pinta el círculo. */
   porLlamar?: number;
+  /** El onboarding no terminó: todo con candado salvo Ayuda. */
+  bloqueado?: boolean;
+  pasosOnboarding?: number;
+  /** La bienvenida está en pantalla: los ítems se desbloquean en orden. */
+  desbloqueando?: boolean;
 }) {
   const pathname = usePathname();
   const [abierta, setAbierta] = useState(false);
   const secciones = SECCIONES_MAS.filter(
     (s) => !s.feature || features[s.feature],
   );
+  const motivo = motivoBloqueo(pasosOnboarding);
 
   // La hoja se cierra con Escape; al navegar la cierra el onClick de cada link.
   useEffect(() => {
@@ -92,6 +152,21 @@ export function BarraMobile({
 
   const enMas = secciones.some((s) => pathname.startsWith(s.href));
 
+  const principales = [
+    { href: "/panel", nombre: "Inicio", activo: pathname === "/panel", icono: <IconoInicio className="size-5" /> },
+    // Forma corta de "A quién llamar", que es como se llama la pantalla y
+    // como figura en el sidebar: entero no entra en una pestaña de 75px
+    // sin partirse en dos renglones.
+    {
+      href: "/panel/proximos",
+      nombre: "Llamar",
+      activo: pathname.startsWith("/panel/proximos"),
+      icono: <IconoReloj className="size-5" />,
+      badge: <BadgePorLlamar cantidad={porLlamar} />,
+    },
+    { href: "/panel/clientes", nombre: "Clientes", activo: pathname.startsWith("/panel/clientes"), icono: <IconoClientes className="size-5" /> },
+  ];
+
   return (
     <>
       <nav
@@ -101,45 +176,41 @@ export function BarraMobile({
         // pantalla — y una barra fixed se repite al pie de cada hoja.
         className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-line bg-base pb-[env(safe-area-inset-bottom)] lg:hidden print:hidden"
       >
-        <ItemBarra
-          href="/panel"
-          nombre="Inicio"
-          activo={pathname === "/panel"}
-          icono={<IconoInicio className="size-5" />}
-        />
-        <ItemBarra
-          href="/panel/proximos"
-          // Forma corta de "A quién llamar", que es como se llama la
-          // pantalla y como figura en el sidebar: entero no entra en una
-          // pestaña de 75px sin partirse en dos renglones.
-          nombre="Llamar"
-          activo={pathname.startsWith("/panel/proximos")}
-          icono={<IconoReloj className="size-5" />}
-          badge={<BadgePorLlamar cantidad={porLlamar} />}
-        />
-        <ItemBarra
-          href="/panel/clientes"
-          nombre="Clientes"
-          activo={pathname.startsWith("/panel/clientes")}
-          icono={<IconoClientes className="size-5" />}
-        />
+        {principales.map((item, i) =>
+          bloqueado ? (
+            <ItemBarraBloqueado key={item.href} nombre={item.nombre} icono={item.icono} motivo={motivo} />
+          ) : (
+            <ItemBarra
+              key={item.href}
+              href={item.href}
+              nombre={item.nombre}
+              activo={item.activo}
+              icono={item.icono}
+              badge={item.badge}
+              indice={i}
+              desbloqueando={desbloqueando}
+            />
+          ),
+        )}
+
         {/* La acción primaria del mecánico, destacada: rojo = acción.
-            Suspendido deja de ser un enlace: se apaga y dice por qué. */}
-        {suspendido ? (
-          <span
-            aria-disabled="true"
-            title={MOTIVO_SUSPENSION}
-            className="flex min-h-11 flex-col items-center justify-center gap-0.5 text-ink-40"
+            Suspendido o con el onboarding a medias deja de ser un enlace:
+            se apaga y dice por qué. */}
+        {suspendido || bloqueado ? (
+          <ItemBloqueado
+            motivo={suspendido ? MOTIVO_SUSPENSION : motivo}
+            posicion="arriba"
+            className={`${CLASE_ITEM_BARRA} text-ink-40`}
           >
             <span className="flex size-9 -mt-4 items-center justify-center rounded-full bg-line text-ink-40 shadow-md">
               <IconoCandado className="size-5" />
             </span>
             <span className="text-label">Trabajo</span>
-          </span>
+          </ItemBloqueado>
         ) : (
           <Link
             href="/panel/services/nuevo"
-            className="flex min-h-11 flex-col items-center justify-center gap-0.5 text-ink-60"
+            className={`${CLASE_ITEM_BARRA} text-ink-60`}
           >
             <span className="flex size-9 -mt-4 items-center justify-center rounded-full bg-brand text-white shadow-md">
               <IconoPlus className="size-5" />
@@ -151,7 +222,7 @@ export function BarraMobile({
           type="button"
           onClick={() => setAbierta(true)}
           aria-expanded={abierta}
-          className={`flex min-h-11 flex-col items-center justify-center gap-0.5 ${
+          className={`${CLASE_ITEM_BARRA} ${
             enMas ? "font-semibold text-ink" : "text-ink-60"
           }`}
         >
@@ -175,16 +246,27 @@ export function BarraMobile({
           />
           <div className="absolute inset-x-0 bottom-0 rounded-t-lg bg-base p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
             <nav className="flex flex-col">
-              {secciones.map((s) => (
-                <Link
-                  key={s.href}
-                  href={s.href}
-                  onClick={() => setAbierta(false)}
-                  className="flex h-11 items-center rounded-md px-3 text-body text-ink hover:bg-surface"
-                >
-                  {s.nombre}
-                </Link>
-              ))}
+              {secciones.map((s) =>
+                bloqueado && !SIEMPRE_ABIERTAS.has(s.href) ? (
+                  <ItemBloqueado
+                    key={s.href}
+                    motivo={motivo}
+                    className="flex h-11 items-center rounded-md px-3 text-body text-ink-40"
+                  >
+                    {s.nombre}
+                    <IconoCandado aria-hidden className="ml-auto size-4" />
+                  </ItemBloqueado>
+                ) : (
+                  <Link
+                    key={s.href}
+                    href={s.href}
+                    onClick={() => setAbierta(false)}
+                    className="flex h-11 items-center rounded-md px-3 text-body text-ink hover:bg-surface"
+                  >
+                    {s.nombre}
+                  </Link>
+                ),
+              )}
             </nav>
             <div className="mt-2 border-t border-line pt-2">
               <a

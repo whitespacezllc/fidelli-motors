@@ -14,7 +14,7 @@ import {
   crearMensaje,
   editarMensaje,
   type EstadoMensaje,
-} from "@/app/panel/mensajes/actions";
+} from "@/app/panel/(tras-onboarding)/mensajes/actions";
 
 type Mensaje = {
   id: string;

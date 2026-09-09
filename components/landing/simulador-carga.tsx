@@ -14,7 +14,7 @@ import {
 import { PasosGuia, type EstadoPaso } from "@/components/landing/pasos-guia";
 import { RENGLONES, formatearKm } from "@/lib/renglones";
 import { formatearPatente, normalizarPatente } from "@/lib/texto";
-import type { VehiculoIdentificado } from "@/app/panel/services/nuevo/actions";
+import type { VehiculoIdentificado } from "@/app/panel/(tras-onboarding)/services/nuevo/actions";
 
 // 03 · La simulación de carga — el visitante carga un service él mismo.
 //

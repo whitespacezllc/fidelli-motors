@@ -7,7 +7,7 @@ import {
   cerrarPendiente,
   alternarVisiblePendiente,
   type EstadoPendienteForm,
-} from "@/app/panel/pendientes/actions";
+} from "@/app/panel/(tras-onboarding)/pendientes/actions";
 import { formatearFecha } from "@/lib/fechas";
 import { formatearKm } from "@/lib/renglones";
 

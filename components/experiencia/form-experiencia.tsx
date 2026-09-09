@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
 import Link from "next/link";
 import { Boton } from "@/components/ui/boton";
 import {
@@ -15,7 +15,7 @@ import type { BorradorExperiencia } from "@/components/experiencia/pantalla-expe
 import {
   guardarExperiencia,
   type EstadoExperiencia,
-} from "@/app/panel/experiencia/actions";
+} from "@/app/panel/(tras-onboarding)/experiencia/actions";
 
 const ESTADO_INICIAL: EstadoExperiencia = {};
 
@@ -240,15 +240,25 @@ export function FormExperiencia({
   config,
   borrador,
   alCambiar,
+  etiquetaGuardar = "Guardar cambios",
+  alGuardar,
 }: {
   config: ConfigExperiencia;
   borrador: BorradorExperiencia;
   alCambiar: (parcial: Partial<BorradorExperiencia>) => void;
+  /** El paso 2 del onboarding dice "Guardar diseño". */
+  etiquetaGuardar?: string;
+  /** Avisa cuando se guardó bien (el onboarding confirma el paso con eso). */
+  alGuardar?: () => void;
 }) {
   const [estado, accion, guardando] = useActionState(
     guardarExperiencia,
     ESTADO_INICIAL,
   );
+
+  useEffect(() => {
+    if (estado.ok) alGuardar?.();
+  }, [estado.ok, alGuardar]);
   const color = borrador.color;
   const setColor = (v: string) => alCambiar({ color: v });
 
@@ -508,7 +518,7 @@ export function FormExperiencia({
       </section>
 
       <Boton type="submit" tam="lg" disabled={guardando || !colorValido} className="sm:self-start">
-        {guardando ? "Guardando…" : "Guardar cambios"}
+        {guardando ? "Guardando…" : etiquetaGuardar}
       </Boton>
     </form>
   );

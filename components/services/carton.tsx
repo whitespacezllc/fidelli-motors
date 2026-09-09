@@ -33,8 +33,8 @@ import {
   guardarService,
   crearProductoRapido,
   type ItemCargado,
-} from "@/app/panel/services/nuevo/[vehiculoId]/actions";
-import { actualizarService } from "@/app/panel/services/[serviceId]/editar/actions";
+} from "@/app/panel/(tras-onboarding)/services/nuevo/[vehiculoId]/actions";
+import { actualizarService } from "@/app/panel/(tras-onboarding)/services/[serviceId]/editar/actions";
 
 type Producto = {
   id: string;
