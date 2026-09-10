@@ -40,16 +40,12 @@ export default async function PaginaInicio({
   const bienvenida = sesion?.bienvenidaPendiente ? (
     <Bienvenida nombre={sesion.lubricentroNombre ?? "Tu lubricentro"} />
   ) : null;
-  const opcionesChecklist = {
-    aplicaPremio: featureHabilitada(sesion, "premios"),
-    premioOmitido: sesion?.premioOmitido ?? false,
-  };
 
   // Una sola consulta para toda la pantalla —métricas, landing, gráfico,
   // retención y últimos services— más la lista de sucursales del filtro,
   // que es chica y va en paralelo. El resumen se arma en Postgres: ocho
   // agregados en ocho viajes sería el error a evitar.
-  const [resumenRes, sucursalesRes, stockBajoRes] = await Promise.all([
+  const [resumenRes, sucursalesRes, stockBajoRes, onboardingRes] = await Promise.all([
     supabase.rpc("resumen_inicio", { p_sucursal_id: sucursal || undefined }),
     supabase
       .from("sucursales")
@@ -61,7 +57,23 @@ export default async function PaginaInicio({
     // paralelo, y evita reescribir por cuarta vez la función más tocada
     // del schema.
     supabase.rpc("stock_bajo", { p_limite: 8 }),
+    // El estado del onboarding, por su función de la base: es la única que
+    // sabe si el programa de premios EXISTE aunque esté apagado (el
+    // `premio_meta` del resumen solo ve el activo). Sin esto, apagar el
+    // programa desde Fidelización volvía a tapar el Inicio con el checklist.
+    // Va aparte de resumen_inicio por la misma razón que stock_bajo: una
+    // consulta chica en paralelo antes que reescribir esa función otra vez.
+    sesion?.lubricentroId
+      ? supabase.rpc("onboarding_estado", { p_lubricentro_id: sesion.lubricentroId })
+      : Promise.resolve({ data: null }),
   ]);
+
+  const onboarding = onboardingRes.data as { premio_definido?: boolean } | null;
+  const opcionesChecklist = {
+    aplicaPremio: featureHabilitada(sesion, "premios"),
+    premioOmitido: sesion?.premioOmitido ?? false,
+    premioDefinido: onboarding?.premio_definido === true,
+  };
 
   const crudo = resumenRes.data as (Omit<Resumen, "series"> & {
     series?: Partial<Record<VistaPanel, PuntoSerie[]>>;
