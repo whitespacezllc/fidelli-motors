@@ -9,11 +9,18 @@ export type EstadoChecklist = {
 };
 
 // Lo que el checklist no puede saber por los datos del resumen: si el
-// plan incluye premios (sin la feature el paso no existe) y si el taller
-// dejó el premio para después en el onboarding (cuenta como hecho).
+// plan incluye premios (sin la feature el paso no existe), si el taller
+// dejó el premio para después en el onboarding (cuenta como hecho) y si
+// el programa existe aunque hoy esté apagado. `premio_meta` del resumen
+// solo ve el programa ACTIVO: apagarlo desde Fidelización lo dejaba en
+// null y el checklist volvía a tapar el Inicio pidiendo un premio que ya
+// estaba definido. La regla es la misma del onboarding (paso 3 en
+// onboarding_estado_de): definirlo y apagarlo es una decisión, no una
+// omisión.
 export type OpcionesChecklist = {
   aplicaPremio: boolean;
   premioOmitido: boolean;
+  premioDefinido: boolean;
 };
 
 function plural(n: number, singular: string, plural: string) {
@@ -24,7 +31,10 @@ export function estaCompleto(c: EstadoChecklist, o: OpcionesChecklist): boolean 
   return (
     c.sucursales > 0 &&
     c.productos > 0 &&
-    (!o.aplicaPremio || c.premio_meta !== null || o.premioOmitido) &&
+    (!o.aplicaPremio ||
+      c.premio_meta !== null ||
+      o.premioDefinido ||
+      o.premioOmitido) &&
     c.services > 0
   );
 }
@@ -81,8 +91,13 @@ export function Checklist({
             logro:
               estado.premio_meta !== null
                 ? `Premio cada ${estado.premio_meta} services`
-                : "Lo dejaste para después: se define desde Fidelización",
-            hecho: estado.premio_meta !== null || opciones.premioOmitido,
+                : opciones.premioDefinido
+                  ? "Definido y hoy apagado: se prende desde Fidelización"
+                  : "Lo dejaste para después: se define desde Fidelización",
+            hecho:
+              estado.premio_meta !== null ||
+              opciones.premioDefinido ||
+              opciones.premioOmitido,
             destino: "/panel/fidelizacion",
             cta: "Empezar",
           },
