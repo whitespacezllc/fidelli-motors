@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Boton } from "@/components/ui/boton";
 import { Combobox } from "@/components/ui/combobox";
@@ -16,6 +16,10 @@ import {
   normalizarViscosidad,
   formatearKm,
   VISCOSIDAD_FORMATO,
+  SALTOS_FIJOS,
+  SALTO_POR_DEFECTO,
+  SALTO_RANGO,
+  esSaltoValido,
   type ItemTipo,
 } from "@/lib/renglones";
 import {
@@ -112,11 +116,9 @@ export type ServiceEnEdicion = {
 // CLASE_CAMPO y CLASE_LABEL viven en campos-carton.tsx, junto con los
 // campos extraídos que también usa la simulación de la landing.
 
-// Los tres saltos del cartón. Sin "Otro": la carga es a botón fijo — un
-// número a mano era la puerta a un 100.000 de más que ensucia la
-// predicción de retorno.
-const SALTOS = ["8", "10", "15"] as const;
-type Salto = (typeof SALTOS)[number];
+// Los saltos viven en lib/renglones: tres atajos fijos y "Otro", que pide
+// el salto en km (cada cuántos), nunca el kilometraje final.
+type ProxModo = (typeof SALTOS_FIJOS)[number] | "otro";
 
 // El stock del aceite baja según la UNIDAD del producto — la regla vive en
 // guardar_service y acá solo se refleja. A granel (litro) descuenta los
@@ -127,18 +129,19 @@ function descuentaPorLitros(p: { stock?: number | null; unidad?: string }) {
   return p.stock != null && p.unidad === "litro";
 }
 
-// El próximo service guardado pudo salir de los atajos o —en services de
-// antes de sacar "Otro"— de un número a mano: al reabrir, se vuelve al
-// atajo si la cuenta coincide y, si no, el valor guardado se conserva
-// como un botón más ("legado"), para que editar otra cosa no lo pise.
-function proxInicial(edicion: ServiceEnEdicion | undefined) {
-  if (!edicion || edicion.kilometros == null)
-    return { modo: "10" as const, legado: edicion?.proxServiceKm ?? 0 };
-  for (const salto of SALTOS) {
-    if (edicion.proxServiceKm === edicion.kilometros + Number(salto) * 1000)
-      return { modo: salto, legado: 0 };
-  }
-  return { modo: "legado" as const, legado: edicion.proxServiceKm };
+// El próximo service guardado pudo salir de un atajo o de "Otro": al
+// reabrir se vuelve al atajo si la cuenta coincide y, si no, "Otro" queda
+// elegido con el salto guardado, para que editar otra cosa del cartón no
+// lo pise. Cubre también los services viejos cargados con un número a mano.
+function proxInicial(edicion: ServiceEnEdicion | undefined): {
+  modo: ProxModo;
+  otro: string;
+} {
+  if (!edicion || edicion.kilometros == null || !edicion.proxServiceKm)
+    return { modo: SALTO_POR_DEFECTO, otro: "" };
+  const salto = edicion.proxServiceKm - edicion.kilometros;
+  const fijo = SALTOS_FIJOS.find((s) => s === salto);
+  return fijo ? { modo: fijo, otro: "" } : { modo: "otro", otro: String(salto) };
 }
 
 export function Carton({
@@ -192,11 +195,14 @@ export function Carton({
     edicion?.cambiados ?? {},
   );
   const [abiertos, setAbiertos] = useState<Record<string, boolean>>({});
-  const [proxModo, setProxModo] = useState<Salto | "legado">(
-    proxInicial(edicion).modo,
+  const [proxModo, setProxModo] = useState<ProxModo>(
+    () => proxInicial(edicion).modo,
   );
-  // Solo existe al editar un service viejo cargado con "Otro".
-  const proxLegado = proxInicial(edicion).legado;
+  // El salto escrito en "Otro", como texto (igual que los kilómetros).
+  const [otroSalto, setOtroSalto] = useState(() => proxInicial(edicion).otro);
+  // El campo toma el foco solo cuando se acaba de tocar "Otro", no al
+  // abrir un service que ya se guardó con un salto propio.
+  const [otroRecienElegido, setOtroRecienElegido] = useState(false);
   const [observaciones, setObservaciones] = useState(
     edicion?.observaciones ?? "",
   );
@@ -233,10 +239,19 @@ export function Carton({
   const viscosidadRara =
     aceiteTipo.trim().length > 0 && !esViscosidadValida(aceiteTipo);
 
-  const proxKm = useMemo(() => {
-    if (proxModo === "legado") return proxLegado;
-    return kmCargado ? kmNum + Number(proxModo) * 1000 : 0;
-  }, [proxModo, proxLegado, kmCargado, kmNum]);
+  // "Otro" cuenta solo con un salto dentro del rango. Fuera de él el
+  // próximo queda en 0: se apagan el botón de revisar y el renglón de
+  // abajo, y el aviso bajo el campo dice qué corregir.
+  const otroNum = Number(otroSalto.replace(/\D/g, ""));
+  const otroCargado = otroSalto.trim() !== "";
+  const otroFueraDeRango = otroCargado && !esSaltoValido(otroNum);
+  const salto =
+    proxModo === "otro"
+      ? otroCargado && !otroFueraDeRango
+        ? otroNum
+        : 0
+      : proxModo;
+  const proxKm = kmCargado && salto > 0 ? kmNum + salto : 0;
 
   const aceitesDelCatalogo = productos.filter((p) => p.categoria === "aceite");
   const aceiteElegido =
@@ -1107,29 +1122,47 @@ export function Carton({
         <div>
           <span className={CLASE_LABEL}>Próximo service</span>
           <div className="flex flex-wrap gap-2">
-            {/* El botón "legado" solo aparece editando un service viejo que
-                se cargó con un número a mano: conserva ese valor sin
-                obligar a recalcularlo con los saltos de hoy. */}
-            {([...SALTOS, ...(proxLegado ? (["legado"] as const) : [])]).map(
-              (modo) => (
-                <button
-                  key={modo}
-                  type="button"
-                  onClick={() => setProxModo(modo)}
-                  aria-pressed={proxModo === modo}
-                  className={`flex h-11 items-center rounded-md border px-3.5 text-ui tabular-nums transition-colors ${
-                    proxModo === modo
-                      ? "border-ink bg-ink font-semibold text-white"
-                      : "border-line bg-base text-ink-60 hover:bg-surface"
-                  }`}
-                >
-                  {modo === "legado"
-                    ? `${formatearKm(proxLegado)} km`
-                    : `+${formatearKm(Number(modo) * 1000)} km`}
-                </button>
-              ),
-            )}
+            {/* Tres atajos y "Otro". Los atajos son la carga de un toque;
+                "Otro" abre un campo que pide el salto (cada cuántos km),
+                nunca el kilometraje final: un cero de más se ve al lado. */}
+            {([...SALTOS_FIJOS, "otro"] as const).map((modo) => (
+              <button
+                key={modo}
+                type="button"
+                onClick={() => {
+                  setProxModo(modo);
+                  setOtroRecienElegido(modo === "otro");
+                }}
+                aria-pressed={proxModo === modo}
+                className={`flex h-11 items-center rounded-md border px-3.5 text-ui tabular-nums transition-colors ${
+                  proxModo === modo
+                    ? "border-ink bg-ink font-semibold text-white"
+                    : "border-line bg-base text-ink-60 hover:bg-surface"
+                }`}
+              >
+                {modo === "otro" ? "Otro" : `+${formatearKm(modo)} km`}
+              </button>
+            ))}
           </div>
+          {proxModo === "otro" && (
+            <div className="mt-2">
+              <input
+                id="otro-salto"
+                inputMode="numeric"
+                autoFocus={otroRecienElegido}
+                value={otroSalto}
+                onChange={(e) => setOtroSalto(e.target.value)}
+                placeholder="Cada cuántos km"
+                aria-label="Cada cuántos kilómetros hasta el próximo service"
+                className={`${CLASE_CAMPO} tabular-nums`}
+              />
+              {otroFueraDeRango && (
+                <p className="mt-2 rounded-md bg-urgente-soft px-3.5 py-3 text-ui text-urgente">
+                  {SALTO_RANGO}
+                </p>
+              )}
+            </div>
+          )}
           {proxKm > 0 && (
             <p className="mt-1.5 text-label text-ink-60 tabular-nums">
               Próximo service: {formatearKm(proxKm)} km
@@ -1304,7 +1337,9 @@ export function Carton({
           <p className="mt-1.5 text-center text-label text-ink-60">
             {esMecanica
               ? "Falta contar qué trabajo se hizo."
-              : "Faltan los kilómetros y la viscosidad del aceite."}
+              : kmCargado && aceiteTipo.trim().length >= 2 && proxKm === 0
+                ? "Falta indicar cada cuántos km es el próximo service."
+                : "Faltan los kilómetros y la viscosidad del aceite."}
           </p>
         )}
       </div>
