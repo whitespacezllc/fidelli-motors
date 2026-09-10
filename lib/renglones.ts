@@ -64,3 +64,27 @@ export function esViscosidadValida(texto: string): boolean {
 export function formatearKm(km: number): string {
   return km.toLocaleString("es-AR");
 }
+
+// Los saltos del próximo service. Tres atajos fijos —el service típico de
+// un auto, a un toque— y "Otro" para lo que no entra en ellos: la moto que
+// se hace cada 4.000, el camión pesado cada 25.000, el cliente que conoce
+// su auto y pide 12.000. El número a mano ya existió y se sacó (un 100.000
+// de más ensució la predicción de retorno); vuelve acotado: pide el SALTO
+// y no el kilometraje final, y el salto tiene rango. Un cero de más en un
+// 10.000 no pasa; en un 4.000 se ve al lado, en "Próximo service: …".
+export const SALTOS_FIJOS = [8_000, 10_000, 15_000] as const;
+export const SALTO_POR_DEFECTO = 10_000;
+export const SALTO_MINIMO = 1_000;
+export const SALTO_MAXIMO = 60_000;
+
+export function esSaltoValido(salto: number): boolean {
+  return (
+    Number.isInteger(salto) && salto >= SALTO_MINIMO && salto <= SALTO_MAXIMO
+  );
+}
+
+// Bajo el campo de "Otro": el hecho y el ejemplo correcto.
+export const SALTO_RANGO = `Entre ${formatearKm(SALTO_MINIMO)} y ${formatearKm(SALTO_MAXIMO)} km: 4.000 para una moto, 25.000 para un camión.`;
+
+// La misma regla desde el servidor, para un payload que no pasó por el cartón.
+export const SALTO_RANGO_ERROR = `El próximo service tiene que quedar entre ${formatearKm(SALTO_MINIMO)} y ${formatearKm(SALTO_MAXIMO)} km después de los kilómetros de hoy. Elegí un salto o corregí el de Otro.`;

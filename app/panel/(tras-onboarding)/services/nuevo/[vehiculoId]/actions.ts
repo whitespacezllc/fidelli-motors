@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { sesionParaEscribir, featureHabilitada } from "@/lib/auth/session";
 import type { CategoriaProducto } from "@/lib/categorias";
+import { esSaltoValido, SALTO_RANGO_ERROR } from "@/lib/renglones";
 
 export type ItemCargado = {
   /** Uno de los 11 renglones; ausente en un renglón libre de mecánica. */
@@ -145,6 +146,11 @@ export async function guardarService(
       return {
         error: "El próximo service tiene que ser mayor a los kilómetros de hoy.",
       };
+    }
+    // El salto acotado también acá: la puerta al 100.000 de más se cierra
+    // para el payload que no pasó por el cartón.
+    if (!esSaltoValido(payload.proxServiceKm - payload.kilometros)) {
+      return { error: SALTO_RANGO_ERROR };
     }
   }
 

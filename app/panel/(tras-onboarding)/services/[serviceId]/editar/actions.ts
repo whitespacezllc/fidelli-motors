@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { sesionParaEscribir } from "@/lib/auth/session";
+import { esSaltoValido, SALTO_RANGO_ERROR } from "@/lib/renglones";
 import type {
   PayloadService,
   ResultadoGuardado,
@@ -63,6 +64,11 @@ export async function actualizarService(
       return {
         error: "El próximo service tiene que ser mayor a los kilómetros de hoy.",
       };
+    }
+    // El salto acotado también acá: la puerta al 100.000 de más se cierra
+    // para el payload que no pasó por el cartón.
+    if (!esSaltoValido(payload.proxServiceKm - payload.kilometros)) {
+      return { error: SALTO_RANGO_ERROR };
     }
   }
 
