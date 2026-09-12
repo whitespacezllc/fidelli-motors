@@ -57,6 +57,9 @@ export function TablaLubricentros({
             {/* El onboarding: en qué paso está y cuándo avanzó por última
                 vez. Solo lectura — los pasos los da el taller. */}
             <th scope="col" className={TH}>Onboarding</th>
+            {/* El módulo pago, para el repaso de cobranzas: se ve de una
+                cuáles tenants lo tienen sin abrir tenant por tenant. */}
+            <th scope="col" className={TH}>Módulos</th>
             <th scope="col" className={TH}>
               <span className="sr-only">Acciones</span>
             </th>
@@ -187,6 +190,16 @@ export function TablaLubricentros({
                           : "sin avances"}
                       </span>
                     </>
+                  )}
+                </td>
+
+                <td className={`${TD} whitespace-nowrap`}>
+                  {l.modulo_neumaticos ? (
+                    <span className="rounded-sm border border-reward bg-reward-soft px-2 py-0.5 text-label font-semibold tracking-[0.04em] text-ink uppercase">
+                      Gomería
+                    </span>
+                  ) : (
+                    <span className="text-ink-40">—</span>
                   )}
                 </td>
 

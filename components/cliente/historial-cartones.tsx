@@ -2,6 +2,7 @@ import { IconoChevron, IconoCandado } from "@/components/iconos";
 import {
   CartonPapel,
   CartonPapelMecanica,
+  CartonPapelNeumaticos,
 } from "@/components/services/carton-papel";
 import {
   marcadosDe,
@@ -11,12 +12,33 @@ import {
 import { formatearKm } from "@/lib/renglones";
 import { formatearFecha } from "@/lib/fechas";
 import { ESTILO_PAPEL } from "@/lib/cliente/tema";
+import { ETIQUETA_TIPO, type TipoTrabajo } from "@/lib/trabajos";
+import { resumenRuedas } from "@/lib/ruedas";
 
-// El historial cronológico, con LOS DOS tipos de trabajo en una sola
+// LA LÍNEA SECUNDARIA DEL ACORDEÓN, por tipo. Antes era un ternario con
+// el service como caso por ausencia; con tres tipos eso le mostraba al
+// dueño del auto los kilómetros de un trabajo de gomería como si fuera
+// un cambio de aceite. Un Record obliga a contestar por cada tipo.
+const RESUMEN_POR_TIPO: Record<TipoTrabajo, (s: ServiceCarton) => string> = {
+  service: (s) =>
+    `${formatearKm(s.kilometros ?? 0)} km${s.sucursal ? ` · ${s.sucursal}` : ""}`,
+  mecanica: (s) => [s.trabajoDescripcion, s.sucursal].filter(Boolean).join(" · "),
+  neumaticos: (s) =>
+    [
+      s.kilometros != null ? `${formatearKm(s.kilometros)} km` : null,
+      resumenRuedas(s.ruedas, s.alineacion ?? false),
+      s.sucursal,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+};
+
+// El historial cronológico, con LOS TRES tipos de trabajo en una sola
 // línea de tiempo — un cliente de taller que escanea tiene que ver todo
 // lo que le hicieron al auto, no solo los cambios de aceite. Cada fila se
 // abre a su papel: el cartón para el service, la orden de trabajo para la
-// mecánica. Es el mismo objeto, no un resumen distinto.
+// mecánica y el esquema de las ruedas para la gomería. Es el mismo
+// objeto, no un resumen distinto.
 //
 // Va con <details>/<summary> y no con estado de React: expandir y colapsar
 // es exactamente para lo que existe el elemento, funciona sin que hidrate
@@ -65,18 +87,16 @@ export function HistorialCartones({
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-baseline gap-x-2 text-c-body font-bold tabular-nums">
                     {formatearFecha(s.fecha)}
-                    {s.tipo === "mecanica" && (
-                      <span className="rounded-sm border border-line bg-surface px-2 py-0.5 text-label font-semibold tracking-[0.04em] text-ink-60 uppercase">
-                        Mecánica
-                      </span>
-                    )}
+                    {/* EL SELLO DEL TIPO, para los tres. Antes había uno
+                        solo —"Mecánica"— y el service se identificaba por
+                        ausencia; con tres tipos, dejar uno sin etiquetar
+                        es confuso para el dueño del auto. */}
+                    <span className="rounded-sm border border-line bg-surface px-2 py-0.5 text-label font-semibold tracking-[0.04em] text-ink-60 uppercase">
+                      {ETIQUETA_TIPO[s.tipo]}
+                    </span>
                   </span>
                   <span className="block text-c-body text-ink-60 tabular-nums">
-                    {s.tipo === "mecanica"
-                      ? [s.trabajoDescripcion, s.sucursal]
-                          .filter(Boolean)
-                          .join(" · ")
-                      : `${formatearKm(s.kilometros ?? 0)} km${s.sucursal ? ` · ${s.sucursal}` : ""}`}
+                    {RESUMEN_POR_TIPO[s.tipo](s)}
                   </span>
                   {s.fijado && (
                     <span className="mt-2 inline-flex items-center gap-1.5 rounded-sm bg-surface px-2.5 py-1 text-c-body text-ink-60">
@@ -95,7 +115,20 @@ export function HistorialCartones({
                   siendo un recibo claro sobre el mostrador — el reset
                   devuelve los tokens de tinta dentro de este subárbol. */}
               <div className="px-3 pt-1 pb-4" style={ESTILO_PAPEL}>
-                {s.tipo === "mecanica" ? (
+                {s.tipo === "neumaticos" ? (
+                  <CartonPapelNeumaticos
+                    escala="cliente"
+                    datos={{
+                      lubricentroNombre,
+                      colorTenant,
+                      colorPapel,
+                      fecha: s.fecha,
+                      kilometros: s.kilometros,
+                      alineacion: s.alineacion ?? false,
+                      ruedas: s.ruedas,
+                    }}
+                  />
+                ) : s.tipo === "mecanica" ? (
                   <CartonPapelMecanica
                     escala="cliente"
                     datos={{

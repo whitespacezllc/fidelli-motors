@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { aplicarFiltrosTrabajos, filtrosTrabajos } from "@/lib/trabajos";
+import {
+  aplicarFiltrosTrabajos,
+  filtrosTrabajos,
+  ETIQUETA_TIPO,
+} from "@/lib/trabajos";
+import { ETIQUETA_POSICION, resumenRuedas } from "@/lib/ruedas";
 import { RENGLONES, type ItemTipo } from "@/lib/renglones";
 import {
   contextoExportacion,
@@ -162,11 +167,15 @@ export async function GET(request: NextRequest) {
       const consulta = supabase.from("services").select(
         `id, tipo, trabajo_descripcion, fecha, created_at, kilometros, anulado,
          observaciones, prox_service_km, aceite_tipo, aceite_nombre, aceite_litros,
+         alineacion,
          vehiculos!inner(patente, marca, modelo, clientes(nombre, telefono)),
          sucursales(nombre),
          usuarios!usuario_id(nombre),
          aceite:productos!aceite_producto_id(nombre, marca, unidad),
-         service_items(item_tipo, detalle, cambiado, cantidad, productos(nombre, marca, unidad))`,
+         service_items(item_tipo, detalle, cambiado, cantidad, productos(nombre, marca, unidad)),
+         service_ruedas(posicion, colocada, rotada, balanceada, reparada,
+                        marca, medida, dot, profundidad_mm,
+                        productos(nombre, marca, unidad))`,
       );
       return aplicarFiltrosTrabajos(consulta, filtros)
         .order("fecha", { ascending: false })
@@ -191,7 +200,7 @@ export async function GET(request: NextRequest) {
       filasTrabajos.push([
         fecha(t.fecha),
         fechaHora(t.created_at),
-        texto(t.tipo === "mecanica" ? "Mecánica" : "Service"),
+        texto(ETIQUETA_TIPO[t.tipo]),
         patente(t.vehiculos.patente),
         texto(vehiculo),
         texto(t.vehiculos.clientes?.nombre),
@@ -202,7 +211,14 @@ export async function GET(request: NextRequest) {
         texto(t.aceite_nombre ?? (t.aceite ? nombreProducto(t.aceite) : null)),
         numero(t.aceite_litros),
         texto(resumenProductos(t, items)),
-        texto(t.trabajo_descripcion),
+        // La columna Detalle cuenta de qué se trató el trabajo. En
+        // gomería, el resumen de las ruedas: la descripción libre es de
+        // la mecánica y en neumáticos viene siempre en null.
+        texto(
+          t.tipo === "neumaticos"
+            ? resumenRuedas(t.service_ruedas ?? [], t.alineacion ?? false)
+            : t.trabajo_descripcion,
+        ),
         texto(renglones(items)),
         texto(t.observaciones),
         numero(t.prox_service_km),
@@ -226,6 +242,25 @@ export async function GET(request: NextRequest) {
           siNo(t.anulado),
         ]);
       }
+      // Una cubierta COLOCADA que salió del catálogo es un producto que
+      // se consumió y movió el stock: va en la misma hoja que el aceite y
+      // los renglones. Una rueda solo medida no, porque no salió nada del
+      // estante.
+      for (const rueda of t.service_ruedas ?? []) {
+        if (!rueda.productos || !rueda.colocada) continue;
+        filasProductos.push([
+          texto(t.id),
+          fecha(t.fecha),
+          patente(t.vehiculos.patente),
+          texto(ETIQUETA_POSICION[rueda.posicion]),
+          texto(rueda.productos.nombre),
+          texto(rueda.productos.marca),
+          numero(1),
+          texto(rueda.productos.unidad),
+          siNo(t.anulado),
+        ]);
+      }
+
       for (const item of items) {
         if (!item.productos) continue;
         filasProductos.push([

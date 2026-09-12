@@ -10,6 +10,7 @@ import { FiltrosServices } from "@/components/services/filtros-services";
 import { FilaService } from "@/components/services/fila-service";
 import { BotonExportar } from "@/components/panel/boton-exportar";
 import { estadoService } from "@/lib/servicios";
+import { resumenRuedas } from "@/lib/ruedas";
 import {
   aplicarFiltrosTrabajos,
   filtrosTrabajos,
@@ -46,9 +47,11 @@ export default async function PaginaServices({
   const base = supabase
     .from("services")
     .select(
-      `id, tipo, trabajo_descripcion, fecha, created_at, kilometros, anulado, desbloqueado_hasta,
+      `id, tipo, trabajo_descripcion, fecha, created_at, kilometros, anulado,
+       desbloqueado_hasta, alineacion,
        vehiculos!inner(patente, patente_normalizada, marca, modelo, clientes(nombre)),
-       sucursales(nombre)`,
+       sucursales(nombre),
+       service_ruedas(colocada, rotada, balanceada, reparada)`,
       { count: "exact" },
     )
     .order("fecha", { ascending: false })
@@ -68,7 +71,12 @@ export default async function PaginaServices({
   const services = (serviciosRes.data ?? []).map((s) => ({
     id: s.id,
     tipo: s.tipo,
-    descripcion: s.trabajo_descripcion,
+    // La columna del medio dice de qué se trató el trabajo: la
+    // descripción en mecánica, el resumen de las ruedas en gomería.
+    descripcion:
+      s.tipo === "neumaticos"
+        ? resumenRuedas(s.service_ruedas ?? [], s.alineacion ?? false)
+        : s.trabajo_descripcion,
     creado: s.created_at,
     patente: s.vehiculos.patente,
     vehiculo:
@@ -79,16 +87,14 @@ export default async function PaginaServices({
     estado: estadoService(s),
   }));
 
-  // Los links de paginación conservan los filtros.
+  // Los links de paginación conservan los filtros. Salen de
+  // queryTrabajos —el mismo armador que usa la exportación— y no de una
+  // lista escrita a mano: así estaba, y el filtro de TIPO se perdía al
+  // pasar de página sin que nadie lo notara.
   const urlPagina = (n: number) => {
-    const p = new URLSearchParams();
-    if (filtros.q) p.set("q", filtros.q);
-    if (filtros.sucursal) p.set("sucursal", filtros.sucursal);
-    if (filtros.desde) p.set("desde", filtros.desde);
-    if (filtros.hasta) p.set("hasta", filtros.hasta);
-    if (n > 1) p.set("pagina", String(n));
-    const query = p.toString();
-    return `/panel/services${query ? `?${query}` : ""}`;
+    const query = queryTrabajos(filtros);
+    if (n <= 1) return `/panel/services${query}`;
+    return `/panel/services${query ? `${query}&` : "?"}pagina=${n}`;
   };
 
   return (

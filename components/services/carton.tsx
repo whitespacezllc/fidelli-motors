@@ -8,6 +8,7 @@ import { Combobox } from "@/components/ui/combobox";
 import {
   CartonPapel,
   CartonPapelMecanica,
+  CartonPapelNeumaticos,
 } from "@/components/services/carton-papel";
 import {
   RENGLONES,
@@ -31,7 +32,20 @@ import {
   SelectorProductoBuscable,
   RenglonInterruptor,
 } from "@/components/services/campos-carton";
-import { recordarSucursal } from "@/lib/preferencias";
+import {
+  RuedasCarton,
+  ruedasVacias,
+  ruedaCuenta,
+  type RuedasPorPosicion,
+} from "@/components/services/ruedas-carton";
+import {
+  ETIQUETA_TIPO,
+  NOMBRE_TRABAJO,
+  TIPOS_TRABAJO,
+  type TipoTrabajo,
+} from "@/lib/trabajos";
+import { POSICIONES, type PosicionRueda } from "@/lib/ruedas";
+import { recordarSucursal, recordarTipoTrabajo } from "@/lib/preferencias";
 import { formatearFecha as formatearFechaCorta } from "@/lib/fechas";
 import {
   guardarService,
@@ -43,6 +57,8 @@ import { actualizarService } from "@/app/panel/(tras-onboarding)/services/[servi
 type Producto = {
   id: string;
   nombre: string;
+  /** La marca cruda, para copiarla como snapshot en una rueda. */
+  marca?: string | null;
   categoria: string;
   precioVenta?: number | null;
   stock?: number | null;
@@ -71,6 +87,13 @@ export type DatosCarton = {
   premioDisponible: { descripcion: string; alcance: "services" | "todos" } | null;
   /** El plan habilita mecánica: sin esto el selector de tipo no aparece. */
   puedeMecanica?: boolean;
+  /** El módulo de gomería está pago y prendido para este tenant. */
+  puedeNeumaticos?: boolean;
+  /** El último tipo que cargó ESTE dispositivo. Lo resuelve el servidor
+   *  desde la cookie para que la solapa correcta llegue ya pintada: una
+   *  gomería carga cubiertas todo el día y abrir siempre en Service es un
+   *  toque equivocado por cada trabajo de la jornada. */
+  tipoInicial?: TipoTrabajo;
   /** El plan habilita pendientes: gobierna los dos bloques de abajo. */
   puedePendientes?: boolean;
   /** Los pendientes ABIERTOS del auto, para tildar sin salir del flujo. */
@@ -88,10 +111,26 @@ export type DatosCarton = {
 // En edición llega el service precargado; el vehículo no se puede cambiar
 // (nunca fue un campo del formulario, y así debe seguir: un service
 // cargado en el auto equivocado se anula y se recarga).
+export type RuedaEnEdicion = {
+  posicion: PosicionRueda;
+  posicionAnterior: PosicionRueda | null;
+  colocada: boolean;
+  rotada: boolean;
+  balanceada: boolean;
+  reparada: boolean;
+  productoId: string | null;
+  marca: string | null;
+  medida: string | null;
+  indiceCargaVel: string | null;
+  dot: string | null;
+  profundidadMm: number | null;
+  presionPsi: number | null;
+};
+
 export type ServiceEnEdicion = {
   serviceId: string;
   /** El tipo NO se edita: un service no se convierte en mecánica. */
-  tipo: "service" | "mecanica";
+  tipo: TipoTrabajo;
   fecha: string;
   kilometros: number | null;
   aceiteTipo: string;
@@ -111,6 +150,9 @@ export type ServiceEnEdicion = {
   /** ¿Alguno de los productos de este trabajo lleva stock? Lo resuelve el
    *  servidor, que tiene los producto_id: acá el renglón es texto. */
   usaProductosConStock?: boolean;
+  /** Gomería: la alineación del vehículo y las ruedas ya cargadas. */
+  alineacion?: boolean;
+  ruedas?: RuedaEnEdicion[];
 };
 
 // CLASE_CAMPO y CLASE_LABEL viven en campos-carton.tsx, junto con los
@@ -157,10 +199,22 @@ export function Carton({
   // El tipo de trabajo, LO PRIMERO del flujo: es la bifurcación entera.
   // En edición queda fijo — reescribir un service como mecánica sería
   // reescribir la historia del auto (la base también lo impide).
-  const [tipo, setTipo] = useState<"service" | "mecanica">(
-    edicion?.tipo ?? "service",
+  // En edición queda fijo. En una carga nueva arranca en el último tipo
+  // que usó este dispositivo (cookie), con Service como valor inicial.
+  const [tipo, setTipo] = useState<TipoTrabajo>(
+    edicion?.tipo ?? datos.tipoInicial ?? "service",
   );
   const esMecanica = tipo === "mecanica";
+  const esNeumaticos = tipo === "neumaticos";
+  // El cartón de aceite es el de `service` y nada más. Se pregunta por el
+  // tipo en positivo a propósito: "si no es mecánica, entonces es service"
+  // era exactamente la rama implícita que un tercer tipo rompe.
+  const esService = tipo === "service";
+
+  function elegirTipo(nuevo: TipoTrabajo) {
+    setTipo(nuevo);
+    recordarTipoTrabajo(nuevo);
+  }
   const [descripcion, setDescripcion] = useState(
     edicion?.trabajoDescripcion ?? "",
   );
@@ -203,6 +257,32 @@ export function Carton({
   // El campo toma el foco solo cuando se acaba de tocar "Otro", no al
   // abrir un service que ya se guardó con un salto propio.
   const [otroRecienElegido, setOtroRecienElegido] = useState(false);
+  // Gomería: la alineación es del vehículo entero, y las ruedas van por
+  // posición. En edición llegan cargadas desde la base.
+  const [alineacion, setAlineacion] = useState(
+    Boolean(edicion?.alineacion),
+  );
+  const [ruedas, setRuedas] = useState<RuedasPorPosicion>(() => {
+    const base = ruedasVacias();
+    for (const r of edicion?.ruedas ?? []) {
+      base[r.posicion] = {
+        colocada: r.colocada,
+        rotada: r.rotada,
+        balanceada: r.balanceada,
+        reparada: r.reparada,
+        posicionAnterior: r.posicionAnterior ?? "",
+        productoId: r.productoId ?? "",
+        marca: r.marca ?? "",
+        medida: r.medida ?? "",
+        indiceCargaVel: r.indiceCargaVel ?? "",
+        dot: r.dot ?? "",
+        profundidad: r.profundidadMm != null ? String(r.profundidadMm) : "",
+        presion: r.presionPsi != null ? String(r.presionPsi) : "",
+      };
+    }
+    return base;
+  });
+
   const [observaciones, setObservaciones] = useState(
     edicion?.observaciones ?? "",
   );
@@ -254,6 +334,11 @@ export function Carton({
   const proxKm = kmCargado && salto > 0 ? kmNum + salto : 0;
 
   const aceitesDelCatalogo = productos.filter((p) => p.categoria === "aceite");
+  // La categoría `neumatico` ya existía en el catálogo, con orden 6: lo
+  // que faltaba era el trabajo que las consume.
+  const cubiertasDelCatalogo = productos.filter(
+    (p) => p.categoria === "neumatico",
+  );
   const aceiteElegido =
     productos.find((p) => p.id === aceiteProductoId) ?? null;
 
@@ -320,6 +405,35 @@ export function Carton({
     // Mecánica: renglones libres — el texto viaja SIEMPRE en `detalle` (la
     // base lo exige para un renglón sin tipo) y el producto se vincula si
     // el nombre coincide.
+    // Las ruedas que valen: se les hizo algo, o se las midió. Es el mismo
+    // criterio que el CHECK rueda_con_sustancia — acá para no mandar
+    // cinco filas vacías, y allá como garantía.
+    const ruedasCargadas = POSICIONES.filter((pos) =>
+      ruedaCuenta(ruedas[pos]),
+    ).map((pos) => {
+      const r = ruedas[pos];
+      return {
+        posicion: pos,
+        posicion_anterior: r.rotada ? r.posicionAnterior || null : null,
+        colocada: r.colocada,
+        rotada: r.rotada,
+        balanceada: r.balanceada,
+        reparada: r.reparada,
+        // El producto solo viaja si la cubierta se COLOCÓ: una rueda
+        // medida que referencia un producto del catálogo no descuenta
+        // stock, y mandarlo igual sería pedirle a la base que lo ignore.
+        producto_id: r.colocada ? r.productoId || null : null,
+        marca: r.marca.trim() || null,
+        medida: r.medida.trim().toUpperCase() || null,
+        indice_carga_vel: r.indiceCargaVel.trim().toUpperCase() || null,
+        dot: r.dot.trim() || null,
+        profundidad_mm: r.profundidad.trim()
+          ? r.profundidad.trim().replace(",", ".")
+          : null,
+        presion_psi: r.presion.trim() ? r.presion.replace(/\D/g, "") : null,
+      };
+    });
+
     const items: ItemCargado[] = esMecanica
       ? libres
           .map((texto, i) => ({ texto: texto.trim(), i }))
@@ -350,17 +464,21 @@ export function Carton({
       fecha,
       // En mecánica los kilómetros son opcionales: null si no se anotaron.
       kilometros: esMecanica ? (kmCargado ? kmNum : null) : kmNum,
-      aceiteTipo: esMecanica ? "" : normalizarViscosidad(aceiteTipo),
-      aceiteProductoId: esMecanica ? null : aceiteProductoId || null,
-      aceiteNombre: esMecanica ? null : nombreAceite,
+      aceiteTipo: esService ? normalizarViscosidad(aceiteTipo) : "",
+      aceiteProductoId: esService ? aceiteProductoId || null : null,
+      aceiteNombre: esService ? nombreAceite : null,
       aceiteLitros:
-        !esMecanica &&
+        esService &&
         aceiteElegido != null &&
         descuentaPorLitros(aceiteElegido) &&
         litros.trim() !== ""
           ? Number(litros.replace(",", ".")) || null
           : null,
-      proxServiceKm: esMecanica ? 0 : proxKm,
+      proxServiceKm: esService ? proxKm : 0,
+      // Gomería. `alineacion` viaja en null para los otros dos tipos: la
+      // columna es del trabajo de cubiertas y el CHECK espejo lo exige.
+      alineacion: esNeumaticos ? alineacion : null,
+      ruedas: esNeumaticos ? ruedasCargadas : [],
       observaciones: observaciones.trim() || null,
       items,
       // El canje va con el trabajo, en la misma transacción. Al editar no
@@ -444,25 +562,65 @@ export function Carton({
       (np.descripcion.trim().length < 5 || (!np.fecha && !np.km)),
   );
 
-  const listoParaRevisar =
-    (esMecanica
-      ? descripcion.trim().length >= 5
-      : kmCargado && aceiteTipo.trim().length >= 2 && proxKm > kmNum) &&
-    !pendienteIncompleto;
+  // Gomería: kilómetros cargados y al menos una rueda o la alineación.
+  // Y ninguna rueda a medio cargar — una rotada sin decir de dónde venía
+  // la rechaza la base, así que se atrapa acá antes de perder lo tipeado.
+  const hayTrabajoDeRuedas = POSICIONES.some((pos) => ruedaCuenta(ruedas[pos]));
+  const rotadaSinOrigen = POSICIONES.some(
+    (pos) => ruedas[pos].rotada && !ruedas[pos].posicionAnterior,
+  );
+  const listoNeumaticos =
+    kmCargado && (hayTrabajoDeRuedas || alineacion) && !rotadaSinOrigen;
+
+  const listoPorTipo: Record<TipoTrabajo, boolean> = {
+    service: kmCargado && aceiteTipo.trim().length >= 2 && proxKm > kmNum,
+    mecanica: descripcion.trim().length >= 5,
+    neumaticos: listoNeumaticos,
+  };
+
+  const listoParaRevisar = listoPorTipo[tipo] && !pendienteIncompleto;
 
   // El premio en una mecánica solo si el programa cuenta todos los
   // trabajos — con el alcance clásico, el contador ni se movió.
   const premioAplicable =
-    !esMecanica || datos.premioDisponible?.alcance === "todos"
+    esService || datos.premioDisponible?.alcance === "todos"
       ? datos.premioDisponible
       : null;
+
+  // Qué falta para poder revisar, dicho por tipo. Un mapa y no una
+  // cadena de ternarios: con tres tipos, el "si no es mecánica es
+  // service" implícito le mostraba al gomero un cartel sobre el aceite.
+  const faltaPorTipo: Record<TipoTrabajo, string> = {
+    service:
+      kmCargado && aceiteTipo.trim().length >= 2 && proxKm === 0
+        ? "Falta indicar cada cuántos km es el próximo service."
+        : "Faltan los kilómetros y la viscosidad del aceite.",
+    mecanica: "Falta contar qué trabajo se hizo.",
+    neumaticos: rotadaSinOrigen
+      ? "Marcá de qué posición venía cada cubierta rotada."
+      : !kmCargado
+        ? "Faltan los kilómetros del odómetro."
+        : "Marcá al menos una rueda o la alineación.",
+  };
+  const queFalta = pendienteIncompleto
+    ? "A cada pendiente ponele qué es (5 letras mínimo) y una fecha o kilómetros."
+    : faltaPorTipo[tipo];
+
+  // Los segmentos del control, en el orden del catálogo. El service no
+  // se gatea nunca: es el trabajo base y ningún plan lo apaga.
+  const tiposDisponibles = TIPOS_TRABAJO.filter(
+    (t) =>
+      t === "service" ||
+      (t === "mecanica" && datos.puedeMecanica) ||
+      (t === "neumaticos" && datos.puedeNeumaticos),
+  );
 
   // ---------- Momento 2 ----------
   if (paso === "preview") {
     return (
       <div className="pb-4">
         <h1 className="font-brand text-h3 font-bold text-ink">
-          {esMecanica ? "Revisá el trabajo" : "Revisá el service"}
+          Revisá el {NOMBRE_TRABAJO[tipo]}
         </h1>
         <p className="mt-0.5 mb-4 text-ui text-ink-60">
           Así lo va a ver {datos.clienteNombre.split(" ")[0]} en su celular
@@ -488,6 +646,43 @@ export function Carton({
                   kilometros: kmCargado ? kmNum : null,
                   descripcion: descripcion.trim(),
                   renglones: libres.map((l) => l.trim()).filter(Boolean),
+                }}
+              />
+            ) : esNeumaticos ? (
+              <CartonPapelNeumaticos
+                datos={{
+                  lubricentroNombre: datos.lubricentroNombre,
+                  colorTenant: datos.colorTenant,
+                  colorPapel: datos.colorPapel,
+                  fecha,
+                  kilometros: kmCargado ? kmNum : null,
+                  alineacion,
+                  ruedas: POSICIONES.filter((pos) =>
+                    ruedaCuenta(ruedas[pos]),
+                  ).map((pos) => {
+                    const r = ruedas[pos];
+                    return {
+                      posicion: pos,
+                      posicionAnterior: r.rotada
+                        ? (r.posicionAnterior || null)
+                        : null,
+                      colocada: r.colocada,
+                      rotada: r.rotada,
+                      balanceada: r.balanceada,
+                      reparada: r.reparada,
+                      marca: r.marca.trim() || null,
+                      medida: r.medida.trim().toUpperCase() || null,
+                      indiceCargaVel:
+                        r.indiceCargaVel.trim().toUpperCase() || null,
+                      dot: r.dot.trim() || null,
+                      profundidadMm: r.profundidad.trim()
+                        ? Number(r.profundidad.replace(",", "."))
+                        : null,
+                      presionPsi: r.presion.trim()
+                        ? Number(r.presion.replace(/\D/g, ""))
+                        : null,
+                    };
+                  }),
                 }}
               />
             ) : (
@@ -596,9 +791,7 @@ export function Carton({
               ? "Guardando…"
               : edicion
                 ? "Guardar cambios"
-                : esMecanica
-                  ? "Confirmar trabajo"
-                  : "Confirmar service"}
+                : `Confirmar ${NOMBRE_TRABAJO[tipo]}`}
           </Boton>
         </div>
           </div>
@@ -657,38 +850,45 @@ export function Carton({
       </CabeceraCarton>
 
       {/* EL TIPO DE TRABAJO, lo primero: es la bifurcación del cartón
-          entero. Solo aparece si el plan trae mecánica, y nunca al editar
-          (el tipo de un trabajo guardado no se reescribe). */}
-      {datos.puedeMecanica && !edicion && (
+          entero. Cada segmento aparece con su feature, y nunca al editar
+          (el tipo de un trabajo guardado no se reescribe).
+
+          SIN MÓDULO NO HAY NADA QUE MOSTRAR: el que no tiene gomería ve
+          el control de dos mitades de siempre, sin candado, sin cartel y
+          sin upsell. El panel es la herramienta de trabajo, no la
+          vidriera — la venta del módulo pasa por otro lado. */}
+      {tiposDisponibles.length > 1 && !edicion && (
         <fieldset className="mb-4">
           <legend className="sr-only">Tipo de trabajo</legend>
-          <div className="grid grid-cols-2 gap-2">
-            {(
-              [
-                ["service", "Service"],
-                ["mecanica", "Mecánica"],
-              ] as const
-            ).map(([valor, etiqueta]) => (
+          <div
+            className={`grid gap-2 ${
+              tiposDisponibles.length === 3 ? "grid-cols-3" : "grid-cols-2"
+            }`}
+          >
+            {tiposDisponibles.map((valor) => (
               <button
                 key={valor}
                 type="button"
-                onClick={() => setTipo(valor)}
+                onClick={() => elegirTipo(valor)}
                 aria-pressed={tipo === valor}
-                className={`flex h-12 items-center justify-center rounded-md border font-brand text-body font-bold transition-colors ${
+                className={`flex h-12 items-center justify-center rounded-md border px-1 font-brand text-body font-bold transition-colors ${
                   tipo === valor
                     ? "border-ink bg-ink text-white"
                     : "border-line bg-base text-ink-60 hover:bg-surface"
                 }`}
               >
-                {etiqueta}
+                {ETIQUETA_TIPO[valor]}
               </button>
             ))}
           </div>
         </fieldset>
       )}
-      {edicion?.tipo === "mecanica" && (
+      {edicion && edicion.tipo !== "service" && (
         <p className="mb-4 rounded-md border border-line bg-surface px-3.5 py-2.5 text-ui text-ink-60">
-          Trabajo de mecánica — el tipo no se cambia al editar.
+          {edicion.tipo === "mecanica"
+            ? "Trabajo de mecánica"
+            : "Trabajo de gomería"}{" "}
+          — el tipo no se cambia al editar.
         </p>
       )}
 
@@ -874,7 +1074,62 @@ export function Carton({
           </div>
         )}
 
-        {!esMecanica && (
+        {/* 4-N. La gomería: la alineación del auto y las ruedas.
+            SIN IMPORTES, como todo el modelo operativo. */}
+        {esNeumaticos && (
+          <>
+            {/* LA ALINEACIÓN ES DEL VEHÍCULO, no de una rueda: por eso es
+                un interruptor de la cabecera y no una casilla más del
+                detalle de cada posición. */}
+            <div className="rounded-lg border border-line bg-surface/60">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={alineacion}
+                onClick={() => setAlineacion((v) => !v)}
+                className="flex min-h-14 w-full items-center justify-between gap-3 px-4 py-2.5 text-left"
+              >
+                <span className="min-w-0">
+                  <span className="block font-brand text-body font-bold text-ink">
+                    Alineación
+                  </span>
+                  <span className="block text-ui text-ink-60">
+                    Del auto entero, no de una rueda
+                  </span>
+                </span>
+                <span
+                  className={`flex h-6 w-10 shrink-0 items-center rounded-full p-0.5 transition-colors ${
+                    alineacion ? "bg-ink" : "bg-line"
+                  }`}
+                >
+                  <span
+                    className={`size-5 rounded-full bg-base shadow-sm transition-transform ${
+                      alineacion ? "translate-x-4" : "translate-x-0"
+                    }`}
+                  />
+                </span>
+              </button>
+            </div>
+
+            <RuedasCarton
+              ruedas={ruedas}
+              alCambiar={(pos, rueda) =>
+                setRuedas((prev) => ({ ...prev, [pos]: rueda }))
+              }
+              productos={cubiertasDelCatalogo.map((p) => ({
+                id: p.id,
+                nombre: p.nombre,
+                marca: p.marca ?? null,
+                precioVenta: p.precioVenta ?? null,
+                stock: p.stock ?? null,
+                unidad: p.unidad ?? "unidad",
+                litrosSugeridos: null,
+              }))}
+            />
+          </>
+        )}
+
+        {esService && (
           <>
         {/* 4. Aceite de motor — bloque destacado, siempre en blanco */}
         <div className="rounded-lg border border-line bg-surface/60 p-4">
@@ -887,9 +1142,10 @@ export function Carton({
             </div>
             <div className="sm:flex-[1.4]">
               <SelectorProductoBuscable
+                id="aceite-producto"
                 productoId={aceiteProductoId}
                 alElegir={(p) => elegirAceite(p)}
-                aceites={aceitesDelCatalogo.map((p) => ({
+                productos={aceitesDelCatalogo.map((p) => ({
                   id: p.id,
                   nombre: p.nombre,
                   precioVenta: p.precioVenta ?? null,
@@ -1118,7 +1374,7 @@ export function Carton({
         {/* 6 y 7. Próximo service y observaciones, también en pares desde
             desktop: son el cierre del cartón y ninguno necesita todo el ancho. */}
         <div className="grid gap-4 sm:grid-cols-2 sm:items-start">
-        {!esMecanica && (
+        {esService && (
         <div>
           <span className={CLASE_LABEL}>Próximo service</span>
           <div className="flex flex-wrap gap-2">
@@ -1335,11 +1591,7 @@ export function Carton({
         </Boton>
         {!listoParaRevisar && (
           <p className="mt-1.5 text-center text-label text-ink-60">
-            {esMecanica
-              ? "Falta contar qué trabajo se hizo."
-              : kmCargado && aceiteTipo.trim().length >= 2 && proxKm === 0
-                ? "Falta indicar cada cuántos km es el próximo service."
-                : "Faltan los kilómetros y la viscosidad del aceite."}
+            {queFalta}
           </p>
         )}
       </div>

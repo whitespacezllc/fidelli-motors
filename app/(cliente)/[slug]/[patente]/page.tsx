@@ -18,6 +18,7 @@ import { PieConfianza } from "@/components/cliente/pie-confianza";
 import {
   CartonPapel,
   CartonPapelMecanica,
+  CartonPapelNeumaticos,
 } from "@/components/services/carton-papel";
 import { renglonesLibres } from "@/lib/cliente/carton";
 import { metadataPwa } from "@/lib/pwa";
@@ -102,9 +103,11 @@ export default async function PaginaVehiculo({ params }: Props) {
   const paleta = paletaTenant(lubricentro.colorPrimario, lubricentro.tema);
   // El cartón destacado y la respuesta de "¿cuándo me toca?" salen del
   // último SERVICE — es lo que gobierna el próximo cambio de aceite y lo
-  // que replica el papel del parasol. Si el auto solo tiene mecánica (el
-  // caso taller), el destacado es el último trabajo. El resto va todo
-  // junto al historial, en una sola línea de tiempo con los dos tipos.
+  // que replica el papel del parasol. Si el auto solo tiene mecánica o
+  // gomería, el destacado es el último trabajo y el bloque de próximo
+  // service no existe: es el mismo comportamiento de siempre, ahora con
+  // un tipo más. El resto va todo junto al historial, en una sola línea
+  // de tiempo con los tres tipos.
   const ultimoService = services.find((s) => s.tipo === "service") ?? null;
   const ultimo = ultimoService ?? services[0] ?? null;
   const anteriores = services.filter((s) => s !== ultimo);
@@ -170,7 +173,20 @@ export default async function PaginaVehiculo({ params }: Props) {
                     SOLO adentro del papel; el "Hecho en" de abajo queda
                     afuera y acompaña al tema. */}
                 <div style={ESTILO_PAPEL}>
-                {ultimo.tipo === "mecanica" ? (
+                {ultimo.tipo === "neumaticos" ? (
+                  <CartonPapelNeumaticos
+                    escala="cliente"
+                    datos={{
+                      lubricentroNombre: lubricentro.nombre,
+                      colorTenant: paleta.primary,
+                      colorPapel: lubricentro.colorCarton,
+                      fecha: ultimo.fecha,
+                      kilometros: ultimo.kilometros,
+                      alineacion: ultimo.alineacion ?? false,
+                      ruedas: ultimo.ruedas,
+                    }}
+                  />
+                ) : ultimo.tipo === "mecanica" ? (
                   <CartonPapelMecanica
                     escala="cliente"
                     datos={{
@@ -221,7 +237,14 @@ export default async function PaginaVehiculo({ params }: Props) {
                   cartones anteriores — es información sobre el auto, y
                   "cubiertas para cambio" importa más que el progreso del
                   premio. */}
-              <div className="flex flex-col gap-6 sm:gap-8 lg:col-start-2 lg:row-start-2">
+              {/* min-w-0: un item de grilla NO baja de su ancho
+                  min-content salvo que se lo digan, y acá adentro vive el
+                  historial, donde el papel de un trabajo de gomería pide
+                  más de lo que la columna ofrece en un celular de 390. Sin
+                  esto, la columna se estira y TODA la página —el próximo
+                  service incluido— se corre 8px al costado. No cambia nada
+                  donde nadie pide de más, que es el resto de los casos. */}
+              <div className="flex min-w-0 flex-col gap-6 sm:gap-8 lg:col-start-2 lg:row-start-2">
                 {/* El momento de mayor intención del mes: entre el
                     próximo service y el historial, sin tapar nada. */}
                 {mensajeTaller && (

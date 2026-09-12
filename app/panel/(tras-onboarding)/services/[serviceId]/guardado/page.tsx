@@ -5,6 +5,7 @@ import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { clasesBoton } from "@/components/ui/boton";
 import { NotaPostGuardado } from "@/components/notas/nota-post-guardado";
 import { formatearKm } from "@/lib/renglones";
+import { resumenRuedas } from "@/lib/ruedas";
 
 export const metadata: Metadata = { title: "Trabajo guardado" };
 
@@ -21,7 +22,9 @@ export default async function PaginaGuardado({
   const { data: service } = await supabase
     .from("services")
     .select(
-      "id, tipo, trabajo_descripcion, fecha, kilometros, vehiculo_id, vehiculos(patente, marca, modelo, clientes(nombre))",
+      `id, tipo, trabajo_descripcion, fecha, kilometros, alineacion, vehiculo_id,
+       vehiculos(patente, marca, modelo, clientes(nombre)),
+       service_ruedas(colocada, rotada, balanceada, reparada)`,
     )
     .eq("id", serviceId)
     .maybeSingle();
@@ -66,7 +69,7 @@ export default async function PaginaGuardado({
   return (
     <div className="mx-auto max-w-md lg:max-w-xl lg:pt-4">
       <p className="rounded-md bg-success-soft px-3.5 py-3 font-brand text-body font-bold text-success">
-        ✓ {service.tipo === "mecanica" ? "Trabajo guardado" : "Service guardado"}
+        ✓ {service.tipo === "service" ? "Service guardado" : "Trabajo guardado"}
       </p>
 
       <div className="surface-card mt-4 p-4">
@@ -80,7 +83,12 @@ export default async function PaginaGuardado({
             service.kilometros != null
               ? `${formatearKm(service.kilometros)} km`
               : null,
+            // Cada tipo se resume con lo suyo: la descripción en
+            // mecánica, el trabajo hecho sobre las ruedas en gomería.
             service.tipo === "mecanica" ? service.trabajo_descripcion : null,
+            service.tipo === "neumaticos"
+              ? resumenRuedas(service.service_ruedas ?? [], service.alineacion ?? false)
+              : null,
           ]
             .filter(Boolean)
             .join(" · ")}

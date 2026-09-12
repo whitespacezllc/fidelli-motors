@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { obtenerSesion } from "@/lib/auth/session";
+import { MODULOS_PAGOS } from "@/lib/planes";
+import { errorMotivoModulo, motivoDeModuloValido } from "@/lib/modulos";
 
 async function exigirSuperadmin() {
   const sesion = await obtenerSesion();
@@ -189,6 +191,32 @@ export async function fijarOverridePlan(
   await exigirSuperadmin();
 
   const supabase = await createClient();
+
+  // EL MOTIVO DE UN MÓDULO PAGO TIENE FORMATO FIJO, y se exige SOLO
+  // cuando la clave del módulo cambia de estado. Por eso se lee primero
+  // lo que hay guardado: el formulario manda el objeto entero de vuelta
+  // (read-modify-write), así que la clave viaja también cuando el
+  // superadmin vino a tocar el tope de sucursales de un tenant que ya
+  // tiene el módulo — y ahí el motivo es el de las sucursales.
+  //
+  // Va en el servidor y contra la BASE, no contra lo que dice el
+  // formulario: es el único registro comercial que vamos a tener hasta
+  // que exista facturación de verdad.
+  const { data: actual } = await supabase
+    .from("lubricentros")
+    .select("plan_overrides")
+    .eq("id", datos.lubricentroId)
+    .maybeSingle();
+
+  const antes = (actual?.plan_overrides ?? {}) as Record<string, unknown>;
+
+  for (const modulo of MODULOS_PAGOS) {
+    const cambia = (antes[modulo] ?? null) !== (datos.overrides[modulo] ?? null);
+    if (cambia && !motivoDeModuloValido(modulo, datos.motivo)) {
+      return { error: errorMotivoModulo(modulo) };
+    }
+  }
+
   const { error } = await supabase.rpc("fijar_override_plan", {
     p_lubricentro: datos.lubricentroId,
     p_overrides: datos.overrides,
