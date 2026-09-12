@@ -10,8 +10,9 @@ import {
 import { obtenerSesion } from "@/lib/auth/session";
 import { FormPago } from "./form-pago";
 import { FormOverrides } from "./form-overrides";
-import { ETIQUETA_FEATURE, type FeaturePlan } from "@/lib/planes";
-import { haceCuanto } from "@/lib/fechas";
+import { ETIQUETA_FEATURE, MODULOS_PAGOS, type FeaturePlan } from "@/lib/planes";
+import { PREFIJOS_MODULO, leerMotivoModulo } from "@/lib/modulos";
+import { haceCuanto, hoyISO } from "@/lib/fechas";
 import { BotonAviso } from "@/components/fidelli/boton-aviso";
 import {
   ESTILO_ATENCION,
@@ -60,8 +61,12 @@ export async function TabSuscripcion({
       .from("cambios_override_plan")
       .select("id, overrides_despues, motivo, created_at, usuarios!cambiado_por(nombre)")
       .eq("lubricentro_id", tenant.id)
+      // 40 y no 8: el historial visible sigue siendo de 8, pero el
+      // estado del módulo se reconstruye buscando hacia atrás el cambio
+      // que lo prendió. Con 8 filas, un tenant al que se le tocaron los
+      // overrides varias veces mostraba "activo" sin fecha.
       .order("created_at", { ascending: false })
-      .limit(8),
+      .limit(40),
   ]);
 
   const overrides =
@@ -71,6 +76,32 @@ export async function TabSuscripcion({
     (suscripcion?.plan?.features ?? {}) as Partial<Record<FeaturePlan, boolean>>;
   const planLimiteSucursales = suscripcion?.plan?.limites?.sucursales ?? null;
   const clavesOverride = Object.keys(overrides);
+
+  // El "hoy" del NEGOCIO (hora argentina), en el formato que se escribe
+  // acá: el motivo del módulo lo lee una persona, no un parser.
+  const hoyDdMmAaaa = () => {
+    const [a, m, d] = hoyISO().split("-");
+    return `${d}/${m}/${a}`;
+  };
+
+  // El historial visible: las últimas ocho, como siempre.
+  const cambiosVisibles = cambios.slice(0, 8);
+
+  // EL ESTADO DE LOS MÓDULOS PAGOS, bien visible. Hasta que haya
+  // facturación, esto es lo único que contesta "¿este taller paga la
+  // gomería o se la estamos regalando?", y la respuesta está en el motivo
+  // del cambio que lo prendió (formato obligatorio, ver lib/modulos).
+  const estadoModulos = MODULOS_PAGOS.map((m) => {
+    const activo = overrides[m] === true;
+    // El cambio más reciente que dejó la clave en true: es el que trae la
+    // forma de cobro y la fecha con las que se dio de alta.
+    const alta = cambios.find(
+      (c) =>
+        (c.overrides_despues as Record<string, unknown> | null)?.[m] === true,
+    );
+    const leido = alta ? leerMotivoModulo(m, alta.motivo) : null;
+    return { modulo: m, activo, alta, leido };
+  });
 
   const aviso = (atencionRes.data ?? {}) as {
     atencion?: string | null;
@@ -211,6 +242,62 @@ export async function TabSuscripcion({
       </section>
     </div>
 
+    {/* ============ Los módulos pagos ============
+        Va ARRIBA de los overrides y con peso propio: un módulo es plata
+        que entra todos los meses y tiene que verse sin abrir nada. */}
+    {estadoModulos.map(({ modulo, activo, alta, leido }) => (
+      <section
+        key={modulo}
+        className={`surface-card mt-5 overflow-hidden ${activo ? "border-reward" : ""}`}
+      >
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4.5 py-3.5">
+          <h2 className="font-brand text-ui font-bold tracking-[0.04em] text-ink-60 uppercase">
+            {PREFIJOS_MODULO[modulo]}
+          </h2>
+          {activo ? (
+            <p className="text-ui text-ink tabular-nums">
+              <span className="font-semibold">
+                Activo
+                {leido ? ` · ${leido.forma}` : ""}
+              </span>
+              {leido ? ` · desde el ${leido.fecha}` : ""}
+              {!leido && alta
+                ? ` · desde el ${formatearFecha(alta.created_at)}`
+                : ""}
+              {!alta ? " · sin registro de alta" : ""}
+            </p>
+          ) : (
+            <p className="text-ui text-ink-60">
+              No está activo en esta cuenta.
+            </p>
+          )}
+        </div>
+        {activo && alta && (
+          <p className="border-t border-line px-4.5 py-2.5 text-ui text-ink-60">
+            {alta.motivo}
+            {alta.usuarios?.nombre ? ` — ${alta.usuarios.nombre}` : ""}
+          </p>
+        )}
+        {/* EL PLAN, AL LADO DEL INTERRUPTOR. No hay piso de plan por
+            código —Basic + override da true, y así se queda: la regla de
+            "se vende desde Pro" es comercial, no de seguridad—. Lo que sí
+            hay es que el error se VEA: un Basic con el módulo paga más que
+            un Pro, y el aviso lo dice sin bloquear nada. */}
+        <p className="border-t border-line px-4.5 py-2.5 text-ui text-ink-60 tabular-nums">
+          Plan vigente:{" "}
+          <span className="font-semibold text-ink">
+            {suscripcion?.plan?.nombre ?? "sin suscripción"}
+          </span>
+          {suscripcion?.plan?.nombre === "Basic" && (
+            <>
+              {" "}· Es Basic: con el módulo paga más que un Pro. Se puede
+              prender igual, pero conviene ofrecerle el plan.
+            </>
+          )}
+        </p>
+      </section>
+    ))}
+
     {/* ============ Plan y overrides ============
         Qué habilita el plan de este tenant y las excepciones por cuenta.
         El override es LA salida sancionada para "activale esto a este
@@ -252,13 +339,13 @@ export async function TabSuscripcion({
             <p className="mb-2 text-label font-semibold tracking-[0.06em] text-ink-40 uppercase">
               Historial de overrides
             </p>
-            {cambios.length === 0 ? (
+            {cambiosVisibles.length === 0 ? (
               <p className="text-ui text-ink-60">
                 Nunca se tocó: este tenant vive con lo que dice su plan.
               </p>
             ) : (
               <ul className="flex flex-col gap-2.5">
-                {cambios.map((c) => (
+                {cambiosVisibles.map((c) => (
                   <li key={c.id} className="rounded-md border border-line px-3 py-2.5">
                     <p className="text-label text-ink-40">
                       {haceCuanto(c.created_at)} · {c.usuarios?.nombre ?? "—"} · quedó en{" "}
@@ -289,6 +376,7 @@ export async function TabSuscripcion({
           planFeatures={planFeatures}
           planLimiteSucursales={planLimiteSucursales}
           overrides={overrides}
+          hoy={hoyDdMmAaaa()}
         />
       </div>
     </section>

@@ -8,7 +8,8 @@ import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { clasesBoton } from "@/components/ui/boton";
 import { Carton } from "@/components/services/carton";
 import { formatearHora, hoyISO } from "@/lib/fechas";
-import { COOKIE_SUCURSAL } from "@/lib/preferencias";
+import { COOKIE_SUCURSAL, COOKIE_TIPO_TRABAJO } from "@/lib/preferencias";
+import { esTipoTrabajo, type TipoTrabajo } from "@/lib/trabajos";
 
 export const metadata: Metadata = { title: "Cargar trabajo" };
 
@@ -43,6 +44,8 @@ export default async function PaginaCarton({
     productosRes,
     serviciosRes,
     configRes,
+    beneficioRes,
+    configNeumRes,
     premioRes,
     pendientesRes,
   ] = await Promise.all([
@@ -73,6 +76,22 @@ export default async function PaginaCarton({
         .order("created_at", { ascending: false })
         .limit(5),
       supabase.from("config_experiencia").select("color_primario, color_carton").maybeSingle(),
+      // El beneficio de la compra que este auto pueda tener vigente: el
+      // último trabajo de gomería que lo dio. El mecánico lo ve arriba del
+      // formulario y no le cobra la rotación que ya está paga.
+      supabase
+        .from("services")
+        .select("kilometros, beneficio_hasta_km, beneficio_hasta_fecha")
+        .eq("vehiculo_id", vehiculoId)
+        .eq("anulado", false)
+        .eq("tipo", "neumaticos")
+        .not("beneficio_hasta_km", "is", null)
+        .order("fecha", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      // Y el interruptor: con beneficio_km = 0 el aviso no aparece.
+      supabase.from("config_neumaticos").select("beneficio_km").maybeSingle(),
       // El ciclo con reset, calculado en vivo contra la meta vigente.
       // Sin la feature de premios ni se consulta: el checkbox de canje no
       // aparece y el guardado nunca choca con la policy al final — que era
@@ -123,19 +142,53 @@ export default async function PaginaCarton({
   const ultimo = servicios[0] ?? null;
   const premio = premioRes.data?.[0] ?? null;
   const puedeMecanica = featureHabilitada(sesion, "mecanica");
+  // El módulo de gomería: pago, aparte del plan, prendido por tenant.
+  const puedeNeumaticos = featureHabilitada(sesion, "neumaticos");
 
   // La sucursal es del dispositivo, no del usuario: en el MVP es probable que
   // el lubricentro comparta una sola cuenta entre sucursales, así que la
   // última usada se recuerda en una cookie de este celular. Si la cookie
   // trae una sucursal que ya no está activa, cae en la primera.
-  const recordada = (await cookies()).get(COOKIE_SUCURSAL)?.value;
+  const galletas = await cookies();
+  const recordada = galletas.get(COOKIE_SUCURSAL)?.value;
   const sucursalInicial =
     sucursales.find((s) => s.id === recordada)?.id ?? sucursales[0].id;
+
+  // El tipo de trabajo también es del DISPOSITIVO: una gomería carga
+  // cubiertas todo el día y abrir siempre en Service es un toque
+  // equivocado por cada trabajo de la jornada. Se resuelve en el servidor
+  // para que la solapa correcta llegue ya pintada, sin parpadeo. Si la
+  // cookie trae un tipo que este tenant ya no puede cargar —porque se le
+  // dio de baja el módulo—, cae en Service.
+  const tipoRecordado = galletas.get(COOKIE_TIPO_TRABAJO)?.value;
+  const puedeTipo: Record<TipoTrabajo, boolean> = {
+    service: true,
+    mecanica: puedeMecanica,
+    neumaticos: puedeNeumaticos,
+  };
+  const tipoInicial: TipoTrabajo =
+    esTipoTrabajo(tipoRecordado) && puedeTipo[tipoRecordado]
+      ? tipoRecordado
+      : "service";
 
   // El "hoy" del NEGOCIO, no del servidor: esto corre en Vercel (UTC) y
   // armar la fecha con getFullYear/getMonth del proceso fechaba a mañana
   // todo service cargado entre las 21:00 y las 24:00 hora argentina.
   const hoy = hoyISO();
+
+  // "Vigente" = la fecha no pasó y el último odómetro conocido no llegó a
+  // los km del beneficio. El odómetro conocido es el mayor entre el del
+  // último service y el del trabajo que dio el beneficio.
+  const b = beneficioRes.data;
+  const kmConocido = Math.max(ultimo?.kilometros ?? 0, b?.kilometros ?? 0);
+  const beneficioVigente =
+    (configNeumRes.data?.beneficio_km ?? 0) > 0 &&
+    b?.beneficio_hasta_km != null &&
+    b.beneficio_hasta_fecha &&
+    b.beneficio_hasta_fecha >= hoy &&
+    kmConocido < b.beneficio_hasta_km
+      ? { hastaKm: b.beneficio_hasta_km, hastaFecha: b.beneficio_hasta_fecha }
+      : null;
 
   // Caso borde: ya hay un service de hoy para esta patente.
   const deHoy = servicios.find((s) => s.fecha === hoy);
@@ -168,6 +221,9 @@ export default async function PaginaCarton({
           productos: (productosRes.data ?? []).map((p) => ({
             id: p.id,
             nombre: [p.nombre, p.marca].filter(Boolean).join(" · "),
+            // La marca cruda va aparte del nombre de catálogo: al elegir
+            // una cubierta se copia como snapshot en la rueda.
+            marca: p.marca,
             categoria: p.categoria,
             precioVenta: p.precio_venta,
             stock: p.stock,
@@ -187,6 +243,9 @@ export default async function PaginaCarton({
               }
             : null,
           puedeMecanica,
+          puedeNeumaticos,
+          tipoInicial,
+          beneficioVigente,
           puedePendientes: featureHabilitada(sesion, "pendientes"),
           pendientesAbiertos: (pendientesRes.data ?? []).map((tp) => ({
             id: tp.id,

@@ -5,7 +5,7 @@ import { TarjetaVideo } from "@/components/ayuda/tarjeta-video";
 import { IconoWhatsapp } from "@/components/iconos";
 import { urlWhatsappSoporte } from "@/lib/config";
 import { videosPorSeccion } from "@/lib/ayuda/videos";
-import { etiquetaPlan, planEfectivo } from "@/lib/ayuda/plan";
+import { etiquetaVideo } from "@/lib/ayuda/plan";
 
 export const metadata: Metadata = { title: "Ayuda" };
 
@@ -27,7 +27,7 @@ function idDe(texto: string): string {
 // que no encuentra lo suyo escribe por WhatsApp desde la tarjeta del pie.
 export default async function PaginaAyuda() {
   const sesion = await obtenerSesion();
-  const plan = planEfectivo(sesion?.capacidades ?? null);
+  const capacidades = sesion?.capacidades ?? null;
   const grupos = videosPorSeccion();
 
   return (
@@ -52,7 +52,7 @@ export default async function PaginaAyuda() {
                 <TarjetaVideo
                   key={video.id}
                   video={video}
-                  etiquetaPlan={etiquetaPlan(video.plan, plan)}
+                  etiquetaPlan={etiquetaVideo(video, capacidades)}
                 />
               ))}
             </ul>

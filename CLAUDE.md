@@ -285,20 +285,35 @@ alter view <la_vista> set (security_invoker = on);
 GoTrue las escanea como `string` no-nullable y un `NULL` rompe todo login de ese
 usuario con un 500 genérico.
 
-**Los enlaces de los mails NO usan `{{ .ConfirmationURL }}`.** Esa variable
-apunta a `/auth/v1/verify`, que devuelve la sesión en el **fragmento** de la URL
-(`#access_token=…`). El fragmento no viaja al servidor: `/auth/callback` es un
-Route Handler y recibe una URL sin código, con lo que el enlace terminaba en
-`/login?aviso=enlace` y el invitado nunca podía activar su cuenta. Los templates
-arman el enlace así:
+**Los enlaces de los mails NO usan `{{ .ConfirmationURL }}` ni `{{ .RedirectTo }}`.**
+`ConfirmationURL` apunta a `/auth/v1/verify`, que devuelve la sesión en el
+**fragmento** de la URL (`#access_token=…`); el fragmento no viaja al servidor y
+`/auth/callback` es un Route Handler, así que el invitado nunca podía activar su
+cuenta. `RedirectTo` lo valida GoTrue contra la lista de Redirect URLs del
+proyecto y, si no está, lo descarta **en silencio** y arma el enlace contra el
+Site URL pelado (fue el bug de producción). Los templates arman el enlace así:
 
 ```
-{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=invite
+{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=invite
 ```
 
-`.RedirectTo` es el `redirectTo` que mandó la llamada, así que el enlace vuelve
-al mismo origen del que salió (local, preview o producción). **Este cambio es de
-los templates: en la nube hay que replicarlo en los templates del proyecto.**
+Condición: el Site URL de cada proyecto tiene que ser la URL de su app (local
+`http://localhost:3000`, prod `https://fidellimotors.app`). **Los templates son
+configuración del dashboard, no viajan con el repo:** cada cambio en
+`supabase/templates/` hay que pegarlo a mano en dev y en prod (Authentication →
+Emails), y comprobarlo mirando el `href` del botón en un mail real.
+
+**Cuánto dura un enlace de mail lo decide "Email OTP Expiration"**, en el
+dashboard de cada proyecto (Authentication → Sign In / Providers → Email). Ese
+único valor gobierna invitación, recuperación, confirmación y cambio de mail. El
+default de la nube es **una hora**; el `otp_expiry = 86400` de `config.toml` sólo
+manda en local. Los mails y las pantallas prometen 24 horas, así que **dev y prod
+tienen que estar en 86400** (el máximo del dashboard). Con el default, todo owner
+que abre la invitación a la tarde llega a "La invitación ya venció" (pasó en
+producción el 2026-09-08). Aun así, un enlace vencido no es un callejón: en
+`/auth/enlace?tipo=invite` el owner se pide otra invitación con su mail
+(`lib/auth/invitacion.ts`, sólo para cuentas nunca activadas, una por minuto), y
+`/auth/callback` deja en los logs el código con el que GoTrue rechazó el enlace.
 
 ### La clave `service_role`
 
@@ -403,6 +418,44 @@ escrito, el logo entra en el contenedor de `InsigniaMarca` sin tocar layout.
 **10 · El copy nunca revela el tamaño del equipo.** Ni "somos dos", ni "el
 equipo", ni "nuestro CTO". El lubricentro está comprando continuidad.
 
+Y las tres que dejó el módulo de gomería (septiembre de 2026). Ninguna estaba
+escrita en ningún lado, y las tres se pisaron en el mismo sprint:
+
+**11 · Los CHECK y las policies por tipo admiten valores nuevos en silencio.**
+Todo lo que esté escrito como `tipo <> 'algo' or (...)` se evalúa como
+verdadero para cualquier valor del enum que no sea `algo`. Agregar un valor a
+`tipo_trabajo` sin sumar su propio CHECK y su propia condición en las dos
+policies de `services` deja ese tipo sin restricciones y sin gating de plan,
+también por la API directa. No da error, no rompe el build y no lo atrapa
+ninguna prueba que no se haya escrito para eso. El caso real: con
+`'neumaticos'` en el enum y sin `20260911120100`, una fila de gomería entraba
+con viscosidad de aceite y descripción de mecánica a la vez, y el módulo pago
+quedaba gratis para los trece tenants. Cuando agregues un valor a un enum que
+aparezca en un CHECK o en una policy, buscá todas las apariciones del enum en
+`supabase/migrations` y cerrá cada una. Lo vigila R15.
+
+**12 · No llames funciones `security definer` sin guarda desde una vista
+`security_invoker`.** `feature_de_tenant()` es definer y no está grantada a
+`authenticated` a propósito: grantarla dejaría a cualquier owner leyendo las
+features de todos los tenants. Llamarla desde una vista o función invoker hace
+que la consulta explote con `permission denied`, y el front muestra una lista
+vacía sin un solo error a la vista — el listado de `/fidelli` dijo "Todavía
+no hay ningún lubricentro" con trece tenants en la base. Usá
+`plan_permite()`, que es la puerta pública y está atada a
+`mi_lubricentro_id()`, o resolvé los tres escalones en línea con
+`plan_overrides` y `planes.features`. Nunca grantes la definer para salir del
+paso. Lo vigila R15i.
+
+**13 · Una prueba que nunca viste en rojo no existe.** El caso real: R15a
+verificaba el gating de `services` cargando un trabajo con ruedas, y con la
+policy que decía probar rota seguía en verde — lo que rechazaba era la policy
+de `service_ruedas`. Por cada prueba nueva, rompé a mano exactamente lo que
+dice cubrir y confirmá que falla. `scripts/regresion-retencion.sh` y
+`scripts/regresion-neumaticos.sh` son el molde: reconstruyen la vista o la
+función rota con un `sed` sobre la migración, corren el bloque de
+`verificaciones.sql` que la cubre y esperan la excepción. Es la práctica del
+proyecto, no un script de un módulo: un bloque nuevo de la red trae su rotura.
+
 ---
 
 ## La red de regresión — qué protege cada cosa
@@ -430,17 +483,24 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R11** | Un tenant sin configurar rinde igual que siempre; el mensaje al escanear respeta feature, vigencia y suspensión en las dos capas | Un tenant cambió de aspecto sin pedirlo, o se está mostrando un mensaje que no corresponde |
 | **R13** | Las patentes de moto (`123ABC`, `A123BCD`) entran por el CHECK, por `corregir_patente` y por `get_carton`; lo que no es patente sigue afuera | Alguien volvió a cerrar el formato a autos, o lo abrió a cualquier cosa |
 | **R14** | Ninguna cuenta queda con `onboarding_completado_at` null tras el seed; las funciones del onboarding son definer; un Basic tiene dos pasos y nunca se le pide el premio; el estado de otro tenant no se lee | Una cuenta vieja vería el panel bloqueado, o un taller no podría salir nunca del onboarding, o se le pide una función que su plan no tiene |
+| **R15** | El módulo de gomería (bloque 1): sin el módulo no entra un trabajo de neumáticos ni por SQL directo —en dos variantes, porque la de "solo alineación" es la única que aísla la policy de `services`—; no altera la retención; los CHECK del tercer tipo y de cada rueda; el stock baja una por rueda colocada; el premio sigue `alcance`; apagar el módulo no le saca a nadie lo que ya cargó; el listado de `/fidelli` sigue respondiendo | La regla 11 o la 12. El módulo pago quedó abierto, o la superficie de administración quedó vacía sin error |
+| **R16** | Los retornos de gomería (bloque 2): `vista_proximos_service` devuelve exactamente las mismas filas antes y después de cargar trabajos de gomería; la vista nueva es invoker y solo para tenants con el módulo; cada motivo (rotación, alineación, reajuste, antigüedad, desgaste) con su regla; el anti-spam por ciclo; el beneficio de la compra y su apagado; los CHECK y el RLS de `config_neumaticos`; `resumen_inicio` emite el tipo; el ritmo sale de todos los trabajos con km | La regla 5 otra vez, o un motivo que dejó de avisar: la pantalla que trae la plata miente en silencio |
 
-Además, fuera del reset:
+Además, fuera del reset, **las roturas a mano** (regla 13):
 
 ```bash
 ./scripts/regresion-retencion.sh
+./scripts/regresion-neumaticos.sh
 ```
 
-Rompe la vista de retención a propósito de dos formas —le saca el filtro de
+El primero rompe la vista de retención de dos formas —le saca el filtro de
 tipo y le saca `security_invoker`— y verifica que la red **atrape las dos**.
-Es la prueba de que R2 y el chequeo de aislamiento sirven de verdad. Se corre
-antes de un release, no en cada cambio.
+El segundo rompe cada regla del módulo de gomería (22 roturas: cada motivo
+apagado, el gate del módulo, el anti-spam, el beneficio, los CHECK, el RLS,
+el tipo en Inicio…) con un `sed` sobre las líneas marcadas `-- @algo` de la
+migración, y espera ver cada bloque de R16 en rojo. Son la prueba de que las
+pruebas sirven de verdad. Se corren antes de un release, no en cada cambio, y
+**un bloque nuevo de la red trae su rotura en uno de los dos scripts**.
 
 Y en cualquier momento, a mano:
 

@@ -20,9 +20,32 @@ export const FEATURES_PLAN = [
   "presupuestos",
   "personalizacion_pagina",
   "pagina_premium",
+  // MÓDULO PAGO, aparte del plan. Está en el catálogo para que
+  // plan_permite() lo resuelva, pero NO figura en el `features` de ningún
+  // plan: la clave ausente cae al tercer escalón de feature_de_tenant() y
+  // devuelve false. Se prende por tenant, con el override de /fidelli.
+  "neumaticos",
 ] as const;
 
 export type FeaturePlan = (typeof FEATURES_PLAN)[number];
+
+/**
+ * Los MÓDULOS PAGOS: features que se venden aparte del plan y se prenden
+ * por tenant desde /fidelli. No vienen con ningún plan, así que la etiqueta
+ * "Plan Pro" no los nombra bien — se nombran con ETIQUETA_MODULO.
+ */
+export const MODULOS_PAGOS = ["neumaticos"] as const satisfies readonly FeaturePlan[];
+
+export type ModuloPago = (typeof MODULOS_PAGOS)[number];
+
+export function esModuloPago(f: string): f is ModuloPago {
+  return (MODULOS_PAGOS as readonly string[]).includes(f);
+}
+
+/** Cómo se nombra el módulo en la interfaz, cuando hay que nombrarlo. */
+export const ETIQUETA_MODULO: Record<ModuloPago, string> = {
+  neumaticos: "Módulo Gomería",
+};
 
 export const LIMITES_PLAN = ["sucursales"] as const;
 
@@ -36,6 +59,7 @@ export const ETIQUETA_FEATURE: Record<FeaturePlan, string> = {
   presupuestos: "Presupuestos",
   personalizacion_pagina: "Personalización de tu página",
   pagina_premium: "Página premium",
+  neumaticos: "Gomería — módulo pago",
 };
 
 /**
@@ -48,6 +72,9 @@ export const RUTA_FEATURE: Partial<Record<FeaturePlan, string>> = {
   premios: "/panel/fidelizacion",
   personalizacion_pagina: "/panel/experiencia",
   presupuestos: "/panel/presupuestos",
+  // La configuración de los intervalos de gomería: es donde vive la
+  // pantalla del módulo dentro del panel.
+  neumaticos: "/panel/neumaticos",
 };
 
 /**

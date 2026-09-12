@@ -26,6 +26,8 @@ function leerCampos(formData: FormData) {
     contenido: String(formData.get("contenido") ?? "").trim(),
     contenido_pendiente:
       String(formData.get("contenido_pendiente") ?? "").trim() || null,
+    contenido_neumaticos:
+      String(formData.get("contenido_neumaticos") ?? "").trim() || null,
   };
 }
 
@@ -56,6 +58,7 @@ export async function crearMensaje(
     tono: campos.tono,
     contenido: campos.contenido,
     contenido_pendiente: campos.contenido_pendiente,
+    contenido_neumaticos: campos.contenido_neumaticos,
     activo: false,
   });
 
@@ -87,6 +90,7 @@ export async function editarMensaje(
       tono: campos.tono,
       contenido: campos.contenido,
       contenido_pendiente: campos.contenido_pendiente,
+      contenido_neumaticos: campos.contenido_neumaticos,
     })
     .eq("id", id)
     .select("id");

@@ -6,6 +6,7 @@ import { Boton, clasesBoton } from "@/components/ui/boton";
 import {
   VARIABLES_MENSAJE,
   VARIABLES_MENSAJE_PENDIENTE,
+  VARIABLES_MENSAJE_NEUMATICOS,
   resolverTemplate,
   variablesDesconocidas,
   type VariablesMensaje,
@@ -22,6 +23,8 @@ type Mensaje = {
   contenido: string;
   /** El mensaje del trabajo PENDIENTE: sin km de próximo service. */
   contenido_pendiente: string | null;
+  /** El mensaje del RETORNO DE GOMERÍA: {motivo} en vez de km. */
+  contenido_neumaticos: string | null;
 };
 
 const ESTADO_INICIAL: EstadoMensaje = {};
@@ -36,11 +39,13 @@ function FormularioMensaje({
   ejemplo,
   ejemploEsReal,
   alGuardar,
+  puedeNeumaticos,
 }: {
   mensaje?: Mensaje;
   ejemplo: VariablesMensaje;
   ejemploEsReal: boolean;
   alGuardar: () => void;
+  puedeNeumaticos: boolean;
 }) {
   const [estado, accion, pendiente] = useActionState(
     mensaje ? editarMensaje : crearMensaje,
@@ -49,6 +54,9 @@ function FormularioMensaje({
   const [contenido, setContenido] = useState(mensaje?.contenido ?? "");
   const [contenidoPendiente, setContenidoPendiente] = useState(
     mensaje?.contenido_pendiente ?? "",
+  );
+  const [contenidoNeumaticos, setContenidoNeumaticos] = useState(
+    mensaje?.contenido_neumaticos ?? "",
   );
   const [sinConexion, setSinConexion] = useState(false);
   const areaRef = useRef<HTMLTextAreaElement>(null);
@@ -81,6 +89,10 @@ function FormularioMensaje({
   const desconocidasPendiente = variablesDesconocidas(
     contenidoPendiente,
     VARIABLES_MENSAJE_PENDIENTE,
+  );
+  const desconocidasNeumaticos = variablesDesconocidas(
+    contenidoNeumaticos,
+    VARIABLES_MENSAJE_NEUMATICOS,
   );
   const vistaPrevia = contenido.trim()
     ? resolverTemplate(contenido, ejemplo)
@@ -207,6 +219,56 @@ function FormularioMensaje({
         )}
       </div>
 
+      {/* La tercera plantilla del tono: la del RETORNO DE GOMERÍA. Solo
+          con el módulo. {motivo} son los motivos dados, ya en castellano:
+          "la rotación y el balanceo", "el cambio de cubiertas por
+          antigüedad". Sin el módulo el campo no aparece y lo guardado no
+          se pisa: el hidden lo lleva tal cual. */}
+      {puedeNeumaticos ? (
+        <div>
+          <label htmlFor="contenido_neumaticos" className={CLASE_LABEL}>
+            Mensaje de retorno de gomería
+          </label>
+          <textarea
+            id="contenido_neumaticos"
+            name="contenido_neumaticos"
+            rows={4}
+            value={contenidoNeumaticos}
+            onChange={(e) => setContenidoNeumaticos(e.target.value)}
+            className="w-full rounded-md border border-line bg-base px-3.5 py-3 text-body text-ink"
+          />
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {VARIABLES_MENSAJE_NEUMATICOS.map((v) => (
+              <button
+                key={v.clave}
+                type="button"
+                onClick={() =>
+                  setContenidoNeumaticos((c) => `${c}{${v.clave}}`)
+                }
+                title={`Se reemplaza por ${v.descripcion}`}
+                className="rounded-md border border-line bg-surface px-2.5 py-1.5 font-ui text-label font-semibold text-ink tabular-nums hover:bg-line/60"
+              >
+                {`{${v.clave}}`}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-label text-ink-60">
+            {"{motivo}"} dice qué le toca al auto: “la rotación y el balanceo”,
+            “la alineación”, “el cambio de cubiertas por antigüedad”.
+          </p>
+          {desconocidasNeumaticos.length > 0 && (
+            <p className="mt-2 rounded-md border border-urgente bg-urgente-soft px-3.5 py-3 text-ui text-urgente">
+              <span className="font-semibold tabular-nums">
+                {desconocidasNeumaticos.map((d) => `{${d}}`).join(", ")}
+              </span>{" "}
+              no {desconocidasNeumaticos.length === 1 ? "es una variable" : "son variables"} de este mensaje: las que existen son las cuatro de arriba.
+            </p>
+          )}
+        </div>
+      ) : (
+        <input type="hidden" name="contenido_neumaticos" value={contenidoNeumaticos} />
+      )}
+
       {desconocidas.length > 0 && (
         <p className="rounded-md border border-urgente bg-urgente-soft px-3.5 py-3 text-ui text-urgente">
           {desconocidas.length === 1 ? (
@@ -258,12 +320,15 @@ export function DialogMensaje({
   ejemploEsReal,
   etiquetaTrigger,
   variante = "secundario",
+  puedeNeumaticos = false,
 }: {
   mensaje?: Mensaje;
   ejemplo: VariablesMensaje;
   ejemploEsReal: boolean;
   etiquetaTrigger?: string;
   variante?: "primario" | "secundario";
+  /** El módulo de gomería está activo: se edita la tercera plantilla. */
+  puedeNeumaticos?: boolean;
 }) {
   const [abierto, setAbierto] = useState(false);
 
@@ -281,6 +346,7 @@ export function DialogMensaje({
           ejemplo={ejemplo}
           ejemploEsReal={ejemploEsReal}
           alGuardar={() => setAbierto(false)}
+          puedeNeumaticos={puedeNeumaticos}
         />
       </DialogContenido>
     </Dialog>

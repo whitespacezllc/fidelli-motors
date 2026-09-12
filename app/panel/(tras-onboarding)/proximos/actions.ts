@@ -76,6 +76,37 @@ export async function alternarContacto(
     return {};
   }
 
+  // El retorno de gomería tiene su propio ciclo: el último trabajo de
+  // NEUMÁTICOS. Destildar borra los contactos de ese motivo posteriores a
+  // él, que son exactamente los que vista_proximos_neumaticos mira.
+  if (estado === "neumaticos") {
+    const { data: ultimoNeum } = await supabase
+      .from("services")
+      .select("created_at")
+      .eq("vehiculo_id", vehiculoId)
+      .eq("anulado", false)
+      .eq("tipo", "neumaticos")
+      .order("fecha", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    let borrado = supabase
+      .from("contactos")
+      .delete()
+      .eq("vehiculo_id", vehiculoId)
+      .eq("estado", "neumaticos");
+    if (ultimoNeum?.created_at) borrado = borrado.gt("created_at", ultimoNeum.created_at);
+
+    const { error } = await borrado;
+    if (error) {
+      return { error: "No se pudo destildar el contacto. Probá de nuevo." };
+    }
+    revalidatePath("/panel/proximos");
+    revalidatePath("/panel", "layout");
+    return {};
+  }
+
   // El último service acota el borrado igual que la vista acota el exists:
   // los contactos de ciclos anteriores son historial y no se tocan.
   const { data: ultimo } = await supabase

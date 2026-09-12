@@ -7,6 +7,7 @@ import { IconoCandado } from "@/components/iconos";
 import { CLASE_ERROR } from "@/components/fidelli/estilos";
 import { formatearFecha, formatearHora } from "@/lib/fechas";
 import { horasParaBadge, type EstadoService } from "@/lib/servicios";
+import { ETIQUETA_TIPO, type TipoTrabajo } from "@/lib/trabajos";
 import {
   desbloquearService,
   type EstadoDesbloqueo,
@@ -26,7 +27,7 @@ type ServiceFila = {
   vehiculo: string | null;
   cliente: string | null;
   sucursal: string;
-  tipo?: "service" | "mecanica";
+  tipo?: TipoTrabajo;
   descripcion?: string | null;
   kilometros: number | null;
   desbloqueadoPor: string | null;
@@ -61,9 +62,9 @@ export function FilaServiceFidelli({
       </td>
       <td className={`${TD} whitespace-nowrap text-ink-60`}>{service.sucursal}</td>
       <td className={`${TD} text-right whitespace-nowrap text-ink`}>
-        {service.tipo === "mecanica"
-          ? "Mecánica"
-          : (service.kilometros ?? 0).toLocaleString("es-AR")}
+        {(service.tipo ?? "service") === "service"
+          ? (service.kilometros ?? 0).toLocaleString("es-AR")
+          : ETIQUETA_TIPO[service.tipo ?? "service"]}
       </td>
       <td className={TD}>
         <BadgeEdicion estado={estado} desbloqueadoPor={service.desbloqueadoPor} />
@@ -184,13 +185,21 @@ function DialogDesbloquear({
               </dd>
             </div>
             <div className="flex justify-between gap-4 py-0.5">
-              <dt className="text-ink-60">Kilómetros</dt>
+              <dt className="text-ink-60">Tipo</dt>
               <dd className="text-right text-ink">
-                {service.tipo === "mecanica"
-          ? "Mecánica"
-          : (service.kilometros ?? 0).toLocaleString("es-AR")} km
+                {ETIQUETA_TIPO[service.tipo ?? "service"]}
               </dd>
             </div>
+            {/* Los kilómetros, solo si están: en mecánica son opcionales,
+                y "Mecánica km" era lo que se leía antes. */}
+            {service.kilometros != null && (
+              <div className="flex justify-between gap-4 py-0.5">
+                <dt className="text-ink-60">Kilómetros</dt>
+                <dd className="text-right text-ink">
+                  {service.kilometros.toLocaleString("es-AR")} km
+                </dd>
+              </div>
+            )}
             <div className="flex justify-between gap-4 py-0.5">
               <dt className="text-ink-60">Sucursal</dt>
               <dd className="text-right text-ink">{service.sucursal}</dd>

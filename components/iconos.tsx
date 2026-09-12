@@ -22,6 +22,7 @@ import {
   WarningIcon,
   CheckIcon,
   WrenchIcon,
+  TireIcon,
   ReceiptIcon,
   PaletteIcon,
   ChatCircleTextIcon,
@@ -159,6 +160,7 @@ export const IconoAviso = delSistema(WarningIcon);
 // que es peor que cualquiera de las dos: el ojo busca la marca visual
 // donde no está.
 export const IconoTrabajos = delSistema(WrenchIcon);
+export const IconoNeumatico = delSistema(TireIcon);
 export const IconoPresupuesto = delSistema(ReceiptIcon);
 // Las dos salidas del presupuesto terminado.
 export const IconoDescargar = delSistema(DownloadSimpleIcon);

@@ -7,6 +7,8 @@ import type {
   Lubricentro,
   SucursalPublica,
 } from "@/lib/cliente/landing";
+import type { TipoTrabajo } from "@/lib/trabajos";
+import type { PosicionRueda } from "@/lib/ruedas";
 
 // Toda la pantalla del vehículo sale de una sola llamada a get_carton.
 // La función ya respeta campos_visibles del tenant: si el lubri apagó
@@ -24,7 +26,27 @@ export type ItemCarton = {
   cantidad: number;
 };
 
-export type TipoTrabajo = "service" | "mecanica";
+// El tipo viene del catálogo compartido: lib/trabajos es el espejo del
+// enum de la base, y tenerlo repetido acá fue lo que dejó al cartón del
+// cliente con dos tipos cuando la base ya tenía tres.
+export type { TipoTrabajo };
+
+/** Una rueda del trabajo de gomería, tal como la emite get_carton. */
+export type RuedaCarton = {
+  posicion: PosicionRueda;
+  posicionAnterior: PosicionRueda | null;
+  colocada: boolean;
+  rotada: boolean;
+  balanceada: boolean;
+  reparada: boolean;
+  /** null si el tenant apagó "mostrar productos". */
+  marca: string | null;
+  medida: string | null;
+  indiceCargaVel: string | null;
+  dot: string | null;
+  profundidadMm: number | null;
+  presionPsi: number | null;
+};
 
 export type ServiceCarton = {
   tipo: TipoTrabajo;
@@ -41,6 +63,15 @@ export type ServiceCarton = {
   /** Pasaron 24 horas: nadie lo puede retocar. */
   fijado: boolean;
   items: ItemCarton[];
+  /** Gomería: la alineación del vehículo. null en los otros dos tipos. */
+  alineacion: boolean | null;
+  /** Gomería: una fila por rueda. Vacío en los otros dos tipos. */
+  ruedas: RuedaCarton[];
+  /** Gomería: rotación y balanceo sin cargo hasta estos km / esta fecha.
+   *  null si no aplica o si el taller apagó el beneficio (get_carton ya
+   *  lo gatea por config_neumaticos.beneficio_km). */
+  beneficioHastaKm: number | null;
+  beneficioHastaFecha: string | null;
 };
 
 export type NotaPublica = {
@@ -139,10 +170,29 @@ type CartonJson = {
     aceite_tipo: string | null;
     aceite_nombre: string | null;
     prox_service_km: number | null;
+    alineacion?: boolean | null;
+    beneficio_hasta_km?: number | null;
+    beneficio_hasta_fecha?: string | null;
     sucursal: string | null;
     observaciones: string | null;
     fijado: boolean;
     items: ItemCarton[] | null;
+    ruedas?:
+      | {
+          posicion: PosicionRueda;
+          posicion_anterior: PosicionRueda | null;
+          colocada: boolean;
+          rotada: boolean;
+          balanceada: boolean;
+          reparada: boolean;
+          marca: string | null;
+          medida: string | null;
+          indice_carga_vel: string | null;
+          dot: string | null;
+          profundidad_mm: number | string | null;
+          presion_psi: number | null;
+        }[]
+      | null;
   }[];
 };
 
@@ -234,6 +284,27 @@ export async function obtenerCarton(
         observaciones: s.observaciones,
         fijado: s.fijado,
         items: s.items ?? [],
+        alineacion: s.alineacion ?? null,
+        beneficioHastaKm: s.beneficio_hasta_km ?? null,
+        beneficioHastaFecha: s.beneficio_hasta_fecha ?? null,
+        // numeric(3,1) viaja como string en el jsonb de Postgres: se
+        // convierte una sola vez, acá, para que ninguna vista tenga que
+        // acordarse de hacerlo.
+        ruedas: (s.ruedas ?? []).map((r) => ({
+          posicion: r.posicion,
+          posicionAnterior: r.posicion_anterior,
+          colocada: r.colocada,
+          rotada: r.rotada,
+          balanceada: r.balanceada,
+          reparada: r.reparada,
+          marca: r.marca,
+          medida: r.medida,
+          indiceCargaVel: r.indice_carga_vel,
+          dot: r.dot,
+          profundidadMm:
+            r.profundidad_mm != null ? Number(r.profundidad_mm) : null,
+          presionPsi: r.presion_psi,
+        })),
       })),
     },
   };

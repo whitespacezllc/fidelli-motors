@@ -4,6 +4,20 @@ import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { IconoReloj, IconoQR } from "@/components/iconos";
 import { GraficoServices } from "@/components/inicio/grafico-services";
 import { formatearKm } from "@/lib/renglones";
+import { ETIQUETA_TIPO, type TipoTrabajo } from "@/lib/trabajos";
+import { resumenRuedas } from "@/lib/ruedas";
+
+// De qué se trató cada uno de los últimos trabajos, por tipo: el service
+// no dice nada (sus kilómetros van en la celda de la derecha), la mecánica
+// su descripción, la gomería el resumen de las ruedas.
+const RESUMEN_POR_TIPO: Record<
+  TipoTrabajo,
+  (s: DatosInicio["ultimos"][number]) => string | null
+> = {
+  service: () => null,
+  mecanica: (s) => s.descripcion ?? null,
+  neumaticos: (s) => resumenRuedas(s.ruedas ?? [], s.alineacion ?? false) || null,
+};
 import { formatearFechaHora, nombreDelMes } from "@/lib/fechas";
 import type { PuntoSerie, VistaPanel } from "@/lib/series";
 
@@ -20,8 +34,15 @@ export type DatosInicio = {
   retencion: { vencido: number; urgente: number; proximo: number };
   ultimos: {
     id: string;
-    tipo?: "service" | "mecanica";
+    /** Lo emite resumen_inicio desde 20260912100100. Opcional por la
+     *  ventana entre el deploy de Vercel y el db push: sin la clave, la
+     *  fila cae al service, como antes. */
+    tipo?: TipoTrabajo;
     descripcion?: string | null;
+    /** Gomería: la alineación y las cuatro casillas de cada rueda, para
+     *  armar el resumen con la misma función que usan las otras pantallas. */
+    alineacion?: boolean | null;
+    ruedas?: { colocada: boolean; rotada: boolean; balanceada: boolean; reparada: boolean }[] | null;
     fecha: string;
     creado: string;
     patente: string;
@@ -305,22 +326,26 @@ export function Dashboard({
                     {s.patente.toUpperCase()}
                   </span>
                   <span className="order-3 w-full truncate text-ui text-ink-60 lg:order-none lg:w-auto">
-                    {s.tipo === "mecanica" && s.descripcion
-                      ? `${s.vehiculo ?? "Vehículo"} — ${s.descripcion}`
-                      : (s.vehiculo ?? "Vehículo")}
+                    {[s.vehiculo ?? "Vehículo", RESUMEN_POR_TIPO[s.tipo ?? "service"](s)]
+                      .filter(Boolean)
+                      .join(" — ")}
                   </span>
                   <span className="order-4 text-label text-ink-60 lg:order-none lg:text-ui">
                     {s.sucursal}
                   </span>
-                  {s.tipo === "mecanica" ? (
-                    <span className="order-5 ml-auto lg:order-none lg:ml-0 lg:justify-self-end">
-                      <span className="rounded-sm border border-line bg-surface px-2 py-0.5 text-label font-semibold tracking-[0.04em] text-ink-60 uppercase">
-                        Mecánica
-                      </span>
-                    </span>
-                  ) : (
+                  {/* Los kilómetros son el dato del service; los otros
+                      dos tipos se identifican por su sello. En positivo:
+                      "si no es mecánica, es service" le ponía al trabajo
+                      de gomería la celda equivocada. */}
+                  {(s.tipo ?? "service") === "service" ? (
                     <span className="order-5 ml-auto text-ui text-ink-60 tabular-nums lg:order-none lg:ml-0 lg:text-right">
                       {formatearKm(s.km ?? 0)} km
+                    </span>
+                  ) : (
+                    <span className="order-5 ml-auto lg:order-none lg:ml-0 lg:justify-self-end">
+                      <span className="rounded-sm border border-line bg-surface px-2 py-0.5 text-label font-semibold tracking-[0.04em] text-ink-60 uppercase">
+                        {ETIQUETA_TIPO[s.tipo ?? "service"]}
+                      </span>
                     </span>
                   )}
                 </Link>

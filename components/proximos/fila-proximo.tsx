@@ -4,12 +4,26 @@ import { CheckContactado } from "@/components/proximos/check-contactado";
 import { BotonWhatsapp } from "@/components/proximos/boton-whatsapp";
 import { formatearKm } from "@/lib/renglones";
 import { formatearFecha } from "@/lib/fechas";
-import type { EstadoContacto } from "@/lib/contacto";
+import {
+  etiquetaMotivo,
+  type EstadoContacto,
+  type MotivoContacto,
+  type MotivoNeumaticos,
+} from "@/lib/contacto";
 
 export type ProximoServicio = {
-  /** De dónde viene la fila: el motor de retención o un pendiente. */
-  fuente?: "service" | "pendiente";
+  /** De dónde viene la fila: el motor de retención, un pendiente, o el
+   *  retorno de gomería. */
+  fuente?: "service" | "pendiente" | "neumaticos";
   pendienteId?: string;
+  /** Los motivos dados del retorno de gomería (solo neumáticos). */
+  motivos?: MotivoNeumaticos[];
+  /** El año del DOT más viejo, para "Cubiertas de 2019". */
+  anioDot?: number | null;
+  /** La profundidad más baja, para "Dibujo al límite: 2,5 mm". */
+  mmMinimo?: number | null;
+  /** A qué km toca la rotación, si es uno de los motivos. */
+  kmObjetivo?: number | null;
   /** Qué quedó por hacer (solo pendientes). */
   descripcion?: string;
   /** Cuándo se anotó (solo pendientes). */
@@ -46,9 +60,28 @@ export function FilaProximo({
   suspendido?: boolean;
 }) {
   const esPendiente = fila.fuente === "pendiente";
+  const esNeumaticos = fila.fuente === "neumaticos";
   // El motivo que se registra al contactar: el anti-spam del pendiente es
-  // por motivo 'pendiente', separado de los tres estados del service.
-  const motivo = esPendiente ? ("pendiente" as const) : fila.estado;
+  // por motivo 'pendiente' y el de gomería por 'neumaticos', separados de
+  // los tres estados del service. Un mapa por fuente, no un ternario.
+  const MOTIVO_POR_FUENTE: Record<"service" | "pendiente" | "neumaticos", MotivoContacto> = {
+    service: fila.estado,
+    pendiente: "pendiente",
+    neumaticos: "neumaticos",
+  };
+  const motivo = MOTIVO_POR_FUENTE[fila.fuente ?? "service"];
+  // "Rotación y balanceo · Cubiertas de 2019": la línea secundaria de la
+  // fila de gomería, con todos los motivos dados.
+  const motivosTexto = esNeumaticos
+    ? (fila.motivos ?? [])
+        .map((m) =>
+          etiquetaMotivo(m, {
+            anioDot: fila.anioDot ?? null,
+            mmMinimo: fila.mmMinimo ?? null,
+          }),
+        )
+        .join(" · ")
+    : "";
   return (
     <li
       className={`border-b border-line px-4 py-4 last:border-b-0 sm:px-5 lg:grid lg:grid-cols-[minmax(9rem,1fr)_7.5rem_11rem_6rem_9.5rem_6.5rem_5rem_auto] lg:items-center lg:gap-x-4 lg:py-3 ${
@@ -81,6 +114,11 @@ export function FilaProximo({
             {fila.descripcion}
           </span>
         )}
+        {esNeumaticos && (
+          <span className="mt-0.5 block w-full truncate text-ui text-ink lg:text-label">
+            {motivosTexto}
+          </span>
+        )}
       </div>
 
       {/* 3. Último service — en mobile es dato de respaldo, no de decisión */}
@@ -100,21 +138,36 @@ export function FilaProximo({
         </span>
       </div>
 
-      {/* 4. Próximo service — el km declarado por el mecánico */}
+      {/* 4. Próximo service — el km declarado por el mecánico; en gomería,
+          el km al que toca la rotación (si es uno de los motivos). */}
       <div className="hidden lg:block">
         <span className={CLASE_DATO}>
           {esPendiente
             ? fila.objetivoKm
               ? formatearKm(fila.objetivoKm)
               : "—"
-            : formatearKm(fila.proxServiceKm)}
+            : esNeumaticos
+              ? fila.kmObjetivo
+                ? formatearKm(fila.kmObjetivo)
+                : "—"
+              : formatearKm(fila.proxServiceKm)}
         </span>
       </div>
 
       {/* 5. Retorno estimado */}
       <div className="mt-2 lg:mt-0">
         <span className="lg:hidden">
-          {esPendiente ? (
+          {esNeumaticos ? (
+            <>
+              <span className="text-ui text-ink-60">
+                {motivosTexto} — vuelve cerca del{" "}
+              </span>
+              <span className="text-ui font-semibold text-ink tabular-nums">
+                {fila.estimacionInicial ? "~" : ""}
+                {formatearFecha(fila.fechaEstimada)}
+              </span>
+            </>
+          ) : esPendiente ? (
             <>
               <span className="text-ui text-ink-60">
                 {fila.descripcion} —{" "}
@@ -170,6 +223,11 @@ export function FilaProximo({
         {esPendiente && (
           <span className="mt-1 block w-fit rounded-sm border border-line bg-surface px-2 py-0.5 text-label font-semibold tracking-[0.04em] text-ink-60 uppercase">
             Pendiente
+          </span>
+        )}
+        {esNeumaticos && (
+          <span className="mt-1 block w-fit rounded-sm border border-line bg-surface px-2 py-0.5 text-label font-semibold tracking-[0.04em] text-ink-60 uppercase">
+            Neumáticos
           </span>
         )}
       </div>

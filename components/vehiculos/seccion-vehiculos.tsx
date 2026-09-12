@@ -15,13 +15,15 @@ import { IconoPremio } from "@/components/iconos";
 import { formatearFecha } from "@/lib/fechas";
 import { formatearKm } from "@/lib/renglones";
 import type { EstadoService } from "@/lib/servicios";
+import { ETIQUETA_TIPO, type TipoTrabajo } from "@/lib/trabajos";
 
 type ServiceDelVehiculo = {
   id: string;
-  tipo: "service" | "mecanica";
+  tipo: TipoTrabajo;
   fecha: string;
   kilometros: number | null;
-  /** El aceite del service, o la descripción del trabajo de mecánica. */
+  /** El aceite del service, la descripción de la mecánica o el resumen
+   *  de las ruedas del trabajo de gomería. */
   aceite: string;
   sucursal: string;
   estado: EstadoService;
@@ -237,15 +239,17 @@ function TarjetaVehiculo({
                 <span className="text-ui font-semibold text-ink tabular-nums">
                   {formatearFecha(s.fecha)}
                 </span>
-                {s.tipo === "mecanica" ? (
-                  <span className="text-label text-ink-60">
-                    <span className="rounded-sm border border-line bg-surface px-2 py-0.5 font-semibold tracking-[0.04em] uppercase">
-                      Mecánica
-                    </span>
-                  </span>
-                ) : (
+                {/* Los kilómetros son el dato del service; los otros dos
+                    tipos se identifican por su sello. */}
+                {s.tipo === "service" ? (
                   <span className="text-ui text-ink-60 tabular-nums">
                     {formatearKm(s.kilometros ?? 0)} km
+                  </span>
+                ) : (
+                  <span className="text-label text-ink-60">
+                    <span className="rounded-sm border border-line bg-surface px-2 py-0.5 font-semibold tracking-[0.04em] uppercase">
+                      {ETIQUETA_TIPO[s.tipo]}
+                    </span>
                   </span>
                 )}
                 <span className="hidden truncate text-ui text-ink-60 sm:inline">

@@ -5,11 +5,87 @@
 export type EstadoContacto = "vencido" | "urgente" | "proximo";
 
 /**
- * Por qué se contacta: los tres estados del service, o el trabajo
- * pendiente. Es lo que se registra en `contactos` y lo que gobierna el
- * anti-spam — un contacto por motivo.
+ * Por qué se contacta: los tres estados del service, el trabajo pendiente,
+ * o el retorno de gomería. Es lo que se registra en `contactos` y lo que
+ * gobierna el anti-spam — un contacto por motivo.
  */
-export type MotivoContacto = EstadoContacto | "pendiente";
+export type MotivoContacto = EstadoContacto | "pendiente" | "neumaticos";
+
+// ============================================================
+// LOS MOTIVOS DEL RETORNO DE GOMERÍA
+//
+// Los calcula vista_proximos_neumaticos y viajan como text[]: una fila por
+// vehículo con todos los motivos dados, porque un gomero que le escribe
+// dos veces en la misma semana al mismo cliente es spam. Acá viven los
+// nombres: cómo se ve cada motivo en la fila de "A quién llamar" y cómo se
+// dice en el WhatsApp.
+// ============================================================
+
+export const MOTIVOS_NEUMATICOS = [
+  "rotacion",
+  "alineacion",
+  "reajuste",
+  "antiguedad",
+  "desgaste",
+] as const;
+
+export type MotivoNeumaticos = (typeof MOTIVOS_NEUMATICOS)[number];
+
+export function esMotivoNeumaticos(valor: unknown): valor is MotivoNeumaticos {
+  return (MOTIVOS_NEUMATICOS as readonly unknown[]).includes(valor);
+}
+
+/** La línea secundaria de la fila. Los dos de recambio llevan su dato. */
+export function etiquetaMotivo(
+  motivo: MotivoNeumaticos,
+  datos: { anioDot: number | null; mmMinimo: number | null },
+): string {
+  switch (motivo) {
+    case "rotacion":
+      return "Rotación y balanceo";
+    case "alineacion":
+      return "Alineación";
+    case "reajuste":
+      return "Reajuste de tuercas";
+    case "antiguedad":
+      return datos.anioDot ? `Cubiertas de ${datos.anioDot}` : "Cubiertas viejas";
+    case "desgaste":
+      return datos.mmMinimo != null
+        ? `Dibujo al límite: ${formatearMm(datos.mmMinimo)} mm`
+        : "Dibujo al límite";
+  }
+}
+
+/**
+ * {motivo} del WhatsApp, en castellano natural: "la rotación y el
+ * balanceo", "la rotación y la alineación", "el cambio de cubiertas por
+ * antigüedad". La rotación sola nombra al balanceo; acompañada, no — "la
+ * rotación y el balanceo y la alineación" no lo dice nadie.
+ */
+export function fraseMotivos(motivos: readonly MotivoNeumaticos[]): string {
+  const solaRotacion = motivos.length === 1 && motivos[0] === "rotacion";
+  const frases = motivos.map((m) => {
+    switch (m) {
+      case "rotacion":
+        return solaRotacion ? "la rotación y el balanceo" : "la rotación";
+      case "alineacion":
+        return "la alineación";
+      case "reajuste":
+        return "el reajuste de tuercas";
+      case "antiguedad":
+        return "el cambio de cubiertas por antigüedad";
+      case "desgaste":
+        return "el cambio de cubiertas por desgaste";
+    }
+  });
+  if (frases.length <= 1) return frases[0] ?? "";
+  return `${frases.slice(0, -1).join(", ")} y ${frases[frases.length - 1]}`;
+}
+
+// 2.5 → "2,5" y 3 → "3": la coma del castellano, sin ceros de relleno.
+function formatearMm(mm: number): string {
+  return mm.toLocaleString("es-AR", { maximumFractionDigits: 1 });
+}
 
 /**
  * Teléfono argentino a formato wa.me: solo dígitos, con el 54 adelante.
@@ -77,6 +153,25 @@ export const VARIABLES_MENSAJE_PENDIENTE: {
   { clave: "vehiculo", descripcion: "marca y modelo del auto" },
   { clave: "patente", descripcion: "la patente" },
   { clave: "pendiente", descripcion: "qué quedó por hacer" },
+];
+
+/** Las variables del mensaje del RETORNO DE GOMERÍA: {motivo} son los
+ *  motivos dados, ya armados en castellano (ver fraseMotivos). */
+export type VariablesNeumaticos = {
+  nombre: string;
+  vehiculo: string;
+  patente: string;
+  motivo: string;
+};
+
+export const VARIABLES_MENSAJE_NEUMATICOS: {
+  clave: keyof VariablesNeumaticos;
+  descripcion: string;
+}[] = [
+  { clave: "nombre", descripcion: "el nombre del cliente" },
+  { clave: "vehiculo", descripcion: "marca y modelo del auto" },
+  { clave: "patente", descripcion: "la patente" },
+  { clave: "motivo", descripcion: "qué le toca: la rotación, la alineación…" },
 ];
 
 // El catálogo de variables, para el editor de mensajes: qué existe y qué

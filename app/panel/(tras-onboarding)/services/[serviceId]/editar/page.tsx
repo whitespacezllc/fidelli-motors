@@ -38,12 +38,15 @@ export default async function PaginaEditarService({ params }: Props) {
         .from("services")
         .select(
           `id, tipo, trabajo_descripcion, fecha, created_at, kilometros,
-           aceite_litros,
+           aceite_litros, alineacion,
            aceite_tipo, aceite_producto_id,
            prox_service_km, observaciones, anulado, desbloqueado_hasta,
            sucursal_id, vehiculo_id,
            vehiculos(patente, marca, modelo, clientes(nombre)),
-           service_items(item_tipo, detalle, cambiado, cantidad, producto_id, productos(nombre, marca))`,
+           service_items(item_tipo, detalle, cambiado, cantidad, producto_id, productos(nombre, marca)),
+           service_ruedas(posicion, posicion_anterior, colocada, rotada, balanceada,
+                          reparada, producto_id, marca, medida, indice_carga_vel,
+                          dot, profundidad_mm, presion_psi)`,
         )
         .eq("id", serviceId)
         .maybeSingle(),
@@ -134,6 +137,25 @@ export default async function PaginaEditarService({ params }: Props) {
     (p) => idsProductos.has(p.id) && p.stock != null,
   );
 
+  // Las ruedas del trabajo de gomería, tal como quedaron guardadas. Al
+  // editar se reemplazan enteras (borrar e insertar): lo que el mecánico
+  // corrige es cómo quedó el auto, no una fila.
+  const ruedas = (service.service_ruedas ?? []).map((r) => ({
+    posicion: r.posicion,
+    posicionAnterior: r.posicion_anterior,
+    colocada: r.colocada,
+    rotada: r.rotada,
+    balanceada: r.balanceada,
+    reparada: r.reparada,
+    productoId: r.producto_id,
+    marca: r.marca,
+    medida: r.medida,
+    indiceCargaVel: r.indice_carga_vel,
+    dot: r.dot,
+    profundidadMm: r.profundidad_mm,
+    presionPsi: r.presion_psi,
+  }));
+
   const libres = service.service_items
     .filter((i) => i.item_tipo === null)
     .map(
@@ -180,6 +202,7 @@ export default async function PaginaEditarService({ params }: Props) {
           productos: (productosRes.data ?? []).map((p) => ({
             id: p.id,
             nombre: [p.nombre, p.marca].filter(Boolean).join(" · "),
+            marca: p.marca,
             categoria: p.categoria,
             precioVenta: p.precio_venta,
             stock: p.stock,
@@ -218,6 +241,8 @@ export default async function PaginaEditarService({ params }: Props) {
               .map((i) => [i.item_tipo as string, String(i.cantidad)]),
           ),
           usaProductosConStock,
+          alineacion: service.alineacion ?? false,
+          ruedas,
         }}
       />
     </div>

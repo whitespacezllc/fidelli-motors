@@ -1,4 +1,5 @@
 import type { ClavePlan } from "@/lib/planes-landing";
+import type { ModuloPago } from "@/lib/planes";
 
 // ============================================================
 // LOS VIDEOS DE AYUDA — la única fuente.
@@ -61,6 +62,14 @@ export type VideoAyuda = {
   solapa: string;
   /** El plan mínimo que incluye la función. */
   plan: ClavePlan;
+  /**
+   * Si la función es un MÓDULO PAGO y no parte de un plan, cuál. La
+   * etiqueta del video pasa a decir "Módulo Gomería" en vez de "Plan
+   * Ultra", que sería mentira: el módulo no viene con ningún plan y no se
+   * consigue subiendo de plan. Con `plan` se decide el piso; con esto, el
+   * nombre de lo que falta.
+   */
+  modulo?: ModuloPago;
   /** Si es el video de un paso del onboarding, cuál. */
   pasoOnboarding: PasoOnboarding | null;
   /**
@@ -235,6 +244,24 @@ export const VIDEOS: readonly VideoAyuda[] = [
     plan: "ultra",
     pasoOnboarding: null,
     featureLanding: ["Sucursales", "Sucursales ilimitadas"],
+  },
+  {
+    id: "carga-neumaticos",
+    titulo: "Cargar un trabajo de neumáticos",
+    descripcion:
+      "Las cuatro ruedas, la alineación y los datos de cada cubierta.",
+    // ⚠ SANTIAGO: el ID va acá cuando grabes el video. Hasta entonces la
+    // tarjeta figura como "Video en preparación".
+    youtubeId: null,
+    duracion: 0,
+    seccion: "Trabajos",
+    solapa: "/panel/services",
+    // El módulo se vende aparte del plan y solo a Pro o Ultra: el piso es
+    // Pro, pero lo que falta se nombra con el módulo, no con el plan.
+    plan: "pro",
+    modulo: "neumaticos",
+    pasoOnboarding: null,
+    featureLanding: null,
   },
 ] as const;
 

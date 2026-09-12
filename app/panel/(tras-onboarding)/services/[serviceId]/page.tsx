@@ -7,11 +7,13 @@ import { clasesBoton } from "@/components/ui/boton";
 import {
   CartonPapel,
   CartonPapelMecanica,
+  CartonPapelNeumaticos,
 } from "@/components/services/carton-papel";
 import { BadgeEstado } from "@/components/services/badge-estado";
 import { AnularService } from "@/components/services/anular-service";
 import { estadoService, puedeEditarse } from "@/lib/servicios";
 import { formatearKm } from "@/lib/renglones";
+import { ETIQUETA_TIPO } from "@/lib/trabajos";
 import {
   formatearFecha,
   formatearFechaHora,
@@ -31,21 +33,29 @@ export default async function PaginaService({ params }: Props) {
   const supabase = await createClient();
   const sesion = await obtenerSesion();
 
-  const [serviceRes, configRes] = await Promise.all([
+  const [serviceRes, configRes, configNeumRes] = await Promise.all([
     supabase
       .from("services")
       .select(
         `id, tipo, trabajo_descripcion, fecha, created_at, kilometros,
-         aceite_tipo, aceite_nombre,
+         aceite_tipo, aceite_nombre, alineacion,
+         beneficio_hasta_km, beneficio_hasta_fecha,
          prox_service_km, observaciones, anulado, desbloqueado_hasta,
          vehiculos(patente, marca, modelo, cliente_id, clientes(nombre)),
          sucursales(nombre),
          usuarios!usuario_id(nombre),
-         service_items(item_tipo, detalle, cambiado, productos(nombre, marca))`,
+         service_items(item_tipo, detalle, cambiado, productos(nombre, marca)),
+         service_ruedas(posicion, posicion_anterior, colocada, rotada, balanceada,
+                        reparada, marca, medida, indice_carga_vel, dot,
+                        profundidad_mm, presion_psi, productos(nombre, marca))`,
       )
       .eq("id", serviceId)
       .maybeSingle(),
     supabase.from("config_experiencia").select("color_primario, color_carton").maybeSingle(),
+    // El interruptor del beneficio: con beneficio_km = 0 la línea no se
+    // dibuja, tampoco en los trabajos que ya lo tenían guardado. Mismo
+    // criterio que get_carton para el cliente.
+    supabase.from("config_neumaticos").select("beneficio_km").maybeSingle(),
   ]);
 
   const service = serviceRes.data;
@@ -74,6 +84,7 @@ export default async function PaginaService({ params }: Props) {
   // El mismo criterio de get_carton: el detalle escrito manda, y si el
   // renglón se cargó con producto del catálogo, se muestra su nombre.
   const esMecanica = service.tipo === "mecanica";
+  const esNeumaticos = service.tipo === "neumaticos";
   const renglonesLibres = service.service_items
     .filter((i) => i.item_tipo === null)
     .map(
@@ -98,6 +109,24 @@ export default async function PaginaService({ params }: Props) {
     ]),
   );
 
+  // Las ruedas del trabajo de gomería, para el papel. Mismo criterio que
+  // el resto: la marca escrita manda, y si la cubierta salió del catálogo
+  // se muestra la suya.
+  const ruedasPapel = (service.service_ruedas ?? []).map((r) => ({
+    posicion: r.posicion,
+    posicionAnterior: r.posicion_anterior,
+    colocada: r.colocada,
+    rotada: r.rotada,
+    balanceada: r.balanceada,
+    reparada: r.reparada,
+    marca: r.marca ?? r.productos?.marca ?? r.productos?.nombre ?? null,
+    medida: r.medida,
+    indiceCargaVel: r.indice_carga_vel,
+    dot: r.dot,
+    profundidadMm: r.profundidad_mm,
+    presionPsi: r.presion_psi,
+  }));
+
   // formatearHora fija la zona argentina: este componente se renderiza en
   // el servidor y el Intl pelado usaba la hora del proceso (UTC en Vercel).
   const horaDesbloqueo =
@@ -121,11 +150,11 @@ export default async function PaginaService({ params }: Props) {
         <div>
           <h1 className="flex flex-wrap items-center gap-2.5 font-brand text-h3 font-bold text-ink">
             <span className="plate">{patente}</span> · {nombreVehiculo}
-            {esMecanica && (
-              <span className="rounded-sm border border-line bg-surface px-2 py-0.5 font-ui text-label font-semibold tracking-[0.04em] text-ink-60 uppercase">
-                Mecánica
-              </span>
-            )}
+            {/* El sello del tipo. El service también lleva el suyo: con
+                tres tipos, dejar uno sin etiquetar es confuso. */}
+            <span className="rounded-sm border border-line bg-surface px-2 py-0.5 font-ui text-label font-semibold tracking-[0.04em] text-ink-60 uppercase">
+              {ETIQUETA_TIPO[service.tipo]}
+            </span>
           </h1>
           <p className="mt-1 text-ui text-ink-60">
             {clienteId ? (
@@ -213,7 +242,28 @@ export default async function PaginaService({ params }: Props) {
       {/* El cartón + la metadata operativa, lado a lado en desktop */}
       <div className="grid gap-5 md:grid-cols-[minmax(0,22rem)_1fr] md:items-start">
         <div className={estado.tipo === "anulado" ? "opacity-55" : ""}>
-          {esMecanica ? (
+          {esNeumaticos ? (
+            <CartonPapelNeumaticos
+              datos={{
+                lubricentroNombre: sesion?.lubricentroNombre ?? "Tu lubricentro",
+                colorTenant: configRes.data?.color_primario ?? "#0A0A0A",
+                colorPapel: configRes.data?.color_carton ?? null,
+                fecha: service.fecha,
+                kilometros: service.kilometros,
+                alineacion: service.alineacion ?? false,
+                ruedas: ruedasPapel,
+                beneficio:
+                  (configNeumRes.data?.beneficio_km ?? 0) > 0 &&
+                  service.beneficio_hasta_km != null &&
+                  service.beneficio_hasta_fecha
+                    ? {
+                        hastaKm: service.beneficio_hasta_km,
+                        hastaFecha: service.beneficio_hasta_fecha,
+                      }
+                    : null,
+              }}
+            />
+          ) : esMecanica ? (
             <CartonPapelMecanica
               datos={{
                 lubricentroNombre: sesion?.lubricentroNombre ?? "Tu lubricentro",

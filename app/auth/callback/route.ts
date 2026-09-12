@@ -28,6 +28,19 @@ function destinoSeguro(next: string | null, tipo: string | null): string {
   return DESTINO[tipo ?? ""] ?? "/auth/clave";
 }
 
+// Cuando GoTrue rechaza un enlace, el motivo queda en los logs del servidor
+// con su código (otp_expired, etc.). Es lo que permite saber POR QUÉ falló
+// un enlace real en vez de adivinar. Nunca el token.
+function registrarRechazo(
+  paso: string,
+  tipo: string | null,
+  error: { code?: string; status?: number; message?: string },
+) {
+  console.warn(
+    `[auth/callback] ${paso} rechazado · tipo=${tipo ?? "-"} · code=${error.code ?? "-"} · status=${error.status ?? "-"} · ${error.message ?? ""}`,
+  );
+}
+
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
@@ -41,6 +54,7 @@ export async function GET(request: Request) {
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) return NextResponse.redirect(`${origin}${destino}`);
+    registrarRechazo("exchangeCodeForSession", type, error);
   }
 
   // Formato de los templates: ?token_hash=…&type=…
@@ -50,6 +64,7 @@ export async function GET(request: Request) {
       token_hash: tokenHash,
     });
     if (!error) return NextResponse.redirect(`${origin}${destino}`);
+    registrarRechazo("verifyOtp", type, error);
   }
 
   // Acá se separan dos cosas que antes contaban la misma historia:
