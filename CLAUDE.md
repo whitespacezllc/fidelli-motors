@@ -285,20 +285,35 @@ alter view <la_vista> set (security_invoker = on);
 GoTrue las escanea como `string` no-nullable y un `NULL` rompe todo login de ese
 usuario con un 500 genérico.
 
-**Los enlaces de los mails NO usan `{{ .ConfirmationURL }}`.** Esa variable
-apunta a `/auth/v1/verify`, que devuelve la sesión en el **fragmento** de la URL
-(`#access_token=…`). El fragmento no viaja al servidor: `/auth/callback` es un
-Route Handler y recibe una URL sin código, con lo que el enlace terminaba en
-`/login?aviso=enlace` y el invitado nunca podía activar su cuenta. Los templates
-arman el enlace así:
+**Los enlaces de los mails NO usan `{{ .ConfirmationURL }}` ni `{{ .RedirectTo }}`.**
+`ConfirmationURL` apunta a `/auth/v1/verify`, que devuelve la sesión en el
+**fragmento** de la URL (`#access_token=…`); el fragmento no viaja al servidor y
+`/auth/callback` es un Route Handler, así que el invitado nunca podía activar su
+cuenta. `RedirectTo` lo valida GoTrue contra la lista de Redirect URLs del
+proyecto y, si no está, lo descarta **en silencio** y arma el enlace contra el
+Site URL pelado (fue el bug de producción). Los templates arman el enlace así:
 
 ```
-{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=invite
+{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=invite
 ```
 
-`.RedirectTo` es el `redirectTo` que mandó la llamada, así que el enlace vuelve
-al mismo origen del que salió (local, preview o producción). **Este cambio es de
-los templates: en la nube hay que replicarlo en los templates del proyecto.**
+Condición: el Site URL de cada proyecto tiene que ser la URL de su app (local
+`http://localhost:3000`, prod `https://fidellimotors.app`). **Los templates son
+configuración del dashboard, no viajan con el repo:** cada cambio en
+`supabase/templates/` hay que pegarlo a mano en dev y en prod (Authentication →
+Emails), y comprobarlo mirando el `href` del botón en un mail real.
+
+**Cuánto dura un enlace de mail lo decide "Email OTP Expiration"**, en el
+dashboard de cada proyecto (Authentication → Sign In / Providers → Email). Ese
+único valor gobierna invitación, recuperación, confirmación y cambio de mail. El
+default de la nube es **una hora**; el `otp_expiry = 86400` de `config.toml` sólo
+manda en local. Los mails y las pantallas prometen 24 horas, así que **dev y prod
+tienen que estar en 86400** (el máximo del dashboard). Con el default, todo owner
+que abre la invitación a la tarde llega a "La invitación ya venció" (pasó en
+producción el 2026-09-08). Aun así, un enlace vencido no es un callejón: en
+`/auth/enlace?tipo=invite` el owner se pide otra invitación con su mail
+(`lib/auth/invitacion.ts`, sólo para cuentas nunca activadas, una por minuto), y
+`/auth/callback` deja en los logs el código con el que GoTrue rechazó el enlace.
 
 ### La clave `service_role`
 

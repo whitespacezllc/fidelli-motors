@@ -3,9 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { crearClienteAdmin } from "@/lib/supabase/admin";
 import { obtenerSesion } from "@/lib/auth/session";
-import { origenDelSitio } from "@/lib/origen";
+import { enviarInvitacion } from "@/lib/auth/invitacion";
 import type { Periodo } from "@/lib/fidelli/plan";
 import type { MotivoAviso } from "@/lib/config";
 
@@ -92,49 +91,9 @@ export async function verificarSlug(slug: string): Promise<EstadoSlug> {
 // ============================================================
 // La invitación del owner — la fase 2, y la única que usa service_role
 //
-// Devuelve null si salió bien, o el motivo en castellano si falló.
-// Nunca tira: el que llama necesita seguir vivo para poder contar que
-// el tenant sí quedó creado.
+// `enviarInvitacion` vive en lib/auth/invitacion.ts: la comparte con la
+// página del enlace vencido, desde donde el propio owner se pide otra.
 // ============================================================
-
-async function enviarInvitacion(
-  lubricentroId: string,
-  nombre: string,
-  email: string,
-): Promise<string | null> {
-  try {
-    const admin = crearClienteAdmin();
-
-    const { error } = await admin.auth.admin.inviteUserByEmail(email, {
-      // Esta metadata es lo que lee el trigger handle_new_user para crear
-      // la fila de aplicación. Sin rol o sin lubricentro_id, el alta del
-      // usuario falla a propósito en vez de dejar un usuario sin tenant.
-      data: { lubricentro_id: lubricentroId, rol: "owner", nombre },
-      // OBLIGATORIO. Sin redirectTo el enlace del mail cae en / con el
-      // código sin canjear: la sesión nunca se crea y el owner no puede
-      // activar su cuenta. Tiene que apuntar al callback, que es el que
-      // intercambia el código y lo manda a definir la contraseña.
-      redirectTo: `${await origenDelSitio()}/auth/callback`,
-    });
-
-    if (!error) return null;
-
-    const texto = error.message ?? "";
-    if (esErrorDeRed(texto)) {
-      return "No hubo conexión con el servicio de mails.";
-    }
-    if (/already been registered|already exists/i.test(texto)) {
-      return "Ese email ya tiene una cuenta en Fidelli Motors. Usá otro, o pedile al owner que entre con el que ya tiene.";
-    }
-    if (error.status === 429 || /rate limit/i.test(texto)) {
-      return "El servicio de mails cortó el envío por límite. Esperá un minuto y reenviá la invitación.";
-    }
-    return texto || "El servicio de mails rechazó el envío.";
-  } catch (e) {
-    // Incluye el caso de SUPABASE_SERVICE_ROLE_KEY ausente en el entorno.
-    return e instanceof Error ? e.message : "Error desconocido al invitar.";
-  }
-}
 
 // ============================================================
 // El alta — dos fases, y en este orden
