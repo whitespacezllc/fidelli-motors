@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { origenDelSitio } from "@/lib/origen";
+import { reenviarInvitacionPendiente } from "@/lib/auth/invitacion";
 
 export type EstadoAccion = {
   error?: string;
@@ -96,6 +97,35 @@ export async function enviarRecuperacion(
     // Cualquier otro caso se confirma igual: no revelamos qué emails existen.
   }
 
+  return { ok: true, email };
+}
+
+// El owner cuya invitación venció se pide otra desde /auth/enlace. Sin
+// sesión, a propósito: nunca llegó a tener contraseña, así que no hay
+// forma de que la tenga. Las guardas (sólo cuentas nunca activadas, una
+// por minuto) están en reenviarInvitacionPendiente.
+export async function pedirInvitacionNueva(
+  _prev: EstadoAccion,
+  formData: FormData,
+): Promise<EstadoAccion> {
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return { error: "Escribí el email al que te llegó la invitación." };
+  }
+
+  const resultado = await reenviarInvitacionPendiente(email);
+
+  // Sólo se cuenta el fallo real del envío (sin red, el servicio de mails
+  // cortó por límite). Decirle "listo" a un owner al que no le va a llegar
+  // nada sería peor que admitir que ese mail tiene una invitación pendiente.
+  if (typeof resultado === "object") {
+    return {
+      error:
+        "No pudimos mandar el correo en este momento. Probá de nuevo en unos minutos o escribinos por WhatsApp.",
+    };
+  }
+
+  // "enviada" y "omitida" se ven igual: no se revela qué mails tienen cuenta.
   return { ok: true, email };
 }
 

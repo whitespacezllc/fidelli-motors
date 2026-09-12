@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Logo } from "@/components/marca/logo";
 import { clasesBoton } from "@/components/ui/boton";
-import { urlWhatsappSoporte } from "@/lib/config";
+import { FormularioInvitacionVencida } from "@/components/auth/formulario-invitacion-vencida";
 
 export const metadata: Metadata = {
   title: "El enlace no sirve",
@@ -17,31 +17,23 @@ export const metadata: Metadata = {
 // callejón sin salida: el formulario de login no le sirve, porque nunca
 // llegó a tener contraseña.
 //
-// Dos cosas hacen falta acá y ninguna es un formulario: entender qué pasó,
-// y tener a mano el camino para conseguir otro enlace. Ese camino no es el
-// mismo según de qué enlace se trate, y por eso el texto cambia.
+// Dos cosas hacen falta acá: entender qué pasó, y tener a mano el camino
+// para conseguir otro enlace. Ese camino no es el mismo según de qué
+// enlace se trate:
+//   · recuperación (o un enlace cualquiera): /recuperar, que ya existe;
+//   · invitación: el owner se pide otra acá mismo, con su mail
+//     (FormularioInvitacionVencida). Es el caso que más importa, porque es
+//     el primer contacto del cliente con el producto.
 // ============================================================
 
-type Caso = { titulo: string; cuerpo: string; accion: "recuperar" | "fidelli" };
+type Caso = { titulo: string; cuerpo: string };
 
-function leerCaso(motivo?: string, tipo?: string): Caso {
+function leerCaso(motivo?: string): Caso {
   if (motivo === "sin_token") {
     return {
       titulo: "Esta dirección no lleva a ningún lado",
       cuerpo:
         "Llegaste acá sin un enlace de correo. Si estabas tratando de entrar, hacelo desde el login; si te mandamos un mail, abrí el enlace desde ahí.",
-      accion: "recuperar",
-    };
-  }
-
-  // Una invitación vencida no se resuelve sola: el owner no puede pedirse
-  // otra a sí mismo, la manda Fidelli desde el panel de administración.
-  if (tipo === "invite") {
-    return {
-      titulo: "La invitación ya venció",
-      cuerpo:
-        "Los enlaces de invitación duran 24 horas, y este ya pasó ese plazo o se usó antes. No lo podés renovar vos: escribinos y te mandamos uno nuevo en el momento.",
-      accion: "fidelli",
     };
   }
 
@@ -49,7 +41,6 @@ function leerCaso(motivo?: string, tipo?: string): Caso {
     titulo: "El enlace ya se usó o venció",
     cuerpo:
       "Los enlaces de correo duran 24 horas y sirven una sola vez. Pedí uno nuevo y te llega al toque.",
-    accion: "recuperar",
   };
 }
 
@@ -59,7 +50,19 @@ export default async function PaginaEnlace({
   searchParams: Promise<{ motivo?: string; tipo?: string }>;
 }) {
   const { motivo, tipo } = await searchParams;
-  const caso = leerCaso(motivo, tipo);
+
+  if (motivo !== "sin_token" && tipo === "invite") {
+    return (
+      <main className="flex min-h-dvh items-center justify-center px-6 py-10">
+        <div className="w-full max-w-[420px]">
+          <Logo className="mb-8 h-6 w-auto" priority />
+          <FormularioInvitacionVencida />
+        </div>
+      </main>
+    );
+  }
+
+  const caso = leerCaso(motivo);
 
   return (
     <main className="flex min-h-dvh items-center justify-center px-6 py-10">
@@ -71,36 +74,17 @@ export default async function PaginaEnlace({
         </h1>
         <p className="mb-6 text-body text-ink-60">{caso.cuerpo}</p>
 
-        {caso.accion === "recuperar" ? (
-          <div className="flex flex-col gap-3">
-            <Link href="/recuperar" className={clasesBoton("primario", "lg")}>
-              Pedir un enlace nuevo
-            </Link>
-            <Link
-              href="/login"
-              className="flex min-h-11 items-center justify-center text-ui font-semibold text-ink-60 hover:text-ink"
-            >
-              Volver al login
-            </Link>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            <a
-              href={urlWhatsappSoporte()}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={clasesBoton("primario", "lg")}
-            >
-              Escribirle a Fidelli
-            </a>
-            <Link
-              href="/login"
-              className="flex min-h-11 items-center justify-center text-ui font-semibold text-ink-60 hover:text-ink"
-            >
-              Ya tengo contraseña, quiero entrar
-            </Link>
-          </div>
-        )}
+        <div className="flex flex-col gap-3">
+          <Link href="/recuperar" className={clasesBoton("primario", "lg")}>
+            Pedir un enlace nuevo
+          </Link>
+          <Link
+            href="/login"
+            className="flex min-h-11 items-center justify-center text-ui font-semibold text-ink-60 hover:text-ink"
+          >
+            Volver al login
+          </Link>
+        </div>
       </div>
     </main>
   );
