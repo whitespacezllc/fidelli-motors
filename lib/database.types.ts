@@ -1044,12 +1044,108 @@ export type Database = {
           },
         ]
       }
+      service_ruedas: {
+        Row: {
+          balanceada: boolean
+          colocada: boolean
+          created_at: string
+          dot: string | null
+          id: string
+          indice_carga_vel: string | null
+          lubricentro_id: string
+          marca: string | null
+          medida: string | null
+          posicion: Database["public"]["Enums"]["posicion_rueda"]
+          posicion_anterior:
+            | Database["public"]["Enums"]["posicion_rueda"]
+            | null
+          presion_psi: number | null
+          producto_id: string | null
+          profundidad_mm: number | null
+          reparada: boolean
+          rotada: boolean
+          service_id: string
+        }
+        Insert: {
+          balanceada?: boolean
+          colocada?: boolean
+          created_at?: string
+          dot?: string | null
+          id?: string
+          indice_carga_vel?: string | null
+          lubricentro_id: string
+          marca?: string | null
+          medida?: string | null
+          posicion: Database["public"]["Enums"]["posicion_rueda"]
+          posicion_anterior?:
+            | Database["public"]["Enums"]["posicion_rueda"]
+            | null
+          presion_psi?: number | null
+          producto_id?: string | null
+          profundidad_mm?: number | null
+          reparada?: boolean
+          rotada?: boolean
+          service_id: string
+        }
+        Update: {
+          balanceada?: boolean
+          colocada?: boolean
+          created_at?: string
+          dot?: string | null
+          id?: string
+          indice_carga_vel?: string | null
+          lubricentro_id?: string
+          marca?: string | null
+          medida?: string | null
+          posicion?: Database["public"]["Enums"]["posicion_rueda"]
+          posicion_anterior?:
+            | Database["public"]["Enums"]["posicion_rueda"]
+            | null
+          presion_psi?: number | null
+          producto_id?: string | null
+          profundidad_mm?: number | null
+          reparada?: boolean
+          rotada?: boolean
+          service_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_ruedas_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_ruedas_producto_id_fkey"
+            columns: ["producto_id"]
+            isOneToOne: false
+            referencedRelation: "productos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_ruedas_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_ruedas_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_service"
+            referencedColumns: ["ultimo_service_id"]
+          },
+        ]
+      }
       services: {
         Row: {
           aceite_litros: number | null
           aceite_nombre: string | null
           aceite_producto_id: string | null
           aceite_tipo: string | null
+          alineacion: boolean | null
           anulado: boolean
           created_at: string
           desbloqueado_hasta: string | null
@@ -1072,6 +1168,7 @@ export type Database = {
           aceite_nombre?: string | null
           aceite_producto_id?: string | null
           aceite_tipo?: string | null
+          alineacion?: boolean | null
           anulado?: boolean
           created_at?: string
           desbloqueado_hasta?: string | null
@@ -1094,6 +1191,7 @@ export type Database = {
           aceite_nombre?: string | null
           aceite_producto_id?: string | null
           aceite_tipo?: string | null
+          alineacion?: boolean | null
           anulado?: boolean
           created_at?: string
           desbloqueado_hasta?: string | null
@@ -1723,11 +1821,13 @@ export type Database = {
           p_aceite_nombre?: string
           p_aceite_producto_id?: string
           p_aceite_tipo: string
+          p_alineacion?: boolean
           p_fecha: string
           p_items?: Json
           p_kilometros: number
           p_observaciones?: string
           p_prox_service_km: number
+          p_ruedas?: Json
           p_service_id: string
           p_sucursal_id: string
           p_trabajo_descripcion?: string
@@ -1853,12 +1953,17 @@ export type Database = {
         }
         Returns: string
       }
+      guardar_ruedas: {
+        Args: { p_ruedas: Json; p_service_id: string }
+        Returns: undefined
+      }
       guardar_service: {
         Args: {
           p_aceite_litros?: number
           p_aceite_nombre?: string
           p_aceite_producto_id?: string
           p_aceite_tipo: string
+          p_alineacion?: boolean
           p_canjear_premio?: boolean
           p_fecha: string
           p_items?: Json
@@ -1867,6 +1972,7 @@ export type Database = {
           p_pendientes?: Json
           p_prox_service_km: number
           p_resolver_pendientes?: string[]
+          p_ruedas?: Json
           p_sucursal_id: string
           p_tipo?: Database["public"]["Enums"]["tipo_trabajo"]
           p_trabajo_descripcion?: string
@@ -1894,6 +2000,7 @@ export type Database = {
           contactado: boolean
           creado: string
           id: string
+          modulo_neumaticos: boolean
           nombre: string
           onboarding_avance: string
           onboarding_paso: number
@@ -1931,7 +2038,15 @@ export type Database = {
       normalizar_patente: { Args: { entrada: string }; Returns: string }
       normalizar_texto_vehiculo: { Args: { p: string }; Returns: string }
       omitir_premio: { Args: never; Returns: Json }
+      onboarding_completar_de: {
+        Args: { p_lubricentro_id: string }
+        Returns: Json
+      }
       onboarding_estado: { Args: { p_lubricentro_id: string }; Returns: Json }
+      onboarding_estado_de: {
+        Args: { p_lubricentro_id: string }
+        Returns: Json
+      }
       orden_atencion: { Args: { p_atencion: string }; Returns: number }
       overrides_plan_bien_formados: { Args: { p: Json }; Returns: boolean }
       patente_formato_valido: { Args: { p: string }; Returns: boolean }
@@ -2036,8 +2151,14 @@ export type Database = {
         | "aditivo_transmision"
       motivo_contacto_fidelli: "trial" | "cobranza"
       periodo_suscripcion: "mensual" | "semestral" | "anual"
+      posicion_rueda:
+        | "delantera_izquierda"
+        | "delantera_derecha"
+        | "trasera_izquierda"
+        | "trasera_derecha"
+        | "auxilio"
       rol_usuario: "owner" | "superadmin"
-      tipo_trabajo: "service" | "mecanica"
+      tipo_trabajo: "service" | "mecanica" | "neumaticos"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -2188,8 +2309,15 @@ export const Constants = {
       ],
       motivo_contacto_fidelli: ["trial", "cobranza"],
       periodo_suscripcion: ["mensual", "semestral", "anual"],
+      posicion_rueda: [
+        "delantera_izquierda",
+        "delantera_derecha",
+        "trasera_izquierda",
+        "trasera_derecha",
+        "auxilio",
+      ],
       rol_usuario: ["owner", "superadmin"],
-      tipo_trabajo: ["service", "mecanica"],
+      tipo_trabajo: ["service", "mecanica", "neumaticos"],
     },
   },
 } as const

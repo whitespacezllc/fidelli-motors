@@ -9,6 +9,32 @@ import { estadoService } from "@/lib/servicios";
 import { obtenerSesion, featureHabilitada } from "@/lib/auth/session";
 import { formatearCuit } from "@/lib/cuit";
 import { formatearFecha, formatearMesAnio } from "@/lib/fechas";
+import { resumenRuedas } from "@/lib/ruedas";
+import type { TipoTrabajo } from "@/lib/trabajos";
+
+// De qué se trató el trabajo, en una línea, por tipo. Es un Record y no
+// una cadena de ternarios a propósito: el compilador obliga a contestar
+// por cada tipo, y "si no es mecánica, entonces es service" era justo la
+// rama implícita que el tercer tipo rompe en silencio.
+type FilaTrabajo = {
+  trabajo_descripcion: string | null;
+  aceite_tipo: string | null;
+  aceite_nombre: string | null;
+  alineacion: boolean | null;
+  service_ruedas: {
+    colocada: boolean;
+    rotada: boolean;
+    balanceada: boolean;
+    reparada: boolean;
+  }[];
+};
+
+const RESUMEN_POR_TIPO: Record<TipoTrabajo, (s: FilaTrabajo) => string> = {
+  service: (s) => [s.aceite_tipo, s.aceite_nombre].filter(Boolean).join(" · "),
+  mecanica: (s) => s.trabajo_descripcion ?? "",
+  neumaticos: (s) =>
+    resumenRuedas(s.service_ruedas ?? [], s.alineacion ?? false),
+};
 
 export const metadata: Metadata = { title: "Cliente" };
 
@@ -82,7 +108,10 @@ export default async function FichaCliente({
   const { data: filasServices } = await supabase
     .from("services")
     .select(
-      "id, tipo, trabajo_descripcion, fecha, created_at, kilometros, aceite_tipo, aceite_nombre, anulado, desbloqueado_hasta, vehiculo_id, sucursales(nombre)",
+      `id, tipo, trabajo_descripcion, fecha, created_at, kilometros, aceite_tipo,
+       aceite_nombre, anulado, desbloqueado_hasta, vehiculo_id, alineacion,
+       sucursales(nombre),
+       service_ruedas(colocada, rotada, balanceada, reparada)`,
     )
     .in(
       "vehiculo_id",
@@ -257,11 +286,10 @@ export default async function FichaCliente({
             tipo: s.tipo,
             fecha: s.fecha,
             kilometros: s.kilometros,
-            // En mecánica la columna del aceite cuenta el trabajo.
-            aceite:
-              s.tipo === "mecanica"
-                ? (s.trabajo_descripcion ?? "")
-                : [s.aceite_tipo, s.aceite_nombre].filter(Boolean).join(" · "),
+            // La columna cuenta de qué se trató cada trabajo, y cada
+            // tipo la llena con lo suyo: el aceite en el service, la
+            // descripción en mecánica, las ruedas en gomería.
+            aceite: RESUMEN_POR_TIPO[s.tipo](s),
             sucursal: s.sucursales?.nombre ?? "",
             estado: estadoService(s),
           })),

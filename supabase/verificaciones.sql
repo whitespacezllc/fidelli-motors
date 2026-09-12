@@ -1064,3 +1064,543 @@ begin
   update suscripciones set plan_id = v_plan where lubricentro_id = v_lub;
   delete from lubricentros where id = v_ajeno;
 end $$;
+
+-- ============================================================
+-- R15 · El módulo de gomería (bloque 1 de neumáticos)
+--
+-- Las gemelas de R2 y R3 para el TERCER tipo de trabajo. Existen porque
+-- el modo de falla de agregar un valor al enum NO DA ERROR: los CHECK y
+-- las policies de services están escritos como `tipo <> 'x' or (...)`, y
+-- sobre un tipo que no nombran la premisa es verdadera y no se evalúa
+-- nada. Sin estas pruebas, el día que alguien agregue un cuarto tipo el
+-- módulo PAGO queda abierto y gratis para todos los tenants — sin error,
+-- sin log y sin que se caiga ningún build.
+--
+--   a · Sin el módulo no se carga un trabajo de neumáticos NI POR SQL
+--       DIRECTO (la capa de aplicación acá no existe: esto es la policy
+--       sola). Es la gemela de R3b, y va en DOS variantes: una alineación
+--       sola —el único caso que aísla services_insercion— y un trabajo
+--       con ruedas. Ver la nota larga en a1: con ruedas, la prueba pasa
+--       aunque la policy de services esté rota.
+--   b · Con el módulo prendido desde /fidelli, sí. Control positivo: sin
+--       esto, "no se puede cargar nunca" pasaría la prueba a).
+--   c · Un trabajo de neumáticos NO altera la fila de retención del
+--       vehículo. Es la gemela de R2, y protege la misma pantalla: la que
+--       trae la plata.
+--   d · Los CHECK del tercer tipo: viscosidad de aceite, sin kilómetros y
+--       sin alineación quedan afuera.
+--   e · Los CHECK por rueda: medida, DOT, profundidad y rotación.
+--   f · El stock: baja UNA unidad por rueda colocada con producto, y una
+--       rueda solo MEDIDA no mueve nada.
+--   g · El premio no lo avanza un trabajo de neumáticos salvo alcance
+--       'todos' — premio_disponible ya lo resuelve sola y esto lo fija.
+--   h · LA REGLA DE ORO: apagar el módulo apaga la ESCRITURA, nunca la
+--       lectura. El trabajo cargado sigue visible para el taller y para
+--       el cliente final.
+-- ============================================================
+do $$
+declare
+  v_lub     uuid;
+  v_owner   uuid;
+  v_super   uuid;
+  v_veh     uuid;
+  v_suc     uuid;
+  v_prod    uuid;
+  v_id      uuid;
+  v_antes   text;
+  v_despues text;
+  v_stock   numeric;
+  v_ciclo   integer;
+  v_ciclo2  integer;
+  v_premio  uuid;
+  v_ruedas  jsonb;
+  v_json    jsonb;
+  v_pat     text;
+  v_n       integer;
+begin
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+  select u.id into v_owner from usuarios u where u.lubricentro_id = v_lub and u.rol = 'owner' limit 1;
+  select u.id into v_super from usuarios u where u.rol = 'superadmin' limit 1;
+  select su.id into v_suc from sucursales su where su.lubricentro_id = v_lub and su.activa limit 1;
+
+  if v_owner is null or v_super is null then
+    raise exception 'R15 SIN PISO: falta el owner del demo o el superadmin del seed.';
+  end if;
+
+  -- El auto de la prueba sale de la lista de retención: así c) mide lo
+  -- que de verdad importa — que el trabajo de gomería no lo desplace.
+  select vp.vehiculo_id into v_veh
+  from vista_proximos_service vp where vp.lubricentro_id = v_lub limit 1;
+
+  if v_veh is null then
+    raise exception 'R15 SIN PISO: el seed no deja ningún auto en la lista de a quién llamar.';
+  end if;
+
+  select concat_ws('|', ultimo_service_fecha, ultimo_service_km, prox_service_km,
+                   km_faltantes, km_por_dia, fecha_estimada, estado)
+    into v_antes
+  from vista_proximos_service where vehiculo_id = v_veh;
+
+  -- Una cubierta del catálogo, con stock, para la prueba f).
+  insert into productos (lubricentro_id, categoria, nombre, marca, unidad, stock)
+  values (v_lub, 'neumatico', 'R15 Cubierta de prueba', 'Fate', 'unidad', 10)
+  returning id into v_prod;
+
+  v_ruedas := jsonb_build_array(
+    jsonb_build_object('posicion', 'delantera_izquierda', 'colocada', true, 'balanceada', true,
+                       'producto_id', v_prod, 'marca', 'Fate', 'medida', '205/55 R16', 'dot', '2325'),
+    jsonb_build_object('posicion', 'delantera_derecha', 'colocada', true, 'balanceada', true,
+                       'producto_id', v_prod, 'marca', 'Fate', 'medida', '205/55 R16', 'dot', '2325'),
+    jsonb_build_object('posicion', 'trasera_izquierda', 'colocada', true, 'balanceada', true,
+                       'producto_id', v_prod, 'marca', 'Fate', 'medida', '205/55 R16', 'dot', '2325'),
+    jsonb_build_object('posicion', 'trasera_derecha', 'colocada', true, 'balanceada', true,
+                       'producto_id', v_prod, 'marca', 'Fate', 'medida', '205/55 R16', 'dot', '2325'),
+    -- El auxilio, solo MEDIDO: sin ninguna casilla y con la profundidad
+    -- cargada. Es una fila válida y NO descuenta stock.
+    jsonb_build_object('posicion', 'auxilio', 'producto_id', v_prod,
+                       'profundidad_mm', '4.5', 'medida', '205/55 R16')
+  );
+
+  -- ---------- a · SIN el módulo, la policy sola tiene que rechazar ----------
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  if plan_permite('neumaticos') then
+    raise exception 'R15 SIN PISO: el demo ya tiene el módulo de gomería — la prueba a) no probaría nada.';
+  end if;
+
+  -- a1 · SOLO ALINEACIÓN, y esto NO es un caso de borde de la prueba:
+  --      es el único que aísla services_insercion. Un trabajo con ruedas
+  --      lo rechaza también ruedas_escritura, así que con ruedas la
+  --      prueba pasa aunque la policy de services esté rota — se probó
+  --      rompiéndola a propósito y pasó igual. Un trabajo de gomería que
+  --      es sólo una alineación no toca service_ruedas: acá no hay
+  --      segunda red, y es exactamente el trabajo que entraba gratis.
+  begin
+    perform guardar_service(
+      p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => current_date,
+      p_kilometros => 123456, p_aceite_tipo => null, p_prox_service_km => null,
+      p_tipo => 'neumaticos', p_alineacion => true);
+    raise exception 'R15a: un tenant SIN el módulo cargó una ALINEACIÓN. La condición (tipo <> ''neumaticos'' or plan_permite(''neumaticos'')) se cayó de services_insercion: el módulo pago está abierto y gratis, también por la API directa.';
+  exception
+    when insufficient_privilege then null; -- exactamente lo esperado
+  end;
+
+  -- a2 · y con ruedas, donde además tiene que pronunciarse la policy de
+  --      service_ruedas.
+  begin
+    perform guardar_service(
+      p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => current_date,
+      p_kilometros => 123456, p_aceite_tipo => null, p_prox_service_km => null,
+      p_tipo => 'neumaticos', p_alineacion => true, p_ruedas => v_ruedas);
+    raise exception 'R15a: un tenant SIN el módulo cargó un trabajo de neumáticos con ruedas. Cayeron services_insercion Y ruedas_escritura.';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- ---------- El interruptor, por la puerta real ----------
+  -- fijar_override_plan() y no un UPDATE: exige superadmin, exige motivo
+  -- y deja el registro. Es el mismo camino que /fidelli.
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  perform fijar_override_plan(v_lub, '{"neumaticos": true}'::jsonb,
+    'Módulo gomería · bonificado · 2026-09-11 — prueba de regresión R15');
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- ---------- b · CON el módulo, el trabajo entra ----------
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  if not plan_permite('neumaticos') then
+    raise exception 'R15b: el override de /fidelli no habilita el módulo — plan_permite(''neumaticos'') sigue en false con la clave en true.';
+  end if;
+
+  begin
+    v_id := guardar_service(
+      p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => current_date,
+      p_kilometros => 123456, p_aceite_tipo => null, p_prox_service_km => null,
+      p_observaciones => 'regresión R15',
+      p_tipo => 'neumaticos', p_alineacion => true, p_ruedas => v_ruedas);
+  exception when others then
+    raise exception 'R15b: con el módulo prendido, un trabajo de neumáticos NO se pudo cargar (%). El gating quedó cerrado para todos.', sqlerrm;
+  end;
+
+  select count(*) into v_n from service_ruedas where service_id = v_id;
+  if v_n <> 5 then
+    raise exception 'R15b: se guardaron % ruedas y se mandaron 5 (cuatro colocadas y el auxilio medido).', v_n;
+  end if;
+
+  -- ---------- f · El stock: una unidad por rueda COLOCADA ----------
+  select stock into v_stock from productos where id = v_prod;
+  if v_stock <> 6 then
+    raise exception 'R15f: el stock de la cubierta quedó en % y esperaba 6 (10 menos las CUATRO colocadas; el auxilio solo medido no descuenta).', v_stock;
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- ---------- c · La retención no se mueve ----------
+  select concat_ws('|', ultimo_service_fecha, ultimo_service_km, prox_service_km,
+                   km_faltantes, km_por_dia, fecha_estimada, estado)
+    into v_despues
+  from vista_proximos_service where vehiculo_id = v_veh;
+
+  if v_despues is distinct from v_antes then
+    raise exception
+      E'RETENCIÓN ROTA (R15c): un trabajo de NEUMÁTICOS alteró la fila de la vista.\n  antes:   %\n  después: %',
+      v_antes, v_despues
+      using hint = 'El distinct on de vista_proximos_service está tomando el trabajo de gomería como último service. Ver la regla 5 del CLAUDE.md.';
+  end if;
+
+  -- ---------- h · LA REGLA DE ORO: se apaga la escritura, no la lectura ----------
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  perform fijar_override_plan(v_lub, '{}'::jsonb,
+    'Módulo gomería · pago · 2026-09-11 — baja de prueba R15');
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  if plan_permite('neumaticos') then
+    raise exception 'R15h SIN PISO: borrar la clave del override no apagó el módulo.';
+  end if;
+
+  select count(*) into v_n from services where id = v_id;
+  if v_n <> 1 then
+    raise exception 'R15h: apagar el módulo le SACÓ al taller el trabajo que ya había cargado. Se apaga la escritura, nunca la lectura (20260822150000:18).';
+  end if;
+
+  select count(*) into v_n from service_ruedas where service_id = v_id;
+  if v_n <> 5 then
+    raise exception 'R15h: apagar el módulo le sacó al taller las ruedas del trabajo que ya había cargado (quedaron %). La lectura no se apaga nunca.', v_n;
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- Y el cliente final lo sigue viendo en su cartón.
+  select v.patente into v_pat from vehiculos v where v.id = v_veh;
+  v_json := get_carton('demo', v_pat);
+  if not exists (
+    select 1 from jsonb_array_elements(v_json->'services') s
+    where s->>'tipo' = 'neumaticos'
+      and jsonb_array_length(coalesce(s->'ruedas', '[]'::jsonb)) = 5
+  ) then
+    raise exception 'R15h: el trabajo de neumáticos desapareció del cartón del cliente al apagar el módulo. El calco pegado en el parasol no se apaga porque el taller dejó de pagar un add-on.';
+  end if;
+
+  -- limpieza del trabajo y del producto de prueba
+  delete from services where id = v_id;
+  delete from productos where id = v_prod;
+end $$;
+
+-- ---------- R15d y R15e · Los CHECK, sin RLS de por medio ----------
+-- Como postgres: RLS no aplica, los CHECK sí. Es exactamente lo que hay
+-- que probar — que la forma de la fila la sostiene la TABLA y no la
+-- función de guardado.
+do $$
+declare
+  v_lub  uuid;
+  v_veh  uuid;
+  v_suc  uuid;
+  v_usr  uuid;
+  v_srv  uuid;
+  v_caso text;
+begin
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+  select v.id into v_veh from vehiculos v where v.lubricentro_id = v_lub limit 1;
+  select su.id into v_suc from sucursales su where su.lubricentro_id = v_lub and su.activa limit 1;
+  select u.id into v_usr from usuarios u where u.lubricentro_id = v_lub and u.rol = 'owner' limit 1;
+
+  -- d1 · con viscosidad de aceite cargada
+  begin
+    insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id,
+                          tipo, fecha, kilometros, aceite_tipo, alineacion)
+    values (v_lub, v_suc, v_veh, v_usr, 'neumaticos', current_date, 90000, '10W40', true);
+    raise exception 'R15d: entró un trabajo de NEUMÁTICOS con viscosidad de aceite. El CHECK del tercer tipo no rige: los otros dos están escritos como (tipo <> ''x'' or ...) y sobre neumáticos no se pronuncian.';
+  exception
+    when check_violation then null; -- exactamente lo esperado
+  end;
+
+  -- d2 · sin kilómetros
+  begin
+    insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id,
+                          tipo, fecha, alineacion)
+    values (v_lub, v_suc, v_veh, v_usr, 'neumaticos', current_date, true);
+    raise exception 'R15d: entró un trabajo de neumáticos SIN kilómetros. El bloque 2 calcula la rotación contra ese número.';
+  exception
+    when check_violation then null;
+  end;
+
+  -- d3 · sin alineación contestada
+  begin
+    insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id,
+                          tipo, fecha, kilometros)
+    values (v_lub, v_suc, v_veh, v_usr, 'neumaticos', current_date, 90000);
+    raise exception 'R15d: entró un trabajo de neumáticos con la alineación sin contestar.';
+  exception
+    when check_violation then null;
+  end;
+
+  -- d4 · el espejo: alineación en un tipo que no es neumáticos
+  begin
+    insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id,
+                          tipo, fecha, kilometros, aceite_tipo, prox_service_km, alineacion)
+    values (v_lub, v_suc, v_veh, v_usr, 'service', current_date, 90000, '10W40', 100000, true);
+    raise exception 'R15d: un SERVICE se guardó con alineación. La columna es del trabajo de gomería.';
+  exception
+    when check_violation then null;
+  end;
+
+  -- ---------- e · los CHECK por rueda ----------
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id,
+                        tipo, fecha, kilometros, alineacion)
+  values (v_lub, v_suc, v_veh, v_usr, 'neumaticos', current_date, 90000, true)
+  returning id into v_srv;
+
+  -- e1 · una rueda sin acción y sin medición no existe
+  begin
+    v_caso := 'una rueda sin ninguna acción y sin profundidad';
+    insert into service_ruedas (service_id, posicion, marca)
+    values (v_srv, 'delantera_izquierda', 'Fate');
+    raise exception 'R15e: entró %. Una fila de rueda existe porque se le hizo algo o porque se la midió.', v_caso;
+  exception
+    when check_violation then null;
+  end;
+
+  -- e2 · rotada sin decir de dónde venía
+  begin
+    v_caso := 'una rueda rotada sin posición anterior';
+    insert into service_ruedas (service_id, posicion, rotada)
+    values (v_srv, 'delantera_izquierda', true);
+    raise exception 'R15e: entró %.', v_caso;
+  exception
+    when check_violation then null;
+  end;
+
+  -- e3 · rotada desde su propia posición
+  begin
+    v_caso := 'una rueda rotada desde su propia posición';
+    insert into service_ruedas (service_id, posicion, rotada, posicion_anterior)
+    values (v_srv, 'delantera_izquierda', true, 'delantera_izquierda');
+    raise exception 'R15e: entró %.', v_caso;
+  exception
+    when check_violation then null;
+  end;
+
+  -- e4 · medida con formato inventado
+  begin
+    v_caso := 'una medida con formato inválido (205-55-16)';
+    insert into service_ruedas (service_id, posicion, colocada, medida)
+    values (v_srv, 'delantera_izquierda', true, '205-55-16');
+    raise exception 'R15e: entró %.', v_caso;
+  exception
+    when check_violation then null;
+  end;
+
+  -- e5 · DOT con semana imposible (semana 67)
+  begin
+    v_caso := 'un DOT con la semana 67';
+    insert into service_ruedas (service_id, posicion, colocada, dot)
+    values (v_srv, 'delantera_izquierda', true, '6725');
+    raise exception 'R15e: entró %. Las dos primeras cifras son la semana: 01 a 53.', v_caso;
+  exception
+    when check_violation then null;
+  end;
+
+  -- e6 · profundidad fuera de rango
+  begin
+    v_caso := 'una profundidad de 30 mm';
+    insert into service_ruedas (service_id, posicion, profundidad_mm)
+    values (v_srv, 'delantera_izquierda', 30);
+    raise exception 'R15e: entró %.', v_caso;
+  exception
+    when check_violation then null;
+  end;
+
+  -- e7 · dos filas para la misma posición del mismo trabajo
+  insert into service_ruedas (service_id, posicion, colocada) values (v_srv, 'delantera_izquierda', true);
+  begin
+    v_caso := 'dos ruedas en la misma posición del mismo trabajo';
+    insert into service_ruedas (service_id, posicion, colocada) values (v_srv, 'delantera_izquierda', true);
+    raise exception 'R15e: entró %.', v_caso;
+  exception
+    when unique_violation then null;
+  end;
+
+  -- e8 · lo VÁLIDO tiene que entrar: medir sin vender, y las tres formas
+  --      de medida. Si esto falla, el CHECK quedó de más y el taller no
+  --      puede cargar lo que sí corresponde.
+  insert into service_ruedas (service_id, posicion, profundidad_mm, dot, medida)
+  values (v_srv, 'trasera_izquierda', 4.5, '2325', '205/55 R16');
+  insert into service_ruedas (service_id, posicion, colocada, medida)
+  values (v_srv, 'trasera_derecha', true, '225/45 ZR17');
+  insert into service_ruedas (service_id, posicion, colocada, medida)
+  values (v_srv, 'auxilio', true, '31.10 R15');
+
+  -- El tenant se hereda de la cabecera, sin que la función lo escriba.
+  if exists (select 1 from service_ruedas where service_id = v_srv and lubricentro_id is distinct from v_lub) then
+    raise exception 'R15e: una rueda quedó con el lubricentro equivocado — el trigger de herencia no corrió.';
+  end if;
+
+  delete from services where id = v_srv;
+end $$;
+
+-- ---------- R15g · El premio y el tercer tipo ----------
+-- premio_disponible ya resuelve esto sola con `pv.alcance = 'todos' or
+-- s.tipo = 'service'`: un trabajo de gomería avanza el ciclo SOLO si el
+-- taller puso "todos". No hizo falta tocar nada; esto lo fija.
+do $$
+declare
+  v_lub    uuid;
+  v_owner  uuid;
+  v_super  uuid;
+  v_veh    uuid;
+  v_suc    uuid;
+  v_srv    uuid;
+  v_antes  integer;
+  v_solo   integer;
+  v_todos  integer;
+  v_premio uuid;
+begin
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+  select u.id into v_owner from usuarios u where u.lubricentro_id = v_lub and u.rol = 'owner' limit 1;
+  select u.id into v_super from usuarios u where u.rol = 'superadmin' limit 1;
+  select v.id into v_veh from vehiculos v where v.lubricentro_id = v_lub limit 1;
+  select su.id into v_suc from sucursales su where su.lubricentro_id = v_lub and su.activa limit 1;
+  select p.id into v_premio from premios p where p.lubricentro_id = v_lub and p.activo limit 1;
+
+  if v_premio is null then
+    raise exception 'R15g SIN PISO: el seed no dejó ningún premio activo en el demo.';
+  end if;
+
+  update premios set alcance = 'services' where id = v_premio;
+  select services_ciclo into v_antes from premio_disponible(v_veh);
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  perform fijar_override_plan(v_lub, '{"neumaticos": true}'::jsonb,
+    'Módulo gomería · bonificado · 2026-09-11 — prueba de premios R15g');
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  v_srv := guardar_service(
+    p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => current_date,
+    p_kilometros => 777000, p_aceite_tipo => null, p_prox_service_km => null,
+    p_tipo => 'neumaticos', p_alineacion => true,
+    p_ruedas => jsonb_build_array(
+      jsonb_build_object('posicion', 'delantera_izquierda', 'colocada', true)));
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  select services_ciclo into v_solo from premio_disponible(v_veh);
+  if v_solo <> v_antes then
+    raise exception 'R15g: con alcance ''services'' un trabajo de gomería avanzó el ciclo (% → %). El programa cuenta cambios de aceite.', v_antes, v_solo;
+  end if;
+
+  update premios set alcance = 'todos' where id = v_premio;
+  select services_ciclo into v_todos from premio_disponible(v_veh);
+  if v_todos <> v_antes + 1 then
+    raise exception 'R15g: con alcance ''todos'' el trabajo de gomería NO avanzó el ciclo (% → %).', v_antes, v_todos;
+  end if;
+
+  -- limpieza: el premio como estaba y el trabajo de la prueba
+  update premios set alcance = 'services' where id = v_premio;
+  delete from services where id = v_srv;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  perform fijar_override_plan(v_lub, '{}'::jsonb,
+    'Módulo gomería · pago · 2026-09-11 — cierre de la prueba R15g');
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+end $$;
+
+-- ---------- R15i · El listado de /fidelli sigue respondiendo ----------
+-- Esta prueba nace de un bug real de este mismo bloque: al sumarle la
+-- columna del módulo, listado_lubricentros() pasó a llamar a
+-- feature_de_tenant(), que es SECURITY DEFINER y NO está grantada a
+-- authenticated (a propósito: acepta cualquier lubricentro_id). Como la
+-- función del listado es security INVOKER, la llamada explotaba con
+-- "permission denied"… y la pantalla de /fidelli mostraba "Todavía no hay
+-- ningún lubricentro". Cero error a la vista, la superficie de
+-- administración entera vacía.
+--
+-- El chequeo es tonto a propósito: como superadmin, el listado tiene que
+-- devolver AL MENOS las filas que hay en la tabla. Cualquier permiso que
+-- falte en cualquier función que el listado llame lo hace fallar acá y no
+-- en producción.
+do $$
+declare
+  v_super  uuid;
+  v_tabla  integer;
+  v_listado integer;
+  v_modulo boolean;
+  v_lub    uuid;
+begin
+  select u.id into v_super from usuarios u where u.rol = 'superadmin' limit 1;
+  if v_super is null then
+    raise exception 'R15i SIN PISO: el seed local no dejó ningún superadmin.';
+  end if;
+
+  select count(*) into v_tabla from lubricentros;
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  begin
+    select count(*) into v_listado from listado_lubricentros();
+  exception when others then
+    raise exception
+      E'R15i: listado_lubricentros() falla para un superadmin (%).\n/fidelli queda vacío diciendo "Todavía no hay ningún lubricentro", sin ningún error a la vista.', sqlerrm
+      using hint = 'Es security INVOKER: solo puede llamar funciones grantadas a authenticated. feature_de_tenant NO lo está.';
+  end;
+
+  if v_listado < v_tabla then
+    raise exception 'R15i: el listado devuelve % filas y en la tabla hay %.', v_listado, v_tabla;
+  end if;
+
+  -- Y la columna del módulo dice la verdad: apagado ahora…
+  select modulo_neumaticos into v_modulo from listado_lubricentros() where id = v_lub;
+  if v_modulo then
+    raise exception 'R15i: el listado marca el módulo de gomería como activo sin override.';
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- …y prendido cuando el override lo prende.
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  perform fijar_override_plan(v_lub, '{"neumaticos": true}'::jsonb,
+    'Módulo gomería · pago · 2026-09-11 — prueba del listado R15i');
+  select modulo_neumaticos into v_modulo from listado_lubricentros() where id = v_lub;
+  if not v_modulo then
+    raise exception 'R15i: el override prendió el módulo pero el listado de cobranzas no lo muestra.';
+  end if;
+  perform fijar_override_plan(v_lub, '{}'::jsonb,
+    'Módulo gomería · pago · 2026-09-11 — cierre de la prueba R15i');
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+end $$;

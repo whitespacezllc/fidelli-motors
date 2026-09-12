@@ -357,7 +357,7 @@ export function RenglonInterruptor({
 // escribe tres letras en vez de scrollear una lista. Elegirlo muestra el
 // precio y el stock, y precarga los litros del service (litros_sugeridos)
 // sin pedir un toque más.
-export type ProductoAceite = {
+export type ProductoBuscable = {
   id: string;
   nombre: string;
   precioVenta: number | null;
@@ -366,35 +366,44 @@ export type ProductoAceite = {
   litrosSugeridos: number | null;
 };
 
+// Nació para el aceite del cartón y lo usa también cada rueda del trabajo
+// de gomería, que busca en la categoría `neumatico`. Es el MISMO
+// componente y no una variante: lo único que cambia entre los dos usos es
+// el catálogo que recibe y el `id` del campo, que tiene que ser único
+// cuando hay cinco en la misma pantalla.
 export function SelectorProductoBuscable({
+  id = "producto-buscable",
+  etiqueta = "Producto",
   productoId,
   alElegir,
-  aceites,
+  productos,
   alPedirAlta,
 }: {
+  id?: string;
+  etiqueta?: string;
   productoId: string;
   /** null = sin producto. */
-  alElegir: (producto: ProductoAceite | null) => void;
-  aceites: ProductoAceite[];
+  alElegir: (producto: ProductoBuscable | null) => void;
+  productos: ProductoBuscable[];
   alPedirAlta?: () => void;
 }) {
-  const elegido = aceites.find((p) => p.id === productoId) ?? null;
+  const elegido = productos.find((p) => p.id === productoId) ?? null;
   const [texto, setTexto] = useState(elegido?.nombre ?? "");
   const [abierto, setAbierto] = useState(false);
 
   const filtrados = texto.trim()
-    ? aceites.filter((p) =>
+    ? productos.filter((p) =>
         p.nombre.toLowerCase().includes(texto.trim().toLowerCase()),
       )
-    : aceites;
+    : productos;
 
   return (
     <div className="relative">
-      <label htmlFor="aceite-producto" className={CLASE_LABEL}>
-        Producto <span className="text-ink-40 normal-case">(opcional)</span>
+      <label htmlFor={id} className={CLASE_LABEL}>
+        {etiqueta} <span className="text-ink-40 normal-case">(opcional)</span>
       </label>
       <input
-        id="aceite-producto"
+        id={id}
         value={texto}
         onChange={(e) => {
           setTexto(e.target.value);

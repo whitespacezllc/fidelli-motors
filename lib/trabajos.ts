@@ -9,7 +9,52 @@ import { normalizarPatente } from "@/lib/texto";
 // filtroClientes() en lib/clientes.ts.
 // ============================================================
 
-export type TipoTrabajo = "service" | "mecanica";
+// ============================================================
+// LOS TIPOS DE TRABAJO — un mapa, nunca un binario.
+//
+// Hasta el módulo de gomería había DOS tipos, y media aplicación estaba
+// escrita como `tipo === "mecanica" ? A : B`: el service era "lo que no
+// es mecánica", identificado por ausencia. Con un tercer tipo esa forma
+// no da error — le muestra al cliente el cartón de aceite de un trabajo
+// de cubiertas.
+//
+// Por eso el catálogo vive acá, tipado, y las pantallas se ramifican con
+// un Record<TipoTrabajo, …> que el compilador obliga a completar. Un
+// cuarto tipo mañana rompe el build en cada lugar que haya que mirar, que
+// es exactamente lo que se quiere.
+//
+// El orden de TIPOS_TRABAJO es el del control de la carga.
+// ============================================================
+
+export const TIPOS_TRABAJO = ["service", "mecanica", "neumaticos"] as const;
+
+export type TipoTrabajo = (typeof TIPOS_TRABAJO)[number];
+
+/** Cómo se nombra cada tipo. Singular, como etiqueta de una fila. */
+export const ETIQUETA_TIPO: Record<TipoTrabajo, string> = {
+  service: "Service",
+  mecanica: "Mecánica",
+  neumaticos: "Neumáticos",
+};
+
+/** El nombre del trabajo en una oración: "Confirmar {…}". */
+export const NOMBRE_TRABAJO: Record<TipoTrabajo, string> = {
+  service: "service",
+  mecanica: "trabajo",
+  neumaticos: "trabajo",
+};
+
+/** La feature de plan que habilita cada tipo. `service` no tiene: es el
+ *  trabajo base y ningún plan lo apaga. */
+export const FEATURE_DE_TIPO: Record<TipoTrabajo, "mecanica" | "neumaticos" | null> = {
+  service: null,
+  mecanica: "mecanica",
+  neumaticos: "neumaticos",
+};
+
+export function esTipoTrabajo(valor: unknown): valor is TipoTrabajo {
+  return (TIPOS_TRABAJO as readonly unknown[]).includes(valor);
+}
 
 export type FiltrosTrabajos = {
   q?: string;
@@ -35,10 +80,7 @@ export function filtrosTrabajos(params: ParamsTrabajos): FiltrosTrabajos {
     sucursal: params.sucursal || undefined,
     // Valor cerrado: cualquier otra cosa en la URL no filtra nada, en vez
     // de mandarle basura al enum de Postgres.
-    tipo:
-      params.tipo === "service" || params.tipo === "mecanica"
-        ? params.tipo
-        : undefined,
+    tipo: esTipoTrabajo(params.tipo) ? params.tipo : undefined,
     desde: params.desde && FECHA.test(params.desde) ? params.desde : undefined,
     hasta: params.hasta && FECHA.test(params.hasta) ? params.hasta : undefined,
   };

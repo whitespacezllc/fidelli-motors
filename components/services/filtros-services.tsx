@@ -8,7 +8,7 @@ type Sucursal = { id: string; nombre: string };
 export type FiltrosListado = {
   q?: string;
   sucursal?: string;
-  /** "service" | "mecanica". Sin valor, los dos. */
+  /** Uno de los tres tipos. Sin valor, todos. */
   tipo?: string;
   desde?: string;
   hasta?: string;
@@ -67,6 +67,7 @@ export function FiltrosServices({
           <option value="">Todos</option>
           <option value="service">Services</option>
           <option value="mecanica">Mecánica</option>
+          <option value="neumaticos">Neumáticos</option>
         </select>
       </label>
 

@@ -4,6 +4,7 @@ import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { IconoReloj, IconoQR } from "@/components/iconos";
 import { GraficoServices } from "@/components/inicio/grafico-services";
 import { formatearKm } from "@/lib/renglones";
+import { ETIQUETA_TIPO, type TipoTrabajo } from "@/lib/trabajos";
 import { formatearFechaHora, nombreDelMes } from "@/lib/fechas";
 import type { PuntoSerie, VistaPanel } from "@/lib/series";
 
@@ -20,7 +21,12 @@ export type DatosInicio = {
   retencion: { vencido: number; urgente: number; proximo: number };
   ultimos: {
     id: string;
-    tipo?: "service" | "mecanica";
+    /** OJO: resumen_inicio NO emite esta clave hoy, así que en la
+     *  práctica llega undefined y "Últimos trabajos" muestra los
+     *  kilómetros para los tres tipos. Se tipa igual —y se ramifica con
+     *  el mapa de abajo— para que el día que la función la emita, la
+     *  pantalla ya diga la verdad. */
+    tipo?: TipoTrabajo;
     descripcion?: string | null;
     fecha: string;
     creado: string;
@@ -312,15 +318,19 @@ export function Dashboard({
                   <span className="order-4 text-label text-ink-60 lg:order-none lg:text-ui">
                     {s.sucursal}
                   </span>
-                  {s.tipo === "mecanica" ? (
-                    <span className="order-5 ml-auto lg:order-none lg:ml-0 lg:justify-self-end">
-                      <span className="rounded-sm border border-line bg-surface px-2 py-0.5 text-label font-semibold tracking-[0.04em] text-ink-60 uppercase">
-                        Mecánica
-                      </span>
-                    </span>
-                  ) : (
+                  {/* Los kilómetros son el dato del service; los otros
+                      dos tipos se identifican por su sello. En positivo:
+                      "si no es mecánica, es service" le ponía al trabajo
+                      de gomería la celda equivocada. */}
+                  {(s.tipo ?? "service") === "service" ? (
                     <span className="order-5 ml-auto text-ui text-ink-60 tabular-nums lg:order-none lg:ml-0 lg:text-right">
                       {formatearKm(s.km ?? 0)} km
+                    </span>
+                  ) : (
+                    <span className="order-5 ml-auto lg:order-none lg:ml-0 lg:justify-self-end">
+                      <span className="rounded-sm border border-line bg-surface px-2 py-0.5 text-label font-semibold tracking-[0.04em] text-ink-60 uppercase">
+                        {ETIQUETA_TIPO[s.tipo ?? "service"]}
+                      </span>
                     </span>
                   )}
                 </Link>

@@ -1,0 +1,28 @@
+-- ============================================================
+-- El tercer tipo de trabajo: neumáticos (el módulo de gomería).
+--
+-- Va SOLO en esta migración por la misma regla de Postgres que separó
+-- 20260823100000_estado_contacto_pendiente: un valor nuevo de enum no se
+-- puede usar en la misma transacción que lo crea, y la migración
+-- siguiente lo usa en los CHECK, en las policies y en la red de
+-- verificación. Cada archivo corre en su propia transacción, así que
+-- separarlos es la solución canónica.
+--
+-- ⚠ ESTE ARCHIVO SOLO ES SEGURO JUNTO AL SIGUIENTE. Con el valor en el
+-- enum y sin 20260911120100:
+--
+--   · los CHECK service_completo y mecanica_coherente están escritos como
+--     `tipo <> 'service' or (...)` y `tipo <> 'mecanica' or (...)`: para
+--     una fila 'neumaticos' las dos premisas son verdaderas y NO SE
+--     EVALÚA NADA — entraría una fila con viscosidad de aceite y
+--     descripción de mecánica a la vez;
+--   · las policies services_insercion y services_edicion dicen
+--     `tipo <> 'mecanica' or plan_permite('mecanica')`: con 'neumaticos'
+--     la condición del plan ni se mira, y el módulo PAGO quedaría abierto
+--     y gratis para todos los tenants, también por la API directa.
+--
+-- Las dos migraciones salen en el MISMO PR y se aplican en orden. No
+-- mergear una sin la otra.
+-- ============================================================
+
+alter type tipo_trabajo add value if not exists 'neumaticos';

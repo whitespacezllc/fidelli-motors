@@ -5,6 +5,13 @@ import { createClient } from "@/lib/supabase/server";
 import { sesionParaEscribir, featureHabilitada } from "@/lib/auth/session";
 import type { CategoriaProducto } from "@/lib/categorias";
 import { esSaltoValido, SALTO_RANGO_ERROR } from "@/lib/renglones";
+import { FEATURE_DE_TIPO, type TipoTrabajo } from "@/lib/trabajos";
+import {
+  DOT_FORMATO,
+  MEDIDA_FORMATO,
+  validarNeumaticos,
+  type PosicionRueda,
+} from "@/lib/ruedas";
 
 export type ItemCargado = {
   /** Uno de los 11 renglones; ausente en un renglón libre de mecánica. */
@@ -17,6 +24,25 @@ export type ItemCargado = {
   cantidad?: number;
 };
 
+/** Una rueda del trabajo de gomería, tal como la escribe guardar_ruedas. */
+export type RuedaCargada = {
+  posicion: PosicionRueda;
+  posicion_anterior: PosicionRueda | null;
+  colocada: boolean;
+  rotada: boolean;
+  balanceada: boolean;
+  reparada: boolean;
+  /** Solo con `colocada`: una rueda medida no descuenta stock. */
+  producto_id: string | null;
+  marca: string | null;
+  medida: string | null;
+  indice_carga_vel: string | null;
+  dot: string | null;
+  /** Texto: la base lo castea. Así no se pierde el "7,5" del mecánico. */
+  profundidad_mm: string | null;
+  presion_psi: string | null;
+};
+
 export type PendienteNuevo = {
   descripcion: string;
   objetivoFecha: string | null;
@@ -27,7 +53,7 @@ export type PendienteNuevo = {
 export type PayloadService = {
   vehiculoId: string;
   /** 'service' si falta: los llamadores viejos no lo mandan. */
-  tipo?: "service" | "mecanica";
+  tipo?: TipoTrabajo;
   trabajoDescripcion?: string | null;
   sucursalId: string;
   fecha: string;
@@ -46,6 +72,10 @@ export type PayloadService = {
   pendientes?: PendienteNuevo[];
   /** Los abiertos que se hicieron EN este trabajo. */
   resolverPendientes?: string[];
+  /** Gomería: la alineación del vehículo. null en los otros dos tipos. */
+  alineacion?: boolean | null;
+  /** Gomería: una fila por rueda con sustancia. */
+  ruedas?: RuedaCargada[];
 };
 
 export type ResultadoGuardado = { error?: string; serviceId?: string };
@@ -73,6 +103,22 @@ function traducirError(error: { code?: string; message?: string }): string {
   if (/pendiente_sin_objetivo|pendiente_invalido/.test(error.message ?? "")) {
     return "A cada pendiente ponele qué es y una fecha o kilómetros.";
   }
+  // Los errores nombrados de guardar_ruedas. Van antes del 23514 genérico
+  // para que el mecánico lea qué campo corregir y no "algún dato".
+  if (/neumaticos_sin_trabajo/.test(error.message ?? "")) {
+    return "Marcá al menos una rueda o la alineación: un trabajo vacío no se guarda.";
+  }
+  if (/medida_invalida/.test(error.message ?? "")) return MEDIDA_FORMATO;
+  if (/dot_invalido/.test(error.message ?? "")) return DOT_FORMATO;
+  if (/profundidad_invalida/.test(error.message ?? "")) {
+    return "La profundidad de dibujo va en milímetros, de 0 a 25.";
+  }
+  if (/presion_invalida/.test(error.message ?? "")) {
+    return "La presión va en PSI, de 10 a 120.";
+  }
+  if (/rueda_sin_posicion|rotacion_con_origen/.test(error.message ?? "")) {
+    return "Marcá de qué posición venía cada cubierta rotada.";
+  }
   if (/fetch|network|conexión/i.test(error.message ?? "")) return SIN_CONEXION;
   if (error.code === "23514") {
     return "Algún dato quedó fuera de rango. Revisá los kilómetros y el próximo service.";
@@ -95,13 +141,20 @@ export async function guardarService(
     };
   }
 
-  const esMecanica = payload.tipo === "mecanica";
+  const tipo: TipoTrabajo = payload.tipo ?? "service";
+  const esMecanica = tipo === "mecanica";
+  const esNeumaticos = tipo === "neumaticos";
 
   // La feature la hace cumplir la base (policy condicional al tipo); esto
   // pone el mensaje ANTES de perder lo tipeado en un error al final.
-  if (esMecanica && !featureHabilitada(sesion, "mecanica")) {
+  // Sale del mapa de lib/trabajos y no de un if por tipo: un cuarto tipo
+  // sin feature declarada no compila.
+  const feature = FEATURE_DE_TIPO[tipo];
+  if (feature && !featureHabilitada(sesion, feature)) {
     return {
-      error: "Los trabajos de mecánica no están en tu plan. Escribinos si los querés activar.",
+      error: esNeumaticos
+        ? "El módulo de gomería no está activo en tu cuenta. Escribinos si lo querés activar."
+        : "Los trabajos de mecánica no están en tu plan. Escribinos si los querés activar.",
     };
   }
 
@@ -131,6 +184,9 @@ export async function guardarService(
         error: "Contá qué trabajo se hizo: es lo que va a ver tu cliente en su historial.",
       };
     }
+  } else if (esNeumaticos) {
+    const problema = validarNeumaticos(payload);
+    if (problema) return { error: problema };
   } else {
     if (
       payload.kilometros == null ||
@@ -168,16 +224,21 @@ export async function guardarService(
     // Los tres son argumentos SIN default en la función: viajan siempre,
     // con null explícito en mecánica (los CHECK condicionales los admiten).
     p_kilometros: payload.kilometros as number,
-    p_aceite_tipo: (esMecanica ? null : payload.aceiteTipo) as unknown as string,
-    p_prox_service_km: (esMecanica
-      ? null
-      : payload.proxServiceKm) as unknown as number,
+    p_aceite_tipo: (tipo === "service"
+      ? payload.aceiteTipo
+      : null) as unknown as string,
+    p_prox_service_km: (tipo === "service"
+      ? payload.proxServiceKm
+      : null) as unknown as number,
     p_items: payload.items,
-    p_aceite_producto_id: payload.aceiteProductoId ?? undefined,
-    p_aceite_nombre: payload.aceiteNombre ?? undefined,
+    p_aceite_producto_id:
+      tipo === "service" ? (payload.aceiteProductoId ?? undefined) : undefined,
+    p_aceite_nombre:
+      tipo === "service" ? (payload.aceiteNombre ?? undefined) : undefined,
     p_observaciones: payload.observaciones ?? undefined,
     p_canjear_premio: payload.canjearPremio ?? false,
-    p_aceite_litros: esMecanica ? undefined : (payload.aceiteLitros ?? undefined),
+    p_aceite_litros:
+      tipo === "service" ? (payload.aceiteLitros ?? undefined) : undefined,
     p_pendientes: pendientes.map((tp) => ({
       descripcion: tp.descripcion.trim(),
       objetivo_fecha: tp.objetivoFecha,
@@ -185,6 +246,10 @@ export async function guardarService(
       visible_cliente: tp.visibleCliente,
     })),
     p_resolver_pendientes: resolverPendientes,
+    // Gomería. La alineación viaja SIEMPRE en neumáticos (true o false,
+    // pero contestada: el CHECK la exige) y nunca en los otros dos.
+    p_alineacion: esNeumaticos ? Boolean(payload.alineacion) : undefined,
+    p_ruedas: esNeumaticos ? (payload.ruedas ?? []) : undefined,
   });
 
   if (error) return { error: traducirError(error) };
