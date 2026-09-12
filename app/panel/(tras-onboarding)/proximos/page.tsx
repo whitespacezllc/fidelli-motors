@@ -10,6 +10,8 @@ import { ContadorEstado } from "@/components/proximos/badge-urgencia";
 import { FiltrosProximosServices } from "@/components/proximos/filtros-proximos";
 import { FilaProximo, type ProximoServicio } from "@/components/proximos/fila-proximo";
 import {
+  esMotivoNeumaticos,
+  fraseMotivos,
   linkWhatsapp,
   resolverTemplate,
   telefonoWhatsapp,
@@ -24,6 +26,14 @@ const PESO: Record<EstadoContacto, number> = { vencido: 0, urgente: 1, proximo: 
 const ESTADOS: EstadoContacto[] = ["vencido", "urgente", "proximo"];
 
 type Params = { sucursal?: string; estado?: string; fuente?: string };
+
+type Fuente = "services" | "pendientes" | "neumaticos";
+
+const ETIQUETA_FUENTE: Record<Fuente, string> = {
+  services: "Services",
+  pendientes: "Pendientes",
+  neumaticos: "Neumáticos",
+};
 
 // La pantalla donde el dueño cobra el retorno de lo que paga. Todo el
 // cálculo —el estado, el ritmo del vehículo, la fecha estimada, y el check
@@ -40,15 +50,23 @@ export default async function PaginaProximos({
   const sesion = await obtenerSesion();
 
   const puedePendientes = featureHabilitada(sesion, "pendientes");
+  const puedeNeumaticos = featureHabilitada(sesion, "neumaticos");
+  // Las fuentes que este tenant puede elegir en el filtro. Con una sola
+  // (services) el filtro no aparece: no hay nada que filtrar.
+  const fuentes: Fuente[] = [
+    "services",
+    ...(puedePendientes ? (["pendientes"] as const) : []),
+    ...(puedeNeumaticos ? (["neumaticos"] as const) : []),
+  ];
   const filtros = {
     sucursal: params.sucursal || undefined,
     estado: ESTADOS.includes(params.estado as EstadoContacto)
       ? (params.estado as EstadoContacto)
       : undefined,
-    // La fuente: services, pendientes, o las dos (default).
+    // La fuente: una de las habilitadas, o todas (default).
     fuente:
-      puedePendientes && (params.fuente === "services" || params.fuente === "pendientes")
-        ? params.fuente
+      fuentes.length > 1 && (fuentes as string[]).includes(params.fuente ?? "")
+        ? (params.fuente as Fuente)
         : undefined,
   };
 
@@ -79,17 +97,35 @@ export default async function PaginaProximos({
   if (filtros.estado)
     consultaPendientes = consultaPendientes.eq("estado", filtros.estado);
 
-  const [filasRes, pendientesRes, templateRes, sucursalesRes, recuperadosRes] =
+  // La tercera fuente: los retornos de gomería, una fila por vehículo con
+  // sus motivos. Mismo contrato de columnas que la vista de services.
+  let consultaNeumaticos = supabase
+    .from("vista_proximos_neumaticos")
+    .select(
+      `vehiculo_id, patente, marca, modelo, cliente_id, cliente_nombre,
+       cliente_telefono, ultimo_service_fecha, ultimo_service_km,
+       sucursal_id, sucursal_nombre, estimacion_inicial, fecha_estimada,
+       estado, contactado, motivos, km_objetivo, anio_dot, mm_minimo`,
+    );
+  if (filtros.sucursal)
+    consultaNeumaticos = consultaNeumaticos.eq("sucursal_id", filtros.sucursal);
+  if (filtros.estado)
+    consultaNeumaticos = consultaNeumaticos.eq("estado", filtros.estado);
+
+  const [filasRes, pendientesRes, neumaticosRes, templateRes, sucursalesRes, recuperadosRes] =
     await Promise.all([
-      filtros.fuente === "pendientes"
+      filtros.fuente && filtros.fuente !== "services"
         ? Promise.resolve({ data: [] as never[] })
         : consulta,
-      puedePendientes && filtros.fuente !== "services"
+      puedePendientes && (!filtros.fuente || filtros.fuente === "pendientes")
         ? consultaPendientes
+        : Promise.resolve({ data: [] as never[] }),
+      puedeNeumaticos && (!filtros.fuente || filtros.fuente === "neumaticos")
+        ? consultaNeumaticos
         : Promise.resolve({ data: [] as never[] }),
       supabase
         .from("mensaje_templates")
-        .select("contenido, contenido_pendiente")
+        .select("contenido, contenido_pendiente, contenido_neumaticos")
         .eq("activo", true)
         .limit(1)
         .maybeSingle(),
@@ -103,6 +139,7 @@ export default async function PaginaProximos({
 
   const template = templateRes.data?.contenido ?? null;
   const templatePendiente = templateRes.data?.contenido_pendiente ?? null;
+  const templateNeumaticos = templateRes.data?.contenido_neumaticos ?? null;
   const recuperados = (recuperadosRes.data as number | null) ?? 0;
 
   // Las columnas de una vista llegan tipadas como nullable: se acotan acá,
@@ -198,7 +235,64 @@ export default async function PaginaProximos({
     },
   );
 
-  const todas = [...filas, ...filasPendientes];
+  // Los retornos de gomería, al MISMO contrato de fila. El mensaje sale de
+  // la tercera plantilla del tono activo, con {motivo} armado en
+  // castellano desde los motivos dados de la vista.
+  const filasNeumaticos: ProximoServicio[] = (neumaticosRes.data ?? []).flatMap(
+    (f) => {
+      if (!f.vehiculo_id || !f.estado || !f.fecha_estimada) return [];
+
+      const vehiculo =
+        [f.marca, f.modelo].filter(Boolean).join(" ") || "el vehículo";
+      const patente = (f.patente ?? "").toUpperCase();
+      const telefono = f.cliente_telefono ?? "";
+      // La vista manda text[]; se acota al catálogo por si algún día
+      // suma un motivo que este front todavía no nombra.
+      const motivos = (f.motivos ?? []).filter(esMotivoNeumaticos);
+
+      const mensaje = templateNeumaticos
+        ? resolverTemplate(templateNeumaticos, {
+            nombre: (f.cliente_nombre ?? "").split(" ")[0],
+            vehiculo,
+            patente,
+            motivo: fraseMotivos(motivos),
+          })
+        : null;
+
+      return [
+        {
+          fuente: "neumaticos" as const,
+          motivos,
+          anioDot: f.anio_dot,
+          mmMinimo: f.mm_minimo != null ? Number(f.mm_minimo) : null,
+          kmObjetivo: f.km_objetivo,
+          vehiculoId: f.vehiculo_id,
+          clienteId: f.cliente_id ?? "",
+          clienteNombre: f.cliente_nombre ?? "",
+          clienteTelefono: telefono,
+          patente,
+          vehiculo,
+          ultimoServiceFecha: f.ultimo_service_fecha ?? "",
+          ultimoServiceKm: f.ultimo_service_km ?? 0,
+          sucursal: f.sucursal_nombre ?? "",
+          proxServiceKm: 0,
+          fechaEstimada: f.fecha_estimada,
+          // "40 km/día supuestos" solo tiene sentido cuando la fecha salió
+          // de proyectar kilómetros. Un DOT de 2018 o un dibujo de 2,5 mm
+          // vencen por lo que son, no por el ritmo del auto.
+          estimacionInicial:
+            Boolean(f.estimacion_inicial) &&
+            motivos.some((m) => m === "rotacion" || m === "reajuste"),
+          estado: f.estado as EstadoContacto,
+          contactado: Boolean(f.contactado),
+          linkWhatsapp: mensaje ? linkWhatsapp(telefono, mensaje) : null,
+          telefonoValido: telefonoWhatsapp(telefono) !== null,
+        },
+      ];
+    },
+  );
+
+  const todas = [...filas, ...filasPendientes, ...filasNeumaticos];
 
   // Vencidos arriba, después urgentes, después próximos; dentro de cada
   // estado, por fecha estimada (un pendiente solo-por-km no tiene fecha:
@@ -220,6 +314,7 @@ export default async function PaginaProximos({
     proximo: filas.filter((f) => f.estado === "proximo").length,
   };
   const cuantosPendientes = filasPendientes.length;
+  const cuantosNeumaticos = filasNeumaticos.length;
 
   const urlFuente = (fuente?: string) => {
     const p = new URLSearchParams();
@@ -263,7 +358,7 @@ export default async function PaginaProximos({
           {ESTADOS.map((e) => (
             <ContadorEstado key={e} estado={e} cantidad={conteos[e]} />
           ))}
-          {puedePendientes && filtros.fuente !== "services" && (
+          {puedePendientes && (!filtros.fuente || filtros.fuente === "pendientes") && (
             <span className="inline-flex h-9 items-center gap-1.5 rounded-md border border-line bg-surface px-3 text-ui text-ink-60 tabular-nums">
               Pendientes
               <span className="font-brand font-bold text-ink">
@@ -271,13 +366,25 @@ export default async function PaginaProximos({
               </span>
             </span>
           )}
-          {puedePendientes && (
+          {puedeNeumaticos && (!filtros.fuente || filtros.fuente === "neumaticos") && (
+            <span className="inline-flex h-9 items-center gap-1.5 rounded-md border border-line bg-surface px-3 text-ui text-ink-60 tabular-nums">
+              Neumáticos
+              <span className="font-brand font-bold text-ink">
+                {cuantosNeumaticos}
+              </span>
+            </span>
+          )}
+          {/* El filtro por fuente: una entrada por fuente habilitada. Con
+              services solo no hay nada que filtrar y no aparece. */}
+          {fuentes.length > 1 && (
             <span className="ml-1 inline-flex overflow-hidden rounded-md border border-line">
               {(
                 [
                   [undefined, "Todo"],
-                  ["services", "Services"],
-                  ["pendientes", "Pendientes"],
+                  ...fuentes.map(
+                    (f) =>
+                      [f, ETIQUETA_FUENTE[f]] as const,
+                  ),
                 ] as const
               ).map(([valor, etiqueta]) => (
                 <Link
@@ -319,7 +426,13 @@ export default async function PaginaProximos({
           <ul>
             {todas.map((f) => (
               <FilaProximo
-                key={f.fuente === "pendiente" ? `p-${f.pendienteId}` : `s-${f.vehiculoId}`}
+                key={
+                  f.fuente === "pendiente"
+                    ? `p-${f.pendienteId}`
+                    : f.fuente === "neumaticos"
+                      ? `n-${f.vehiculoId}`
+                      : `s-${f.vehiculoId}`
+                }
                 fila={f}
                 suspendido={suspendido}
               />

@@ -184,6 +184,10 @@ export default async function PaginaVehiculo({ params }: Props) {
                       kilometros: ultimo.kilometros,
                       alineacion: ultimo.alineacion ?? false,
                       ruedas: ultimo.ruedas,
+                      beneficio:
+                        ultimo.beneficioHastaKm != null && ultimo.beneficioHastaFecha
+                          ? { hastaKm: ultimo.beneficioHastaKm, hastaFecha: ultimo.beneficioHastaFecha }
+                          : null,
                     }}
                   />
                 ) : ultimo.tipo === "mecanica" ? (

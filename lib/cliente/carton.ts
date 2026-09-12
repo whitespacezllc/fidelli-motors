@@ -67,6 +67,11 @@ export type ServiceCarton = {
   alineacion: boolean | null;
   /** Gomería: una fila por rueda. Vacío en los otros dos tipos. */
   ruedas: RuedaCarton[];
+  /** Gomería: rotación y balanceo sin cargo hasta estos km / esta fecha.
+   *  null si no aplica o si el taller apagó el beneficio (get_carton ya
+   *  lo gatea por config_neumaticos.beneficio_km). */
+  beneficioHastaKm: number | null;
+  beneficioHastaFecha: string | null;
 };
 
 export type NotaPublica = {
@@ -166,6 +171,8 @@ type CartonJson = {
     aceite_nombre: string | null;
     prox_service_km: number | null;
     alineacion?: boolean | null;
+    beneficio_hasta_km?: number | null;
+    beneficio_hasta_fecha?: string | null;
     sucursal: string | null;
     observaciones: string | null;
     fijado: boolean;
@@ -278,6 +285,8 @@ export async function obtenerCarton(
         fijado: s.fijado,
         items: s.items ?? [],
         alineacion: s.alineacion ?? null,
+        beneficioHastaKm: s.beneficio_hasta_km ?? null,
+        beneficioHastaFecha: s.beneficio_hasta_fecha ?? null,
         // numeric(3,1) viaja como string en el jsonb de Postgres: se
         // convierte una sola vez, acá, para que ninguna vista tenga que
         // acordarse de hacerlo.

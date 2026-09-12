@@ -30,6 +30,12 @@ update mensaje_templates set contenido_pendiente = case tono
 end
 where contenido_pendiente is null;
 
+-- Y la tercera plantilla, la del retorno de gomería (20260912100100). El
+-- backfill de la migración corre ANTES del seed, cuando el demo todavía no
+-- existe, así que acá se lo llama de nuevo: es idempotente y solo completa
+-- lo que está en null, con el nombre del lubricentro adentro. R16g lo exige.
+select completar_templates_neumaticos();
+
 -- Horarios de las sucursales demo. La columna llegó después de que
 -- seed_demo() quedó mergeada (las migraciones no se editan), así que se
 -- completa acá — este archivo es solo del entorno local.

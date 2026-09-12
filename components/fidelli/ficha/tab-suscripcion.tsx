@@ -278,6 +278,23 @@ export async function TabSuscripcion({
             {alta.usuarios?.nombre ? ` — ${alta.usuarios.nombre}` : ""}
           </p>
         )}
+        {/* EL PLAN, AL LADO DEL INTERRUPTOR. No hay piso de plan por
+            código —Basic + override da true, y así se queda: la regla de
+            "se vende desde Pro" es comercial, no de seguridad—. Lo que sí
+            hay es que el error se VEA: un Basic con el módulo paga más que
+            un Pro, y el aviso lo dice sin bloquear nada. */}
+        <p className="border-t border-line px-4.5 py-2.5 text-ui text-ink-60 tabular-nums">
+          Plan vigente:{" "}
+          <span className="font-semibold text-ink">
+            {suscripcion?.plan?.nombre ?? "sin suscripción"}
+          </span>
+          {suscripcion?.plan?.nombre === "Basic" && (
+            <>
+              {" "}· Es Basic: con el módulo paga más que un Pro. Se puede
+              prender igual, pero conviene ofrecerle el plan.
+            </>
+          )}
+        </p>
       </section>
     ))}
 

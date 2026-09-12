@@ -1604,3 +1604,765 @@ begin
   execute 'reset role';
   perform set_config('request.jwt.claims', '{}', true);
 end $$;
+
+-- ============================================================
+-- R16 · Retornos de gomería (bloque 2 de neumáticos)
+--
+-- La pantalla que renueva las suscripciones es "A quién llamar", y su
+-- modo de falla es silencioso. Este bloque le suma una TERCERA fuente
+-- (vista_proximos_neumaticos) sin tocar la primera, y estas pruebas
+-- sostienen las dos cosas: que la primera no se movió (R16a) y que la
+-- tercera dice lo que promete.
+--
+-- Cada bloque lleva su código en el mensaje de la excepción y va entre
+-- marcadores `-- >>> R16x` / `-- <<< R16x`: scripts/regresion-neumaticos.sh
+-- los corre de a uno con una rotura a mano y espera verlos en ROJO. Una
+-- prueba que nunca se vio fallar no cuenta.
+--
+--   a · vista_proximos_service devuelve EXACTAMENTE las mismas filas
+--       antes y después de cargar trabajos de gomería en los mismos autos.
+--   b · security_invoker en la vista nueva, con la consulta que lo prueba.
+--   c · Sin el módulo: cero filas y el badge no cuenta nada. Un superadmin
+--       tampoco ve filas (no tiene tenant).
+--   d · Rotación por km, alineación por meses, y los dos motivos en UNA
+--       sola fila.
+--   e · El reajuste a los 3 días aparece; a los 20 ya no.
+--   f · DOT de 2018 → antigüedad; 2,5 mm → desgaste; sin datos → nada, y
+--       no rompe.
+--   g · Los tenants existentes y los nuevos tienen su config y su tercera
+--       plantilla, sin pisar lo personalizado.
+--   h · El anti-spam: un aviso por vehículo por ciclo, por motivo
+--       'neumaticos', posterior al último trabajo de gomería.
+--   i · El beneficio: con dos o más colocadas, desde la config; con
+--       beneficio_km = 0 desaparece de todos lados; se recalcula al editar.
+--   j · Los CHECK de la configuración y su RLS por tenant.
+--   k · resumen_inicio emite el tipo de cada trabajo.
+--   l · El ritmo sale de TODOS los trabajos con kilómetros.
+-- ============================================================
+
+-- >>> R16-setup
+-- Helpers temporales (se borran en R16-fin). Los que escriben datos corren
+-- como postgres; los que llaman a guardar_service corren como el owner.
+create function r16_lub() returns uuid language sql as $$
+  select id from lubricentros where slug = 'demo' $$;
+create function r16_owner() returns uuid language sql as $$
+  select u.id from usuarios u where u.lubricentro_id = r16_lub() and u.rol = 'owner' limit 1 $$;
+create function r16_super() returns uuid language sql as $$
+  select u.id from usuarios u where u.rol = 'superadmin' limit 1 $$;
+create function r16_sucursal() returns uuid language sql as $$
+  select su.id from sucursales su where su.lubricentro_id = r16_lub() and su.activa
+  order by su.created_at limit 1 $$;
+
+create function r16_como(p_uid uuid) returns void language plpgsql as $$
+begin
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', p_uid, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+end $$;
+
+create function r16_postgres() returns void language plpgsql as $$
+begin
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+end $$;
+
+-- El interruptor, por la puerta real de /fidelli.
+create function r16_modulo(p_on boolean) returns void language plpgsql as $$
+begin
+  perform r16_como(r16_super());
+  perform fijar_override_plan(r16_lub(),
+    case when p_on then '{"neumaticos": true}'::jsonb else '{}'::jsonb end,
+    'Módulo gomería · bonificado · 2026-09-12 — prueba de regresión R16');
+  perform r16_postgres();
+end $$;
+
+create function r16_cliente(p_nombre text) returns uuid language plpgsql as $$
+declare v uuid;
+begin
+  insert into clientes (lubricentro_id, nombre, telefono)
+  values (r16_lub(), p_nombre, '351 555 0100') returning id into v;
+  return v;
+end $$;
+
+create function r16_vehiculo(p_cliente uuid, p_patente text) returns uuid language plpgsql as $$
+declare v uuid;
+begin
+  insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+  values (r16_lub(), p_cliente, p_patente, 'Fiat', 'Cronos') returning id into v;
+  return v;
+end $$;
+
+-- Un trabajo de gomería con la fecha que se pida (el created_at es ahora).
+create function r16_neum(p_veh uuid, p_fecha date, p_km integer, p_alineacion boolean, p_ruedas jsonb)
+returns uuid language sql as $$
+  select guardar_service(
+    p_vehiculo_id => p_veh, p_sucursal_id => r16_sucursal(), p_fecha => p_fecha,
+    p_kilometros => p_km, p_aceite_tipo => null, p_prox_service_km => null,
+    p_tipo => 'neumaticos', p_alineacion => p_alineacion, p_ruedas => p_ruedas) $$;
+
+create function r16_service(p_veh uuid, p_fecha date, p_km integer) returns uuid language sql as $$
+  select guardar_service(
+    p_vehiculo_id => p_veh, p_sucursal_id => r16_sucursal(), p_fecha => p_fecha,
+    p_kilometros => p_km, p_aceite_tipo => '10W40', p_prox_service_km => p_km + 10000) $$;
+
+create function r16_mecanica(p_veh uuid, p_fecha date, p_km integer) returns uuid language sql as $$
+  select guardar_service(
+    p_vehiculo_id => p_veh, p_sucursal_id => r16_sucursal(), p_fecha => p_fecha,
+    p_kilometros => p_km, p_aceite_tipo => null, p_prox_service_km => null,
+    p_tipo => 'mecanica', p_trabajo_descripcion => 'Prueba R16: cambio de pastillas') $$;
+
+-- El juego nuevo: cuatro colocadas y balanceadas.
+create function r16_cuatro_colocadas() returns jsonb language sql immutable as $$
+  select jsonb_build_array(
+    jsonb_build_object('posicion', 'delantera_izquierda', 'colocada', true, 'balanceada', true),
+    jsonb_build_object('posicion', 'delantera_derecha',   'colocada', true, 'balanceada', true),
+    jsonb_build_object('posicion', 'trasera_izquierda',   'colocada', true, 'balanceada', true),
+    jsonb_build_object('posicion', 'trasera_derecha',     'colocada', true, 'balanceada', true)) $$;
+
+-- Una medición: las cuatro con profundidad, y un DOT en la delantera
+-- izquierda si se pide.
+create function r16_medicion(p_mm_di numeric, p_mm_resto numeric, p_dot text) returns jsonb language sql immutable as $$
+  select jsonb_build_array(
+    jsonb_build_object('posicion', 'delantera_izquierda', 'profundidad_mm', p_mm_di::text, 'dot', p_dot),
+    jsonb_build_object('posicion', 'delantera_derecha',   'profundidad_mm', p_mm_resto::text),
+    jsonb_build_object('posicion', 'trasera_izquierda',   'profundidad_mm', p_mm_resto::text),
+    jsonb_build_object('posicion', 'trasera_derecha',     'profundidad_mm', p_mm_resto::text)) $$;
+
+create function r16_limpiar(p_cliente uuid) returns void language plpgsql as $$
+begin
+  delete from contactos where vehiculo_id in (select id from vehiculos where cliente_id = p_cliente);
+  delete from services  where vehiculo_id in (select id from vehiculos where cliente_id = p_cliente);
+  delete from vehiculos where cliente_id = p_cliente;
+  delete from clientes  where id = p_cliente;
+end $$;
+-- <<< R16-setup
+
+-- >>> R16a
+-- ---------- R16a · vista_proximos_service no se mueve ----------
+do $$
+declare
+  v_antes   text;
+  v_despues text;
+  v_ids     uuid[];
+  v_kms     integer[];
+  v_nuevos  uuid[] := '{}';
+  v_n       integer;
+  i         integer;
+begin
+  -- La foto, campo por campo, de TODA la vista (como postgres: sin RLS).
+  select coalesce(string_agg(row_to_json(vp)::text, E'\n' order by vp.vehiculo_id), '')
+    into v_antes from vista_proximos_service vp;
+
+  select array_agg(x.vehiculo_id), array_agg(x.ultimo_service_km)
+    into v_ids, v_kms
+  from (select vp.vehiculo_id, vp.ultimo_service_km
+        from vista_proximos_service vp
+        where vp.lubricentro_id = r16_lub()
+        order by vp.vehiculo_id limit 3) x;
+
+  if coalesce(array_length(v_ids, 1), 0) = 0 then
+    raise exception 'R16a SIN PISO: el seed no deja ningún auto en la lista de a quién llamar.';
+  end if;
+
+  -- Trabajos de gomería de HOY, con MÁS kilómetros que el último service,
+  -- en los mismos autos que están en la lista: colocación con alineación,
+  -- rotación, y una medición con DOT viejo y dibujo al límite. Si
+  -- cualquiera de los tres se colara como "último service", la fila cambia.
+  perform r16_modulo(true);
+  perform r16_como(r16_owner());
+  for i in 1 .. array_length(v_ids, 1) loop
+    v_nuevos := v_nuevos || case i
+      when 1 then r16_neum(v_ids[i], current_date, v_kms[i] + 500, true, r16_cuatro_colocadas())
+      when 2 then r16_neum(v_ids[i], current_date, v_kms[i] + 500, false, jsonb_build_array(
+        jsonb_build_object('posicion','delantera_izquierda','rotada',true,'balanceada',true,'posicion_anterior','trasera_izquierda'),
+        jsonb_build_object('posicion','delantera_derecha','rotada',true,'balanceada',true,'posicion_anterior','trasera_derecha'),
+        jsonb_build_object('posicion','trasera_izquierda','rotada',true,'balanceada',true,'posicion_anterior','delantera_izquierda'),
+        jsonb_build_object('posicion','trasera_derecha','rotada',true,'balanceada',true,'posicion_anterior','delantera_derecha')))
+      else r16_neum(v_ids[i], current_date, v_kms[i] + 500, false, r16_medicion(2.5, 6, '1218'))
+    end;
+  end loop;
+  perform r16_postgres();
+
+  select coalesce(string_agg(row_to_json(vp)::text, E'\n' order by vp.vehiculo_id), '')
+    into v_despues from vista_proximos_service vp;
+
+  if v_despues is distinct from v_antes then
+    raise exception
+      E'R16a · RETENCIÓN ROTA: cargar trabajos de gomería alteró vista_proximos_service.\n  antes:   %\n  después: %',
+      left(v_antes, 400), left(v_despues, 400)
+      using hint = 'Este bloque no toca esa vista. Si cambió, alguien le sacó el filtro de tipo o la redefinió.';
+  end if;
+
+  -- Y la tercera vista SÍ los ve (control positivo: la prueba no es vacía).
+  perform r16_como(r16_owner());
+  select count(*) into v_n from vista_proximos_neumaticos where vehiculo_id = any(v_ids);
+  perform r16_postgres();
+  if v_n = 0 then
+    raise exception 'R16a SIN PISO: los trabajos de gomería no aparecen en vista_proximos_neumaticos (la medición con DOT 2018 tendría que estar vencida).';
+  end if;
+
+  delete from services where id = any(v_nuevos);
+  perform r16_modulo(false);
+end $$;
+-- <<< R16a
+
+-- >>> R16b
+-- ---------- R16b · security_invoker en la vista nueva ----------
+do $$
+declare v_opts text;
+begin
+  select array_to_string(reloptions, ',') into v_opts
+  from pg_class where relname = 'vista_proximos_neumaticos';
+  if v_opts is null
+     or (v_opts not like '%security_invoker=on%' and v_opts not like '%security_invoker=true%') then
+    raise exception
+      'R16b · AISLAMIENTO ROTO: vista_proximos_neumaticos perdió el security_invoker — un owner vería los retornos de TODOS los lubricentros.'
+      using hint = 'alter view vista_proximos_neumaticos set (security_invoker = on);';
+  end if;
+end $$;
+-- <<< R16b
+
+-- >>> R16c
+-- ---------- R16c · Sin el módulo, nada ----------
+do $$
+declare
+  v_cli  uuid; v_veh uuid; v_id uuid;
+  v_base integer; v_con integer; v_sin integer; v_n integer;
+begin
+  v_cli := r16_cliente('R16c'); v_veh := r16_vehiculo(v_cli, 'RC 016 AA');
+
+  -- El badge SIN el módulo, como owner: la base.
+  perform r16_modulo(false);
+  perform r16_como(r16_owner());
+  v_base := contactos_por_hacer();
+  perform r16_postgres();
+
+  -- Con el módulo: un auto con motivo vencido (DOT de 2018).
+  perform r16_modulo(true);
+  perform r16_como(r16_owner());
+  v_id := r16_neum(v_veh, current_date, 50000, false, r16_medicion(6, 6, '1218'));
+  select count(*) into v_n from vista_proximos_neumaticos where vehiculo_id = v_veh;
+  if v_n <> 1 then
+    raise exception 'R16c SIN PISO: con el módulo prendido el auto con DOT 2018 no aparece (% filas).', v_n;
+  end if;
+  v_con := contactos_por_hacer();
+  perform r16_postgres();
+  if v_con <> v_base + 1 then
+    raise exception 'R16c: el badge no suma la tercera fuente — con el módulo dice % y la base era % (esperaba %).', v_con, v_base, v_base + 1;
+  end if;
+
+  -- Se apaga el módulo: el trabajo sigue en la base, pero la vista no lo
+  -- devuelve y el badge vuelve a la base.
+  perform r16_modulo(false);
+  perform r16_como(r16_owner());
+  select count(*) into v_n from vista_proximos_neumaticos where vehiculo_id = v_veh;
+  v_sin := contactos_por_hacer();
+  perform r16_postgres();
+  if v_n <> 0 then
+    raise exception 'R16c: un tenant SIN el módulo ve % fila(s) de retornos de gomería en "A quién llamar".', v_n;
+  end if;
+  if v_sin <> v_base then
+    raise exception 'R16c: sin el módulo, el badge cuenta retornos de gomería (% vs base %).', v_sin, v_base;
+  end if;
+
+  -- Un superadmin no tiene tenant: cero filas, sin error.
+  perform r16_como(r16_super());
+  select count(*) into v_n from vista_proximos_neumaticos;
+  perform r16_postgres();
+  if v_n <> 0 then
+    raise exception 'R16c: un superadmin ve % fila(s) en vista_proximos_neumaticos.', v_n;
+  end if;
+
+  perform r16_limpiar(v_cli);
+end $$;
+-- <<< R16c
+
+-- >>> R16d
+-- ---------- R16d · Rotación, alineación, y los dos en una fila ----------
+do $$
+declare
+  v_cli uuid; v_a uuid; v_b uuid; v_c uuid;
+  v_mot text[]; v_n integer; v_km integer;
+begin
+  v_cli := r16_cliente('R16d');
+  v_a := r16_vehiculo(v_cli, 'RD 016 AA');
+  v_b := r16_vehiculo(v_cli, 'RD 016 BB');
+  v_c := r16_vehiculo(v_cli, 'RD 016 CC');
+
+  perform r16_modulo(true);
+  perform r16_como(r16_owner());
+
+  -- A · cubiertas colocadas hace 12.000 km (y una alineación reciente,
+  --     para que el ÚNICO motivo sea la rotación).
+  perform r16_service(v_a, current_date - 400, 50000);
+  perform r16_neum(v_a, current_date - 380, 51000, false, r16_cuatro_colocadas());
+  perform r16_neum(v_a, current_date - 30, 61500, true, '[]'::jsonb);
+  perform r16_service(v_a, current_date - 10, 62000);
+
+  -- B · alineación hace 14 meses, sin colocación.
+  perform r16_neum(v_b, current_date - 425, 40000, true, '[]'::jsonb);
+  perform r16_service(v_b, current_date - 5, 43000);
+
+  -- C · colocación con alineación hace 14 meses: vencen las dos.
+  perform r16_neum(v_c, current_date - 425, 30000, true, r16_cuatro_colocadas());
+  perform r16_service(v_c, current_date - 5, 45000);
+
+  select motivos, km_faltantes into v_mot, v_km from vista_proximos_neumaticos where vehiculo_id = v_a;
+  if v_mot is null or v_mot <> array['rotacion'] then
+    raise exception 'R16d: el auto con cubiertas colocadas hace 12.000 km tiene motivos % (esperaba {rotacion}).', coalesce(v_mot::text, 'SIN FILA');
+  end if;
+  if v_km <> 0 then
+    raise exception 'R16d: la rotación ya vencida por km dice que faltan % km (esperaba 0).', v_km;
+  end if;
+
+  select motivos into v_mot from vista_proximos_neumaticos where vehiculo_id = v_b;
+  if v_mot is null or v_mot <> array['alineacion'] then
+    raise exception 'R16d: el auto alineado hace 14 meses tiene motivos % (esperaba {alineacion}).', coalesce(v_mot::text, 'SIN FILA');
+  end if;
+
+  select count(*) into v_n from vista_proximos_neumaticos where vehiculo_id = v_c;
+  if v_n <> 1 then
+    raise exception 'R16d: el auto con rotación Y alineación vencidas aparece % veces (esperaba UNA fila con los dos motivos).', v_n;
+  end if;
+  select motivos into v_mot from vista_proximos_neumaticos where vehiculo_id = v_c;
+  if not (v_mot @> array['rotacion', 'alineacion']) then
+    raise exception 'R16d: la fila única del auto con los dos motivos dice % (esperaba rotacion y alineacion).', v_mot;
+  end if;
+
+  perform r16_postgres();
+  perform r16_limpiar(v_cli);
+  perform r16_modulo(false);
+end $$;
+-- <<< R16d
+
+-- >>> R16e
+-- ---------- R16e · El reajuste de tuercas: a los 3 días sí, a los 20 no ----------
+do $$
+declare
+  v_cli uuid; v_d uuid; v_e uuid; v_mot text[]; v_n integer;
+begin
+  v_cli := r16_cliente('R16e');
+  v_d := r16_vehiculo(v_cli, 'RE 016 AA');
+  v_e := r16_vehiculo(v_cli, 'RE 016 BB');
+
+  perform r16_modulo(true);
+  perform r16_como(r16_owner());
+  perform r16_neum(v_d, current_date - 3,  70000, false, r16_cuatro_colocadas());
+  perform r16_neum(v_e, current_date - 20, 70000, false, r16_cuatro_colocadas());
+
+  select motivos into v_mot from vista_proximos_neumaticos where vehiculo_id = v_d;
+  if v_mot is null or v_mot <> array['reajuste'] then
+    raise exception 'R16e: la colocación de hace 3 días tiene motivos % (esperaba {reajuste}).', coalesce(v_mot::text, 'SIN FILA');
+  end if;
+
+  select count(*) into v_n from vista_proximos_neumaticos where vehiculo_id = v_e;
+  if v_n <> 0 then
+    raise exception 'R16e: la colocación de hace 20 días sigue en la lista (%): el reajuste de tuercas a los dos meses es ridículo.',
+      (select motivos from vista_proximos_neumaticos where vehiculo_id = v_e);
+  end if;
+
+  perform r16_postgres();
+  perform r16_limpiar(v_cli);
+  perform r16_modulo(false);
+end $$;
+-- <<< R16e
+
+-- >>> R16f
+-- ---------- R16f · Antigüedad, desgaste, y nada ----------
+do $$
+declare
+  v_cli uuid; v_f uuid; v_g uuid; v_h uuid;
+  v_mot text[]; v_anio integer; v_mm numeric; v_n integer;
+begin
+  v_cli := r16_cliente('R16f');
+  v_f := r16_vehiculo(v_cli, 'RF 016 AA');
+  v_g := r16_vehiculo(v_cli, 'RF 016 BB');
+  v_h := r16_vehiculo(v_cli, 'RF 016 CC');
+
+  perform r16_modulo(true);
+  perform r16_como(r16_owner());
+  -- F · un DOT de 2018 (semana 12), dibujo sano.
+  perform r16_neum(v_f, current_date, 50000, false, r16_medicion(6, 6, '1218'));
+  -- G · 2,5 mm en una, sin DOT.
+  perform r16_neum(v_g, current_date, 50000, false, r16_medicion(2.5, 6, null));
+  -- H · ni DOT ni profundidad: una alineación y una rueda balanceada.
+  perform r16_neum(v_h, current_date, 50000, true, jsonb_build_array(
+    jsonb_build_object('posicion', 'delantera_izquierda', 'balanceada', true)));
+
+  select motivos, anio_dot into v_mot, v_anio from vista_proximos_neumaticos where vehiculo_id = v_f;
+  if v_mot is null or v_mot <> array['antiguedad'] then
+    raise exception 'R16f: el auto con DOT de 2018 tiene motivos % (esperaba {antiguedad}).', coalesce(v_mot::text, 'SIN FILA');
+  end if;
+  if v_anio <> 2018 then
+    raise exception 'R16f: anio_dot dice % (esperaba 2018).', v_anio;
+  end if;
+
+  select motivos, mm_minimo into v_mot, v_mm from vista_proximos_neumaticos where vehiculo_id = v_g;
+  if v_mot is null or v_mot <> array['desgaste'] then
+    raise exception 'R16f: el auto con 2,5 mm tiene motivos % (esperaba {desgaste}).', coalesce(v_mot::text, 'SIN FILA');
+  end if;
+  if v_mm <> 2.5 then
+    raise exception 'R16f: mm_minimo dice % (esperaba 2.5).', v_mm;
+  end if;
+
+  select count(*) into v_n from vista_proximos_neumaticos where vehiculo_id = v_h;
+  if v_n <> 0 then
+    raise exception 'R16f: el auto sin DOT ni profundidad aparece con motivos %.',
+      (select motivos from vista_proximos_neumaticos where vehiculo_id = v_h);
+  end if;
+
+  perform r16_postgres();
+  perform r16_limpiar(v_cli);
+  perform r16_modulo(false);
+end $$;
+-- <<< R16f
+
+-- >>> R16g
+-- ---------- R16g · Config y plantilla para todos, sin pisar nada ----------
+do $$
+declare
+  v_nuevo uuid; v_n integer; v_m integer; v_t record;
+begin
+  -- Todos los tenants que existen tienen su config y su tercera plantilla.
+  select count(*) into v_n from lubricentros l
+  where not exists (select 1 from config_neumaticos c where c.lubricentro_id = l.id);
+  if v_n > 0 then
+    raise exception 'R16g: % lubricentro(s) sin fila en config_neumaticos.', v_n;
+  end if;
+  select count(*) into v_n from mensaje_templates where contenido_neumaticos is null;
+  if v_n > 0 then
+    raise exception 'R16g: % plantilla(s) sin contenido_neumaticos después de la migración.', v_n;
+  end if;
+
+  -- Un tenant nuevo nace con su config (trigger) y sus tres tonos con las
+  -- tres plantillas cada uno.
+  insert into lubricentros (nombre, slug) values ('R16 Gomería', 'r16-gomeria') returning id into v_nuevo;
+  if not exists (select 1 from config_neumaticos where lubricentro_id = v_nuevo) then
+    raise exception 'R16g: un lubricentro nuevo nació sin config_neumaticos — el trigger no corrió.';
+  end if;
+  perform sembrar_templates(v_nuevo, 'R16 Gomería');
+  select count(*), count(contenido_neumaticos) into v_n, v_m from mensaje_templates where lubricentro_id = v_nuevo;
+  if v_n <> 3 or v_m <> 3 then
+    raise exception 'R16g: la siembra dejó % tonos y % con contenido_neumaticos (esperaba 3 y 3).', v_n, v_m;
+  end if;
+  if not exists (select 1 from mensaje_templates where lubricentro_id = v_nuevo and tono = 'Cercano'
+                 and contenido_neumaticos like '%R16 Gomería%' and contenido_neumaticos like '%{motivo}%') then
+    raise exception 'R16g: el tono Cercano sembrado no nombra al lubricentro o no lleva {motivo}.';
+  end if;
+
+  -- El backfill no pisa lo personalizado: una plantilla propia del tenant,
+  -- con sus dos textos escritos a mano y sin el tercero.
+  insert into mensaje_templates (lubricentro_id, tono, contenido, contenido_pendiente, contenido_neumaticos, activo)
+  values (v_nuevo, 'Promo', 'PERSONALIZADO DE SERVICE', 'PERSONALIZADO DE PENDIENTE', null, false);
+  v_n := completar_templates_neumaticos();
+  if v_n <> 1 then
+    raise exception 'R16g: completar_templates_neumaticos() completó % fila(s) (esperaba 1: solo la que estaba en null).', v_n;
+  end if;
+  select * into v_t from mensaje_templates where lubricentro_id = v_nuevo and tono = 'Promo';
+  if v_t.contenido <> 'PERSONALIZADO DE SERVICE' or v_t.contenido_pendiente <> 'PERSONALIZADO DE PENDIENTE' then
+    raise exception 'R16g: el backfill PISÓ lo personalizado (contenido=%, pendiente=%).', v_t.contenido, v_t.contenido_pendiente;
+  end if;
+  if v_t.contenido_neumaticos is null or v_t.contenido_neumaticos not like '%R16 Gomería%' then
+    raise exception 'R16g: el backfill no cargó contenido_neumaticos con el nombre del lubricentro (%).', v_t.contenido_neumaticos;
+  end if;
+  v_n := completar_templates_neumaticos();
+  if v_n <> 0 then
+    raise exception 'R16g: el backfill no es idempotente: la segunda corrida tocó % fila(s).', v_n;
+  end if;
+
+  delete from mensaje_templates where lubricentro_id = v_nuevo;
+  delete from lubricentros where id = v_nuevo;
+end $$;
+-- <<< R16g
+
+-- >>> R16h
+-- ---------- R16h · El anti-spam: un aviso por ciclo, por motivo 'neumaticos' ----------
+do $$
+declare
+  v_cli uuid; v_veh uuid; v_nuevo uuid; v_c boolean; v_antes integer; v_despues integer;
+begin
+  v_cli := r16_cliente('R16h'); v_veh := r16_vehiculo(v_cli, 'RH 016 AA');
+
+  perform r16_modulo(true);
+  perform r16_como(r16_owner());
+  perform r16_neum(v_veh, current_date, 50000, false, r16_medicion(6, 6, '1218'));
+
+  select contactado into v_c from vista_proximos_neumaticos where vehiculo_id = v_veh;
+  if v_c is null or v_c then
+    raise exception 'R16h: un auto recién cargado ya figura como contactado (%).', coalesce(v_c::text, 'SIN FILA');
+  end if;
+
+  -- Un contacto por OTRO motivo (el service vencido) no cuenta.
+  -- created_at explícito con clock_timestamp(): dentro de UNA transacción
+  -- now() es el mismo instante para el trabajo y para el contacto, y el
+  -- anti-spam pide un contacto estrictamente POSTERIOR. En la vida real
+  -- son dos transacciones separadas por minutos; acá se simula el reloj.
+  insert into contactos (lubricentro_id, vehiculo_id, usuario_id, estado, canal, created_at)
+  values (r16_lub(), v_veh, r16_owner(), 'vencido', 'manual', clock_timestamp());
+  select contactado into v_c from vista_proximos_neumaticos where vehiculo_id = v_veh;
+  if v_c then
+    raise exception 'R16h: un contacto por motivo ''vencido'' marcó como contactado el retorno de gomería — se perdió la semántica por motivo.';
+  end if;
+
+  -- El contacto por 'neumaticos' sí, y baja el badge en 1.
+  v_antes := contactos_por_hacer();
+  insert into contactos (lubricentro_id, vehiculo_id, usuario_id, estado, canal, created_at)
+  values (r16_lub(), v_veh, r16_owner(), 'neumaticos', 'whatsapp', clock_timestamp());
+  select contactado into v_c from vista_proximos_neumaticos where vehiculo_id = v_veh;
+  if not v_c then
+    raise exception 'R16h: el contacto por ''neumaticos'' no marcó la fila como contactada.';
+  end if;
+  v_despues := contactos_por_hacer();
+  if v_despues <> v_antes - 1 then
+    raise exception 'R16h: contactar no bajó el badge en 1 (% → %).', v_antes, v_despues;
+  end if;
+
+  -- Un trabajo NUEVO de gomería abre otro ciclo: vuelve a estar sin contactar.
+  -- (Su created_at se adelanta con el reloj real por lo mismo de arriba.)
+  v_nuevo := r16_neum(v_veh, current_date, 50100, false, r16_medicion(6, 6, '1218'));
+  perform r16_postgres();
+  update services set created_at = clock_timestamp() where id = v_nuevo;
+  perform r16_como(r16_owner());
+  select contactado into v_c from vista_proximos_neumaticos where vehiculo_id = v_veh;
+  if v_c then
+    raise exception 'R16h: un trabajo de gomería posterior al contacto no abrió un ciclo nuevo.';
+  end if;
+
+  perform r16_postgres();
+  perform r16_limpiar(v_cli);
+  perform r16_modulo(false);
+end $$;
+-- <<< R16h
+
+-- >>> R16i
+-- ---------- R16i · El beneficio de la compra ----------
+do $$
+declare
+  v_cli uuid; v_j uuid; v_k uuid; v_l uuid;
+  v_sj uuid; v_sk uuid; v_sl uuid;
+  v_km integer; v_fecha date; v_json jsonb; v_pat text;
+begin
+  v_cli := r16_cliente('R16i');
+  v_j := r16_vehiculo(v_cli, 'RI 016 AA');
+  v_k := r16_vehiculo(v_cli, 'RI 016 BB');
+  v_l := r16_vehiculo(v_cli, 'RI 016 CC');
+
+  perform r16_modulo(true);
+  perform r16_como(r16_owner());
+
+  -- J · el juego completo: beneficio desde la config (10.000 km / 6 meses).
+  v_sj := r16_neum(v_j, current_date, 100000, false, r16_cuatro_colocadas());
+  select beneficio_hasta_km, beneficio_hasta_fecha into v_km, v_fecha from services where id = v_sj;
+  if v_km is distinct from 110000 or v_fecha is distinct from (current_date + interval '6 months')::date then
+    raise exception 'R16i: con cuatro colocadas el beneficio quedó en % km / % (esperaba 110000 / %).',
+      v_km, v_fecha, (current_date + interval '6 months')::date;
+  end if;
+
+  -- K · UNA cubierta: sin beneficio.
+  v_sk := r16_neum(v_k, current_date, 80000, false, jsonb_build_array(
+    jsonb_build_object('posicion', 'delantera_izquierda', 'colocada', true)));
+  select beneficio_hasta_km into v_km from services where id = v_sk;
+  if v_km is not null then
+    raise exception 'R16i: con UNA cubierta colocada se dio beneficio (% km).', v_km;
+  end if;
+
+  -- El cartón del cliente lo muestra…
+  perform r16_postgres();
+  select patente into v_pat from vehiculos where id = v_j;
+  v_json := get_carton('demo', v_pat);
+  if (v_json->'services'->0->>'beneficio_hasta_km')::integer is distinct from 110000 then
+    raise exception 'R16i: get_carton no emite el beneficio (%).', v_json->'services'->0->>'beneficio_hasta_km';
+  end if;
+
+  -- …y con beneficio_km = 0 desaparece de todos lados: del cartón de J
+  -- (que ya lo tenía guardado) y de un trabajo nuevo.
+  perform r16_como(r16_owner());
+  update config_neumaticos set beneficio_km = 0 where lubricentro_id = r16_lub();
+  v_sl := r16_neum(v_l, current_date, 90000, false, r16_cuatro_colocadas());
+  select beneficio_hasta_km into v_km from services where id = v_sl;
+  if v_km is not null then
+    raise exception 'R16i: con beneficio_km = 0 un trabajo nuevo recibió beneficio (% km).', v_km;
+  end if;
+  perform r16_postgres();
+  v_json := get_carton('demo', v_pat);
+  if v_json->'services'->0->>'beneficio_hasta_km' is not null then
+    raise exception 'R16i: con beneficio_km = 0 el cartón de J sigue mostrando el beneficio (%).', v_json->'services'->0->>'beneficio_hasta_km';
+  end if;
+
+  -- Se vuelve a prender: J lo recupera sin tocar el trabajo.
+  perform r16_como(r16_owner());
+  update config_neumaticos set beneficio_km = 10000 where lubricentro_id = r16_lub();
+  perform r16_postgres();
+  v_json := get_carton('demo', v_pat);
+  if (v_json->'services'->0->>'beneficio_hasta_km')::integer is distinct from 110000 then
+    raise exception 'R16i: al volver a prender el beneficio, el cartón de J no lo recuperó.';
+  end if;
+
+  -- Editar recalcula: K pasa a dos colocadas y gana el beneficio.
+  perform r16_como(r16_owner());
+  perform actualizar_service(
+    p_service_id => v_sk, p_sucursal_id => r16_sucursal(), p_fecha => current_date,
+    p_kilometros => 80000, p_aceite_tipo => null, p_prox_service_km => null,
+    p_alineacion => false,
+    p_ruedas => jsonb_build_array(
+      jsonb_build_object('posicion', 'delantera_izquierda', 'colocada', true),
+      jsonb_build_object('posicion', 'delantera_derecha',   'colocada', true)));
+  select beneficio_hasta_km into v_km from services where id = v_sk;
+  if v_km is distinct from 90000 then
+    raise exception 'R16i: al editar a dos colocadas el beneficio no se recalculó (% km, esperaba 90000).', v_km;
+  end if;
+
+  perform r16_postgres();
+  perform r16_limpiar(v_cli);
+  perform r16_modulo(false);
+end $$;
+-- <<< R16i
+
+-- >>> R16j
+-- ---------- R16j · Los CHECK de la configuración y su RLS ----------
+do $$
+declare
+  v_ajeno uuid; v_n integer; v_km integer;
+begin
+  insert into lubricentros (nombre, slug) values ('R16 ajeno', 'r16-ajeno') returning id into v_ajeno;
+
+  perform r16_modulo(true);
+  perform r16_como(r16_owner());
+
+  -- Fuera de rango: rechazado.
+  begin
+    update config_neumaticos set km_rotacion = 500 where lubricentro_id = r16_lub();
+    raise exception 'R16j: entró una rotación cada 500 km — el CHECK no rige.';
+  exception when check_violation then null;
+  end;
+  begin
+    update config_neumaticos set mm_alerta = 1.0 where lubricentro_id = r16_lub();
+    raise exception 'R16j: entró una alerta de dibujo a 1,0 mm, por debajo del mínimo legal.';
+  exception when check_violation then null;
+  end;
+  begin
+    update config_neumaticos set beneficio_km = 100 where lubricentro_id = r16_lub();
+    raise exception 'R16j: entró un beneficio de 100 km (0 apaga, o de 3.000 para arriba).';
+  exception when check_violation then null;
+  end;
+
+  -- En rango: entra y se lee.
+  update config_neumaticos set km_rotacion = 5000 where lubricentro_id = r16_lub();
+  select km_rotacion into v_km from config_neumaticos where lubricentro_id = r16_lub();
+  if v_km <> 5000 then
+    raise exception 'R16j: el owner guardó km_rotacion = 5000 y se lee %.', v_km;
+  end if;
+  update config_neumaticos set km_rotacion = 10000 where lubricentro_id = r16_lub();
+
+  -- RLS: el owner ve SOLO su fila y no toca la ajena.
+  select count(*) into v_n from config_neumaticos;
+  if v_n <> 1 then
+    raise exception 'R16j: el owner ve % filas de config_neumaticos (esperaba 1: la suya).', v_n;
+  end if;
+  update config_neumaticos set km_rotacion = 5000 where lubricentro_id = v_ajeno;
+  get diagnostics v_n = row_count;
+  if v_n <> 0 then
+    raise exception 'R16j: el owner modificó la configuración de OTRO lubricentro.';
+  end if;
+  perform r16_postgres();
+
+  -- Sin el módulo, la lectura sigue y la escritura no.
+  perform r16_modulo(false);
+  perform r16_como(r16_owner());
+  select count(*) into v_n from config_neumaticos where lubricentro_id = r16_lub();
+  if v_n <> 1 then
+    raise exception 'R16j: apagar el módulo le escondió al owner su propia configuración.';
+  end if;
+  begin
+    update config_neumaticos set km_rotacion = 5000 where lubricentro_id = r16_lub();
+    raise exception 'R16j: sin el módulo el owner pudo escribir la configuración.';
+  exception when insufficient_privilege then null;
+  end;
+  perform r16_postgres();
+
+  delete from lubricentros where id = v_ajeno;
+end $$;
+-- <<< R16j
+
+-- >>> R16k
+-- ---------- R16k · resumen_inicio emite el tipo ----------
+do $$
+declare
+  v_cli uuid; v_veh uuid; v_json jsonb; v_ultimo jsonb;
+begin
+  v_cli := r16_cliente('R16k'); v_veh := r16_vehiculo(v_cli, 'RK 016 AA');
+
+  perform r16_modulo(true);
+  perform r16_como(r16_owner());
+  perform r16_neum(v_veh, current_date, 50000, true, r16_cuatro_colocadas());
+  v_json := resumen_inicio();
+  perform r16_postgres();
+
+  v_ultimo := v_json->'ultimos'->0;
+  if v_ultimo->>'tipo' is distinct from 'neumaticos' then
+    raise exception 'R16k: el último trabajo de Inicio dice tipo % (esperaba neumaticos). Sin el tipo, "Últimos trabajos" muestra kilómetros para los tres.', coalesce(v_ultimo->>'tipo', 'NULL');
+  end if;
+  if jsonb_array_length(coalesce(v_ultimo->'ruedas', '[]'::jsonb)) <> 4
+     or (v_ultimo->'ruedas'->0->>'colocada')::boolean is distinct from true
+     or (v_ultimo->>'alineacion')::boolean is distinct from true then
+    raise exception 'R16k: resumen_inicio no emite las ruedas y la alineación del trabajo de gomería (%).', v_ultimo;
+  end if;
+  if not exists (select 1 from jsonb_array_elements(v_json->'ultimos') u where u->>'tipo' = 'service') then
+    raise exception 'R16k: ningún service de los últimos trae tipo ''service''.';
+  end if;
+
+  perform r16_limpiar(v_cli);
+  perform r16_modulo(false);
+end $$;
+-- <<< R16k
+
+-- >>> R16l
+-- ---------- R16l · El ritmo sale de TODOS los trabajos con kilómetros ----------
+do $$
+declare
+  v_cli uuid; v_veh uuid; v_kmd numeric; v_n bigint; v_ini boolean;
+begin
+  v_cli := r16_cliente('R16l'); v_veh := r16_vehiculo(v_cli, 'RL 016 AA');
+
+  perform r16_modulo(true);
+  perform r16_como(r16_owner());
+  -- Un service, una mecánica con odómetro y la colocación de hoy:
+  -- 6.000 km en 100 días = 60 km/día. Si el ritmo mirara solo gomería,
+  -- daría el default de 40 con una sola lectura.
+  perform r16_service(v_veh, current_date - 100, 10000);
+  perform r16_mecanica(v_veh, current_date - 50, 13000);
+  perform r16_neum(v_veh, current_date, 16000, false, r16_cuatro_colocadas());
+
+  select km_por_dia, cantidad_services, estimacion_inicial into v_kmd, v_n, v_ini
+  from vista_proximos_neumaticos where vehiculo_id = v_veh;
+  perform r16_postgres();
+
+  if v_kmd is null then
+    raise exception 'R16l SIN PISO: la colocación de hoy no aparece (el reajuste tendría que estar dado).';
+  end if;
+  if v_kmd <> 60 or v_n <> 3 or v_ini then
+    raise exception 'R16l: el ritmo da % km/día sobre % lecturas (inicial=%) — esperaba 60 sobre 3, medido. El ritmo tiene que salir de todos los trabajos con kilómetros, no solo de los de gomería.', v_kmd, v_n, v_ini;
+  end if;
+
+  perform r16_limpiar(v_cli);
+  perform r16_modulo(false);
+end $$;
+-- <<< R16l
+
+-- >>> R16-fin
+drop function r16_limpiar(uuid);
+drop function r16_medicion(numeric, numeric, text);
+drop function r16_cuatro_colocadas();
+drop function r16_mecanica(uuid, date, integer);
+drop function r16_service(uuid, date, integer);
+drop function r16_neum(uuid, date, integer, boolean, jsonb);
+drop function r16_vehiculo(uuid, text);
+drop function r16_cliente(text);
+drop function r16_modulo(boolean);
+drop function r16_postgres();
+drop function r16_como(uuid);
+drop function r16_sucursal();
+drop function r16_super();
+drop function r16_owner();
+drop function r16_lub();
+-- <<< R16-fin

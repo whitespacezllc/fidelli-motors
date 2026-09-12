@@ -89,6 +89,9 @@ export type DatosCarton = {
   puedeMecanica?: boolean;
   /** El módulo de gomería está pago y prendido para este tenant. */
   puedeNeumaticos?: boolean;
+  /** El beneficio de la compra vigente de este auto: rotación y balanceo
+   *  sin cargo hasta X km o hasta tal fecha. null si no tiene o venció. */
+  beneficioVigente?: { hastaKm: number; hastaFecha: string } | null;
   /** El último tipo que cargó ESTE dispositivo. Lo resuelve el servidor
    *  desde la cookie para que la solapa correcta llegue ya pintada: una
    *  gomería carga cubiertas todo el día y abrir siempre en Service es un
@@ -912,6 +915,23 @@ export function Carton({
           >
             Productos
           </Link>
+          .
+        </p>
+      )}
+
+      {/* EL BENEFICIO DE LA COMPRA, discreto y arriba del formulario: el
+          mecánico tiene que saber que la rotación de este auto ya está
+          paga ANTES de cobrarla. Sin color de estado: es información. */}
+      {!edicion && datos.beneficioVigente && (
+        <p className="mb-4 rounded-md border border-line bg-surface px-3.5 py-2.5 text-ui text-ink-60 tabular-nums">
+          Este auto tiene rotación y balanceo sin cargo hasta los{" "}
+          <span className="font-semibold text-ink">
+            {formatearKm(datos.beneficioVigente.hastaKm)} km
+          </span>{" "}
+          o hasta el{" "}
+          <span className="font-semibold text-ink">
+            {formatearFechaCorta(datos.beneficioVigente.hastaFecha)}
+          </span>
           .
         </p>
       )}

@@ -126,6 +126,10 @@ export function HistorialCartones({
                       kilometros: s.kilometros,
                       alineacion: s.alineacion ?? false,
                       ruedas: s.ruedas,
+                      beneficio:
+                        s.beneficioHastaKm != null && s.beneficioHastaFecha
+                          ? { hastaKm: s.beneficioHastaKm, hastaFecha: s.beneficioHastaFecha }
+                          : null,
                     }}
                   />
                 ) : s.tipo === "mecanica" ? (
