@@ -474,6 +474,10 @@ export type NeumaticosDatos = {
   kilometros: number | null;
   alineacion: boolean;
   ruedas: RuedaPapel[];
+  /** El beneficio de la compra: rotación y balanceo sin cargo hasta X km
+   *  o hasta tal fecha. Ausente en la previsualización (se calcula al
+   *  guardar) y cuando el taller lo tiene apagado. */
+  beneficio?: { hastaKm: number; hastaFecha: string } | null;
 };
 
 export function CartonPapelNeumaticos({
@@ -588,6 +592,18 @@ export function CartonPapelNeumaticos({
             </div>
           )}
         </div>
+      )}
+
+      {/* EL BENEFICIO DE LA COMPRA, dentro del papel y con el mismo
+          contra-reset: tinta oscura sobre papel claro. Sin colores de
+          estado — es una promesa escrita en el cartón, no una alarma. */}
+      {datos.beneficio && (
+        <p className={`mt-3.5 text-center ${e.ruedaDato} text-ink tabular-nums`}>
+          Rotación y balanceo sin cargo hasta los{" "}
+          <span className="font-bold">{formatearKm(datos.beneficio.hastaKm)} km</span>{" "}
+          o hasta el{" "}
+          <span className="font-bold">{formatearFecha(datos.beneficio.hastaFecha)}</span>.
+        </p>
       )}
     </div>
   );

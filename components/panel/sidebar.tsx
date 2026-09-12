@@ -14,6 +14,7 @@ import {
   IconoPresupuesto,
   IconoDiseno,
   IconoMensajes,
+  IconoNeumatico,
   IconoLubricentro,
   IconoCuenta,
   IconoAyuda,
@@ -75,6 +76,9 @@ const GRUPOS: {
       // muestra el BloqueoPlan de personalización + los calcos igual.
       { href: "/panel/experiencia", nombre: "Diseño de experiencia", Icono: IconoDiseno },
       { href: "/panel/mensajes", nombre: "Mensajes", Icono: IconoMensajes },
+      // Los intervalos del módulo de gomería. Solo con el módulo: es un
+      // add-on pago y el menú no ofrece lo que no se puede usar.
+      { href: "/panel/neumaticos", nombre: "Neumáticos", feature: "neumaticos", Icono: IconoNeumatico },
       { href: "/panel/sucursales", nombre: "Sucursales", Icono: IconoLubricentro },
       { href: "/panel/cuenta", nombre: "Mi cuenta", Icono: IconoCuenta },
       { href: "/panel/ayuda", nombre: "Ayuda", Icono: IconoAyuda },

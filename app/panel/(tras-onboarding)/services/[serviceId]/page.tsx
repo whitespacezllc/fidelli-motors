@@ -33,12 +33,13 @@ export default async function PaginaService({ params }: Props) {
   const supabase = await createClient();
   const sesion = await obtenerSesion();
 
-  const [serviceRes, configRes] = await Promise.all([
+  const [serviceRes, configRes, configNeumRes] = await Promise.all([
     supabase
       .from("services")
       .select(
         `id, tipo, trabajo_descripcion, fecha, created_at, kilometros,
          aceite_tipo, aceite_nombre, alineacion,
+         beneficio_hasta_km, beneficio_hasta_fecha,
          prox_service_km, observaciones, anulado, desbloqueado_hasta,
          vehiculos(patente, marca, modelo, cliente_id, clientes(nombre)),
          sucursales(nombre),
@@ -51,6 +52,10 @@ export default async function PaginaService({ params }: Props) {
       .eq("id", serviceId)
       .maybeSingle(),
     supabase.from("config_experiencia").select("color_primario, color_carton").maybeSingle(),
+    // El interruptor del beneficio: con beneficio_km = 0 la línea no se
+    // dibuja, tampoco en los trabajos que ya lo tenían guardado. Mismo
+    // criterio que get_carton para el cliente.
+    supabase.from("config_neumaticos").select("beneficio_km").maybeSingle(),
   ]);
 
   const service = serviceRes.data;
@@ -247,6 +252,15 @@ export default async function PaginaService({ params }: Props) {
                 kilometros: service.kilometros,
                 alineacion: service.alineacion ?? false,
                 ruedas: ruedasPapel,
+                beneficio:
+                  (configNeumRes.data?.beneficio_km ?? 0) > 0 &&
+                  service.beneficio_hasta_km != null &&
+                  service.beneficio_hasta_fecha
+                    ? {
+                        hastaKm: service.beneficio_hasta_km,
+                        hastaFecha: service.beneficio_hasta_fecha,
+                      }
+                    : null,
               }}
             />
           ) : esMecanica ? (

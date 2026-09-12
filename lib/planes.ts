@@ -72,6 +72,9 @@ export const RUTA_FEATURE: Partial<Record<FeaturePlan, string>> = {
   premios: "/panel/fidelizacion",
   personalizacion_pagina: "/panel/experiencia",
   presupuestos: "/panel/presupuestos",
+  // La configuración de los intervalos de gomería: es donde vive la
+  // pantalla del módulo dentro del panel.
+  neumaticos: "/panel/neumaticos",
 };
 
 /**

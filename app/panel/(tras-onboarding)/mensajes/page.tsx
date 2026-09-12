@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
-import { panelSuspendido } from "@/lib/auth/session";
+import { panelSuspendido, obtenerSesion, featureHabilitada } from "@/lib/auth/session";
 import { CabeceraSeccion } from "@/components/panel/cabecera-seccion";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { AccionBloqueada } from "@/components/panel/bloqueo-suspension";
@@ -26,6 +26,10 @@ const EJEMPLO_GENERICO: VariablesMensaje = {
 export default async function PaginaMensajes() {
   const supabase = await createClient();
   const suspendido = await panelSuspendido();
+  const sesion = await obtenerSesion();
+  // La tercera plantilla —el retorno de gomería— se edita solo con el
+  // módulo: sin él no hay ningún WhatsApp que la use.
+  const puedeNeumaticos = featureHabilitada(sesion, "neumaticos");
 
   // Los mensajes del tenant, y un vehículo real para la vista previa. El
   // primero de próximos services es el mejor ejemplo: es exactamente el
@@ -33,7 +37,7 @@ export default async function PaginaMensajes() {
   const [mensajesRes, previewRes] = await Promise.all([
     supabase
       .from("mensaje_templates")
-      .select("id, tono, contenido, contenido_pendiente, activo")
+      .select("id, tono, contenido, contenido_pendiente, contenido_neumaticos, activo")
       .order("activo", { ascending: false })
       .order("created_at"),
     supabase
@@ -66,7 +70,11 @@ export default async function PaginaMensajes() {
           (suspendido ? (
             <AccionBloqueada etiqueta="+ Nuevo mensaje" />
           ) : (
-            <DialogMensaje ejemplo={ejemplo} ejemploEsReal={ejemploEsReal} />
+            <DialogMensaje
+              ejemplo={ejemplo}
+              ejemploEsReal={ejemploEsReal}
+              puedeNeumaticos={puedeNeumaticos}
+            />
           ))}
       </CabeceraSeccion>
 
@@ -92,6 +100,7 @@ export default async function PaginaMensajes() {
               ejemploEsReal={ejemploEsReal}
               etiquetaTrigger="+ Crear el primero"
               variante="primario"
+              puedeNeumaticos={puedeNeumaticos}
             />
           )}
         </EstadoVacio>
@@ -104,6 +113,7 @@ export default async function PaginaMensajes() {
               ejemplo={ejemplo}
               ejemploEsReal={ejemploEsReal}
               suspendido={suspendido}
+              puedeNeumaticos={puedeNeumaticos}
             />
           ))}
         </ul>

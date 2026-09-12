@@ -130,6 +130,13 @@ export type Database = {
             foreignKeyName: "canjes_service_id_fkey"
             columns: ["service_id"]
             isOneToOne: false
+            referencedRelation: "vista_proximos_neumaticos"
+            referencedColumns: ["ultimo_service_id"]
+          },
+          {
+            foreignKeyName: "canjes_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
             referencedRelation: "vista_proximos_service"
             referencedColumns: ["ultimo_service_id"]
           },
@@ -260,6 +267,56 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "config_experiencia_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: true
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      config_neumaticos: {
+        Row: {
+          anios_antiguedad: number
+          beneficio_km: number
+          beneficio_meses: number
+          km_alineacion: number
+          km_reajuste: number
+          km_rotacion: number
+          lubricentro_id: string
+          meses_alineacion: number
+          meses_rotacion: number
+          mm_alerta: number
+          updated_at: string
+        }
+        Insert: {
+          anios_antiguedad?: number
+          beneficio_km?: number
+          beneficio_meses?: number
+          km_alineacion?: number
+          km_reajuste?: number
+          km_rotacion?: number
+          lubricentro_id: string
+          meses_alineacion?: number
+          meses_rotacion?: number
+          mm_alerta?: number
+          updated_at?: string
+        }
+        Update: {
+          anios_antiguedad?: number
+          beneficio_km?: number
+          beneficio_meses?: number
+          km_alineacion?: number
+          km_reajuste?: number
+          km_rotacion?: number
+          lubricentro_id?: string
+          meses_alineacion?: number
+          meses_rotacion?: number
+          mm_alerta?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "config_neumaticos_lubricentro_id_fkey"
             columns: ["lubricentro_id"]
             isOneToOne: true
             referencedRelation: "lubricentros"
@@ -532,6 +589,7 @@ export type Database = {
         Row: {
           activo: boolean
           contenido: string
+          contenido_neumaticos: string | null
           contenido_pendiente: string | null
           created_at: string
           id: string
@@ -541,6 +599,7 @@ export type Database = {
         Insert: {
           activo?: boolean
           contenido: string
+          contenido_neumaticos?: string | null
           contenido_pendiente?: string | null
           created_at?: string
           id?: string
@@ -550,6 +609,7 @@ export type Database = {
         Update: {
           activo?: boolean
           contenido?: string
+          contenido_neumaticos?: string | null
           contenido_pendiente?: string | null
           created_at?: string
           id?: string
@@ -879,6 +939,13 @@ export type Database = {
             foreignKeyName: "presupuestos_cliente_id_fkey"
             columns: ["cliente_id"]
             isOneToOne: false
+            referencedRelation: "vista_proximos_neumaticos"
+            referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "presupuestos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
             referencedRelation: "vista_proximos_service"
             referencedColumns: ["cliente_id"]
           },
@@ -1039,6 +1106,13 @@ export type Database = {
             foreignKeyName: "service_items_service_id_fkey"
             columns: ["service_id"]
             isOneToOne: false
+            referencedRelation: "vista_proximos_neumaticos"
+            referencedColumns: ["ultimo_service_id"]
+          },
+          {
+            foreignKeyName: "service_items_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
             referencedRelation: "vista_proximos_service"
             referencedColumns: ["ultimo_service_id"]
           },
@@ -1134,6 +1208,13 @@ export type Database = {
             foreignKeyName: "service_ruedas_service_id_fkey"
             columns: ["service_id"]
             isOneToOne: false
+            referencedRelation: "vista_proximos_neumaticos"
+            referencedColumns: ["ultimo_service_id"]
+          },
+          {
+            foreignKeyName: "service_ruedas_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
             referencedRelation: "vista_proximos_service"
             referencedColumns: ["ultimo_service_id"]
           },
@@ -1147,6 +1228,8 @@ export type Database = {
           aceite_tipo: string | null
           alineacion: boolean | null
           anulado: boolean
+          beneficio_hasta_fecha: string | null
+          beneficio_hasta_km: number | null
           created_at: string
           desbloqueado_hasta: string | null
           desbloqueado_por: string | null
@@ -1170,6 +1253,8 @@ export type Database = {
           aceite_tipo?: string | null
           alineacion?: boolean | null
           anulado?: boolean
+          beneficio_hasta_fecha?: string | null
+          beneficio_hasta_km?: number | null
           created_at?: string
           desbloqueado_hasta?: string | null
           desbloqueado_por?: string | null
@@ -1193,6 +1278,8 @@ export type Database = {
           aceite_tipo?: string | null
           alineacion?: boolean | null
           anulado?: boolean
+          beneficio_hasta_fecha?: string | null
+          beneficio_hasta_km?: number | null
           created_at?: string
           desbloqueado_hasta?: string | null
           desbloqueado_por?: string | null
@@ -1418,6 +1505,13 @@ export type Database = {
             foreignKeyName: "trabajos_pendientes_origen_service_id_fkey"
             columns: ["origen_service_id"]
             isOneToOne: false
+            referencedRelation: "vista_proximos_neumaticos"
+            referencedColumns: ["ultimo_service_id"]
+          },
+          {
+            foreignKeyName: "trabajos_pendientes_origen_service_id_fkey"
+            columns: ["origen_service_id"]
+            isOneToOne: false
             referencedRelation: "vista_proximos_service"
             referencedColumns: ["ultimo_service_id"]
           },
@@ -1427,6 +1521,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "services"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trabajos_pendientes_resuelto_service_id_fkey"
+            columns: ["resuelto_service_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_neumaticos"
+            referencedColumns: ["ultimo_service_id"]
           },
           {
             foreignKeyName: "trabajos_pendientes_resuelto_service_id_fkey"
@@ -1546,6 +1647,13 @@ export type Database = {
             foreignKeyName: "vehiculos_cliente_id_fkey"
             columns: ["cliente_id"]
             isOneToOne: false
+            referencedRelation: "vista_proximos_neumaticos"
+            referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "vehiculos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
             referencedRelation: "vista_proximos_service"
             referencedColumns: ["cliente_id"]
           },
@@ -1634,6 +1742,13 @@ export type Database = {
             foreignKeyName: "trabajos_pendientes_origen_service_id_fkey"
             columns: ["origen_service_id"]
             isOneToOne: false
+            referencedRelation: "vista_proximos_neumaticos"
+            referencedColumns: ["ultimo_service_id"]
+          },
+          {
+            foreignKeyName: "trabajos_pendientes_origen_service_id_fkey"
+            columns: ["origen_service_id"]
+            isOneToOne: false
             referencedRelation: "vista_proximos_service"
             referencedColumns: ["ultimo_service_id"]
           },
@@ -1669,8 +1784,76 @@ export type Database = {
             foreignKeyName: "vehiculos_cliente_id_fkey"
             columns: ["cliente_id"]
             isOneToOne: false
+            referencedRelation: "vista_proximos_neumaticos"
+            referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "vehiculos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
             referencedRelation: "vista_proximos_service"
             referencedColumns: ["cliente_id"]
+          },
+        ]
+      }
+      vista_proximos_neumaticos: {
+        Row: {
+          anio_dot: number | null
+          cantidad_services: number | null
+          cliente_id: string | null
+          cliente_nombre: string | null
+          cliente_telefono: string | null
+          contactado: boolean | null
+          dias_hasta: number | null
+          estado: Database["public"]["Enums"]["estado_contacto"] | null
+          estimacion_inicial: boolean | null
+          fecha_estimada: string | null
+          km_faltantes: number | null
+          km_objetivo: number | null
+          km_por_dia: number | null
+          lubricentro_id: string | null
+          marca: string | null
+          mm_minimo: number | null
+          modelo: string | null
+          motivos: string[] | null
+          patente: string | null
+          patente_normalizada: string | null
+          prox_service_km: number | null
+          sucursal_id: string | null
+          sucursal_nombre: string | null
+          ultimo_service_fecha: string | null
+          ultimo_service_id: string | null
+          ultimo_service_km: number | null
+          vehiculo_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "services_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "services_sucursal_id_fkey"
+            columns: ["sucursal_id"]
+            isOneToOne: false
+            referencedRelation: "sucursales"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "services_vehiculo_id_fkey"
+            columns: ["vehiculo_id"]
+            isOneToOne: false
+            referencedRelation: "vehiculos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "services_vehiculo_id_fkey"
+            columns: ["vehiculo_id"]
+            isOneToOne: false
+            referencedRelation: "vista_vehiculos"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -1766,6 +1949,13 @@ export type Database = {
             foreignKeyName: "vehiculos_cliente_id_fkey"
             columns: ["cliente_id"]
             isOneToOne: false
+            referencedRelation: "vista_proximos_neumaticos"
+            referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "vehiculos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
             referencedRelation: "vista_proximos_service"
             referencedColumns: ["cliente_id"]
           },
@@ -1856,6 +2046,10 @@ export type Database = {
           vehiculo_id: string
         }[]
       }
+      calcular_beneficio_neumaticos: {
+        Args: { p_service_id: string }
+        Returns: undefined
+      }
       catalogo_features_plan: { Args: never; Returns: string[] }
       catalogo_limites_plan: { Args: never; Returns: string[] }
       ciclos_fidelizacion: {
@@ -1866,6 +2060,7 @@ export type Database = {
         }[]
       }
       completar_onboarding: { Args: never; Returns: Json }
+      completar_templates_neumaticos: { Args: never; Returns: number }
       confirmar_diseno: { Args: never; Returns: Json }
       contactado_fidelli: {
         Args: { p_lubricentro_id: string }
@@ -1911,6 +2106,7 @@ export type Database = {
       }
       desbloquear_service: { Args: { p_service_id: string }; Returns: string }
       dias_de_aviso: { Args: never; Returns: number }
+      dot_a_fecha: { Args: { p_dot: string }; Returns: string }
       estado_atencion: {
         Args: {
           p_estado: Database["public"]["Enums"]["estado_suscripcion"]
@@ -2134,7 +2330,12 @@ export type Database = {
     Enums: {
       alcance_premio: "services" | "todos"
       canal_contacto: "whatsapp" | "manual"
-      estado_contacto: "urgente" | "proximo" | "vencido" | "pendiente"
+      estado_contacto:
+        | "urgente"
+        | "proximo"
+        | "vencido"
+        | "pendiente"
+        | "neumaticos"
       estado_pendiente: "pendiente" | "resuelto" | "descartado"
       estado_suscripcion: "trial" | "activa" | "vencida" | "cancelada"
       item_tipo:
@@ -2291,7 +2492,13 @@ export const Constants = {
     Enums: {
       alcance_premio: ["services", "todos"],
       canal_contacto: ["whatsapp", "manual"],
-      estado_contacto: ["urgente", "proximo", "vencido", "pendiente"],
+      estado_contacto: [
+        "urgente",
+        "proximo",
+        "vencido",
+        "pendiente",
+        "neumaticos",
+      ],
       estado_pendiente: ["pendiente", "resuelto", "descartado"],
       estado_suscripcion: ["trial", "activa", "vencida", "cancelada"],
       item_tipo: [
