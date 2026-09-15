@@ -14,7 +14,7 @@ import {
 } from "@/lib/ruedas";
 
 export type ItemCargado = {
-  /** Uno de los 11 renglones; ausente en un renglón libre de mecánica. */
+  /** Uno de los renglones del cartón; ausente en un renglón libre de mecánica. */
   tipo?: string;
   producto_id: string | null;
   detalle: string | null;

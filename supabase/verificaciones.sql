@@ -2366,3 +2366,140 @@ drop function r16_super();
 drop function r16_owner();
 drop function r16_lub();
 -- <<< R16-fin
+
+-- ============================================================
+-- R17 · Los renglones del vehículo pesado (sprint de septiembre de 2026)
+--
+-- Dos invariantes que, rotos, no dan error:
+--   (a) El orden del enum item_tipo ES el orden del cartón. "order by
+--       item_tipo" es lo que dibuja el papel en get_carton, en la
+--       exportación y en pantalla: un valor agregado al final —o anclado
+--       en el lugar equivocado— pone el filtro de urea después de los
+--       aditivos en el cartón de un camión. El build pasa igual.
+--   (b) Ninguna función SQL enumera valores de item_tipo. guardar_service
+--       y actualizar_service tienen que aceptar los 21 tal cual llegan,
+--       y get_carton devolverlos en el orden del papel. Si alguien escribe
+--       un `case item_tipo when …` o un CHECK con la lista de los once,
+--       esto lo atrapa.
+-- ============================================================
+
+-- >>> R17a
+do $$
+declare
+  v_esperado text[] := array[
+    'filtro_aceite', 'filtro_aire', 'filtro_combustible', 'filtro_habitaculo',
+    'filtro_combustible_secundario', 'filtro_separador_agua', 'filtro_aire_secundario',
+    'filtro_secador_aire', 'filtro_urea', 'filtro_hidraulico',
+    'aceite_caja', 'aceite_diferencial', 'aceite_hidraulico',
+    'aceite_caja_reductora', 'aceite_diferencial_delantero',
+    'liq_refrigerante', 'liq_frenos',
+    'aditivo_motor', 'aditivo_transmision',
+    'engrase', 'bateria'
+  ];
+  v_real text[];
+begin
+  select array_agg(e.enumlabel::text order by e.enumsortorder) into v_real
+  from pg_enum e where e.enumtypid = 'item_tipo'::regtype;
+
+  if v_real is distinct from v_esperado then
+    raise exception E'R17a ORDEN DEL CARTÓN ROTO: item_tipo no está en el orden del papel.\n  real:     %\n  esperado: %',
+      array_to_string(v_real, ' · '), array_to_string(v_esperado, ' · ')
+      using hint =
+        'Todo valor nuevo de item_tipo entra con ADD VALUE … AFTER, anclado a un valor que ya existía '
+        '(ver 20260915120000_item_tipo_pesado). Nunca al final: el orden del enum es el del cartón físico.';
+  end if;
+end $$;
+-- <<< R17a
+
+-- >>> R17b
+do $$
+declare
+  v_lub   uuid;
+  v_owner uuid;
+  v_suc   uuid;
+  v_veh   uuid;
+  v_pat   text;
+  v_serv  uuid;
+  v_items jsonb;
+  v_todos text[];
+  v_menos text[];
+  v_tipos text[];
+  v_json  jsonb;
+begin
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+  select u.id into v_owner from usuarios u where u.lubricentro_id = v_lub and u.rol = 'owner' limit 1;
+  select su.id into v_suc from sucursales su where su.lubricentro_id = v_lub and su.activa limit 1;
+  select v.id, v.patente_normalizada into v_veh, v_pat
+  from vehiculos v where v.lubricentro_id = v_lub order by v.created_at limit 1;
+
+  -- Los 21, en el orden del enum tal cual está en la base (R17a ya
+  -- verificó que ese orden es el del cartón).
+  select array_agg(e.enumlabel::text order by e.enumsortorder) into v_todos
+  from pg_enum e where e.enumtypid = 'item_tipo'::regtype;
+  -- Guarda explícita, para que este bloque no se pruebe a sí mismo: con
+  -- la base sin la migración, 11 contra 11 pasaba en verde.
+  if coalesce(array_length(v_todos, 1), 0) <> 21 then
+    raise exception 'R17b: item_tipo tiene % valores, esperaba los 21 del cartón de camión (20260915120000).',
+      coalesce(array_length(v_todos, 1), 0);
+  end if;
+  -- Los mismos sin el primero y sin el último: lo que la edición conserva.
+  select array_agg(u.t order by u.n) into v_menos
+  from unnest(v_todos) with ordinality as u(t, n)
+  where u.t not in ('filtro_aceite', 'bateria');
+
+  -- 1 · Un service de camión completo: el cartón entero, los 21 a la vez.
+  select jsonb_agg(jsonb_build_object('tipo', u.t, 'cambiado', true) order by u.n) into v_items
+  from unnest(v_todos) with ordinality as u(t, n);
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  v_serv := guardar_service(
+    p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => current_date,
+    p_kilometros => 998100, p_aceite_tipo => '15W40', p_prox_service_km => 1023100,
+    p_items => v_items);
+
+  select array_agg(si.item_tipo::text order by si.item_tipo) into v_tipos
+  from service_items si where si.service_id = v_serv;
+  if v_tipos is distinct from v_todos then
+    raise exception 'R17b: guardar_service guardó % renglones de 21 (%). Alguna función SQL enumera valores de item_tipo.',
+      coalesce(array_length(v_tipos, 1), 0), array_to_string(v_tipos, ' · ');
+  end if;
+
+  -- 2 · La edición conserva los renglones nuevos y borra SOLO lo que dejó
+  --     de viajar: el `delete … not in (…)` de actualizar_service es una
+  --     subconsulta sobre el jsonb entrante, no una lista fija.
+  select jsonb_agg(jsonb_build_object('tipo', u.t, 'cambiado', false) order by u.n) into v_items
+  from unnest(v_menos) with ordinality as u(t, n);
+  perform actualizar_service(
+    p_service_id => v_serv, p_sucursal_id => v_suc, p_fecha => current_date,
+    p_kilometros => 998100, p_aceite_tipo => '15W40', p_prox_service_km => 1023100,
+    p_items => v_items);
+
+  select array_agg(si.item_tipo::text order by si.item_tipo) into v_tipos
+  from service_items si where si.service_id = v_serv;
+  if v_tipos is distinct from v_menos then
+    raise exception 'R17b: actualizar_service dejó % renglones (esperaba 19: sin filtro_aceite ni bateria, con los nueve de camión): %',
+      coalesce(array_length(v_tipos, 1), 0), array_to_string(v_tipos, ' · ');
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- 3 · La puerta pública devuelve los renglones en el orden del cartón.
+  --     El service recién cargado es el más nuevo: va primero.
+  v_json := get_carton('demo', v_pat);
+  select array_agg(i.item->>'tipo' order by i.n) into v_tipos
+  from jsonb_array_elements(v_json->'services'->0->'items') with ordinality as i(item, n);
+  if v_tipos is distinct from v_menos then
+    raise exception 'R17b: get_carton devolvió los renglones fuera del orden del cartón: %',
+      array_to_string(v_tipos, ' · ');
+  end if;
+  delete from landing_busquedas where lubricentro_id = v_lub and patente = v_pat;
+
+  -- limpieza total
+  delete from service_items where service_id = v_serv;
+  delete from services where id = v_serv;
+end $$;
+-- <<< R17b

@@ -103,7 +103,7 @@ export default async function PaginaEditarService({ params }: Props) {
   // El detalle del renglón como lo edita el mecánico: texto. Si el renglón
   // vino con producto del catálogo, el texto es su nombre — al guardar, el
   // match por nombre lo vuelve a vincular como producto.
-  // Los 11 renglones del cartón (item_tipo) y los libres de mecánica
+  // Los renglones del cartón (item_tipo) y los libres de mecánica
   // (item_tipo null) se precargan por caminos distintos.
   const renglonesCarton = service.service_items.filter(
     (i) => i.item_tipo !== null,
