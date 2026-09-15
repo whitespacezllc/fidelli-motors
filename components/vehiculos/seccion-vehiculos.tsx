@@ -16,6 +16,7 @@ import { formatearFecha } from "@/lib/fechas";
 import { formatearKm } from "@/lib/renglones";
 import type { EstadoService } from "@/lib/servicios";
 import { ETIQUETA_TIPO, type TipoTrabajo } from "@/lib/trabajos";
+import type { ClaseVehiculo } from "@/lib/renglones";
 
 type ServiceDelVehiculo = {
   id: string;
@@ -51,6 +52,8 @@ type Vehiculo = {
   marca: string | null;
   modelo: string | null;
   anio: number | null;
+  /** null = nunca se preguntó. El dialog de edición la sugiere por la marca. */
+  clase?: ClaseVehiculo | null;
   cantidad_trabajos: number;
   ultimo_service_fecha: string | null;
   /** El último trabajo de CUALQUIER tipo. Distinto del último service

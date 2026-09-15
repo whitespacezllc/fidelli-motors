@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { sesionParaEscribir } from "@/lib/auth/session";
 import { esPatenteValida, PATENTE_FORMATO } from "@/lib/texto";
 import { hoyISO } from "@/lib/fechas";
+import { esClaseVehiculo } from "@/lib/clase-vehiculo";
+import type { ClaseVehiculo } from "@/lib/renglones";
 
 export type EstadoVehiculo = { error?: string; ok?: boolean };
 
@@ -36,6 +38,8 @@ type Campos =
       marca: string | null;
       modelo: string | null;
       anio: number | null;
+      /** null = no se contestó (un formulario que no la manda). */
+      clase: ClaseVehiculo | null;
     }
   | { ok: false; error: string };
 
@@ -44,6 +48,9 @@ function leerCampos(formData: FormData): Campos {
   const marca = String(formData.get("marca") ?? "").trim() || null;
   const modelo = String(formData.get("modelo") ?? "").trim() || null;
   const anioTexto = String(formData.get("anio") ?? "").trim();
+  // Solo liviano o pesado; cualquier otra cosa es "nunca se preguntó".
+  const claseTexto = formData.get("clase");
+  const clase = esClaseVehiculo(claseTexto) ? claseTexto : null;
 
   if (!esPatenteValida(patente)) {
     return { ok: false, error: PATENTE_FORMATO };
@@ -64,7 +71,7 @@ function leerCampos(formData: FormData): Campos {
 
   // La patente va tal como la escribió el mecánico: patente_normalizada la
   // calcula el trigger de la base, no el front.
-  return { ok: true, patente, marca, modelo, anio };
+  return { ok: true, patente, marca, modelo, anio, clase };
 }
 
 function traducirError(error: { code?: string; message?: string }): string {
@@ -97,6 +104,7 @@ export async function crearVehiculo(
     marca: campos.marca,
     modelo: campos.modelo,
     anio: campos.anio,
+    clase: campos.clase,
   });
 
   if (error) return { error: traducirError(error) };
@@ -126,6 +134,7 @@ export async function editarVehiculo(
       marca: campos.marca,
       modelo: campos.modelo,
       anio: campos.anio,
+      clase: campos.clase,
     })
     .eq("id", id);
 

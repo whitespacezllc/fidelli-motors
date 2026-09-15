@@ -2,6 +2,8 @@
 
 import { useActionState, useEffect, useState } from "react";
 import { CamposMarcaModelo } from "@/components/vehiculos/campos-marca-modelo";
+import { SelectorClase } from "@/components/vehiculos/selector-clase";
+import type { ClaseVehiculo } from "@/lib/renglones";
 import { Dialog, DialogTrigger, DialogContenido } from "@/components/ui/dialog";
 import { Boton, clasesBoton } from "@/components/ui/boton";
 import { IconoCandado } from "@/components/iconos";
@@ -24,6 +26,8 @@ type Vehiculo = {
   marca: string | null;
   modelo: string | null;
   anio: number | null;
+  /** null = nunca se preguntó: el selector la sugiere por la marca. */
+  clase?: ClaseVehiculo | null;
   // created_at del PRIMER service no anulado, o null si no tiene ninguno.
   // De ahí sale la ventana de 72 hs para corregir la patente.
   primerServiceEn?: string | null;
@@ -53,6 +57,8 @@ function FormularioVehiculo({
   );
   const [sinConexion, setSinConexion] = useState(false);
   const [errorPatente, setErrorPatente] = useState<string | null>(null);
+  // La marca, espejada solo para pre-seleccionar la clase.
+  const [marca, setMarca] = useState(vehiculo?.marca ?? "");
 
   useEffect(() => {
     if (estado.ok) alGuardar();
@@ -184,6 +190,7 @@ function FormularioVehiculo({
         marcas={marcas}
         marcaInicial={vehiculo?.marca ?? ""}
         modeloInicial={vehiculo?.modelo ?? ""}
+        alCambiarMarca={setMarca}
       />
 
       <div>
@@ -202,6 +209,11 @@ function FormularioVehiculo({
           className={`${CLASE_CAMPO} tabular-nums`}
         />
       </div>
+
+      {/* La clase se contesta una vez y queda. Al editar un auto cargado
+          antes del sprint (clase null), la marca la sugiere igual: así los
+          camiones que ya estaban se marcan a medida que vuelven. */}
+      <SelectorClase marca={marca} inicial={vehiculo?.clase ?? null} />
 
       <Boton type="submit" tam="lg" disabled={pendiente} className="mt-1 w-full">
         {pendiente ? "Guardando…" : "Guardar"}

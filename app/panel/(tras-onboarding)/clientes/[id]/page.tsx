@@ -79,7 +79,7 @@ export default async function FichaCliente({
 
   const { data: filasVehiculos } = await supabase
     .from("vista_vehiculos")
-    .select("id, patente, marca, modelo, anio, cantidad_trabajos, ultimo_service_fecha, ultima_visita_fecha")
+    .select("id, patente, marca, modelo, anio, clase, cantidad_trabajos, ultimo_service_fecha, ultima_visita_fecha")
     .eq("cliente_id", cliente.id)
     .order("created_at");
 
@@ -94,6 +94,7 @@ export default async function FichaCliente({
             marca: v.marca,
             modelo: v.modelo,
             anio: v.anio,
+            clase: v.clase,
             cantidad_trabajos: v.cantidad_trabajos ?? 0,
             ultimo_service_fecha: v.ultimo_service_fecha,
             ultima_visita_fecha: v.ultima_visita_fecha,

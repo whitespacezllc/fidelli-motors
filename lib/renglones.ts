@@ -15,12 +15,13 @@ export const GRUPOS = [
 
 export type Grupo = (typeof GRUPOS)[number];
 
-// La clase del vehículo, como la lee el front: `clase ?? "liviano"`. Es
-// un DEFAULT de qué viene desplegado, nunca una puerta: en ninguna
-// combinación de clase queda un renglón inalcanzable. La moto no vive
-// acá (se deriva de la chapa, ver 20260904120000). Un tercer valor que
-// aparezca algún día cae en el set liviano, nunca en ninguno.
-export type ClaseVehiculo = "liviano" | "pesado";
+// La clase del vehículo (vehiculos.clase, 20260915130000), como la lee el
+// front: `clase ?? "liviano"`. Es un DEFAULT de qué viene desplegado,
+// nunca una puerta: en ninguna combinación de clase queda un renglón
+// inalcanzable. La moto no vive acá (se deriva de la chapa, ver
+// 20260904120000). Un tercer valor que aparezca algún día cae en el set
+// liviano, nunca en ninguno.
+export type ClaseVehiculo = Database["public"]["Enums"]["clase_vehiculo"];
 
 export function normalizarClase(valor: unknown): ClaseVehiculo {
   return valor === "pesado" ? "pesado" : "liviano";

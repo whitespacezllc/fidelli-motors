@@ -42,7 +42,7 @@ export default async function PaginaEditarService({ params }: Props) {
            aceite_tipo, aceite_producto_id,
            prox_service_km, observaciones, anulado, desbloqueado_hasta,
            sucursal_id, vehiculo_id,
-           vehiculos(patente, marca, modelo, clientes(nombre)),
+           vehiculos(patente, marca, modelo, clase, clientes(nombre)),
            service_items(item_tipo, detalle, cambiado, cantidad, producto_id, productos(nombre, marca)),
            service_ruedas(posicion, posicion_anterior, colocada, rotada, balanceada,
                           reparada, producto_id, marca, medida, indice_carga_vel,
@@ -194,6 +194,7 @@ export default async function PaginaEditarService({ params }: Props) {
               .filter(Boolean)
               .join(" ") || "Vehículo",
           clienteNombre: service.vehiculos?.clientes?.nombre ?? "",
+          clase: service.vehiculos?.clase ?? null,
           lubricentroNombre: sesion?.lubricentroNombre ?? "Tu lubricentro",
           colorTenant: configRes.data?.color_primario ?? "#0A0A0A",
           colorPapel: configRes.data?.color_carton ?? null,

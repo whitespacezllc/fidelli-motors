@@ -9,6 +9,8 @@ import type {
 } from "@/lib/cliente/landing";
 import type { TipoTrabajo } from "@/lib/trabajos";
 import type { PosicionRueda } from "@/lib/ruedas";
+import type { ClaseVehiculo } from "@/lib/renglones";
+import { esClaseVehiculo } from "@/lib/clase-vehiculo";
 
 // Toda la pantalla del vehículo sale de una sola llamada a get_carton.
 // La función ya respeta campos_visibles del tenant: si el lubri apagó
@@ -107,6 +109,8 @@ export type Carton = {
     marca: string | null;
     modelo: string | null;
     anio: number | null;
+    /** null = nunca se preguntó; el papel la lee como liviano. */
+    clase: ClaseVehiculo | null;
   };
   /** Recomendaciones del taller sobre el auto. Solo llegan las visibles:
    *  get_carton filtra por nota, y la fecha es SIEMPRE la de creación. */
@@ -145,6 +149,7 @@ type CartonJson = {
     marca: string | null;
     modelo: string | null;
     anio: number | null;
+    clase?: string | null;
   };
   notas?: { fecha: string; contenido: string }[] | null;
   pendientes?:
@@ -248,6 +253,8 @@ export async function obtenerCarton(
         marca: json.vehiculo?.marca ?? null,
         modelo: json.vehiculo?.modelo ?? null,
         anio: json.vehiculo?.anio ?? null,
+        // Un JSON de antes de la migración no trae la clave: null.
+        clase: esClaseVehiculo(json.vehiculo?.clase) ? json.vehiculo.clase : null,
       },
       notas: (json.notas ?? []).map((n) => ({
         fecha: n.fecha,
