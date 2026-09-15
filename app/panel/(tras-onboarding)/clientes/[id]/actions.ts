@@ -134,7 +134,11 @@ export async function editarVehiculo(
       marca: campos.marca,
       modelo: campos.modelo,
       anio: campos.anio,
-      clase: campos.clase,
+      // La clase viaja SOLO si se contestó. Un formulario que no la manda
+      // —o la manda vacía, porque el selector no se tocó— no puede borrar
+      // una clasificación. Se resigna volver una clase a null: nadie lo
+      // necesita. Lo vigila R19.
+      ...(campos.clase ? { clase: campos.clase } : {}),
     })
     .eq("id", id);
 

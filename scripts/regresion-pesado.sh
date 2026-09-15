@@ -13,6 +13,9 @@
 #          crear_cliente_con_vehiculo que ignora p_clase; y get_carton que
 #          deja de emitirla. Las dos funciones rotas salen de la MISMA
 #          migración, con sed sobre las líneas marcadas `-- @clase`.
+#   R19  · un trigger "útil" que rellena la clase al editar: la edición sin
+#          contestarla deja de dejarla en null. Una sugerencia no es una
+#          respuesta, tampoco en la base.
 #
 # Todo corre en transacciones con rollback: no deja rastro. ADD VALUE
 # entra en una transacción desde Postgres 12; lo que no se puede es USAR
@@ -56,5 +59,8 @@ echo "── R18 · la clase con default, el alta que la ignora, la puerta públ
 correr "default 'liviano'" "alter table vehiculos alter column clase set default 'liviano';" R18 "R18"
 correr "alta que ignora p_clase" "$(funcion_rota crear_cliente_con_vehiculo "/@clase/s/p_clase)/null)/")" R18 "R18"
 correr "get_carton sin la clase" "$(funcion_rota get_carton "/@clase/s/v_vehiculo.clase/null/")" R18 "R18"
+
+echo "── R19 · un trigger que rellena la clase al editar ──"
+correr "trigger que inventa liviano" "create function r19_rellena() returns trigger language plpgsql as \$f\$ begin new.clase := coalesce(new.clase, 'liviano'); return new; end \$f\$; create trigger r19_rellena before update on vehiculos for each row execute function r19_rellena();" R19 "R19"
 
 exit $fallas

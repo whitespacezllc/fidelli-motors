@@ -2595,3 +2595,76 @@ begin
   delete from clientes where id in (v_cli_p, v_cli_n);
 end $$;
 -- <<< R18
+
+-- ============================================================
+-- R19 · Editar un vehículo sin contestar la clase la deja en null
+--
+-- Una sugerencia no es una respuesta. Al editar un vehículo con la clase
+-- en null, el selector la SUGIERE por la marca pero no la manda hasta que
+-- el mecánico toca un botón: el input oculto viaja vacío, esClaseVehiculo
+-- lo lee como null y editarVehiculo no incluye `clase` en el update. Este
+-- bloque cubre la mitad que vive en la base: el update que emite esa
+-- acción —los cuatro campos, sin clase— tiene que dejar la clase como
+-- estaba, null o contestada, y nada de la base (un trigger "útil", un
+-- default) puede inventar una clasificación. La mitad del front (el
+-- input vacío y el update sin la clave) se vio en rojo y en verde a mano
+-- en #95. Se resigna volver una clase a null: nadie lo necesita.
+-- ============================================================
+
+-- >>> R19
+do $$
+declare
+  v_lub   uuid;
+  v_owner uuid;
+  v_cli   uuid;
+  v_veh   uuid;
+  v_clase clase_vehiculo;
+begin
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+  select u.id into v_owner from usuarios u where u.lubricentro_id = v_lub and u.rol = 'owner' limit 1;
+
+  -- Un auto cargado antes del sprint: la clase nunca se preguntó.
+  insert into clientes (lubricentro_id, nombre, telefono)
+  values (v_lub, 'Cliente R19', '351555190') returning id into v_cli;
+  insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo, anio)
+  values (v_lub, v_cli, 'AR 019 PL', 'Chevrolet', 'Corsa', 2011) returning id into v_veh;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  -- 1 · La edición sin tocar el selector: exactamente lo que escribe
+  --     editarVehiculo cuando la clase no se contestó — los cuatro
+  --     campos, sin clase.
+  update vehiculos
+  set patente = 'AR 019 PL', marca = 'Chevrolet', modelo = 'Corsa', anio = 2012
+  where id = v_veh;
+
+  select clase into v_clase from vehiculos where id = v_veh;
+  if v_clase is not null then
+    raise exception 'R19: editar un vehículo sin contestar la clase la dejó en % — tiene que quedar null. Algo en la base (un trigger, un default) está inventando una clasificación.', v_clase;
+  end if;
+
+  -- 2 · La edición que SÍ la contesta la guarda.
+  update vehiculos set clase = 'pesado' where id = v_veh;
+  select clase into v_clase from vehiculos where id = v_veh;
+  if v_clase is distinct from 'pesado'::clase_vehiculo then
+    raise exception 'R19: contestar la clase al editar no la guardó (quedó %).', v_clase;
+  end if;
+
+  -- 3 · Y una edición posterior sin la clave no la pisa: el update de
+  --     editarVehiculo no manda `clase` cuando no se contestó.
+  update vehiculos set marca = 'Scania', modelo = 'R450' where id = v_veh;
+  select clase into v_clase from vehiculos where id = v_veh;
+  if v_clase is distinct from 'pesado'::clase_vehiculo then
+    raise exception 'R19: una edición sin la clase pisó la clasificación guardada (quedó %).', v_clase;
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- limpieza total
+  delete from vehiculos where id = v_veh;
+  delete from clientes where id = v_cli;
+end $$;
+-- <<< R19

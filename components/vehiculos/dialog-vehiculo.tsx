@@ -211,9 +211,16 @@ function FormularioVehiculo({
       </div>
 
       {/* La clase se contesta una vez y queda. Al editar un auto cargado
-          antes del sprint (clase null), la marca la sugiere igual: así los
-          camiones que ya estaban se marcan a medida que vuelven. */}
-      <SelectorClase marca={marca} inicial={vehiculo?.clase ?? null} />
+          antes del sprint (clase null), la marca la sugiere pero no la
+          manda: una sugerencia no es una respuesta, y el camión se marca
+          cuando alguien la confirma con un toque, no por abrir el dialog
+          a corregir el año. Al crear desde acá, como en el Momento 0, la
+          sugerencia viaja: mandar el alta es la decisión. */}
+      <SelectorClase
+        marca={marca}
+        inicial={vehiculo?.clase ?? null}
+        modo={vehiculo ? "edicion" : "alta"}
+      />
 
       <Boton type="submit" tam="lg" disabled={pendiente} className="mt-1 w-full">
         {pendiente ? "Guardando…" : "Guardar"}
