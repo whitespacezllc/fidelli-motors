@@ -17,7 +17,7 @@ import type { PosicionRueda } from "@/lib/ruedas";
 // no se reimplementa nada de eso — se consume lo que llega.
 
 export type ItemCarton = {
-  /** Uno de los 11 renglones del cartón, o null: renglón libre de mecánica. */
+  /** Uno de los renglones del cartón (lib/renglones), o null: renglón libre de mecánica. */
   tipo: string | null;
   detalle: string | null;
   /** true = se cambió; false = se revisó y estaba bien ("OK"). */
@@ -323,7 +323,7 @@ export function marcadosDe(
 > {
   return Object.fromEntries(
     service.items
-      // Solo los 11 renglones del cartón: los libres (tipo null) son de
+      // Solo los renglones del cartón: los libres (tipo null) son de
       // la orden de trabajo de mecánica y salen por renglonesLibres().
       .filter((i) => i.tipo !== null)
       .map((i) => [

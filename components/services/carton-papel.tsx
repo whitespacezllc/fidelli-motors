@@ -3,6 +3,9 @@ import {
   GRUPOS,
   GRUPOS_CON_ETIQUETA_EN_PAPEL,
   formatearKm,
+  desplegadoPorClase,
+  etiquetaPapel,
+  type ClaseVehiculo,
 } from "@/lib/renglones";
 import { formatearFecha } from "@/lib/fechas";
 import { paletaTenant } from "@/lib/cliente/color";
@@ -193,6 +196,21 @@ export function CartonPapel({
   // explicar — un cartón todo de tildes se lee solo, como siempre.
   const hayRevisados = Object.values(datos.marcados).some((m) => !m.cambiado);
 
+  // La clase del vehículo llega en la fase 2 del sprint (columna
+  // vehiculos.clase). Hasta entonces el papel de referencia es el de
+  // siempre, el de un auto.
+  const clase: ClaseVehiculo = "liviano";
+
+  // Lo que se imprime: los renglones de la clase del vehículo —el cartón
+  // de referencia, marcados o no, como el papel— más los que ESTE service
+  // marcó aunque la clase no los despliegue. Para un camión el «cartón
+  // físico» de referencia no existe (no hay papel con urea), así que el
+  // troquel imprime lo que el service tiene, en el orden del cartón, y
+  // nunca los 21 a la vez: está diseñado para 11.
+  const enPapel = RENGLONES.filter(
+    (r) => desplegadoPorClase(r, clase) || r.tipo in datos.marcados,
+  );
+
   // La tinta de la etiqueta vertical no puede ser blanca fija: el lubri
   // elige su color y podría ser un amarillo, donde el blanco no se lee.
   const paleta = paletaTenant(datos.colorTenant);
@@ -245,13 +263,15 @@ export function CartonPapel({
         ))}
 
         {GRUPOS.map((grupo) => {
-          const delGrupo = RENGLONES.filter((r) => r.grupo === grupo);
+          const delGrupo = enPapel.filter((r) => r.grupo === grupo);
+          // Un grupo sin renglones (LUBRICACIÓN en un auto) no se imprime.
+          if (delGrupo.length === 0) return null;
           const conEtiqueta = GRUPOS_CON_ETIQUETA_EN_PAPEL.includes(grupo);
 
           const filas = delGrupo.map((r, i) => (
             <Renglon
               key={r.tipo}
-              papel={r.papel}
+              papel={etiquetaPapel(r, clase)}
               marcado={datos.marcados[r.tipo]}
               e={e}
               sinBorde={conEtiqueta && i === delGrupo.length - 1}
@@ -273,6 +293,19 @@ export function CartonPapel({
             </div>
           );
         })}
+
+        {/* Los renglones sueltos —la batería—: sin etiqueta vertical ni
+            encabezado, como los líquidos y los aditivos. */}
+        {enPapel
+          .filter((r) => r.grupo === null)
+          .map((r) => (
+            <Renglon
+              key={r.tipo}
+              papel={r.papel}
+              marcado={datos.marcados[r.tipo]}
+              e={e}
+            />
+          ))}
 
         <div className="flex items-center bg-[var(--tn)]/10">
           <span
@@ -307,7 +340,7 @@ export function CartonPapel({
 // raro. Por eso habla el mismo idioma de papel que el cartón: troquel,
 // grilla con bordes, etiqueta vertical en el color del tenant y una banda
 // de cierre. Lo que cambia es el contenido: descripción del trabajo y
-// renglones libres, sin los 11 fijos y sin PROX. SERV. — eso es del
+// renglones libres, sin los renglones fijos y sin PROX. SERV. — eso es del
 // cambio de aceite.
 // ============================================================
 
@@ -436,7 +469,7 @@ export function CartonPapelMecanica({
 //
 // Mismo idioma que las otras dos piezas: troquel, grilla con bordes,
 // etiqueta vertical en el color del tenant y banda de cierre. Lo que
-// cambia es el cuerpo: no hay 11 renglones ni PROX. SERV. —eso es del
+// cambia es el cuerpo: no hay renglones fijos ni PROX. SERV. —eso es del
 // cambio de aceite— y en su lugar va EL ESQUEMA DEL AUTO.
 //
 // El esquema va DENTRO DEL PAPEL Y FUERA DE LA GRILLA de renglones: un

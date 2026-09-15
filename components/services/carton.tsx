@@ -21,7 +21,11 @@ import {
   SALTO_POR_DEFECTO,
   SALTO_RANGO,
   esSaltoValido,
+  desplegadoPorClase,
+  etiquetaCorta,
+  type ClaseVehiculo,
   type ItemTipo,
+  type Renglon,
 } from "@/lib/renglones";
 import {
   CLASE_CAMPO,
@@ -252,6 +256,9 @@ export function Carton({
     edicion?.cambiados ?? {},
   );
   const [abiertos, setAbiertos] = useState<Record<string, boolean>>({});
+  // El "+" al pie del cartón: los renglones que la clase del vehículo no
+  // despliega. Abierto o cerrado, un renglón MARCADO nunca se oculta.
+  const [otrosAbiertos, setOtrosAbiertos] = useState(false);
   const [proxModo, setProxModo] = useState<ProxModo>(
     () => proxInicial(edicion).modo,
   );
@@ -803,6 +810,114 @@ export function Carton({
     );
   }
 
+  // La clase del vehículo llega en la fase 2 del sprint (columna
+  // vehiculos.clase). Hasta entonces todo vehículo se lee como liviano:
+  // la pantalla de hoy, con los diez renglones nuevos detrás del "+".
+  const clase: ClaseVehiculo = "liviano";
+
+  // A la vista: lo que la clase despliega, lo que el "+" abrió y lo que
+  // ya está marcado. Un renglón MARCADO nunca se oculta — si alguien
+  // prendió la batería y después cierra el "+", la batería sigue ahí:
+  // perder una marca por cerrar un acordeón es la peor falla posible de
+  // esta pantalla. En ninguna combinación queda un renglón inalcanzable.
+  const aLaVista = RENGLONES.filter(
+    (r) =>
+      desplegadoPorClase(r, clase) || otrosAbiertos || r.tipo in marcados,
+  );
+  const ocultos = RENGLONES.length - aLaVista.length;
+
+  // Un renglón del cartón: el interruptor, y prendido, el "¿se cambió?"
+  // y el detalle. Es UNA pieza para los dos lugares donde se dibuja
+  // —dentro de un grupo y suelto— y la clase decide cómo se lee la
+  // etiqueta ("Diferencial" / "Diferencial trasero": mismo valor).
+  function dibujarRenglon(r: Renglon) {
+    const encendido = r.tipo in marcados;
+    return (
+        <div key={r.tipo} className="border-b border-line last:border-b-0">
+          <RenglonInterruptor
+            etiqueta={etiquetaCorta(r, clase)}
+            encendido={encendido}
+            alAlternar={() => alternarRenglon(r.tipo)}
+          />
+
+          {encendido && (
+            <div className="flex flex-col gap-1 px-3.5 pb-3">
+              {/* Prendido = revisado y OK. El segundo toggle dice
+                  que además se cambió — dos estados del papel:
+                  tilde de cambio u "OK" de revisión. */}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={Boolean(cambiados[r.tipo])}
+                onClick={() => alternarCambiado(r.tipo)}
+                className="flex min-h-11 w-full items-center justify-between gap-3 text-left"
+              >
+                <span
+                  className={`text-ui ${
+                    cambiados[r.tipo]
+                      ? "font-semibold text-ink"
+                      : "text-ink-60"
+                  }`}
+                >
+                  {cambiados[r.tipo] ? "Se cambió" : "Revisado, OK — ¿se cambió?"}
+                </span>
+                <span
+                  className={`flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors ${
+                    cambiados[r.tipo] ? "bg-ink" : "bg-line"
+                  }`}
+                >
+                  <span
+                    className={`size-4 rounded-full bg-base shadow-sm transition-transform ${
+                      cambiados[r.tipo] ? "translate-x-4" : "translate-x-0"
+                    }`}
+                  />
+                </span>
+              </button>
+
+              {abiertos[r.tipo] || marcados[r.tipo] ? (
+                <div className="flex items-start gap-2">
+                  <div className="min-w-0 flex-1">
+                    <Combobox
+                      value={marcados[r.tipo]}
+                      onChange={(v) =>
+                        setMarcados((p) => ({ ...p, [r.tipo]: v }))
+                      }
+                      opciones={nombresProductos}
+                      ariaLabel={`Detalle de ${etiquetaCorta(r, clase)}`}
+                    />
+                  </div>
+                  {/* "×2 filtros" sin que el caso normal pida un
+                      toque: prellenado en 1. */}
+                  <input
+                    value={cantidades[r.tipo] ?? "1"}
+                    onChange={(e) =>
+                      setCantidades((prev) => ({
+                        ...prev,
+                        [r.tipo]: e.target.value,
+                      }))
+                    }
+                    inputMode="decimal"
+                    aria-label={`Cantidad de ${etiquetaCorta(r, clase)}`}
+                    className="h-11 w-13 shrink-0 rounded-md border border-line bg-base text-center text-ui text-ink tabular-nums"
+                  />
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setAbiertos((p) => ({ ...p, [r.tipo]: true }))
+                  }
+                  className="min-h-11 self-start text-ui font-semibold text-brand"
+                >
+                  + detalle
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+    );
+  }
+
   // ---------- Momento 1 ----------
   return (
     <div>
@@ -1237,15 +1352,27 @@ export function Carton({
           )}
         </div>
 
-        {/* 5. Los 11 renglones, agrupados como el papel.
-            Los cuatro grupos son listas independientes: en desktop van en dos
+        {/* 5. Los renglones, agrupados como el papel.
+            Los grupos son listas independientes: en desktop van en dos
             columnas y el cartón entra casi entero en una pantalla. El orden
             de lectura no se rompe — se leen igual de arriba a abajo y de
             izquierda a derecha, en el orden del papel.
             items-start evita que un grupo con un detalle abierto estire al
-            de al lado. */}
-        <div className="grid gap-4 sm:grid-cols-2 sm:items-start">
-        {GRUPOS.map((grupo) => (
+            de al lado.
+
+            LO QUE VIENE DESPLEGADO LO DECIDE LA CLASE DEL VEHÍCULO; lo que
+            existe, no. Un auto ve los 11 de siempre; un camión, los 20 de
+            camión; y el "+" de abajo alcanza a todos los demás. */}
+        <div
+          id="renglones-carton"
+          className="grid gap-4 sm:grid-cols-2 sm:items-start"
+        >
+        {GRUPOS.map((grupo) => {
+          const delGrupo = aLaVista.filter((r) => r.grupo === grupo);
+          // Un grupo sin nada a la vista (LUBRICACIÓN en un auto con el
+          // "+" cerrado) no dibuja ni el encabezado.
+          if (delGrupo.length === 0) return null;
+          return (
           // SIN overflow-hidden: recortaba el panel del combobox de detalle,
           // que se despliega por debajo del borde de la tarjeta. El redondeo
           // del encabezado se resuelve en su propia clase.
@@ -1253,96 +1380,39 @@ export function Carton({
             <p className="rounded-t-[11px] border-b border-line bg-surface px-3.5 py-2 text-label font-semibold tracking-[0.12em] text-ink-60 uppercase">
               {grupo}
             </p>
-            {RENGLONES.filter((r) => r.grupo === grupo).map((r) => {
-              const encendido = r.tipo in marcados;
-              return (
-                <div key={r.tipo} className="border-b border-line last:border-b-0">
-                  <RenglonInterruptor
-                    etiqueta={r.corto}
-                    encendido={encendido}
-                    alAlternar={() => alternarRenglon(r.tipo)}
-                  />
-
-                  {encendido && (
-                    <div className="flex flex-col gap-1 px-3.5 pb-3">
-                      {/* Prendido = revisado y OK. El segundo toggle dice
-                          que además se cambió — dos estados del papel:
-                          tilde de cambio u "OK" de revisión. */}
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={Boolean(cambiados[r.tipo])}
-                        onClick={() => alternarCambiado(r.tipo)}
-                        className="flex min-h-11 w-full items-center justify-between gap-3 text-left"
-                      >
-                        <span
-                          className={`text-ui ${
-                            cambiados[r.tipo]
-                              ? "font-semibold text-ink"
-                              : "text-ink-60"
-                          }`}
-                        >
-                          {cambiados[r.tipo] ? "Se cambió" : "Revisado, OK — ¿se cambió?"}
-                        </span>
-                        <span
-                          className={`flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors ${
-                            cambiados[r.tipo] ? "bg-ink" : "bg-line"
-                          }`}
-                        >
-                          <span
-                            className={`size-4 rounded-full bg-base shadow-sm transition-transform ${
-                              cambiados[r.tipo] ? "translate-x-4" : "translate-x-0"
-                            }`}
-                          />
-                        </span>
-                      </button>
-
-                      {abiertos[r.tipo] || marcados[r.tipo] ? (
-                        <div className="flex items-start gap-2">
-                          <div className="min-w-0 flex-1">
-                            <Combobox
-                              value={marcados[r.tipo]}
-                              onChange={(v) =>
-                                setMarcados((p) => ({ ...p, [r.tipo]: v }))
-                              }
-                              opciones={nombresProductos}
-                              ariaLabel={`Detalle de ${r.corto}`}
-                            />
-                          </div>
-                          {/* "×2 filtros" sin que el caso normal pida un
-                              toque: prellenado en 1. */}
-                          <input
-                            value={cantidades[r.tipo] ?? "1"}
-                            onChange={(e) =>
-                              setCantidades((prev) => ({
-                                ...prev,
-                                [r.tipo]: e.target.value,
-                              }))
-                            }
-                            inputMode="decimal"
-                            aria-label={`Cantidad de ${r.corto}`}
-                            className="h-11 w-13 shrink-0 rounded-md border border-line bg-base text-center text-ui text-ink tabular-nums"
-                          />
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setAbiertos((p) => ({ ...p, [r.tipo]: true }))
-                          }
-                          className="min-h-11 self-start text-ui font-semibold text-brand"
-                        >
-                          + detalle
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {delGrupo.map(dibujarRenglon)}
           </div>
-        ))}
+          );
+        })}
+        {/* Los renglones sueltos —la batería—, sin encabezado de grupo y a
+            propósito: el grupo «Revisión» sería la puerta por la que
+            después entran luces, escobillas y presión de neumáticos. */}
+        {aLaVista
+          .filter((r) => r.grupo === null)
+          .map((r) => (
+            <div key={r.tipo} className="rounded-lg border border-line">
+              {dibujarRenglon(r)}
+            </div>
+          ))}
         </div>
+
+        {/* El "+": lo que la clase no desplegó. Cerrado dice cuántos faltan;
+            abierto, los renglones aparecen EN SU GRUPO, en su posición del
+            cartón — un filtro de urea pertenece a FILTROS, no a una lista
+            aparte al final. Se va solo cuando no queda nada por mostrar. */}
+        {(ocultos > 0 || otrosAbiertos) && (
+          <button
+            type="button"
+            aria-expanded={otrosAbiertos}
+            aria-controls="renglones-carton"
+            onClick={() => setOtrosAbiertos((v) => !v)}
+            className="flex min-h-12 w-full items-center justify-center rounded-lg border border-dashed border-line font-brand text-body font-bold text-ink hover:bg-surface"
+          >
+            {otrosAbiertos
+              ? "− Ocultar otros renglones"
+              : `+ Otros renglones (${ocultos})`}
+          </button>
+        )}
 
           </>
         )}

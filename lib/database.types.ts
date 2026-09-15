@@ -2343,13 +2343,23 @@ export type Database = {
         | "filtro_aire"
         | "filtro_combustible"
         | "filtro_habitaculo"
+        | "filtro_combustible_secundario"
+        | "filtro_separador_agua"
+        | "filtro_aire_secundario"
+        | "filtro_secador_aire"
+        | "filtro_urea"
+        | "filtro_hidraulico"
         | "aceite_caja"
         | "aceite_diferencial"
         | "aceite_hidraulico"
+        | "aceite_caja_reductora"
+        | "aceite_diferencial_delantero"
         | "liq_refrigerante"
         | "liq_frenos"
         | "aditivo_motor"
         | "aditivo_transmision"
+        | "engrase"
+        | "bateria"
       motivo_contacto_fidelli: "trial" | "cobranza"
       periodo_suscripcion: "mensual" | "semestral" | "anual"
       posicion_rueda:
@@ -2506,13 +2516,23 @@ export const Constants = {
         "filtro_aire",
         "filtro_combustible",
         "filtro_habitaculo",
+        "filtro_combustible_secundario",
+        "filtro_separador_agua",
+        "filtro_aire_secundario",
+        "filtro_secador_aire",
+        "filtro_urea",
+        "filtro_hidraulico",
         "aceite_caja",
         "aceite_diferencial",
         "aceite_hidraulico",
+        "aceite_caja_reductora",
+        "aceite_diferencial_delantero",
         "liq_refrigerante",
         "liq_frenos",
         "aditivo_motor",
         "aditivo_transmision",
+        "engrase",
+        "bateria",
       ],
       motivo_contacto_fidelli: ["trial", "cobranza"],
       periodo_suscripcion: ["mensual", "semestral", "anual"],
