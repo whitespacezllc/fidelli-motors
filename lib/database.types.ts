@@ -79,6 +79,50 @@ export type Database = {
           },
         ]
       }
+      cambios_precio_catalogo: {
+        Row: {
+          antes: Json
+          cambiado_por: string
+          created_at: string
+          despues: Json
+          fila_id: string
+          id: string
+          motivo: string
+          nombre: string
+          tabla: string
+        }
+        Insert: {
+          antes: Json
+          cambiado_por: string
+          created_at?: string
+          despues: Json
+          fila_id: string
+          id?: string
+          motivo: string
+          nombre: string
+          tabla: string
+        }
+        Update: {
+          antes?: Json
+          cambiado_por?: string
+          created_at?: string
+          despues?: Json
+          fila_id?: string
+          id?: string
+          motivo?: string
+          nombre?: string
+          tabla?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cambios_precio_catalogo_cambiado_por_fkey"
+            columns: ["cambiado_por"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       canjes: {
         Row: {
           created_at: string
@@ -625,6 +669,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      modulos: {
+        Row: {
+          activo: boolean
+          codigo: string
+          created_at: string
+          id: string
+          nombre: string
+          precio_mensual: number
+        }
+        Insert: {
+          activo?: boolean
+          codigo: string
+          created_at?: string
+          id?: string
+          nombre: string
+          precio_mensual: number
+        }
+        Update: {
+          activo?: boolean
+          codigo?: string
+          created_at?: string
+          id?: string
+          nombre?: string
+          precio_mensual?: number
+        }
+        Relationships: []
       }
       notas_vehiculo: {
         Row: {
@@ -2134,6 +2205,20 @@ export type Database = {
       features_plan_bien_formadas: { Args: { p: Json }; Returns: boolean }
       fijar_override_plan: {
         Args: { p_lubricentro: string; p_motivo: string; p_overrides: Json }
+        Returns: undefined
+      }
+      fijar_precio_modulo: {
+        Args: { p_modulo: string; p_motivo: string; p_precio: number }
+        Returns: undefined
+      }
+      fijar_precio_plan: {
+        Args: {
+          p_anual: number
+          p_motivo: string
+          p_plan: string
+          p_precio: number
+          p_semestral: number
+        }
         Returns: undefined
       }
       fm_unaccent: { Args: { "": string }; Returns: string }

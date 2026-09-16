@@ -487,6 +487,28 @@ primario", "Diferencial trasero"): son el MISMO `item_tipo` que "Combustible" y
 en el Excel va siempre la neutra —dos nombres para el mismo valor rompen
 cualquier tabla dinámica del cliente.
 
+Y la que deja el sprint de cobranza (septiembre de 2026):
+
+**16 · Toda la plata es DATO, no constante, y todo cambio de plata deja
+rastro con autor, fecha y motivo.** Los precios de lista, los dos
+`descuento_*_pct` y `modulos.precio_mensual` viven en la base y se mueven
+por `fijar_precio_plan()` / `fijar_precio_modulo()`, que exigen motivo y
+registran en `cambios_precio_catalogo`. Un `UPDATE` suelto sobre esas
+columnas lo rechaza el candado (`bloquear_precio_directo`), venga de donde
+venga. **Nunca hardcodees un porcentaje en TypeScript**: el 25% del anual
+vale 25 en producción y 15 en el default de la migración que creó la
+columna, así que el número escrito a mano se rompe en silencio el día que
+Santiago lo ajuste desde `/fidelli/precios`.
+
+Y el corolario que costó encontrarlo: **el catálogo local tiene que ser el
+de producción.** Hasta la migración `20260916100000` no lo era —el
+semestral valía 10 en local y 0 en prod, y el plan del demo estaba a
+$45.000 contra $46.750— y eso no es cosmético: la pantalla de pago decide
+si OFRECE el período semestral mirando `descuento_semestral_pct > 0`, así
+que la opción aparecía en local y no en producción. Quien probara ahí
+concluiría que la regla anda. Lo vigila R20b, que corre **después** del
+seed porque el plan del demo nace en `seed.sql` y no en las migraciones.
+
 ---
 
 ## La red de regresión — qué protege cada cosa
@@ -519,6 +541,7 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R17** | Los renglones del vehículo pesado: el enum `item_tipo` tiene los 21 valores en el orden exacto del cartón; `guardar_service` y `actualizar_service` aceptan los 21 tal cual y `get_carton` los devuelve en el orden del papel | La regla 14: el cartón de un camión se dibuja fuera de orden, o alguien enumeró los valores de `item_tipo` en SQL y los diez de camión quedaron afuera |
 | **R18** | La clase del vehículo: `vehiculos.clase` es anulable y sin default; el enum es exactamente `(liviano, pesado)`; `crear_cliente_con_vehiculo` guarda la clase contestada y deja null la omitida; `vista_vehiculos` y `get_carton` la exponen (null como null) | Alguien marcó los ~1.800 vehículos como autos "para simplificar", el alta perdió la clase, o el papel del cliente volvió a ser el de un auto para un camión |
 | **R19** | Editar un vehículo sin contestar la clase la deja como estaba: el update de `editarVehiculo` sin la clave no la toca, null o contestada, y nada de la base la inventa | Una sugerencia pasó a ser una respuesta: un trigger o un default clasifica autos que nadie clasificó, o una edición pisa una clase guardada |
+| **R20** | El catálogo de cobranza: `modulos` existe con su precio y su `codigo` coincide con la clave del override; el catálogo local es el de producción (el plan del demo afuera, el semestral en 0); el candado rechaza un `UPDATE` suelto de precio pero NO bloquea `activo`/`features`; el motivo es obligatorio y un guardado que no mueve ningún número no ensucia la auditoría | Un precio se movió sin dejar rastro, el módulo se cobra mal o no se cobra, o el `db reset` volvió a dejar un catálogo que no es el real y el cálculo de plata se prueba contra números que no existen |
 
 Además, fuera del reset, **las roturas a mano** (regla 13):
 
@@ -526,6 +549,7 @@ Además, fuera del reset, **las roturas a mano** (regla 13):
 ./scripts/regresion-retencion.sh
 ./scripts/regresion-neumaticos.sh
 ./scripts/regresion-pesado.sh
+./scripts/regresion-cobranza.sh
 ```
 
 El primero rompe la vista de retención de dos formas —le saca el filtro de
@@ -538,7 +562,14 @@ R18 y R19 (seis roturas): un valor de `item_tipo` agregado al final del enum
 sin `after`, un CHECK en `service_items` con la lista de los once renglones
 de siempre, `vehiculos.clase` con default `'liviano'`, el alta que ignora
 `p_clase`, `get_carton` que calla la clase y un trigger que la rellena al
-editar. Son la prueba de que las pruebas sirven de verdad. Se
+editar. El cuarto rompe R20 (ocho roturas): el código del módulo con un
+typo, el módulo a precio cero, el plan del demo de vuelta en el catálogo,
+el semestral en su default de 10, el plan del demo al precio del seed, el
+candado que deja pasar todo, y las dos del motivo. **La del motivo saca
+las DOS defensas —el chequeo de la función y el `CHECK` de la tabla—
+porque sacando una sola el invariante queda en pie y el bloque pasaría en
+verde con razón**: una rotura que no rompe nada es una prueba que miente.
+Son la prueba de que las pruebas sirven de verdad. Se
 corren antes de un release, no en cada cambio, y **un bloque nuevo de la red
 trae su rotura en uno de estos scripts**.
 
