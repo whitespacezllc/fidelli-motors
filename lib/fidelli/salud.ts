@@ -58,18 +58,32 @@ export function saludDe({
   estado,
   vencimiento,
   ultimoService,
+  descuentoPct,
 }: {
   estado: EstadoSuscripcion | null;
   vencimiento: string | null;
   ultimoService: string | null;
+  /** El descuento negociado del tenant. 100 = no paga nada, así que no
+   *  puede tener el cobro vencido. Es la MISMA regla que `estado_atencion()`
+   *  en la base y que `estado_cobranza()` en su rama `@exento`; vive acá
+   *  también porque esta columna se calcula en el front y no la devuelve
+   *  la base. Si algún día la salud se resuelve en SQL, esta copia se va
+   *  con ella. */
+  descuentoPct: number | null;
 }): Salud | null {
   // Un lubricentro cancelado no es trabajo de hoy: se fue.
   if (estado === "cancelada") return null;
 
+  // Quien no paga nada no puede deber nada. Va ANTES que la fecha, igual
+  // que en la base: sin esto, un bonificado con el vencimiento pasado se
+  // pinta "Cobro vencido" en ámbar al lado de una columna de atención
+  // vacía, y la misma fila se contradice sola.
+  const exento = (descuentoPct ?? 0) >= 100;
+
   // La suscripción manda. Un trial terminado cae acá igual que un plan
   // impago: en los dos casos el producto se está usando sin que entre un
   // peso, y esa es la conversación que hay que tener antes que ninguna.
-  if (vencimiento && diasDesde(vencimiento) > 0) return "cobro_vencido";
+  if (!exento && vencimiento && diasDesde(vencimiento) > 0) return "cobro_vencido";
 
   // Con la plata en orden, la señal es si el lubricentro está trabajando.
   if (!ultimoService) return "sin_actividad";

@@ -2328,6 +2328,7 @@ export type Database = {
         Args: { p_hasta: string; p_suscripcion: string }
         Returns: string
       }
+      cresium_reprocesar_evento: { Args: { p_evento: string }; Returns: Json }
       desbloquear_service: { Args: { p_service_id: string }; Returns: string }
       dias_de_aviso: { Args: never; Returns: number }
       dias_de_gracia: { Args: never; Returns: number }
@@ -2338,6 +2339,7 @@ export type Database = {
       dot_a_fecha: { Args: { p_dot: string }; Returns: string }
       estado_atencion: {
         Args: {
+          p_descuento_pct: number
           p_estado: Database["public"]["Enums"]["estado_suscripcion"]
           p_vencimiento: string
         }

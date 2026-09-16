@@ -173,6 +173,7 @@ export function TablaLubricentros({
                     estado={l.sub_estado}
                     vencimiento={l.sub_vencimiento}
                     ultimoService={l.ultimo_service}
+                    descuentoPct={Number(l.sub_descuento_pct ?? 0)}
                   />
                 </td>
 
