@@ -1,6 +1,6 @@
 import { IconoWhatsapp } from "@/components/iconos";
 import { clasesBoton } from "@/components/ui/boton";
-import { textoDeCobranza, enlaceDePagoDe } from "@/lib/cobranza/copy";
+import { textoDeCobranza, enlaceDePagoDe, esEnlaceExterno } from "@/lib/cobranza/copy";
 import type { Cobranza } from "@/lib/auth/cobranza";
 
 // ============================================================
@@ -37,6 +37,9 @@ export function BarraCobranza({
   const texto = textoDeCobranza(cobranza);
   if (!texto) return null;
 
+  const href = enlaceDePagoDe(cobranza, null, taller);
+  const externo = esEnlaceExterno(href);
+
   return (
     <div
       role="status"
@@ -50,9 +53,8 @@ export function BarraCobranza({
       </div>
 
       <a
-        href={enlaceDePagoDe(cobranza, null, taller)}
-        target="_blank"
-        rel="noreferrer"
+        href={href}
+        {...(externo ? { target: "_blank", rel: "noreferrer" } : {})}
         className={`${clasesBoton("primario")} shrink-0`}
       >
         <IconoWhatsapp aria-hidden className="size-4" />
