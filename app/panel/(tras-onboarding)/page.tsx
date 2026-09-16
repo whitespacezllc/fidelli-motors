@@ -3,6 +3,9 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { featureHabilitada, obtenerSesion, panelSuspendido } from "@/lib/auth/session";
 import { Bienvenida } from "@/components/onboarding/bienvenida";
+import { AvisoCobranzaInicio } from "@/components/panel/aviso-cobranza-inicio";
+import { ModalGracia } from "@/components/panel/modal-gracia";
+import { pesos } from "@/lib/fidelli/plan";
 import { clasesBoton } from "@/components/ui/boton";
 import { CabeceraSeccion } from "@/components/panel/cabecera-seccion";
 import {
@@ -45,7 +48,7 @@ export default async function PaginaInicio({
   // retención y últimos services— más la lista de sucursales del filtro,
   // que es chica y va en paralelo. El resumen se arma en Postgres: ocho
   // agregados en ocho viajes sería el error a evitar.
-  const [resumenRes, sucursalesRes, stockBajoRes, onboardingRes] = await Promise.all([
+  const [resumenRes, sucursalesRes, stockBajoRes, onboardingRes, montoRes] = await Promise.all([
     supabase.rpc("resumen_inicio", { p_sucursal_id: sucursal || undefined }),
     supabase
       .from("sucursales")
@@ -66,9 +69,29 @@ export default async function PaginaInicio({
     sesion?.lubricentroId
       ? supabase.rpc("onboarding_estado", { p_lubricentro_id: sesion.lubricentroId })
       : Promise.resolve({ data: null }),
+    // El monto de la próxima renovación. Se pide SOLO si hay algo que
+    // decir —`por_vencer` o `gracia`—: para un tenant al día, o afuera del
+    // reloj, que son los 17 el día del deploy, esta consulta no existe.
+    //
+    // Y va acá y no en el layout del panel a propósito: en el layout sería
+    // una consulta por CADA pantalla, incluida la de cargar un service.
+    // Acá es una, en la única pantalla donde el número se mira.
+    sesion?.lubricentroId &&
+    (sesion.cobranza?.estado === "por_vencer" || sesion.cobranza?.estado === "gracia")
+      ? supabase.rpc("monto_de_renovacion", { p_lubricentro: sesion.lubricentroId })
+      : Promise.resolve({ data: null }),
   ]);
 
   const onboarding = onboardingRes.data as { premio_definido?: boolean } | null;
+
+  // El total ya formateado, o null. Si la consulta falla o el tenant no
+  // tiene plan, la barra se muestra igual con la fecha y el botón: un
+  // aviso sin cifra sirve; un "$NaN" al lado de un botón de pagar no.
+  const totalCrudo = (montoRes?.data as { total?: number | string } | null)?.total;
+  const monto =
+    totalCrudo != null && Number.isFinite(Number(totalCrudo))
+      ? pesos(Number(totalCrudo))
+      : null;
   const opcionesChecklist = {
     aplicaPremio: featureHabilitada(sesion, "premios"),
     premioOmitido: sesion?.premioOmitido ?? false,
@@ -101,6 +124,32 @@ export default async function PaginaInicio({
   // Vercel esto corre en UTC y a la noche se iba al día siguiente.
   const hoy = hoyISO();
 
+  // ---------- La escalera, en Inicio ----------
+  //
+  // Las DOS piezas van juntas y en las DOS ramas de esta pantalla —la del
+  // checklist y la del dashboard—, porque el dueño aterriza en cualquiera
+  // de las dos y el aviso no es de una rama: es de la cuenta.
+  //
+  // ⚠ Y van acá, en la PÁGINA, nunca en un layout. La página de Inicio no
+  // es ancestro de ninguna otra ruta del panel, así que es
+  // ESTRUCTURALMENTE IMPOSIBLE que el modal aparezca sobre la carga de un
+  // service: habría que mover el archivo. Una lista de rutas excluidas
+  // sería una promesa que alguien tiene que mantener al día; esto no.
+  const escalera = sesion?.cobranza ? (
+    <>
+      <AvisoCobranzaInicio
+        cobranza={sesion.cobranza}
+        monto={monto}
+        taller={sesion.lubricentroNombre}
+      />
+      <ModalGracia
+        cobranza={sesion.cobranza}
+        monto={monto}
+        taller={sesion.lubricentroNombre}
+      />
+    </>
+  ) : null;
+
   if (!resumen) {
     return (
       <div>
@@ -120,6 +169,7 @@ export default async function PaginaInicio({
     return (
       <>
         {bienvenida}
+        {escalera}
         <Checklist
           estado={resumen.checklist}
           opciones={opcionesChecklist}
@@ -134,6 +184,7 @@ export default async function PaginaInicio({
   return (
     <div>
       {bienvenida}
+      {escalera}
       <CabeceraSeccion titulo="Inicio">
         <div className="flex items-center gap-2.5">
           <FiltroSucursal sucursales={sucursales} actual={sucursal} />

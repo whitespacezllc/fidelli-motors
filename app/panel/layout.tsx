@@ -5,6 +5,7 @@ import { cerrarSesion } from "@/lib/auth/actions";
 import { Sidebar } from "@/components/panel/sidebar";
 import { BarraMobile } from "@/components/panel/barra-mobile";
 import { AvisoSuspension } from "@/components/panel/aviso-suspension";
+import { BarraCobranza } from "@/components/panel/barra-cobranza";
 import { metadataPwa } from "@/lib/pwa";
 
 // La autorización vive acá, no en el proxy: /panel es del rol owner.
@@ -23,7 +24,13 @@ export default async function LayoutPanel({
   children: React.ReactNode;
 }) {
   const sesion = await exigirRol("owner");
-  const suspendido = !sesion.lubricentroActivo;
+  // El ÚNICO predicado de suspensión, calculado en obtenerSesion(): cubre
+  // el interruptor manual (`activo = false`) y el reloj de cobranza a la
+  // vez. Los cinco gates leen este mismo campo — que discrepen es lo que
+  // arma un ping-pong de redirects o apaga el AvisoSuspension dejando al
+  // suspendido con un panel de apariencia normal que lo rebota sin
+  // decirle por qué.
+  const suspendido = sesion.suspendido;
   // Resueltas por la base y viajaron con la sesión: acá solo se reparten.
   const features = sesion.capacidades?.features ?? {};
 
@@ -66,6 +73,18 @@ export default async function LayoutPanel({
           {/* Arriba de todo y en todas las pantallas: la suspensión no es de
               una sección, es de la cuenta. */}
           {suspendido && <AvisoSuspension />}
+          {/* La ventana de gracia, en TODAS las pantallas del panel: ya
+              venció y todavía se puede trabajar. `por_vencer` NO va acá —
+              es la barra discreta de Inicio— y `suspendido` ya lo cuenta
+              AvisoSuspension. El componente decide solo: con cualquier
+              otro estado devuelve null.
+
+              Es un Server Component sin consultas propias: el estado viajó
+              con la sesión. La carga de un service no hace ni un fetch más
+              que antes. */}
+          {sesion.cobranza && (
+            <BarraCobranza cobranza={sesion.cobranza} taller={sesion.lubricentroNombre} />
+          )}
           {children}
         </main>
       </div>

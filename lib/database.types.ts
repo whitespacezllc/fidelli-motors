@@ -568,6 +568,7 @@ export type Database = {
           activo: boolean
           bienvenida_vista_at: string | null
           calcos_entregadas: number
+          cobranza_desde: string | null
           created_at: string
           diseno_confirmado_at: string | null
           id: string
@@ -576,11 +577,13 @@ export type Database = {
           plan_overrides: Json
           premio_omitido_at: string | null
           slug: string
+          suspension_automatica: boolean
         }
         Insert: {
           activo?: boolean
           bienvenida_vista_at?: string | null
           calcos_entregadas?: number
+          cobranza_desde?: string | null
           created_at?: string
           diseno_confirmado_at?: string | null
           id?: string
@@ -589,11 +592,13 @@ export type Database = {
           plan_overrides?: Json
           premio_omitido_at?: string | null
           slug: string
+          suspension_automatica?: boolean
         }
         Update: {
           activo?: boolean
           bienvenida_vista_at?: string | null
           calcos_entregadas?: number
+          cobranza_desde?: string | null
           created_at?: string
           diseno_confirmado_at?: string | null
           id?: string
@@ -602,6 +607,7 @@ export type Database = {
           plan_overrides?: Json
           premio_omitido_at?: string | null
           slug?: string
+          suspension_automatica?: boolean
         }
         Relationships: []
       }
@@ -2182,10 +2188,25 @@ export type Database = {
       }
       desbloquear_service: { Args: { p_service_id: string }; Returns: string }
       dias_de_aviso: { Args: never; Returns: number }
+      dias_de_gracia: { Args: never; Returns: number }
+      dias_de_gracia_restantes: {
+        Args: { p_vencimiento: string }
+        Returns: number
+      }
       dot_a_fecha: { Args: { p_dot: string }; Returns: string }
       estado_atencion: {
         Args: {
           p_estado: Database["public"]["Enums"]["estado_suscripcion"]
+          p_vencimiento: string
+        }
+        Returns: string
+      }
+      estado_cobranza: {
+        Args: {
+          p_activo: boolean
+          p_descuento_pct: number
+          p_desde: string
+          p_suspension: boolean
           p_vencimiento: string
         }
         Returns: string
@@ -2311,6 +2332,10 @@ export type Database = {
       }
       marca_canonica: { Args: { p_texto: string }; Returns: string }
       marcar_bienvenida_vista: { Args: never; Returns: undefined }
+      meses_del_periodo: {
+        Args: { p_periodo: Database["public"]["Enums"]["periodo_suscripcion"] }
+        Returns: number
+      }
       metricas_plataforma: { Args: never; Returns: Json }
       metricas_tenant: { Args: { p_lubricentro_id: string }; Returns: Json }
       mi_lubricentro_id: { Args: never; Returns: string }
@@ -2321,6 +2346,11 @@ export type Database = {
           propio: boolean
         }[]
       }
+      modulo_es_pago: {
+        Args: { p_codigo: string; p_lubricentro: string }
+        Returns: boolean
+      }
+      monto_de_renovacion: { Args: { p_lubricentro: string }; Returns: Json }
       normalizar_patente: { Args: { entrada: string }; Returns: string }
       normalizar_texto_vehiculo: { Args: { p: string }; Returns: string }
       omitir_premio: { Args: never; Returns: Json }
@@ -2370,6 +2400,10 @@ export type Database = {
           p_periodo_hasta: string
         }
         Returns: string
+      }
+      reloj_cobranza: {
+        Args: { l: Database["public"]["Tables"]["lubricentros"]["Row"] }
+        Returns: Json
       }
       resumen_inicio: { Args: { p_sucursal_id?: string }; Returns: Json }
       seed_demo: { Args: { p_password?: string }; Returns: string }

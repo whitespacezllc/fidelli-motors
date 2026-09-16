@@ -509,6 +509,44 @@ que la opción aparecía en local y no en producción. Quien probara ahí
 concluiría que la regla anda. Lo vigila R20b, que corre **después** del
 seed porque el plan del demo nace en `seed.sql` y no en las migraciones.
 
+**17 · El reloj de cobranza tiene DOS interruptores, y el segundo arranca
+apagado.** `lubricentros.cobranza_desde` (NULL = este tenant está afuera
+del reloj) decide si el reloj **avisa**; `lubricentros.suspension_automatica`
+decide si puede **cerrar el panel**. El primer ciclo es solo avisos: la
+primera vez que esto corre es la primera vez que el cálculo de plata se
+encuentra con tenants reales, y un monto mal calculado que ADEMÁS suspende
+a alguien no se arregla con una disculpa.
+
+Son COLUMNAS y no funciones, y eso no es un detalle de estilo: una función
+vive en una migración, y una migración vale lo mismo en local y en
+producción **por construcción**. Prendido en prod y apagado en local tiene
+que ser una diferencia de DATOS. Escrito como función, la migración que
+prende el reloj dejaría el `db reset` en rojo para siempre.
+
+El estado se DERIVA (`estado_cobranza`), nunca se guarda: nada de un cron
+dando vuelta booleanos — el día que no corre todos quedan gratis, y el día
+que corre dos veces suspendés a alguien que pagó. `activo = false` gana
+siempre; `descuento_pct = 100` queda fuera del circuito entero (quien no
+paga nada no puede deber nada); el demo no entra nunca, y lo cuida un
+trigger porque un `where` olvidado en el UPDATE de encendido lo metería en
+silencio. Lo vigila R21.
+
+**18 · Un campo calculado de PostgREST es TAMBIÉN un endpoint `/rpc/`, y el
+composite lo elige quien llama.** `reloj_cobranza(lubricentros)` es
+`security invoker` a propósito: como definer, filtrando por un
+`lubricentro_id` que viene adentro del argumento, cualquier owner
+autenticado lee el vencimiento, el período, el descuento negociado y el
+precio del tenant de al lado. **Se verificó explotable en vivo** durante el
+diseño de este sprint, sobre `plan_capacidades`, que tiene esa forma. El
+uuid de la víctima no es secreto: viaja en el `logo_url` público de su
+propia vidriera. Como invoker el RLS recorta la subconsulta y el composite
+forjado devuelve null.
+
+⚠ Y la prueba de esto se escribe con `jsonb_populate_record`, **no** con un
+join contra la tabla: leer la fila del vecino ya lo bloquea el RLS, así que
+la versión con join pasa en verde aunque la función sea definer. Las dos
+veces que se escribió mal, la rotura de R21e se escapó. Lo vigila R21e.
+
 ---
 
 ## La red de regresión — qué protege cada cosa
@@ -541,6 +579,7 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R17** | Los renglones del vehículo pesado: el enum `item_tipo` tiene los 21 valores en el orden exacto del cartón; `guardar_service` y `actualizar_service` aceptan los 21 tal cual y `get_carton` los devuelve en el orden del papel | La regla 14: el cartón de un camión se dibuja fuera de orden, o alguien enumeró los valores de `item_tipo` en SQL y los diez de camión quedaron afuera |
 | **R18** | La clase del vehículo: `vehiculos.clase` es anulable y sin default; el enum es exactamente `(liviano, pesado)`; `crear_cliente_con_vehiculo` guarda la clase contestada y deja null la omitida; `vista_vehiculos` y `get_carton` la exponen (null como null) | Alguien marcó los ~1.800 vehículos como autos "para simplificar", el alta perdió la clase, o el papel del cliente volvió a ser el de un auto para un camión |
 | **R19** | Editar un vehículo sin contestar la clase la deja como estaba: el update de `editarVehiculo` sin la clave no la toca, null o contestada, y nada de la base la inventa | Una sugerencia pasó a ser una respuesta: un trigger o un default clasifica autos que nadie clasificó, o una edición pisa una clase guardada |
+| **R21** | El reloj de cobranza: los cuatro estados con sus bordes exactos y el contador que vale 1 el último día útil; `activo = false` gana sobre todo, `descuento_pct = 100` exime y sin `cobranza_desde` no hay reloj; el SEGUNDO interruptor (con `suspension_automatica` apagada avisa pero no cierra el panel); las nueve claves del payload; la lectura cruzada de tenants con un composite forjado; y los montos (Pro anual, módulo pago vs bonificado, el founding que no toca el módulo) | Un cliente que pagó se suspende solo, un bonificado recibe una factura de $25.000, el primer ciclo dejó de ser solo avisos, o un owner está leyendo la negociación comercial del de al lado |
 | **R20** | El catálogo de cobranza: `modulos` existe con su precio y su `codigo` coincide con la clave del override; el catálogo local es el de producción (el plan del demo afuera, el semestral en 0); el candado rechaza un `UPDATE` suelto de precio pero NO bloquea `activo`/`features`; el motivo es obligatorio y un guardado que no mueve ningún número no ensucia la auditoría | Un precio se movió sin dejar rastro, el módulo se cobra mal o no se cobra, o el `db reset` volvió a dejar un catálogo que no es el real y el cálculo de plata se prueba contra números que no existen |
 
 Además, fuera del reset, **las roturas a mano** (regla 13):
@@ -550,6 +589,7 @@ Además, fuera del reset, **las roturas a mano** (regla 13):
 ./scripts/regresion-neumaticos.sh
 ./scripts/regresion-pesado.sh
 ./scripts/regresion-cobranza.sh
+./scripts/regresion-cobranza-reloj.sh
 ```
 
 El primero rompe la vista de retención de dos formas —le saca el filtro de
@@ -569,7 +609,12 @@ candado que deja pasar todo, y las dos del motivo. **La del motivo saca
 las DOS defensas —el chequeo de la función y el `CHECK` de la tabla—
 porque sacando una sola el invariante queda en pie y el bloque pasaría en
 verde con razón**: una rotura que no rompe nada es una prueba que miente.
-Son la prueba de que las pruebas sirven de verdad. Se
+Son la prueba de que las pruebas sirven de verdad. El quinto rompe R21
+(diez roturas): el borde de la gracia corrido un día, la ventana en cero,
+el contador sin el `+1`, la exención bajada al 50, el interruptor manual
+que deja de ganar, el reloj corriendo para los que están afuera, **el
+segundo interruptor ignorado**, el candado del demo desarmado, el payload
+como `security definer` y el módulo cobrado sin mirar el motivo. Se
 corren antes de un release, no en cada cambio, y **un bloque nuevo de la red
 trae su rotura en uno de estos scripts**.
 
