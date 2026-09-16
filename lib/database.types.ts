@@ -1597,6 +1597,7 @@ export type Database = {
       vehiculos: {
         Row: {
           anio: number | null
+          clase: Database["public"]["Enums"]["clase_vehiculo"] | null
           cliente_id: string
           created_at: string
           id: string
@@ -1608,6 +1609,7 @@ export type Database = {
         }
         Insert: {
           anio?: number | null
+          clase?: Database["public"]["Enums"]["clase_vehiculo"] | null
           cliente_id: string
           created_at?: string
           id?: string
@@ -1619,6 +1621,7 @@ export type Database = {
         }
         Update: {
           anio?: number | null
+          clase?: Database["public"]["Enums"]["clase_vehiculo"] | null
           cliente_id?: string
           created_at?: string
           id?: string
@@ -1919,6 +1922,7 @@ export type Database = {
           anio: number | null
           cantidad_services: number | null
           cantidad_trabajos: number | null
+          clase: Database["public"]["Enums"]["clase_vehiculo"] | null
           cliente_id: string | null
           created_at: string | null
           id: string | null
@@ -2078,6 +2082,7 @@ export type Database = {
       crear_cliente_con_vehiculo: {
         Args: {
           p_anio?: number
+          p_clase?: Database["public"]["Enums"]["clase_vehiculo"]
           p_cuit?: string
           p_email: string
           p_marca?: string
@@ -2330,6 +2335,7 @@ export type Database = {
     Enums: {
       alcance_premio: "services" | "todos"
       canal_contacto: "whatsapp" | "manual"
+      clase_vehiculo: "liviano" | "pesado"
       estado_contacto:
         | "urgente"
         | "proximo"
@@ -2502,6 +2508,7 @@ export const Constants = {
     Enums: {
       alcance_premio: ["services", "todos"],
       canal_contacto: ["whatsapp", "manual"],
+      clase_vehiculo: ["liviano", "pesado"],
       estado_contacto: [
         "urgente",
         "proximo",

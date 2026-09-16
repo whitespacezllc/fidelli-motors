@@ -5,6 +5,7 @@ import {
   formatearKm,
   desplegadoPorClase,
   etiquetaPapel,
+  normalizarClase,
   type ClaseVehiculo,
 } from "@/lib/renglones";
 import { formatearFecha } from "@/lib/fechas";
@@ -43,6 +44,9 @@ export type CartonDatos = {
   // El papel del cartón, del diseño de experiencia del tenant. null o
   // ausente = el blanco de siempre. Llega ya saneado (hexONull).
   colorPapel?: string | null;
+  // La clase del vehículo: el papel de referencia (los 11 de un auto, los
+  // 20 de un camión, marcados o no). null o ausente = liviano.
+  clase?: ClaseVehiculo | null;
   // tipo → estado del renglón (ausente = no se atendió)
   marcados: Record<string, RenglonMarcado>;
 };
@@ -196,10 +200,9 @@ export function CartonPapel({
   // explicar — un cartón todo de tildes se lee solo, como siempre.
   const hayRevisados = Object.values(datos.marcados).some((m) => !m.cambiado);
 
-  // La clase del vehículo llega en la fase 2 del sprint (columna
-  // vehiculos.clase). Hasta entonces el papel de referencia es el de
-  // siempre, el de un auto.
-  const clase: ClaseVehiculo = "liviano";
+  // La clase del vehículo decide el papel de referencia; null y cualquier
+  // valor desconocido se leen como el de siempre, el de un auto.
+  const clase = normalizarClase(datos.clase);
 
   // Lo que se imprime: los renglones de la clase del vehículo —el cartón
   // de referencia, marcados o no, como el papel— más los que ESTE service

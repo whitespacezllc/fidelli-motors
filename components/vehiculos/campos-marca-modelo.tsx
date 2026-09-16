@@ -19,11 +19,15 @@ export function CamposMarcaModelo({
   marcas,
   marcaInicial = "",
   modeloInicial = "",
+  alCambiarMarca,
 }: {
   /** El catálogo global (DNRPA, cola filtrada a mano). Solo sugiere. */
   marcas: string[];
   marcaInicial?: string;
   modeloInicial?: string;
+  /** Cada vez que la marca cambia. El selector de clase la usa para
+   *  pre-seleccionar Pesado en un Scania. */
+  alCambiarMarca?: (marca: string) => void;
 }) {
   const [marca, setMarca] = useState(marcaInicial);
   const [modelo, setModelo] = useState(modeloInicial);
@@ -55,7 +59,10 @@ export function CamposMarcaModelo({
         </span>
         <Combobox
           value={marca}
-          onChange={(v) => setMarca(v)}
+          onChange={(v) => {
+            setMarca(v);
+            alCambiarMarca?.(v);
+          }}
           opciones={marcas}
           ariaLabel="Marca del vehículo"
         />

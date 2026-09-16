@@ -41,7 +41,7 @@ export default async function PaginaService({ params }: Props) {
          aceite_tipo, aceite_nombre, alineacion,
          beneficio_hasta_km, beneficio_hasta_fecha,
          prox_service_km, observaciones, anulado, desbloqueado_hasta,
-         vehiculos(patente, marca, modelo, cliente_id, clientes(nombre)),
+         vehiculos(patente, marca, modelo, clase, cliente_id, clientes(nombre)),
          sucursales(nombre),
          usuarios!usuario_id(nombre),
          service_items(item_tipo, detalle, cambiado, productos(nombre, marca)),
@@ -287,6 +287,9 @@ export default async function PaginaService({ params }: Props) {
                 aceiteNombre: service.aceite_nombre,
                 proxServiceKm: service.prox_service_km ?? 0,
                 marcados,
+                // El papel de referencia es el de la clase del vehículo:
+                // los 20 de un camión, marcados o no.
+                clase: service.vehiculos?.clase ?? null,
               }}
             />
           )}

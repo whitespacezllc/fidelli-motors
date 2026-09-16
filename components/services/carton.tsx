@@ -23,6 +23,7 @@ import {
   esSaltoValido,
   desplegadoPorClase,
   etiquetaCorta,
+  normalizarClase,
   type ClaseVehiculo,
   type ItemTipo,
   type Renglon,
@@ -76,6 +77,9 @@ export type DatosCarton = {
   patente: string;
   vehiculoNombre: string;
   clienteNombre: string;
+  /** La clase del vehículo: decide qué renglones vienen desplegados.
+   *  null = nunca se preguntó, y se lee como liviano. */
+  clase?: ClaseVehiculo | null;
   lubricentroNombre: string;
   colorTenant: string;
   sucursales: Sucursal[];
@@ -217,6 +221,12 @@ export function Carton({
   // tipo en positivo a propósito: "si no es mecánica, entonces es service"
   // era exactamente la rama implícita que un tercer tipo rompe.
   const esService = tipo === "service";
+
+  // La clase del vehículo, contestada una vez en el alta. null (nunca se
+  // preguntó) y cualquier valor desconocido se leen como liviano: la
+  // pantalla de hoy, con los diez renglones nuevos detrás del "+". Con
+  // pesado vienen los 20 de camión y solo la batería queda detrás.
+  const clase = normalizarClase(datos.clase);
 
   function elegirTipo(nuevo: TipoTrabajo) {
     setTipo(nuevo);
@@ -540,6 +550,7 @@ export function Carton({
     aceiteNombre: nombreAceite,
     proxServiceKm: proxKm,
     colorPapel: datos.colorPapel,
+    clase,
     marcados: Object.fromEntries(
       Object.entries(marcados).map(([tipo, detalle]) => [
         tipo,
@@ -809,11 +820,6 @@ export function Carton({
       </div>
     );
   }
-
-  // La clase del vehículo llega en la fase 2 del sprint (columna
-  // vehiculos.clase). Hasta entonces todo vehículo se lee como liviano:
-  // la pantalla de hoy, con los diez renglones nuevos detrás del "+".
-  const clase: ClaseVehiculo = "liviano";
 
   // A la vista: lo que la clase despliega, lo que el "+" abrió y lo que
   // ya está marcado. Un renglón MARCADO nunca se oculta — si alguien

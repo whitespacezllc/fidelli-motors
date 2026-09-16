@@ -9,7 +9,7 @@ import {
   renglonesLibres,
   type ServiceCarton,
 } from "@/lib/cliente/carton";
-import { formatearKm } from "@/lib/renglones";
+import { formatearKm, type ClaseVehiculo } from "@/lib/renglones";
 import { formatearFecha } from "@/lib/fechas";
 import { ESTILO_PAPEL } from "@/lib/cliente/tema";
 import { ETIQUETA_TIPO, type TipoTrabajo } from "@/lib/trabajos";
@@ -48,11 +48,14 @@ export function HistorialCartones({
   lubricentroNombre,
   colorTenant,
   colorPapel = null,
+  clase = null,
 }: {
   services: ServiceCarton[];
   lubricentroNombre: string;
   colorTenant: string;
   colorPapel?: string | null;
+  /** La clase del vehículo: el papel de referencia de cada cartón. */
+  clase?: ClaseVehiculo | null;
 }) {
   if (services.length === 0) return null;
 
@@ -157,6 +160,7 @@ export function HistorialCartones({
                       aceiteNombre: s.aceiteNombre,
                       proxServiceKm: s.proxServiceKm ?? 0,
                       colorPapel,
+                      clase,
                       marcados: marcadosDe(s),
                     }}
                   />

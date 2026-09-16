@@ -51,7 +51,7 @@ export default async function PaginaCarton({
   ] = await Promise.all([
       supabase
         .from("vehiculos")
-        .select("id, patente, marca, modelo, clientes(nombre)")
+        .select("id, patente, marca, modelo, clase, clientes(nombre)")
         .eq("id", vehiculoId)
         .maybeSingle(),
       supabase
@@ -213,6 +213,9 @@ export default async function PaginaCarton({
           vehiculoNombre:
             [vehiculo.marca, vehiculo.modelo].filter(Boolean).join(" ") || "Vehículo",
           clienteNombre: vehiculo.clientes?.nombre ?? "",
+          // Qué viene desplegado en el cartón. null = nunca se preguntó,
+          // y el cartón lo lee como liviano.
+          clase: vehiculo.clase,
           lubricentroNombre: sesion?.lubricentroNombre ?? "Tu lubricentro",
           colorTenant: configRes.data?.color_primario ?? "#0A0A0A",
           colorPapel: configRes.data?.color_carton ?? null,
