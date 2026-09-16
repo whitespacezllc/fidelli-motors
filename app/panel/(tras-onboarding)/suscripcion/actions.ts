@@ -14,8 +14,15 @@ import { redirect } from "next/navigation";
 // eslint-disable-next-line no-restricted-imports
 import { obtenerSesion } from "@/lib/auth/session";
 import { crearClienteAdmin } from "@/lib/supabase/admin";
-import { aliasDeOrden, crearOrdenDePago, cvuDe, ErrorCresium } from "@/lib/cresium/cliente";
-import { conIntentos, estadoEfectivo } from "@/lib/cresium/orden";
+import {
+  aliasDe,
+  aliasDeOrden,
+  crearOrdenDePago,
+  cvuDe,
+  ErrorCresium,
+  esAliasTomado,
+} from "@/lib/cresium/cliente";
+import { aliasParaLaOrden, conIntentos, estadoEfectivo } from "@/lib/cresium/orden";
 import { MESES_DEL_PERIODO, type Periodo } from "@/lib/fidelli/plan";
 
 export type EstadoOrden = { error?: string; ok?: boolean };
@@ -70,6 +77,17 @@ export async function crearOrden(
     .maybeSingle();
 
   if (!sub) return { error: "No encontramos tu suscripción. Escribinos y lo vemos." };
+
+  // El alias FIJO del tenant, si tiene. Null —que hoy es el caso de los 17—
+  // significa "todavía no se le asignó", y entonces se sigue derivando de
+  // la orden como siempre. El corte es este dato y nada más.
+  const { data: tenant } = await supabase
+    .from("lubricentros")
+    .select("cresium_alias")
+    .eq("id", lubricentroId)
+    .maybeSingle();
+
+  const aliasFijo = tenant?.cresium_alias ?? null;
 
   // El período se aplica sobre el vencimiento actual, no sobre hoy: pagar
   // tres días antes no puede regalarle al tenant tres días menos.
@@ -143,7 +161,11 @@ export async function crearOrden(
     externalIdBase,
     intentoInicial,
     async (externalIdIntento, intento) => {
-      const alias = aliasDeOrden(sesion.lubricentroNombre ?? "taller", externalIdIntento);
+      // El alias fijo si lo tiene, el derivado si no. Misma interfaz para
+      // los dos caminos: acá no hay un `if` de negocio, hay un dato.
+      const { alias } = aliasParaLaOrden(aliasFijo, () =>
+        aliasDeOrden(sesion.lubricentroNombre ?? "taller", externalIdIntento),
+      );
       const orden = await crearOrdenDePago({
         externalId: externalIdIntento,
         monto,
@@ -163,12 +185,35 @@ export async function crearOrden(
     // CÓDIGO y no el status: en producción llegó como 400 —no el 409 que
     // uno escribiría—, y el día que lo muevan el reintento tiene que
     // seguir disparándose.
+    //
+    // ⚠ Y NO SE AGREGA EL ALIAS TOMADO ACÁ, aunque el reintento sea
+    // justamente donde va a aparecer. Con el alias DERIVADO el problema no
+    // existe: cada intento pide uno distinto. Con un alias FIJO, el intento
+    // `:2` pide EL MISMO que el `:1`, así que si Cresium contesta que está
+    // tomado, insistir pide exactamente lo mismo otra vez y el bucle se
+    // gasta los cinco intentos para nada. Se maneja abajo, con un mensaje
+    // propio.
     (e) => e instanceof ErrorCresium && e.cuerpo.includes("EXISTING_EXTERNAL_ID"),
   );
 
   if (!resultado.ok) {
     if (!(resultado.error instanceof ErrorCresium)) throw resultado.error;
     console.error(`[cresium] no se pudo crear la orden ${resultado.externalId}: ${resultado.error.message}`);
+
+    // El alias fijo tomado es un caso aparte y no se le puede pedir al
+    // dueño que "pruebe de nuevo": probar de nuevo pide el mismo alias.
+    // Hoy no puede pasar —nadie tiene alias asignado— y está escrito para
+    // el día que sí, porque es el único error de esta pantalla que ninguna
+    // acción del dueño resuelve.
+    if (aliasFijo && esAliasTomado(resultado.error)) {
+      console.error(`[cresium] el alias fijo «${aliasFijo}» del tenant ${lubricentroId} está tomado`);
+      return {
+        error:
+          "No pudimos generar la cuenta para transferir. Escribinos por WhatsApp y lo " +
+          "resolvemos nosotros: no es algo que puedas destrabar desde acá.",
+      };
+    }
+
     return {
       error:
         "No pudimos generar la cuenta para transferir. Probá de nuevo en un momento; " +
@@ -183,6 +228,13 @@ export async function crearOrden(
   }
 
   const { orden, alias } = resultado.valor;
+
+  // Lo que se guarda es lo que CRESIUM confirmó, no lo que pedimos. Con el
+  // alias derivado de un hash daba igual; con uno elegido a mano no: si
+  // Cresium lo normaliza, la pantalla mostraría el nuestro y el banco
+  // esperaría el de ellos. Si no lo devuelve, se queda el que pedimos.
+  const aliasConfirmado = aliasDe(orden) ?? alias;
+
   await supabase.from("cresium_ordenes").insert({
     lubricentro_id: lubricentroId,
     suscripcion_id: sub.id,
@@ -190,7 +242,7 @@ export async function crearOrden(
     periodo: periodo as Periodo,
     periodo_hasta: hastaISO,
     monto,
-    alias,
+    alias: aliasConfirmado,
     cvu: cvuDe(orden),
     orden_id: orden.paymentOrder?.id ?? null,
     estado: orden.paymentOrder?.status ?? "NOT_PAID",

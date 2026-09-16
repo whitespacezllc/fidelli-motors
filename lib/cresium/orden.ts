@@ -53,6 +53,47 @@ export function estadoEfectivo(estado: string, createdAt: string, ahora: Date = 
   return estado;
 }
 
+// ============================================================
+// EL ALIAS DE UNA ORDEN · el camino nuevo detrás de la misma interfaz
+//
+// Una sola función decide, y por eso el corte entre el alias fijo y el
+// derivado es UN DATO y no un deploy:
+//
+//   · el tenant TIENE alias asignado  → se usa ése, siempre, sin tocarlo.
+//   · el tenant NO tiene  (null)      → se sigue derivando de la orden,
+//                                        exactamente como hasta hoy.
+//
+// Hoy los 17 tenants están en null, así que esto no cambia el comportamiento
+// de nadie. El día que Cresium conteste, cada tenant que reciba su alias
+// cruza de camino solo, sin que se toque una línea.
+//
+// ⚠ EL REINTENTO SE COMPORTA DISTINTO CON UN ALIAS FIJO, y conviene tenerlo
+// escrito antes de que pase. Hoy el alias sale del `externalId`, así que el
+// intento `:2` pide un alias DISTINTO del que pidió el `:1` —el comentario
+// de `externalIdDelIntento()` lo dice: «el CVU nuevo trae alias nuevo»—.
+// Con un alias fijo, el `:2` pide EL MISMO, y si el `:1` alcanzó a crear la
+// cuenta antes de fallar por otra cosa, Cresium va a contestar que el alias
+// está tomado. Ese error NO es motivo para subir el número de intento:
+// insistir pide lo mismo otra vez. Lo maneja la acción, que solo reintenta
+// con `EXISTING_EXTERNAL_ID`.
+// ============================================================
+
+/**
+ * El alias con el que se pide una orden.
+ *
+ * `derivado` es la función de siempre (`aliasDeOrden`), que entra por
+ * parámetro para que este módulo siga siendo puro: sin `server-only`, sin
+ * red y sin `node:crypto`, que es lo que permite que la regresión lo
+ * importe directo.
+ */
+export function aliasParaLaOrden(
+  aliasDelTenant: string | null | undefined,
+  derivado: () => string,
+): { alias: string; fijo: boolean } {
+  const propio = aliasDelTenant?.trim();
+  return propio ? { alias: propio, fijo: true } : { alias: derivado(), fijo: false };
+}
+
 export type Intento<T> =
   | { ok: true; valor: T; externalId: string; intento: number }
   | { ok: false; error: unknown; externalId: string; intento: number };

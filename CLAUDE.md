@@ -618,6 +618,7 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R22** | El cobro por Cresium: `pagos.registrado_por` es anulable pero el CHECK impide un pago manual sin autor y uno de Cresium sin id de transacción; cinco entregas del mismo depósito dejan UN pago; `PARTIAL` no mueve el vencimiento; la evidencia se guarda siempre, acredite o no; y la referencia con sufijo de intento (`sub:hasta:2`) acredita a la misma suscripción | Un reintento le regaló otro período a alguien, un cobro automático quedó indistinguible de uno tipeado a mano, o una transferencia parcial activó una suscripción que no se pagó |
 | **R23** | La pantalla de cobranzas de `/fidelli`: un owner lee CERO filas (la función es definer y cruza `usuarios` y `contactos_fidelli` de toda la plataforma); el monto sale de `monto_de_renovacion_en()`, la misma función que la pantalla de pago del cliente; y quien tiene el plan bonificado no aparece | Un dueño de lubricentro está leyendo el vencimiento, el monto y el teléfono de todos los demás, o el WhatsApp le cotiza un número distinto del que el cliente ve en su pantalla |
 | **R20** | El catálogo de cobranza: `modulos` existe con su precio y su `codigo` coincide con la clave del override; el catálogo local es el de producción (el plan del demo afuera, el semestral en 0); el candado rechaza un `UPDATE` suelto de precio pero NO bloquea `activo`/`features`; el motivo es obligatorio y un guardado que no mueve ningún número no ensucia la auditoría | Un precio se movió sin dejar rastro, el módulo se cobra mal o no se cobra, o el `db reset` volvió a dejar un catálogo que no es el real y el cálculo de plata se prueba contra números que no existen |
+| **R25** | El alias fijo por tenant: el interruptor `alias_confirmado_por_cresium()` está APAGADO y la puerta rechaza incluso un alias con la forma correcta; no hay un solo alias asignado en la base; un alias escrito no se cambia ni por UPDATE directo; la unicidad (puerta e índice, que son dos defensas distintas); el formato y los dos largos con su contracaso; y el alta, que asigna por la MISMA puerta y aborta entera si el alias falla | Se asignó un alias antes de que Cresium confirmara el formato —y no hay vuelta atrás barata, porque el tope de cambios por CVU es un número que todavía no sabemos—, o un tenant terminó con un alias distinto del que ya dejó cargado en su home banking |
 
 Además, fuera del reset, **las roturas a mano** (regla 13):
 
@@ -628,6 +629,7 @@ Además, fuera del reset, **las roturas a mano** (regla 13):
 ./scripts/regresion-cobranza.sh
 ./scripts/regresion-cobranza-reloj.sh
 ./scripts/regresion-cobranza-cresium.sh
+./scripts/regresion-cobranza-alias.sh
 ```
 
 El primero rompe la vista de retención de dos formas —le saca el filtro de
@@ -655,7 +657,21 @@ segundo interruptor ignorado**, el candado del demo desarmado, el payload
 como `security definer` y el módulo cobrado sin mirar el motivo. El
 sexto rompe R22e: el parser del webhook apretado a exactamente dos partes,
 con lo que la referencia del segundo intento (`sub:hasta:2`) deja de
-encontrar la suscripción. Se corren antes de un release, no en cada cambio, y **un bloque nuevo de la red
+encontrar la suscripción. El octavo rompe R25 (diez roturas) y es de una clase distinta a
+todas las anteriores: **la mitad de lo que R25 vigila es que NADA PASE**
+mientras Cresium no conteste el largo máximo, el formato exacto y el tope
+de cambios de alias. Una conducta que consiste en no hacer nada es
+exactamente la que se rompe sin que nadie se entere, así que la primera
+rotura es prender el interruptor, y la segunda es la verosímil: dejar el
+chequeo pero correrlo DESPUÉS de validar la forma, con lo que un alias mal
+formado se sigue rechazando —y la mitad de las pruebas sigue en verde—
+mientras uno bien formado entra. **Dos de sus roturas no tienen
+contrapartida y está escrito por qué**: sacarle el `where` al índice
+parcial no rompe nada (dos NULL nunca colisionan en un unique) y sacarle
+el `lower()` tampoco, porque el CHECK de formato rechaza las mayúsculas
+antes de que el índice opine. Una rotura que no rompe nada es una prueba
+que miente sobre lo que cubre, así que no se escribe: se escribe el
+comentario que dice por qué no está. Se corren antes de un release, no en cada cambio, y **un bloque nuevo de la red
 trae su rotura en uno de estos scripts**.
 
 Y en cualquier momento, a mano:

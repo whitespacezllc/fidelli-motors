@@ -99,7 +99,7 @@ export class ErrorCresium extends Error {
  * mal — ni siquiera dice que el problema sea el path.
  */
 async function llamar<T>(
-  metodo: "GET" | "POST" | "DELETE",
+  metodo: "GET" | "POST" | "PUT" | "DELETE",
   path: string,
   cuerpo?: unknown,
 ): Promise<T> {
@@ -186,12 +186,24 @@ async function llamar<T>(
 //     lado del botón de copiar, y un alias que no se parece a nada da
 //     desconfianza justo cuando está por transferir;
 //   · un sufijo DETERMINISTA derivado del externalId, que es único por
-//     suscripción y período. Sin él, `lubricentro-fassetta` y
-//     `lubricentro-manuel` colisionan: los dos empiezan con las mismas
-//     ocho letras.
+//     suscripción y período. Sin él, dos talleres cuyos nombres empiezan
+//     con las mismas ocho letras colisionan.
 //
 // Determinista y no aleatorio para que reintentar la creación de la misma
 // orden pida el MISMO alias, en vez de dejar CVUs huérfanos regados.
+//
+// ⚠ ESTE ES EL CAMINO VIEJO, y sigue siendo el de todo tenant SIN alias
+// asignado (que hoy son los 17). Quien lo tenga asignado no pasa por acá:
+// lo decide `aliasParaLaOrden()` en lib/cresium/orden.ts.
+//
+// ⚠ EL PARÁMETRO SE LLAMA `slug` Y RECIBE EL NOMBRE. El único llamador le
+// pasa `sesion.lubricentroNombre`, y el slug ni siquiera existe en el objeto
+// de sesión. Se deja el nombre del parámetro como está a propósito: cambiarlo
+// cambiaría el alias de cualquiera que lo tenga pedido, y los alias ya
+// pedidos viven en Cresium. Lo que sí importa saber es la consecuencia: el
+// `.replace(/[^a-z0-9]/gi, "")` sobre un nombre BORRA los acentos en vez de
+// transliterarlos ("Gomería" → "Gomera"). La sugerencia del formulario NO
+// hereda eso: ver `aliasSugerido()` en lib/cresium/alias.ts.
 // ============================================================
 export function aliasDeOrden(slug: string, externalId: string): string {
   const corto = slug.replace(/[^a-z0-9]/gi, "").slice(0, 8).toLowerCase() || "taller";
@@ -273,4 +285,66 @@ export function cvuDe(orden: OrdenCreada): string | null {
   const d = orden.depositAddress;
   if (typeof d === "string") return d;
   return d?.value ?? null;
+}
+
+/**
+ * El alias que CRESIUM confirmó, que no tiene por qué ser el que pedimos.
+ *
+ * Hasta hoy guardábamos en `cresium_ordenes.alias` el alias que mandamos en
+ * el request, sin mirar la respuesta. Mientras el alias sale de un hash
+ * nuestro da igual; con un alias elegido a mano deja de dar igual: si
+ * Cresium lo normaliza (minúsculas, un punto de más, un recorte), la
+ * pantalla le muestra al dueño el nuestro y el banco espera el de ellos.
+ *
+ * Devuelve null si no vino: en ese caso el llamador se queda con el que
+ * pidió, que es lo que hacíamos siempre.
+ */
+export function aliasDe(orden: OrdenCreada): string | null {
+  const d = orden.depositAddress;
+  if (typeof d === "string") return null;
+  return d?.alias ?? null;
+}
+
+/**
+ * ¿El rechazo es "ese alias ya está en uso"?
+ *
+ * ⚠ ACEPTA DOS FORMAS Y SOLO UNA ESTÁ MEDIDA. `EXISTING_ALIAS` es la que
+ * documenta Cresium; el `409 CONFLICT · alias already taken` es lo que
+ * contesta NUESTRO doble (scripts/doble-cresium.mjs), que se escribió
+ * antes de tener una respuesta real. Es exactamente la regla 19 de
+ * CLAUDE.md —un doble que reproduce la documentación en vez de la realidad
+ * da verde mientras producción rechaza todo—, y por eso el reconocedor
+ * acepta las dos hasta que haya una medición: así el código anda con el
+ * doble de hoy y con Cresium el día que conteste, y el que sobre se borra
+ * con la medición en la mano, no antes.
+ */
+export function esAliasTomado(error: unknown): boolean {
+  if (!(error instanceof ErrorCresium)) return false;
+  return (
+    error.cuerpo.includes("EXISTING_ALIAS") ||
+    /alias already taken/i.test(error.cuerpo)
+  );
+}
+
+/**
+ * Re-apunta el alias de una cuenta de depósito.
+ *
+ * ⚠ ESTE ENDPOINT TODAVÍA NO ESTÁ HABILITADO EN NUESTRA CUENTA. Se pidió el
+ * 16/09/2026 y no hay respuesta. La función existe para que el día que se
+ * habilite el camino ya esté escrito y probado contra el doble — NO SE
+ * LLAMA DESDE NINGÚN LADO, y no hay que empezar a llamarla sin antes saber
+ * el tope de cambios de alias por CVU (`TOO_MANY_ALIAS_UPDATES`): cada
+ * llamada gasta uno de esos cambios, y no sabemos cuántos hay.
+ *
+ * `address` es el identificador de la cuenta de depósito. El único dato
+ * real que tenemos es el `depositAddress.id` numérico que llegó en el
+ * webhook del depósito de $390 (scripts/fixtures-cresium-deposit-real.json),
+ * pero no está confirmado que el path acepte ese id y no el CVU.
+ */
+export async function reapuntarAlias(address: string, alias: string) {
+  return llamar<{ alias?: string }>(
+    "PUT",
+    `/v3/deposit-address/${encodeURIComponent(address)}`,
+    { alias },
+  );
 }

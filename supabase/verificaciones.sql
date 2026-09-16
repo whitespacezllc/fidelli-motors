@@ -3455,3 +3455,256 @@ begin
   delete from lubricentros where id in (v_lub, v_lub2);
 end $$;
 -- <<< R23
+
+
+-- ============================================================
+-- R25 · El alias fijo por tenant (20260917120000)
+--
+-- El bloque tiene una particularidad y conviene decirla arriba: la mitad
+-- de lo que vigila es que NADA PASE. Mientras Cresium no confirme el
+-- formato, el largo y el tope de cambios, la única conducta correcta es
+-- rechazar todo — y una conducta que consiste en no hacer nada es
+-- exactamente la que se rompe sin que nadie se entere.
+--
+--   a · El interruptor está APAGADO y la puerta rechaza. Con un alias
+--       perfectamente válido. Es el invariante del sprint.
+--   b · Los 17 tenants (y el demo) siguen en null, y un tenant en null NO
+--       es un estado roto: es "todavía no se le asignó". Con el
+--       interruptor prendido a mano, la puerta escribe.
+--   c · El alias es INMUTABLE. Escrito una vez, ni un UPDATE directo lo
+--       mueve. Es la promesa entera: el dueño ya lo cargó en su banco.
+--   d · La unicidad de nuestro lado, incluida la de mayúsculas, y que el
+--       índice parcial deje convivir a los 17 nulls.
+--   e · El formato y los dos largos, con su contracaso.
+--   f · El alta puede traer el alias, y lo asigna por la MISMA puerta —o
+--       sea que hoy, con el interruptor apagado, un alta con alias falla
+--       entera en vez de dejar un tenant a medias.
+-- ============================================================
+
+-- >>> R25
+do $$
+declare
+  v_plan  uuid;
+  v_lub   uuid;
+  v_lub2  uuid;
+  v_lub3  uuid;
+  v_super uuid;
+  v_n     integer;
+  v_alias text;
+begin
+  select id into v_plan  from planes where nombre = 'Pro' and not heredado;
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+
+  insert into lubricentros (nombre, slug) values ('Alias R25', 'alias-r25')
+    returning id into v_lub;
+
+  -- ---------- a · El interruptor apagado ----------
+  if alias_confirmado_por_cresium() then
+    raise exception 'R25a EL INTERRUPTOR DEL ALIAS ESTÁ PRENDIDO: alias_confirmado_por_cresium() devolvió true. Arranca APAGADO y se prende recién cuando Cresium confirme el largo máximo, el formato exacto y el tope de cambios por CVU. Un alias asignado con el formato equivocado no se corrige barato: TOO_MANY_ALIAS_UPDATES es un tope y no sabemos cuál.';
+  end if;
+
+  begin
+    perform fijar_alias_de_tenant(v_lub, 'fm.aliasr25');
+    raise exception 'R25a SE ASIGNÓ UN ALIAS: la puerta escribió con el interruptor apagado. Mientras Cresium no conteste, ningún tenant recibe alias — ni siquiera uno con la forma correcta.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%alias_sin_confirmar%' then raise; end if;
+  end;
+
+  if exists (select 1 from lubricentros where cresium_alias is not null) then
+    raise exception 'R25a HAY ALIAS ASIGNADOS EN LA BASE. Tienen que ser CERO: el sprint entero se escribió para no asignar ninguno hasta que Cresium conteste.';
+  end if;
+
+  -- ---------- b · El null no es un estado roto ----------
+  --
+  -- A partir de acá el interruptor se prende A MANO para poder probar el
+  -- camino de verdad. Es el mismo recurso que usa R21d con el candado del
+  -- demo: se redefine la función adentro de la transacción del reset.
+  create or replace function alias_confirmado_por_cresium()
+  returns boolean language sql immutable parallel safe as $f$ select true; $f$;
+
+  select fijar_alias_de_tenant(v_lub, 'fm.aliasr25') into v_alias;
+  if v_alias is distinct from 'fm.aliasr25' then
+    raise exception 'R25b: la puerta devolvió «%» en vez del alias asignado.', v_alias;
+  end if;
+
+  select cresium_alias into v_alias from lubricentros where id = v_lub;
+  if v_alias is distinct from 'fm.aliasr25' then
+    raise exception 'R25b: el alias no quedó escrito en la fila (quedó «%»).', v_alias;
+  end if;
+
+  if (select cresium_alias_asignado_at from lubricentros where id = v_lub) is null then
+    raise exception 'R25b: se escribió el alias y no la fecha. El día que alguien pregunte desde cuándo tiene ese alias, la fila tiene que contestarlo — y es lo único con lo que vamos a poder contar los cambios contra el tope de Cresium.';
+  end if;
+
+  -- ---------- c · Inmutable ----------
+  begin
+    update lubricentros set cresium_alias = 'fm.otroalias' where id = v_lub;
+    raise exception 'R25c EL ALIAS SE PUDO CAMBIAR: un UPDATE directo lo movió. Es el alias que el dueño YA dejó cargado en su home banking para la transferencia programada; cambiarlo rompe exactamente lo que el alias fijo vino a habilitar, y además gasta uno de los cambios que Cresium permite por CVU.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%alias_inmutable%' then raise; end if;
+  end;
+
+  begin
+    perform fijar_alias_de_tenant(v_lub, 'fm.otroalias');
+    raise exception 'R25c: la puerta reasignó el alias de un tenant que ya tenía.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%alias_ya_asignado%' then raise; end if;
+  end;
+
+  -- Lo que el candado NO tiene que bloquear: cualquier otro UPDATE sobre
+  -- la fila. Si esto empieza a fallar, el candado se comió el ABM entero
+  -- de /fidelli — editar el nombre de un tenant con alias dejaría de andar.
+  begin
+    update lubricentros set nombre = 'Alias R25 editado' where id = v_lub;
+  exception when others then
+    raise exception 'R25c EL CANDADO SE COMIÓ EL ABM: bloqueó un UPDATE que no toca el alias (%). Tiene que mirar SOLO cresium_alias.', sqlerrm;
+  end;
+
+  -- ---------- d · La unicidad, y el índice parcial ----------
+  insert into lubricentros (nombre, slug) values ('Alias R25 dos', 'alias-r25-dos')
+    returning id into v_lub2;
+
+  begin
+    perform fijar_alias_de_tenant(v_lub2, 'fm.aliasr25');
+    raise exception 'R25d: dos tenants se quedaron con el mismo alias. Un alias repetido es la plata de un lubricentro entrando al CVU de otro.';
+  exception
+    when unique_violation then null;
+  end;
+
+  -- Y la de mayúsculas: para un banco, dos alias que difieren solo en el
+  -- case son EL MISMO alias. Por eso el índice va sobre lower().
+  begin
+    perform fijar_alias_de_tenant(v_lub2, 'FM.ALIASR25');
+    raise exception 'R25d: entró un alias que difiere del de otro tenant SOLO en mayúsculas. Para el banco es el mismo alias.';
+  exception
+    when unique_violation then null;
+  end;
+
+  -- Varios tenants sin alias conviven. Esto lo garantiza Postgres solo
+  -- —dos NULL nunca colisionan en un unique— y NO el `where` del índice, que
+  -- está por tamaño y no por corrección. Se afirma igual porque es la
+  -- condición de todos los días mientras Cresium no conteste: los 17 en null.
+  select count(*) into v_n from lubricentros where cresium_alias is null;
+  if v_n < 2 then
+    raise exception 'R25d: hay % tenants sin alias y tendría que haber al menos dos. Mientras Cresium no confirme el formato, TODOS están en null: si dos nulls no pueden convivir, no se puede dar de alta a nadie.', v_n;
+  end if;
+
+  -- ⚠ Y AHORA CONTRA EL ÍNDICE, NO CONTRA LA PUERTA. Las dos pruebas de
+  -- arriba pasan por `fijar_alias_de_tenant()`, así que lo que demuestran
+  -- es que la puerta valida — no que el índice exista. Un UPDATE directo no
+  -- pasa por la puerta, y ahí el índice es la única defensa que queda. Un
+  -- alias repetido es la plata de un lubricentro entrando al CVU de otro.
+  --
+  -- Va en minúsculas a propósito: el CHECK `alias_formato` rechaza las
+  -- mayúsculas antes de que el índice llegue a opinar, así que un duplicado
+  -- en mayúsculas probaría el CHECK y no el índice. (El `lower()` del
+  -- índice es seguro para el día que Cresium conteste que sí acepta
+  -- mayúsculas y el formato se abra: ahí pasa a hacer trabajo. Hoy no se
+  -- puede probar, y por eso no tiene rotura.)
+  insert into lubricentros (nombre, slug) values ('Alias R25 tres', 'alias-r25-tres')
+    returning id into v_lub3;
+  begin
+    update lubricentros set cresium_alias = 'fm.aliasr25' where id = v_lub3;
+    raise exception 'R25d NO HAY ÍNDICE ÚNICO: entró por UPDATE directo un alias que otro tenant ya tiene. La puerta no es suficiente — lo que no pasa por la puerta solo lo frena el índice.';
+  exception
+    when unique_violation then null;
+  end;
+
+  -- ---------- e · El formato y los largos ----------
+  if not alias_formato_valido('fm.taller') then
+    raise exception 'R25e: se rechazó un alias con la forma que Cresium ya aceptó en producción (minúsculas, dígitos y puntos simples). Es la única forma MEDIDA que tenemos.';
+  end if;
+  if alias_formato_valido('FM.taller')  then raise exception 'R25e: entró un alias con mayúsculas, que no está medido contra Cresium.'; end if;
+  if alias_formato_valido('fm-taller')  then raise exception 'R25e: entró un alias con guiones, que no está medido contra Cresium.'; end if;
+  if alias_formato_valido('fm..taller') then raise exception 'R25e: entró un alias con dos puntos seguidos.'; end if;
+  if alias_formato_valido('.fmtaller')  then raise exception 'R25e: entró un alias que empieza con punto.'; end if;
+  if alias_formato_valido('fmtaller.')  then raise exception 'R25e: entró un alias que termina en punto.'; end if;
+
+  begin
+    perform fijar_alias_de_tenant(v_lub2, 'fm.x');   -- 4 caracteres
+    -- ⚠ EL MENSAJE NO PUEDE NOMBRAR `alias_largo`, y no es cosmético: el
+    -- handler de abajo filtra por esa misma palabra, así que un mensaje que
+    -- la contenga se traga a sí mismo y el bloque pasa en verde con la
+    -- rotura puesta. Se vio exactamente así, con el mínimo bajado a 1.
+    raise exception 'R25e SE ACEPTÓ UN ALIAS DEMASIADO CORTO: entró uno de 4 caracteres. El piso del estándar argentino de alias CBU/CVU es 6, y uno más corto lo rechaza el banco cuando el dueño lo tipea.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%alias_largo%' then raise; end if;
+  end;
+
+  begin
+    perform fijar_alias_de_tenant(v_lub2, 'fm.aliasdemasiadolargoparaelbanco');
+    raise exception 'R25e SE ACEPTÓ UN ALIAS DEMASIADO LARGO: entró uno de 32 caracteres. El estándar argentino de alias CBU/CVU topa en 20 y el banco del dueño lo va a rechazar cuando lo tipee. (El mensaje no nombra la excepción a propósito: el handler filtra por esa palabra.)';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%alias_largo%' then raise; end if;
+  end;
+
+  -- El contracaso de los dos largos: uno que SÍ entra.
+  select fijar_alias_de_tenant(v_lub2, 'fm.segundo') into v_alias;
+  if v_alias is distinct from 'fm.segundo' then
+    raise exception 'R25e: un alias de largo válido no entró (dio «%»).', v_alias;
+  end if;
+
+  -- ---------- f · El alta ----------
+  --
+  -- Con el interruptor PRENDIDO el alta puede traerlo; con el apagado la
+  -- transacción del alta falla entera, que es lo correcto: un tenant a
+  -- medias es peor que un alta rechazada.
+  perform crear_lubricentro(
+    'Alta con alias R25', 'alta-alias-r25',
+    '[{"nombre":"Casa Central"}]'::jsonb, v_plan, 'mensual', 0, 30, 'fm.altar25');
+
+  if (select cresium_alias from lubricentros where slug = 'alta-alias-r25') is distinct from 'fm.altar25' then
+    raise exception 'R25f: el alta no guardó el alias que le pasaron.';
+  end if;
+
+  -- Y con el interruptor apagado, el alta entera se cae.
+  create or replace function alias_confirmado_por_cresium()
+  returns boolean language sql immutable parallel safe as $f$ select false; $f$;
+
+  begin
+    perform crear_lubricentro(
+      'Alta sin confirmar R25', 'alta-sin-confirmar-r25',
+      '[{"nombre":"Casa Central"}]'::jsonb, v_plan, 'mensual', 0, 30, 'fm.nodebe');
+    raise exception 'R25f: un alta CON alias pasó con el interruptor apagado.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%alias_sin_confirmar%' then raise; end if;
+  end;
+
+  if exists (select 1 from lubricentros where slug = 'alta-sin-confirmar-r25') then
+    raise exception 'R25f EL ALTA QUEDÓ A MEDIAS: el alias falló y el tenant se creó igual. Tiene que abortar la transacción entera — un lubricentro sin suscripción ni templates es peor que un alta rechazada.';
+  end if;
+
+  -- Y un alta SIN alias sigue andando con el interruptor apagado, que es
+  -- el caso de todos los días mientras Cresium no conteste.
+  perform crear_lubricentro(
+    'Alta sin alias R25', 'alta-sin-alias-r25',
+    '[{"nombre":"Casa Central"}]'::jsonb, v_plan, 'mensual', 0, 30);
+
+  if (select cresium_alias from lubricentros where slug = 'alta-sin-alias-r25') is not null then
+    raise exception 'R25f: un alta sin alias le inventó uno. El null es la respuesta «todavía no se le asignó», y es lo que lo deja cobrando por el alias de cada orden.';
+  end if;
+
+  -- ---------- La limpieza ----------
+  perform set_config('request.jwt.claims', null, true);
+
+  delete from sucursales  where lubricentro_id in (
+    select id from lubricentros where slug in ('alta-alias-r25', 'alta-sin-alias-r25'));
+  delete from mensaje_templates where lubricentro_id in (
+    select id from lubricentros where slug in ('alta-alias-r25', 'alta-sin-alias-r25'));
+  delete from config_experiencia where lubricentro_id in (
+    select id from lubricentros where slug in ('alta-alias-r25', 'alta-sin-alias-r25'));
+  delete from suscripciones where lubricentro_id in (
+    select id from lubricentros where slug in ('alta-alias-r25', 'alta-sin-alias-r25'));
+  delete from lubricentros where slug in ('alta-alias-r25', 'alta-sin-alias-r25');
+  delete from lubricentros where id in (v_lub, v_lub2, v_lub3);
+end $$;
+-- <<< R25
