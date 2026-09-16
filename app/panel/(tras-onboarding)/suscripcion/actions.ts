@@ -29,6 +29,16 @@ export type EstadoOrden = { error?: string; ok?: boolean };
 
 const PERIODOS_VALIDOS: Periodo[] = ["mensual", "semestral", "anual"];
 
+// ⚠ SON DOS PANTALLAS Y LAS DOS MUESTRAN LA ORDEN. Desde el sprint del
+// onboarding, `PantallaPago` también se monta en /panel/onboarding (la
+// cuarta pantalla). Revalidar solo /panel/suscripcion dejaba al dueño que
+// generó la cuenta DESDE EL ONBOARDING mirando la pantalla vieja, sin el
+// CVU que acababa de pedir.
+function revalidarPantallasDePago() {
+  revalidatePath("/panel/suscripcion");
+  revalidatePath("/panel/onboarding");
+}
+
 // ============================================================
 // Crear la orden de pago
 //
@@ -141,7 +151,7 @@ export async function crearOrden(
     return estado === "NOT_PAID" || estado === "PARTIAL";
   });
   if (viva) {
-    revalidatePath("/panel/suscripcion");
+    revalidarPantallasDePago();
     return { ok: true };
   }
 
@@ -248,6 +258,6 @@ export async function crearOrden(
     estado: orden.paymentOrder?.status ?? "NOT_PAID",
   });
 
-  revalidatePath("/panel/suscripcion");
+  revalidarPantallasDePago();
   return { ok: true };
 }

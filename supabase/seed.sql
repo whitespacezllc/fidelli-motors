@@ -7,7 +7,14 @@ select seed_demo();
 -- demo local vería el onboarding y la bienvenida en cada reset.
 update lubricentros
    set onboarding_completado_at = coalesce(onboarding_completado_at, now()),
-       bienvenida_vista_at      = coalesce(bienvenida_vista_at, now());
+       bienvenida_vista_at      = coalesce(bienvenida_vista_at, now()),
+       -- Y la cuarta pantalla ya vista: el demo es un tenant que EXISTÍA,
+       -- igual que los 17 de producción, y a esos el backfill de
+       -- 20260917150000 los marcó. El seed corre después de esa migración
+       -- y crea el demo de cero, así que lo marca acá. Sin esto, el demo
+       -- vería "falta el primer pago" en /panel/onboarding en cada demo
+       -- comercial. Lo vigila R26d.
+       pago_presentado_at       = coalesce(pago_presentado_at, now());
 
 -- El plan del seed nace ACÁ, después de las migraciones — seed_demo() lo
 -- inserta recién en el reset. La migración de planes-con-control marca como

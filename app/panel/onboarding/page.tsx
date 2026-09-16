@@ -9,6 +9,7 @@ import { PasoProducto } from "@/components/onboarding/paso-producto";
 import { PasoDiseno } from "@/components/onboarding/paso-diseno";
 import { PasoPremio } from "@/components/onboarding/paso-premio";
 import { PasoFinal } from "@/components/onboarding/paso-final";
+import { PasoPago, PasoPagoBonificado } from "@/components/onboarding/paso-pago";
 import type { ConfigExperiencia } from "@/components/experiencia/form-experiencia";
 import type { Premio } from "@/components/fidelizacion/formulario-premio";
 import { aCategorias } from "@/lib/categorias";
@@ -21,8 +22,15 @@ import {
   pasosHechos,
   type PasoOnboarding,
 } from "@/lib/onboarding/estado";
+import { armarPagoDelTenant } from "@/lib/suscripcion/datos-pago";
 
 export const metadata: Metadata = { title: "Primeros pasos" };
+
+// La cuarta pantalla muestra el estado de una transferencia, que cambia
+// entre una carga y la siguiente. Sin esto el polling de `PantallaPago`
+// refresca cada ocho segundos una página cacheada y el éxito no llega
+// nunca: "transferí y la pantalla se quedó esperando".
+export const dynamic = "force-dynamic";
 
 // ============================================================
 // /panel/onboarding — tres pasos (dos en Basic) y arrancás.
@@ -44,12 +52,49 @@ export default async function PaginaOnboarding({
 }) {
   const sesion = await obtenerSesion();
   if (!sesion?.lubricentroId) redirect("/login");
-  // Completo, o suspendido (no podría escribir): al panel. `suspendido`
-  // cubre el interruptor manual y el reloj de cobranza a la vez; los cinco
-  // gates leen este mismo campo.
-  if (sesion.onboardingCompleto || sesion.suspendido) redirect("/panel");
+  // Suspendido (no podría escribir): al panel. `suspendido` cubre el
+  // interruptor manual y el reloj de cobranza a la vez; los cinco gates
+  // leen este mismo campo.
+  if (sesion.suspendido) redirect("/panel");
 
   const supabase = await createClient();
+
+  // ============================================================
+  // LA CUARTA PANTALLA
+  //
+  // Hasta el sprint del 16/09/2026 esta línea decía
+  // `if (sesion.onboardingCompleto || sesion.suspendido) redirect("/panel")`
+  // y era la puerta por la que el dueño se iba en el mismo milisegundo en
+  // que `completar_onboarding()` escribía `onboarding_completado_at`. La
+  // condición se partió en dos: completo Y sin pasar por el pago se queda
+  // acá una vez más; completo y con el pago ya presentado, al panel.
+  //
+  // Va por ESTADO y no por callbacks a propósito: el timestamp lo escriben
+  // CINCO caminos distintos —dos de ellos triggers de la base, sin una
+  // línea de front donde engancharse—, así que interceptar componente por
+  // componente se olvidaría de alguno y ese dueño no vería el pago nunca.
+  //
+  // Y no bloquea: para cuando esto se renderiza el gate de
+  // (tras-onboarding) ya está abierto, así que el panel entero funciona
+  // detrás. El botón es una navegación, no un desbloqueo.
+  // ============================================================
+  if (sesion.onboardingCompleto) {
+    if (!sesion.pagoPendiente) redirect("/panel");
+
+    const pago = await armarPagoDelTenant(supabase, sesion.lubricentroId, sesion.cobranza);
+
+    return (
+      <Cabecera titulo="Tu panel ya está funcionando." nombre={sesion.lubricentroNombre ?? "Tu lubricentro"}>
+        <div className="mt-8">
+          {pago.tipo === "pago" ? (
+            <PasoPago datos={pago.datos} />
+          ) : (
+            <PasoPagoBonificado />
+          )}
+        </div>
+      </Cabecera>
+    );
+  }
   const { data: crudo } = await supabase.rpc("onboarding_estado", {
     p_lubricentro_id: sesion.lubricentroId,
   });

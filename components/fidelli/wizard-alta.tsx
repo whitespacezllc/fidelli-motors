@@ -28,7 +28,7 @@ import {
 } from "@/app/fidelli/actions";
 import type { PlanCompleto } from "@/components/fidelli/tipos";
 
-const PASOS = ["Marca y slug", "Sucursales y owner", "Plan y trial"] as const;
+const PASOS = ["Marca y slug", "Sucursales y owner", "Plan"] as const;
 
 const INICIAL: ResultadoAlta = {};
 
@@ -106,7 +106,6 @@ export function WizardAlta({
     periodo: "mensual",
     descuentoPct: 0,
   });
-  const [diasTrial, setDiasTrial] = useState(30);
 
   // El slug se propone solo desde el nombre hasta que alguien lo toca. No se
   // guarda el propuesto: se deriva. Mientras `slugEscrito` sea null manda el
@@ -254,7 +253,6 @@ export function WizardAlta({
       planId: plan.planId,
       periodo: plan.periodo,
       descuentoPct: plan.descuentoPct,
-      diasTrial,
       // Con el campo apagado va vacío, y el tenant nace sin alias: sigue
       // cobrando por el alias que se deriva de cada orden, como los 17.
       alias: aliasHabilitado ? alias : "",
@@ -400,27 +398,19 @@ export function WizardAlta({
               </p>
             )}
 
-            <div>
-              <label htmlFor="trial" className={CLASE_LABEL}>
-                Días de trial
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  id="trial"
-                  type="number"
-                  min={0}
-                  max={365}
-                  step={1}
-                  inputMode="numeric"
-                  value={diasTrial}
-                  onChange={(e) => setDiasTrial(Number(e.target.value))}
-                  className={`${CLASE_CAMPO} max-w-[110px]`}
-                />
-                <span className="text-body text-ink-60">días</span>
-              </div>
-              <p className={CLASE_AYUDA}>
-                La suscripción arranca en trial y vence a los {diasTrial || 0}{" "}
-                días. Se puede cambiar después desde la ficha.
+            {/* EL TRIAL SE FUE, y no es que se escondió el campo: desde el
+                sprint del 16/09/2026 el tenant NACE PAGANDO. `crear_lubricentro`
+                ya no toma `p_dias_trial`, así que dejar el campo sería un
+                número que el dueño elige y la base ignora. */}
+            <div className="rounded-md border border-reward bg-reward-soft px-4 py-3">
+              <p className="font-brand text-ui font-bold text-ink">
+                Nace pagando, con un día de plazo
+              </p>
+              <p className="mt-1 text-ui text-ink-60">
+                La suscripción arranca activa y el reloj de cobranza empieza a
+                correr hoy: el vencimiento queda mañana. El panel le funciona
+                desde el minuto uno — mientras no entre el primer pago, el
+                sistema avisa y no bloquea.
               </p>
             </div>
           </>

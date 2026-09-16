@@ -33,6 +33,10 @@ cd "$(dirname "$0")/.."
 DB="docker exec -i supabase_db_fidelli-motors psql -U postgres -d postgres -X"
 V=supabase/verificaciones.sql
 M=supabase/migrations/20260917120000_alias_por_tenant.sql
+# ⚠ `crear_lubricentro` SE REDEFINIÓ OTRA VEZ en 20260917140000 (el alta que
+# prende el reloj, sin p_dias_trial). Extraerla del archivo viejo reinstala
+# la firma de ocho parámetros y deja una sobrecarga.
+M_ALTA=supabase/migrations/20260917140000_alta_prende_el_reloj.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
 
@@ -138,11 +142,11 @@ echo "── R25f · el alta ──"
 # el alias que le pidieron.
 correr_funcion_alta() {
   local orig roto
-  orig=$(awk '/^create or replace function crear_lubricentro\(/,/^\$\$;$/' "$M")
+  orig=$(awk '/^create or replace function crear_lubricentro\(/,/^\$\$;$/' "$M_ALTA")
   roto=$(printf '%s\n' "$orig" | sed \
     "s/    perform fijar_alias_de_tenant(v_id, p_alias);/    begin perform fijar_alias_de_tenant(v_id, p_alias); exception when others then null; end;/")
   if [ -z "$orig" ]; then
-    echo "  ✗ el alta que se traga el error del alias — no encontré crear_lubricentro en $M"; fallas=1; return
+    echo "  ✗ el alta que se traga el error del alias — no encontré crear_lubricentro en $M_ALTA"; fallas=1; return
   fi
   if [ "$orig" = "$roto" ]; then
     echo "  ✗ el alta que se traga el error del alias — EL SED NO MORDIÓ."; fallas=1; return

@@ -19,8 +19,7 @@ export function PasoFinal() {
       <div>
         <h2 className="font-brand text-h3 font-bold text-ink">Ya está todo cargado.</h2>
         <p className="mt-1.5 max-w-prose text-body text-ink-60">
-          Tu catálogo y tu diseño ya están. Entrá al panel y cargá el primer
-          trabajo con el próximo auto que entre.
+          Tu catálogo y tu diseño ya están. Falta un paso y arrancás.
         </p>
       </div>
       {error && (
@@ -39,12 +38,15 @@ export function PasoFinal() {
               setError(r.error);
               return;
             }
-            router.replace("/panel");
+            // A /panel/onboarding y no a /panel: si el onboarding quedó
+            // completo, la página muestra la cuarta pantalla; si no,
+            // el paso que falte.
+            router.replace("/panel/onboarding");
             router.refresh();
           })
         }
       >
-        {pendiente ? "Entrando…" : "Entrar al panel"}
+        {pendiente ? "Guardando…" : "Continuar"}
       </Boton>
     </div>
   );

@@ -65,7 +65,11 @@ export function PasoDiseno({
         setError(r.error);
         return;
       }
-      router.replace(r.completado ? "/panel" : "/panel/onboarding");
+      // SIEMPRE a /panel/onboarding, aunque el paso haya completado el
+      // onboarding: la página decide si toca la cuarta pantalla —la del
+      // pago— o el panel. Mandar a /panel desde acá se saltea ese paso
+      // justo en el camino normal de un Basic, que termina en el diseño.
+      router.replace("/panel/onboarding");
       router.refresh();
     });
   }, [router, iniciar]);

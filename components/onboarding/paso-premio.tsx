@@ -38,7 +38,9 @@ export function PasoPremio({
         setError(r.error);
         return;
       }
-      router.replace(r.completado ? "/panel" : "/panel/onboarding");
+      // SIEMPRE a /panel/onboarding: la página decide si toca la cuarta
+      // pantalla o el panel. Ver el comentario gemelo en paso-diseno.
+      router.replace("/panel/onboarding");
       router.refresh();
     });
 

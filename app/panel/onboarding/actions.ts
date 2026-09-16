@@ -64,6 +64,23 @@ export async function omitirPremio(): Promise<ResultadoPaso> {
 }
 
 /**
+ * El dueño vio la pantalla de pago del final del onboarding y tocó "Entrar
+ * al panel".
+ *
+ * ⚠ NO DEVUELVE ERROR NI LO PROPAGA, y es a propósito: si esta escritura
+ * falla, el dueño tiene que entrar al panel igual. Quedarse encerrado por
+ * no poder registrar que vio un cartel sería el peor final posible para un
+ * paso que existe justamente para NO bloquear. En el peor caso vuelve a ver
+ * la pantalla la próxima vez, que es un costo de nada.
+ */
+export async function marcarPagoPresentado(): Promise<void> {
+  await sesionParaEscribir();
+  const supabase = await createClient();
+  await supabase.rpc("marcar_pago_presentado");
+  revalidar();
+}
+
+/**
  * La bienvenida ya se mostró: no se repite, ni recargando a mitad.
  *
  * SIN revalidatePath A PROPÓSITO: una revalidación en la respuesta de la

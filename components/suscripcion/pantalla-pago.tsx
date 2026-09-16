@@ -34,8 +34,20 @@ export type DatosPago = {
   orden: OrdenAbierta | null;
   /** La última orden venció sin pagarse: se avisa y se ofrece una nueva. */
   ordenVencida: boolean;
+  /** LA VOZ. `renovacion` es la de siempre: "tu período actual termina
+   *  el…". `alta` es la del tenant que acaba de nacer y todavía no pagó
+   *  ninguna vez: decirle que su período "vence" es mentirle sobre una
+   *  relación que empezó ayer. */
+  voz?: "renovacion" | "alta";
   /** Se muestra la pantalla de éxito: el webhook ya acreditó. */
   alDiaHasta: string | null;
+  /** LA SALIDA. Cuando la pantalla se monta al final del onboarding, el
+   *  dueño tiene que poder irse al panel desde cualquiera de sus estados —
+   *  con la orden generada, sin generar, o después de pagar. Sin esto la
+   *  única salida es el Link de la pantalla de éxito, que solo aparece si
+   *  ya transfirió: sería una pantalla de pago que bloquea, que es
+   *  exactamente lo que este paso NO puede ser. */
+  salida?: { texto: string; onClick: () => void; pendiente?: boolean };
   /** Lo que entró, para decirlo en el éxito. Va aparte de `orden` porque
    *  al pagar la orden deja de estar "abierta" y se anula. */
   montoCobrado: number | null;
@@ -165,12 +177,19 @@ export function PantallaPago({ datos }: { datos: DatosPago }) {
       })()
     : datos.opciones[periodo];
 
+  // El tenant que todavía no pagó ninguna vez no está renovando nada.
+  const esAlta = datos.voz === "alta";
+
   return (
     <div className="surface-card overflow-hidden">
       <div className="flex items-center justify-between gap-3 border-b border-line bg-surface px-4 py-3">
         <span className="font-brand text-ui font-bold">Tu suscripción</span>
         <span className="text-ui text-ink-60">
-          {orden ? "Esperando la transferencia" : `Vence el ${fechaLarga(datos.vencimiento)}`}
+          {orden
+            ? "Esperando la transferencia"
+            : esAlta
+              ? "Falta el primer pago"
+              : `Vence el ${fechaLarga(datos.vencimiento)}`}
         </span>
       </div>
 
@@ -183,10 +202,18 @@ export function PantallaPago({ datos }: { datos: DatosPago }) {
             </span>
           ))}
         </div>
-        <p className="text-ui text-ink-60">
-          Tu período actual termina el{" "}
-          <strong className="text-ink">{fechaLarga(datos.vencimiento)}</strong>.
-        </p>
+        {esAlta ? (
+          <p className="text-ui text-ink-60">
+            Tenés hasta el{" "}
+            <strong className="text-ink">{fechaLarga(datos.vencimiento)}</strong> para
+            hacer el primer pago. Mientras tanto podés usar el panel normalmente.
+          </p>
+        ) : (
+          <p className="text-ui text-ink-60">
+            Tu período actual termina el{" "}
+            <strong className="text-ink">{fechaLarga(datos.vencimiento)}</strong>.
+          </p>
+        )}
 
         {/* ---------- El período ----------
             Se elige PERÍODO, nunca plan: cambiar de Basic a Pro es una
@@ -287,6 +314,11 @@ export function PantallaPago({ datos }: { datos: DatosPago }) {
             <p className="mt-2 text-label text-ink-40">
               Te damos una cuenta tuya para transferir desde tu home banking.
             </p>
+            {/* EL TITULAR, ANTES DE QUE LO VEA EL BANCO. Dicho de antemano
+                es un dato; descubierto en el home banking a la hora de
+                transferir, es una duda — y la duda aparece con el dedo
+                sobre el botón de confirmar. */}
+            <NotaDelTitular />
           </form>
         ) : (
           <>
@@ -301,13 +333,48 @@ export function PantallaPago({ datos }: { datos: DatosPago }) {
               <Dato k="Alias" v={orden.alias} copiable />
               {orden.cvu && <Dato k="CVU" v={orden.cvu} copiable />}
               <Dato k="Titular" v={TITULAR_CVU} />
+              <NotaDelTitular />
             </div>
 
             <EstadoDeLaOrden orden={orden} />
           </>
         )}
+
+        {datos.salida && (
+          <div className="mt-5 border-t border-line pt-5">
+            <Boton
+              type="button"
+              tam="lg"
+              disabled={datos.salida.pendiente}
+              onClick={datos.salida.onClick}
+              className="w-full sm:w-auto"
+            >
+              {datos.salida.pendiente ? "Entrando…" : datos.salida.texto}
+            </Boton>
+            <p className="mt-2 text-label text-ink-40">
+              Podés pagar ahora o después: tu panel ya está funcionando.
+            </p>
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+// ============================================================
+// El titular
+//
+// La cuenta está a nombre de una persona y no de una sociedad, y eso el
+// dueño lo va a ver sí o sí cuando abra su home banking. Decirlo acá lo
+// convierte en un dato; callarlo lo convierte en una duda justo cuando
+// tiene el dedo sobre el botón de transferir $74.000.
+// ============================================================
+function NotaDelTitular() {
+  return (
+    <p className="mt-2 text-label text-ink-40">
+      La cuenta está a nombre de {TITULAR_CVU.split(" ").map((w) => w[0] + w.slice(1).toLowerCase()).join(" ")},
+      fundador de Fidelli Motors: todavía no tenemos sociedad.
+    </p>
   );
 }
 
