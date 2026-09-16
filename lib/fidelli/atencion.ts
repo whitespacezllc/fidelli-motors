@@ -86,6 +86,7 @@ export function linkDeAviso({
   periodo,
   descuentoPct,
   plan,
+  montoTotal,
 }: {
   atencion: Atencion;
   telefono: string | null;
@@ -95,6 +96,16 @@ export function linkDeAviso({
   periodo: Periodo;
   descuentoPct: number;
   plan: PlanCompleto | null;
+  /** El total YA CALCULADO POR LA BASE. Si viene, gana sobre la cuenta de
+   *  acá — y debería venir siempre que el que llama pueda pedirlo.
+   *
+   *  ⚠ `totalDelPeriodo()` NO SUMA LOS MÓDULOS: le cotiza de menos a
+   *  cualquiera que pague gomería. Hoy no le pasa a nadie (los dos que la
+   *  tienen la tienen bonificada), pero es la regla 16 de CLAUDE.md —
+   *  toda la plata es dato, y una cuenta que vive en dos lados termina
+   *  dando dos números. El de la base es el que el cliente ve en su
+   *  pantalla de pago, así que es el único que puede ir en el mensaje. */
+  montoTotal?: number | null;
 }): string | null {
   const numero = telefono ? telefonoWhatsapp(telefono) : null;
   if (!numero) return null;
@@ -113,12 +124,14 @@ export function linkDeAviso({
           ETIQUETA_PERIODO[periodo].toLowerCase(),
           // Lo que tiene que transferir por el período completo, con la
           // cadena de descuentos ya aplicada: no el precio de lista.
-          plan
-            ? pesos(totalDelPeriodo(plan, periodo, descuentoPct)).replace(
-                "ARS ",
-                "",
-              )
-            : "—",
+          montoTotal != null
+            ? pesos(montoTotal).replace("ARS ", "")
+            : plan
+              ? pesos(totalDelPeriodo(plan, periodo, descuentoPct)).replace(
+                  "ARS ",
+                  "",
+                )
+              : "—",
         );
 
   return `https://wa.me/${numero}?text=${encodeURIComponent(texto)}`;

@@ -3346,3 +3346,83 @@ begin
   delete from lubricentros where id = v_lub;
 end $$;
 -- <<< R22
+
+-- ============================================================
+-- R23 · La pantalla de cobranzas de /fidelli (20260916220000)
+--
+--   a · Es SOLO del superadmin. La función es `security definer` porque
+--       cruza `usuarios` y `contactos_fidelli` de todos los tenants, así
+--       que el RLS no la protege: la guarda está adentro y tiene que
+--       rechazar a un owner devolviendo CERO FILAS, no los datos de la
+--       plataforma entera.
+--   b · El monto sale de `monto_de_renovacion_en()`, la MISMA función que
+--       usa la pantalla de pago del cliente. Si las dos pantallas dijeran
+--       números distintos, la conversación por WhatsApp arrancaría con el
+--       dueño y Santiago mirando cosas diferentes.
+--   c · Quien no paga nada NO aparece: perseguir una cobranza de alguien
+--       con el plan bonificado es trabajo inventado.
+-- ============================================================
+
+-- >>> R23
+do $$
+declare
+  v_super uuid; v_owner uuid; v_plan uuid;
+  v_lub uuid; v_lub2 uuid;
+  v_n integer; v_monto numeric; v_esperado numeric;
+begin
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  select id into v_plan  from planes where nombre = 'Pro' and not heredado;
+
+  -- Uno que vence pronto y paga, y otro bonificado al 100.
+  insert into lubricentros (nombre, slug) values ('Cobranza R23', 'cobranza-r23') returning id into v_lub;
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, inicio, vencimiento)
+  values (v_lub, v_plan, 'activa', 'mensual', 0, current_date - 27, current_date + 3);
+
+  insert into lubricentros (nombre, slug) values ('Bonificado R23', 'bonificado-r23') returning id into v_lub2;
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, inicio, vencimiento)
+  values (v_lub2, v_plan, 'activa', 'mensual', 100, current_date - 27, current_date + 3);
+
+  -- ---------- a · Un OWNER no ve nada ----------
+  select u.id into v_owner from usuarios u where u.rol = 'owner' limit 1;
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  select count(*) into v_n from cobranzas_pendientes(15);
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  if v_n <> 0 then
+    raise exception 'R23a FUGA ENTRE TENANTS: un owner leyó % filas de cobranzas_pendientes(). La función es SECURITY DEFINER y cruza usuarios y contactos_fidelli de TODA la plataforma: si la guarda soy_superadmin() se cae, cualquier dueño de lubricentro ve el vencimiento, el monto y el teléfono de todos los demás.', v_n;
+  end if;
+
+  -- ---------- b y c · Como superadmin ----------
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  select count(*) into v_n from cobranzas_pendientes(15) where lubricentro_id = v_lub;
+  if v_n <> 1 then
+    raise exception 'R23b: el tenant que vence en 3 días no aparece en la lista (% filas).', v_n;
+  end if;
+
+  select monto into v_monto from cobranzas_pendientes(15) where lubricentro_id = v_lub;
+  v_esperado := (monto_de_renovacion_en(v_lub, 'mensual') ->> 'total')::numeric;
+  if v_monto is distinct from v_esperado then
+    raise exception 'R23b DOS CUENTAS PARA LA MISMA PLATA: la pantalla de cobranzas dice % y monto_de_renovacion_en() dice %. Tienen que salir de la MISMA función, o el mensaje de WhatsApp le cotiza al cliente un número distinto del que ve en su pantalla de pago.',
+      v_monto, v_esperado;
+  end if;
+
+  select count(*) into v_n from cobranzas_pendientes(15) where lubricentro_id = v_lub2;
+  if v_n <> 0 then
+    raise exception 'R23c: un tenant con descuento_pct = 100 apareció en la lista de cobranzas. No paga nada: perseguirle una cobranza es trabajo inventado.';
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  delete from suscripciones where lubricentro_id in (v_lub, v_lub2);
+  delete from lubricentros where id in (v_lub, v_lub2);
+end $$;
+-- <<< R23
