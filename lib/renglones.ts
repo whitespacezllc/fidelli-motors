@@ -2,33 +2,119 @@ import type { Database } from "@/lib/database.types";
 
 export type ItemTipo = Database["public"]["Enums"]["item_tipo"];
 
-// Los 11 renglones en el orden del enum, que es el del cartón físico.
-// "corto" es como se lee en la carga (el grupo ya dice el sustantivo);
-// "papel" es como está impreso en el cartón, con las abreviaturas del papel.
-export const RENGLONES: {
+// Los grupos del cartón, en el orden del papel. LUBRICACIÓN es del
+// vehículo pesado (contiene solo el engrase). La batería no arma grupo:
+// va suelta, sin encabezado (ver RENGLONES).
+export const GRUPOS = [
+  "FILTROS",
+  "ACEITES",
+  "LÍQUIDOS",
+  "ADITIVOS",
+  "LUBRICACIÓN",
+] as const;
+
+export type Grupo = (typeof GRUPOS)[number];
+
+// La clase del vehículo (vehiculos.clase, 20260915130000), como la lee el
+// front: `clase ?? "liviano"`. Es un DEFAULT de qué viene desplegado,
+// nunca una puerta: en ninguna combinación de clase queda un renglón
+// inalcanzable. La moto no vive acá (se deriva de la chapa, ver
+// 20260904120000). Un tercer valor que aparezca algún día cae en el set
+// liviano, nunca en ninguno.
+export type ClaseVehiculo = Database["public"]["Enums"]["clase_vehiculo"];
+
+export function normalizarClase(valor: unknown): ClaseVehiculo {
+  return valor === "pesado" ? "pesado" : "liviano";
+}
+
+// Qué decide si un renglón viene desplegado en la carga:
+//   siempre — los 11 de siempre. A la vista para todos.
+//   pesado  — los 9 de camión. Desplegados cuando el vehículo es pesado.
+//   extra   — solo la batería. Nunca desplegada por clase; siempre
+//             detrás del "+". Sirve en todos los vehículos, y por eso era
+//             el único que podía estar de más en la pantalla de alguien.
+export type AlcanceRenglon = "siempre" | "pesado" | "extra";
+
+export type Renglon = {
   tipo: ItemTipo;
-  grupo: string;
+  /** null = renglón suelto, sin encabezado de grupo (la batería). */
+  grupo: Grupo | null;
+  alcance: AlcanceRenglon;
+  /** Como se lee en la carga: el grupo ya dice el sustantivo. */
   corto: string;
+  /** Como está impreso en el cartón, con las abreviaturas del papel. */
   papel: string;
-}[] = [
-  { tipo: "filtro_aceite", grupo: "FILTROS", corto: "Aceite", papel: "Aceite" },
-  { tipo: "filtro_aire", grupo: "FILTROS", corto: "Aire", papel: "Aire" },
-  { tipo: "filtro_combustible", grupo: "FILTROS", corto: "Combustible", papel: "Combusti." },
-  { tipo: "filtro_habitaculo", grupo: "FILTROS", corto: "Habitáculo", papel: "Habitáculo" },
-  { tipo: "aceite_caja", grupo: "ACEITES", corto: "Caja", papel: "Caja" },
-  { tipo: "aceite_diferencial", grupo: "ACEITES", corto: "Diferencial", papel: "Diferenc." },
-  { tipo: "aceite_hidraulico", grupo: "ACEITES", corto: "Hidráulico", papel: "Hidráulic." },
-  { tipo: "liq_refrigerante", grupo: "LÍQUIDOS", corto: "Refrigerante", papel: "Líq. refrige." },
-  { tipo: "liq_frenos", grupo: "LÍQUIDOS", corto: "Frenos", papel: "Líq. frenos" },
-  { tipo: "aditivo_motor", grupo: "ADITIVOS", corto: "Motor", papel: "Aditivo motor" },
-  { tipo: "aditivo_transmision", grupo: "ADITIVOS", corto: "Transmisión", papel: "Aditivo transm." },
+  /** La relectura para vehículo pesado. MISMO item_tipo, mismo valor en
+   *  la base: solo cambia cómo se lee la etiqueta. En el Excel va siempre
+   *  la neutra (ver ETIQUETA_RENGLON en la exportación). */
+  pesado?: { corto: string; papel: string };
+};
+
+// Los 21 renglones en el orden del enum, que es el del cartón físico.
+// Los 11 de siempre más los 10 del sprint de vehículo pesado
+// (20260915120000): nueve de camión y la batería.
+//
+// filtro_hidraulico es EL FILTRO (nuevo, de camión). aceite_hidraulico es
+// EL ACEITE y existe desde el día uno. Son dos renglones distintos: en el
+// papel los dos dicen "Hidráulic." y los distingue la etiqueta vertical
+// del grupo, igual que en el cartón de siempre.
+export const RENGLONES: Renglon[] = [
+  { tipo: "filtro_aceite", grupo: "FILTROS", alcance: "siempre", corto: "Aceite", papel: "Aceite" },
+  { tipo: "filtro_aire", grupo: "FILTROS", alcance: "siempre", corto: "Aire", papel: "Aire" },
+  {
+    tipo: "filtro_combustible",
+    grupo: "FILTROS",
+    alcance: "siempre",
+    corto: "Combustible",
+    papel: "Combusti.",
+    pesado: { corto: "Combustible primario", papel: "Combust. prim." },
+  },
+  { tipo: "filtro_habitaculo", grupo: "FILTROS", alcance: "siempre", corto: "Habitáculo", papel: "Habitáculo" },
+  { tipo: "filtro_combustible_secundario", grupo: "FILTROS", alcance: "pesado", corto: "Combustible secundario", papel: "Combust. sec." },
+  { tipo: "filtro_separador_agua", grupo: "FILTROS", alcance: "pesado", corto: "Separador de agua", papel: "Separ. agua" },
+  { tipo: "filtro_aire_secundario", grupo: "FILTROS", alcance: "pesado", corto: "Aire secundario", papel: "Aire sec." },
+  { tipo: "filtro_secador_aire", grupo: "FILTROS", alcance: "pesado", corto: "Secador de aire", papel: "Secador aire" },
+  { tipo: "filtro_urea", grupo: "FILTROS", alcance: "pesado", corto: "Urea (AdBlue)", papel: "Urea" },
+  { tipo: "filtro_hidraulico", grupo: "FILTROS", alcance: "pesado", corto: "Hidráulico", papel: "Hidráulic." },
+  { tipo: "aceite_caja", grupo: "ACEITES", alcance: "siempre", corto: "Caja", papel: "Caja" },
+  {
+    tipo: "aceite_diferencial",
+    grupo: "ACEITES",
+    alcance: "siempre",
+    corto: "Diferencial",
+    papel: "Diferenc.",
+    pesado: { corto: "Diferencial trasero", papel: "Diferenc. tras." },
+  },
+  { tipo: "aceite_hidraulico", grupo: "ACEITES", alcance: "siempre", corto: "Hidráulico", papel: "Hidráulic." },
+  { tipo: "aceite_caja_reductora", grupo: "ACEITES", alcance: "pesado", corto: "Caja reductora", papel: "Caja reduct." },
+  { tipo: "aceite_diferencial_delantero", grupo: "ACEITES", alcance: "pesado", corto: "Diferencial delantero", papel: "Diferenc. del." },
+  { tipo: "liq_refrigerante", grupo: "LÍQUIDOS", alcance: "siempre", corto: "Refrigerante", papel: "Líq. refrige." },
+  { tipo: "liq_frenos", grupo: "LÍQUIDOS", alcance: "siempre", corto: "Frenos", papel: "Líq. frenos" },
+  { tipo: "aditivo_motor", grupo: "ADITIVOS", alcance: "siempre", corto: "Motor", papel: "Aditivo motor" },
+  { tipo: "aditivo_transmision", grupo: "ADITIVOS", alcance: "siempre", corto: "Transmisión", papel: "Aditivo transm." },
+  { tipo: "engrase", grupo: "LUBRICACIÓN", alcance: "pesado", corto: "Engrase", papel: "Engrase" },
+  { tipo: "bateria", grupo: null, alcance: "extra", corto: "Batería", papel: "Batería" },
 ];
 
-export const GRUPOS = ["FILTROS", "ACEITES", "LÍQUIDOS", "ADITIVOS"] as const;
-
 // En el papel solo FILTROS y ACEITES llevan la etiqueta vertical; los
-// líquidos y aditivos van sueltos porque su nombre ya se explica solo.
+// líquidos, los aditivos y el engrase van sueltos porque su nombre ya se
+// explica solo.
 export const GRUPOS_CON_ETIQUETA_EN_PAPEL = ["FILTROS", "ACEITES"];
+
+/** Lo que la clase despliega por defecto. Un default, no una puerta. */
+export function desplegadoPorClase(r: Renglon, clase: ClaseVehiculo): boolean {
+  return r.alcance === "siempre" || (r.alcance === "pesado" && clase === "pesado");
+}
+
+/** La etiqueta de la carga, con la relectura de pesado si la hay. */
+export function etiquetaCorta(r: Renglon, clase: ClaseVehiculo): string {
+  return clase === "pesado" && r.pesado ? r.pesado.corto : r.corto;
+}
+
+/** La etiqueta del papel, con la relectura de pesado si la hay. */
+export function etiquetaPapel(r: Renglon, clase: ClaseVehiculo): string {
+  return clase === "pesado" && r.pesado ? r.pesado.papel : r.papel;
+}
 
 // Las once viscosidades de uso corriente, en orden ascendente — la
 // convención del rubro. Es una CONSTANTE y no una tabla: la viscosidad es

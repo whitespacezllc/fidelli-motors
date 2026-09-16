@@ -2366,3 +2366,305 @@ drop function r16_super();
 drop function r16_owner();
 drop function r16_lub();
 -- <<< R16-fin
+
+-- ============================================================
+-- R17 · Los renglones del vehículo pesado (sprint de septiembre de 2026)
+--
+-- Dos invariantes que, rotos, no dan error:
+--   (a) El orden del enum item_tipo ES el orden del cartón. "order by
+--       item_tipo" es lo que dibuja el papel en get_carton, en la
+--       exportación y en pantalla: un valor agregado al final —o anclado
+--       en el lugar equivocado— pone el filtro de urea después de los
+--       aditivos en el cartón de un camión. El build pasa igual.
+--   (b) Ninguna función SQL enumera valores de item_tipo. guardar_service
+--       y actualizar_service tienen que aceptar los 21 tal cual llegan,
+--       y get_carton devolverlos en el orden del papel. Si alguien escribe
+--       un `case item_tipo when …` o un CHECK con la lista de los once,
+--       esto lo atrapa.
+-- ============================================================
+
+-- >>> R17a
+do $$
+declare
+  v_esperado text[] := array[
+    'filtro_aceite', 'filtro_aire', 'filtro_combustible', 'filtro_habitaculo',
+    'filtro_combustible_secundario', 'filtro_separador_agua', 'filtro_aire_secundario',
+    'filtro_secador_aire', 'filtro_urea', 'filtro_hidraulico',
+    'aceite_caja', 'aceite_diferencial', 'aceite_hidraulico',
+    'aceite_caja_reductora', 'aceite_diferencial_delantero',
+    'liq_refrigerante', 'liq_frenos',
+    'aditivo_motor', 'aditivo_transmision',
+    'engrase', 'bateria'
+  ];
+  v_real text[];
+begin
+  select array_agg(e.enumlabel::text order by e.enumsortorder) into v_real
+  from pg_enum e where e.enumtypid = 'item_tipo'::regtype;
+
+  if v_real is distinct from v_esperado then
+    raise exception E'R17a ORDEN DEL CARTÓN ROTO: item_tipo no está en el orden del papel.\n  real:     %\n  esperado: %',
+      array_to_string(v_real, ' · '), array_to_string(v_esperado, ' · ')
+      using hint =
+        'Todo valor nuevo de item_tipo entra con ADD VALUE … AFTER, anclado a un valor que ya existía '
+        '(ver 20260915120000_item_tipo_pesado). Nunca al final: el orden del enum es el del cartón físico.';
+  end if;
+end $$;
+-- <<< R17a
+
+-- >>> R17b
+do $$
+declare
+  v_lub   uuid;
+  v_owner uuid;
+  v_suc   uuid;
+  v_veh   uuid;
+  v_pat   text;
+  v_serv  uuid;
+  v_items jsonb;
+  v_todos text[];
+  v_menos text[];
+  v_tipos text[];
+  v_json  jsonb;
+begin
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+  select u.id into v_owner from usuarios u where u.lubricentro_id = v_lub and u.rol = 'owner' limit 1;
+  select su.id into v_suc from sucursales su where su.lubricentro_id = v_lub and su.activa limit 1;
+  select v.id, v.patente_normalizada into v_veh, v_pat
+  from vehiculos v where v.lubricentro_id = v_lub order by v.created_at limit 1;
+
+  -- Los 21, en el orden del enum tal cual está en la base (R17a ya
+  -- verificó que ese orden es el del cartón).
+  select array_agg(e.enumlabel::text order by e.enumsortorder) into v_todos
+  from pg_enum e where e.enumtypid = 'item_tipo'::regtype;
+  -- Guarda explícita, para que este bloque no se pruebe a sí mismo: con
+  -- la base sin la migración, 11 contra 11 pasaba en verde.
+  if coalesce(array_length(v_todos, 1), 0) <> 21 then
+    raise exception 'R17b: item_tipo tiene % valores, esperaba los 21 del cartón de camión (20260915120000).',
+      coalesce(array_length(v_todos, 1), 0);
+  end if;
+  -- Los mismos sin el primero y sin el último: lo que la edición conserva.
+  select array_agg(u.t order by u.n) into v_menos
+  from unnest(v_todos) with ordinality as u(t, n)
+  where u.t not in ('filtro_aceite', 'bateria');
+
+  -- 1 · Un service de camión completo: el cartón entero, los 21 a la vez.
+  select jsonb_agg(jsonb_build_object('tipo', u.t, 'cambiado', true) order by u.n) into v_items
+  from unnest(v_todos) with ordinality as u(t, n);
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  v_serv := guardar_service(
+    p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => current_date,
+    p_kilometros => 998100, p_aceite_tipo => '15W40', p_prox_service_km => 1023100,
+    p_items => v_items);
+
+  select array_agg(si.item_tipo::text order by si.item_tipo) into v_tipos
+  from service_items si where si.service_id = v_serv;
+  if v_tipos is distinct from v_todos then
+    raise exception 'R17b: guardar_service guardó % renglones de 21 (%). Alguna función SQL enumera valores de item_tipo.',
+      coalesce(array_length(v_tipos, 1), 0), array_to_string(v_tipos, ' · ');
+  end if;
+
+  -- 2 · La edición conserva los renglones nuevos y borra SOLO lo que dejó
+  --     de viajar: el `delete … not in (…)` de actualizar_service es una
+  --     subconsulta sobre el jsonb entrante, no una lista fija.
+  select jsonb_agg(jsonb_build_object('tipo', u.t, 'cambiado', false) order by u.n) into v_items
+  from unnest(v_menos) with ordinality as u(t, n);
+  perform actualizar_service(
+    p_service_id => v_serv, p_sucursal_id => v_suc, p_fecha => current_date,
+    p_kilometros => 998100, p_aceite_tipo => '15W40', p_prox_service_km => 1023100,
+    p_items => v_items);
+
+  select array_agg(si.item_tipo::text order by si.item_tipo) into v_tipos
+  from service_items si where si.service_id = v_serv;
+  if v_tipos is distinct from v_menos then
+    raise exception 'R17b: actualizar_service dejó % renglones (esperaba 19: sin filtro_aceite ni bateria, con los nueve de camión): %',
+      coalesce(array_length(v_tipos, 1), 0), array_to_string(v_tipos, ' · ');
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- 3 · La puerta pública devuelve los renglones en el orden del cartón.
+  --     El service recién cargado es el más nuevo: va primero.
+  v_json := get_carton('demo', v_pat);
+  select array_agg(i.item->>'tipo' order by i.n) into v_tipos
+  from jsonb_array_elements(v_json->'services'->0->'items') with ordinality as i(item, n);
+  if v_tipos is distinct from v_menos then
+    raise exception 'R17b: get_carton devolvió los renglones fuera del orden del cartón: %',
+      array_to_string(v_tipos, ' · ');
+  end if;
+  delete from landing_busquedas where lubricentro_id = v_lub and patente = v_pat;
+
+  -- limpieza total
+  delete from service_items where service_id = v_serv;
+  delete from services where id = v_serv;
+end $$;
+-- <<< R17b
+
+-- ============================================================
+-- R18 · La clase del vehículo (fase 2 del sprint de vehículo pesado)
+--
+-- Lo que se rompe sin avisar: (a) alguien le pone `default 'liviano'` o
+-- NOT NULL a vehiculos.clase "para simplificar", y los camiones que SA ya
+-- tiene cargados quedan afirmados como autos; (b) crear_cliente_con_vehiculo
+-- deja de guardar la clase (o la guarda cuando no se contestó); (c)
+-- get_carton deja de emitirla y el papel del cliente vuelve a ser el de un
+-- auto para un camión; (d) vista_vehiculos la pierde y el dialog de
+-- edición arranca siempre en liviano. Ninguna da error.
+-- ============================================================
+
+-- >>> R18
+do $$
+declare
+  v_lub     uuid;
+  v_owner   uuid;
+  v_veh_p   uuid;
+  v_veh_n   uuid;
+  v_cli_p   uuid;
+  v_cli_n   uuid;
+  v_notnull boolean;
+  v_default text;
+  v_json    jsonb;
+begin
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+  select u.id into v_owner from usuarios u where u.lubricentro_id = v_lub and u.rol = 'owner' limit 1;
+
+  -- (a) la columna existe, es anulable y no tiene default: null = "nunca
+  --     se preguntó", que no es lo mismo que "liviano".
+  select a.attnotnull, pg_get_expr(d.adbin, d.adrelid) into v_notnull, v_default
+  from pg_attribute a
+  left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+  where a.attrelid = 'vehiculos'::regclass and a.attname = 'clase' and not a.attisdropped;
+  if not found then
+    raise exception 'R18: vehiculos.clase no existe (20260915130000).';
+  end if;
+  if v_notnull or v_default is not null then
+    raise exception 'R18: vehiculos.clase tiene % — tiene que ser anulable y sin default: null distingue "nunca se preguntó" de "se contestó liviano", y los camiones ya cargados no son autos.',
+      case when v_notnull then 'NOT NULL' else 'default ' || v_default end;
+  end if;
+  if (select array_agg(e.enumlabel::text order by e.enumsortorder) from pg_enum e where e.enumtypid = 'clase_vehiculo'::regtype)
+     is distinct from array['liviano', 'pesado'] then
+    raise exception 'R18: clase_vehiculo no es exactamente (liviano, pesado). Un tercer valor tiene que discutirse: el front lo leería como liviano.';
+  end if;
+
+  -- (b) el alta del Momento 0 guarda la clase contestada, y omitida queda null.
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  v_veh_p := crear_cliente_con_vehiculo('Cliente R18 pesado', '351555018', '', 'AR 018 PS', 'Scania', 'R450', 2019, null, 'pesado');
+  v_veh_n := crear_cliente_con_vehiculo('Cliente R18 sin clase', '351555019', '', 'AR 018 PL', 'Ford', 'Ranger');
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  select cliente_id into v_cli_p from vehiculos where id = v_veh_p;
+  select cliente_id into v_cli_n from vehiculos where id = v_veh_n;
+
+  if (select clase from vehiculos where id = v_veh_p) is distinct from 'pesado'::clase_vehiculo then
+    raise exception 'R18: crear_cliente_con_vehiculo no guardó la clase contestada (quedó %).', (select clase from vehiculos where id = v_veh_p);
+  end if;
+  if (select clase from vehiculos where id = v_veh_n) is not null then
+    raise exception 'R18: crear_cliente_con_vehiculo guardó una clase (%) que nadie contestó. Tiene que quedar null.', (select clase from vehiculos where id = v_veh_n);
+  end if;
+
+  -- (d) vista_vehiculos la expone. Que siga con security_invoker lo vigila
+  --     el primer bloque de este archivo, para todas las vistas.
+  if (select clase from vista_vehiculos where id = v_veh_p) is distinct from 'pesado'::clase_vehiculo then
+    raise exception 'R18: vista_vehiculos no expone la clase (o la expone mal).';
+  end if;
+
+  -- (c) la puerta pública la emite tal cual: 'pesado' para el camión y
+  --     null —la clave presente, sin valor— para el que nunca se preguntó.
+  --     Leer null como liviano es del front, no de la base.
+  v_json := get_carton('demo', 'AR 018 PS');
+  if v_json->'vehiculo'->>'clase' is distinct from 'pesado' then
+    raise exception 'R18: get_carton no emite la clase del camión (vehiculo = %).', v_json->'vehiculo';
+  end if;
+  v_json := get_carton('demo', 'AR 018 PL');
+  if not (v_json->'vehiculo' ? 'clase') or v_json->'vehiculo'->>'clase' is not null then
+    raise exception 'R18: get_carton tiene que emitir clase = null para un vehículo sin clase (vehiculo = %).', v_json->'vehiculo';
+  end if;
+  delete from landing_busquedas where lubricentro_id = v_lub and patente in ('AR018PS', 'AR018PL');
+
+  -- limpieza total
+  delete from vehiculos where id in (v_veh_p, v_veh_n);
+  delete from clientes where id in (v_cli_p, v_cli_n);
+end $$;
+-- <<< R18
+
+-- ============================================================
+-- R19 · Editar un vehículo sin contestar la clase la deja en null
+--
+-- Una sugerencia no es una respuesta. Al editar un vehículo con la clase
+-- en null, el selector la SUGIERE por la marca pero no la manda hasta que
+-- el mecánico toca un botón: el input oculto viaja vacío, esClaseVehiculo
+-- lo lee como null y editarVehiculo no incluye `clase` en el update. Este
+-- bloque cubre la mitad que vive en la base: el update que emite esa
+-- acción —los cuatro campos, sin clase— tiene que dejar la clase como
+-- estaba, null o contestada, y nada de la base (un trigger "útil", un
+-- default) puede inventar una clasificación. La mitad del front (el
+-- input vacío y el update sin la clave) se vio en rojo y en verde a mano
+-- en #95. Se resigna volver una clase a null: nadie lo necesita.
+-- ============================================================
+
+-- >>> R19
+do $$
+declare
+  v_lub   uuid;
+  v_owner uuid;
+  v_cli   uuid;
+  v_veh   uuid;
+  v_clase clase_vehiculo;
+begin
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+  select u.id into v_owner from usuarios u where u.lubricentro_id = v_lub and u.rol = 'owner' limit 1;
+
+  -- Un auto cargado antes del sprint: la clase nunca se preguntó.
+  insert into clientes (lubricentro_id, nombre, telefono)
+  values (v_lub, 'Cliente R19', '351555190') returning id into v_cli;
+  insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo, anio)
+  values (v_lub, v_cli, 'AR 019 PL', 'Chevrolet', 'Corsa', 2011) returning id into v_veh;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  -- 1 · La edición sin tocar el selector: exactamente lo que escribe
+  --     editarVehiculo cuando la clase no se contestó — los cuatro
+  --     campos, sin clase.
+  update vehiculos
+  set patente = 'AR 019 PL', marca = 'Chevrolet', modelo = 'Corsa', anio = 2012
+  where id = v_veh;
+
+  select clase into v_clase from vehiculos where id = v_veh;
+  if v_clase is not null then
+    raise exception 'R19: editar un vehículo sin contestar la clase la dejó en % — tiene que quedar null. Algo en la base (un trigger, un default) está inventando una clasificación.', v_clase;
+  end if;
+
+  -- 2 · La edición que SÍ la contesta la guarda.
+  update vehiculos set clase = 'pesado' where id = v_veh;
+  select clase into v_clase from vehiculos where id = v_veh;
+  if v_clase is distinct from 'pesado'::clase_vehiculo then
+    raise exception 'R19: contestar la clase al editar no la guardó (quedó %).', v_clase;
+  end if;
+
+  -- 3 · Y una edición posterior sin la clave no la pisa: el update de
+  --     editarVehiculo no manda `clase` cuando no se contestó.
+  update vehiculos set marca = 'Scania', modelo = 'R450' where id = v_veh;
+  select clase into v_clase from vehiculos where id = v_veh;
+  if v_clase is distinct from 'pesado'::clase_vehiculo then
+    raise exception 'R19: una edición sin la clase pisó la clasificación guardada (quedó %).', v_clase;
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- limpieza total
+  delete from vehiculos where id = v_veh;
+  delete from clientes where id = v_cli;
+end $$;
+-- <<< R19

@@ -62,7 +62,11 @@ const ACEITES_DEMO = [
   { id: "castrol-5w30", nombre: "Castrol Magnatec 5W30" },
 ];
 
-const FILTROS = RENGLONES.filter((r) => r.grupo === "FILTROS");
+// Solo los filtros de siempre: la landing muestra un auto, y los seis
+// de camión (urea, separador de agua…) son del vehículo pesado.
+const FILTROS = RENGLONES.filter(
+  (r) => r.grupo === "FILTROS" && r.alcance === "siempre",
+);
 
 // El estado "vitrina": el formulario completo que se ve sin interactuar.
 const VITRINA = {

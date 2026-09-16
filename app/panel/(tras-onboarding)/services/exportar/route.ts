@@ -44,20 +44,40 @@ import {
 // de hace seis meses.
 // ============================================================
 
-// El renglón del cartón, escrito como se lee. Los once, en el orden del
-// papel.
+// El renglón del cartón, escrito como se lee. Los 21, en el orden del
+// papel. Es un Record TOTAL a propósito: un valor nuevo de item_tipo sin
+// etiqueta no compila, que es la única red que impide mandarle al cliente
+// un Excel con una celda en blanco.
+//
+// UNA SOLA ETIQUETA POR VALOR, siempre la neutra. "Combustible" se lee
+// "Combustible primario" en la carga de un camión y "Diferencial" se lee
+// "Diferencial trasero", pero acá van "Filtro de combustible" y "Aceite
+// de diferencial" para todos: dos nombres para el mismo valor rompen
+// cualquier filtro o tabla dinámica que el cliente arme sobre el archivo.
 const ETIQUETA_RENGLON: Record<ItemTipo, string> = {
   filtro_aceite: "Filtro de aceite",
   filtro_aire: "Filtro de aire",
   filtro_combustible: "Filtro de combustible",
   filtro_habitaculo: "Filtro de habitáculo",
+  filtro_combustible_secundario: "Filtro de combustible secundario",
+  filtro_separador_agua: "Filtro separador de agua",
+  filtro_aire_secundario: "Filtro de aire secundario",
+  filtro_secador_aire: "Filtro secador de aire",
+  filtro_urea: "Filtro de urea (AdBlue)",
+  // El FILTRO hidráulico. El aceite hidráulico es aceite_hidraulico, más
+  // abajo: dos renglones distintos.
+  filtro_hidraulico: "Filtro hidráulico",
   aceite_caja: "Aceite de caja",
   aceite_diferencial: "Aceite de diferencial",
   aceite_hidraulico: "Aceite hidráulico",
+  aceite_caja_reductora: "Aceite de caja reductora",
+  aceite_diferencial_delantero: "Aceite de diferencial delantero",
   liq_refrigerante: "Líquido refrigerante",
   liq_frenos: "Líquido de frenos",
   aditivo_motor: "Aditivo de motor",
   aditivo_transmision: "Aditivo de transmisión",
+  engrase: "Engrase",
+  bateria: "Batería",
 };
 
 const ORDEN_RENGLON = new Map(RENGLONES.map((r, i) => [r.tipo, i]));

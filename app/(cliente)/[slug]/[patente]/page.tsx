@@ -220,6 +220,8 @@ export default async function PaginaVehiculo({ params }: Props) {
                       aceiteNombre: ultimo.aceiteNombre,
                       proxServiceKm: ultimo.proxServiceKm ?? 0,
                       colorPapel: lubricentro.colorCarton,
+                      // El mismo papel que ve el mecánico: el de la clase.
+                      clase: vehiculo.clase,
                       marcados: marcadosDe(ultimo),
                     }}
                   />
@@ -271,6 +273,7 @@ export default async function PaginaVehiculo({ params }: Props) {
                   lubricentroNombre={lubricentro.nombre}
                   colorTenant={paleta.primary}
                   colorPapel={lubricentro.colorCarton}
+                  clase={vehiculo.clase}
                 />
 
                 <BotonTurno

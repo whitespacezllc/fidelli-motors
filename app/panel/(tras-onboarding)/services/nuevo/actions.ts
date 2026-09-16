@@ -19,6 +19,7 @@ import {
   PATENTE_FORMATO,
 } from "@/lib/texto";
 import { hoyISO } from "@/lib/fechas";
+import { esClaseVehiculo } from "@/lib/clase-vehiculo";
 
 export type VehiculoIdentificado = {
   vehiculoId: string;
@@ -147,6 +148,11 @@ function leerVehiculo(formData: FormData) {
   const marca = String(formData.get("marca") ?? "").trim() || null;
   const modelo = String(formData.get("modelo") ?? "").trim() || null;
   const anioTexto = String(formData.get("anio") ?? "").trim();
+  // La clase, solo si es una de las dos: cualquier otra cosa (un
+  // formulario viejo que no la manda, un valor inventado) queda en null,
+  // que es "nunca se preguntó" — nunca se inventa un liviano.
+  const claseTexto = formData.get("clase");
+  const clase = esClaseVehiculo(claseTexto) ? claseTexto : null;
 
   // El año del calendario argentino: con el del proceso (UTC), el 31/12
   // a la noche el tope se corría un año antes de tiempo.
@@ -155,7 +161,7 @@ function leerVehiculo(formData: FormData) {
   const anioValido =
     anio === null || (Number.isInteger(anio) && anio >= 1900 && anio <= maximo);
 
-  return { patente, marca, modelo, anio, anioValido, maximo };
+  return { patente, marca, modelo, anio, anioValido, maximo, clase };
 }
 
 // Caso B: el cliente ya existe, se le suma el auto.
@@ -184,6 +190,7 @@ export async function crearVehiculoParaCliente(
       marca: v.marca,
       modelo: v.modelo,
       anio: v.anio,
+      clase: v.clase,
     })
     .select("id")
     .single();
@@ -239,6 +246,7 @@ export async function crearClienteYVehiculo(
     p_modelo: v.modelo ?? undefined,
     p_anio: v.anio ?? undefined,
     p_cuit: cuit || undefined,
+    p_clase: v.clase ?? undefined,
   });
 
   if (error) return { error: traducirError(error) };

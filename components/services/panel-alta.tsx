@@ -11,6 +11,7 @@ import {
   type EstadoAlta,
 } from "@/app/panel/(tras-onboarding)/services/nuevo/actions";
 import { CamposMarcaModelo } from "@/components/vehiculos/campos-marca-modelo";
+import { SelectorClase } from "@/components/vehiculos/selector-clase";
 
 const ESTADO_INICIAL: EstadoAlta = {};
 
@@ -21,6 +22,10 @@ const CLASE_LABEL =
 
 // Campos del auto, compartidos por los dos caminos. La patente ya viene
 // tipeada del Momento 0: no se vuelve a pedir, se muestra fija.
+//
+// LA CLASE SE PREGUNTA ACÁ Y NUNCA MÁS: un camión es camión para siempre,
+// y el segundo service del mismo camión no pregunta nada. La marca se
+// espeja solo para pre-seleccionarla.
 function CamposVehiculo({
   patente,
   marcas,
@@ -28,10 +33,11 @@ function CamposVehiculo({
   patente: string;
   marcas: string[];
 }) {
+  const [marca, setMarca] = useState("");
   return (
     <>
       <input type="hidden" name="patente" value={patente} />
-      <CamposMarcaModelo marcas={marcas} />
+      <CamposMarcaModelo marcas={marcas} alCambiarMarca={setMarca} />
       {/* En mobile el año ocupa todo el ancho, como siempre. Desde tablet se
           recorta a media fila —el mismo ancho que marca y modelo— para que no
           quede un campo largo suelto debajo del par. */}
@@ -49,6 +55,7 @@ function CamposVehiculo({
           className={`${CLASE_CAMPO} tabular-nums`}
         />
       </div>
+      <SelectorClase marca={marca} />
     </>
   );
 }

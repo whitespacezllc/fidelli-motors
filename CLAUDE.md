@@ -66,8 +66,10 @@ solo en elementos flotantes, radios 4/8/12.
 
 **El cartón digital va en versión papel** (la "versión B" del hi-fi): troquel,
 grilla completa con bordes, etiquetas verticales de grupo en el color del tenant,
-los 11 renglones en el orden del cartón físico, PROX. SERV. KMTS. al pie. Es la
-única pieza del producto donde la grilla con bordes se justifica: *es* el papel.
+los renglones en el orden del cartón físico (los 11 de un auto; los de camión y
+la batería se imprimen solo cuando el service los tiene), PROX. SERV. KMTS. al
+pie. Es la única pieza del producto donde la grilla con bordes se justifica: *es*
+el papel.
 
 El hi-fi navegable está en `/docs`. **Ante una duda visual, abrilo — no lo
 adivines.**
@@ -456,6 +458,35 @@ función rota con un `sed` sobre la migración, corren el bloque de
 `verificaciones.sql` que la cubre y esperan la excepción. Es la práctica del
 proyecto, no un script de un módulo: un bloque nuevo de la red trae su rotura.
 
+Y las dos del sprint de vehículo pesado (septiembre de 2026), que no rompen el
+build y se pisan en el primer `alter type` o en el primer mapa de etiquetas:
+
+**14 · El orden del enum `item_tipo` es el orden del cartón.** `order by
+item_tipo` es lo que dibuja el papel en `get_carton`, en la exportación y en
+pantalla. Un valor nuevo agregado al final —o anclado en el lugar equivocado—
+pone el filtro de urea después de los aditivos en el cartón de un camión, sin
+error y con el build en verde. Todo valor nuevo entra con `add value … after`,
+**anclado a un valor que ya existía antes de esa migración** (anclar a uno
+agregado en la misma transacción es justo lo que Postgres puede rechazar), en
+orden inverso al del cartón —cada uno empuja al anterior hacia abajo— y en una
+migración sola, sin nada más adentro: un valor nuevo de enum no se puede usar
+en la transacción que lo crea. El molde es `20260915120000_item_tipo_pesado`.
+Ninguna función SQL enumera valores de `item_tipo` y así tiene que seguir:
+`guardar_service` y `actualizar_service` castean el jsonb entrante de forma
+genérica. Lo vigila R17.
+
+**15 · `filtro_hidraulico` y `aceite_hidraulico` son dos renglones distintos.**
+El filtro es del sprint de vehículo pesado y vive en FILTROS; el aceite existe
+desde el día uno y vive en ACEITES. En el papel los dos dicen "Hidráulic." y
+los distingue la etiqueta vertical del grupo. Es el error más fácil de cometer
+al tocar `lib/renglones.ts` o `ETIQUETA_RENGLON` en la exportación: un renglón
+mapeado al otro no da error, guarda el aceite como filtro y el Excel del
+cliente miente. Lo mismo con las dos relecturas de pesado ("Combustible
+primario", "Diferencial trasero"): son el MISMO `item_tipo` que "Combustible" y
+"Diferencial", cambia solo cómo se lee la etiqueta en la carga y en el papel, y
+en el Excel va siempre la neutra —dos nombres para el mismo valor rompen
+cualquier tabla dinámica del cliente.
+
 ---
 
 ## La red de regresión — qué protege cada cosa
@@ -485,12 +516,16 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R14** | Ninguna cuenta queda con `onboarding_completado_at` null tras el seed; las funciones del onboarding son definer; un Basic tiene dos pasos y nunca se le pide el premio; el estado de otro tenant no se lee | Una cuenta vieja vería el panel bloqueado, o un taller no podría salir nunca del onboarding, o se le pide una función que su plan no tiene |
 | **R15** | El módulo de gomería (bloque 1): sin el módulo no entra un trabajo de neumáticos ni por SQL directo —en dos variantes, porque la de "solo alineación" es la única que aísla la policy de `services`—; no altera la retención; los CHECK del tercer tipo y de cada rueda; el stock baja una por rueda colocada; el premio sigue `alcance`; apagar el módulo no le saca a nadie lo que ya cargó; el listado de `/fidelli` sigue respondiendo | La regla 11 o la 12. El módulo pago quedó abierto, o la superficie de administración quedó vacía sin error |
 | **R16** | Los retornos de gomería (bloque 2): `vista_proximos_service` devuelve exactamente las mismas filas antes y después de cargar trabajos de gomería; la vista nueva es invoker y solo para tenants con el módulo; cada motivo (rotación, alineación, reajuste, antigüedad, desgaste) con su regla; el anti-spam por ciclo; el beneficio de la compra y su apagado; los CHECK y el RLS de `config_neumaticos`; `resumen_inicio` emite el tipo; el ritmo sale de todos los trabajos con km | La regla 5 otra vez, o un motivo que dejó de avisar: la pantalla que trae la plata miente en silencio |
+| **R17** | Los renglones del vehículo pesado: el enum `item_tipo` tiene los 21 valores en el orden exacto del cartón; `guardar_service` y `actualizar_service` aceptan los 21 tal cual y `get_carton` los devuelve en el orden del papel | La regla 14: el cartón de un camión se dibuja fuera de orden, o alguien enumeró los valores de `item_tipo` en SQL y los diez de camión quedaron afuera |
+| **R18** | La clase del vehículo: `vehiculos.clase` es anulable y sin default; el enum es exactamente `(liviano, pesado)`; `crear_cliente_con_vehiculo` guarda la clase contestada y deja null la omitida; `vista_vehiculos` y `get_carton` la exponen (null como null) | Alguien marcó los ~1.800 vehículos como autos "para simplificar", el alta perdió la clase, o el papel del cliente volvió a ser el de un auto para un camión |
+| **R19** | Editar un vehículo sin contestar la clase la deja como estaba: el update de `editarVehiculo` sin la clave no la toca, null o contestada, y nada de la base la inventa | Una sugerencia pasó a ser una respuesta: un trigger o un default clasifica autos que nadie clasificó, o una edición pisa una clase guardada |
 
 Además, fuera del reset, **las roturas a mano** (regla 13):
 
 ```bash
 ./scripts/regresion-retencion.sh
 ./scripts/regresion-neumaticos.sh
+./scripts/regresion-pesado.sh
 ```
 
 El primero rompe la vista de retención de dos formas —le saca el filtro de
@@ -498,9 +533,14 @@ tipo y le saca `security_invoker`— y verifica que la red **atrape las dos**.
 El segundo rompe cada regla del módulo de gomería (22 roturas: cada motivo
 apagado, el gate del módulo, el anti-spam, el beneficio, los CHECK, el RLS,
 el tipo en Inicio…) con un `sed` sobre las líneas marcadas `-- @algo` de la
-migración, y espera ver cada bloque de R16 en rojo. Son la prueba de que las
-pruebas sirven de verdad. Se corren antes de un release, no en cada cambio, y
-**un bloque nuevo de la red trae su rotura en uno de los dos scripts**.
+migración, y espera ver cada bloque de R16 en rojo. El tercero rompe R17,
+R18 y R19 (seis roturas): un valor de `item_tipo` agregado al final del enum
+sin `after`, un CHECK en `service_items` con la lista de los once renglones
+de siempre, `vehiculos.clase` con default `'liviano'`, el alta que ignora
+`p_clase`, `get_carton` que calla la clase y un trigger que la rellena al
+editar. Son la prueba de que las pruebas sirven de verdad. Se
+corren antes de un release, no en cada cambio, y **un bloque nuevo de la red
+trae su rotura en uno de estos scripts**.
 
 Y en cualquier momento, a mano:
 

@@ -42,7 +42,7 @@ export default async function PaginaEditarService({ params }: Props) {
            aceite_tipo, aceite_producto_id,
            prox_service_km, observaciones, anulado, desbloqueado_hasta,
            sucursal_id, vehiculo_id,
-           vehiculos(patente, marca, modelo, clientes(nombre)),
+           vehiculos(patente, marca, modelo, clase, clientes(nombre)),
            service_items(item_tipo, detalle, cambiado, cantidad, producto_id, productos(nombre, marca)),
            service_ruedas(posicion, posicion_anterior, colocada, rotada, balanceada,
                           reparada, producto_id, marca, medida, indice_carga_vel,
@@ -103,7 +103,7 @@ export default async function PaginaEditarService({ params }: Props) {
   // El detalle del renglón como lo edita el mecánico: texto. Si el renglón
   // vino con producto del catálogo, el texto es su nombre — al guardar, el
   // match por nombre lo vuelve a vincular como producto.
-  // Los 11 renglones del cartón (item_tipo) y los libres de mecánica
+  // Los renglones del cartón (item_tipo) y los libres de mecánica
   // (item_tipo null) se precargan por caminos distintos.
   const renglonesCarton = service.service_items.filter(
     (i) => i.item_tipo !== null,
@@ -194,6 +194,7 @@ export default async function PaginaEditarService({ params }: Props) {
               .filter(Boolean)
               .join(" ") || "Vehículo",
           clienteNombre: service.vehiculos?.clientes?.nombre ?? "",
+          clase: service.vehiculos?.clase ?? null,
           lubricentroNombre: sesion?.lubricentroNombre ?? "Tu lubricentro",
           colorTenant: configRes.data?.color_primario ?? "#0A0A0A",
           colorPapel: configRes.data?.color_carton ?? null,
