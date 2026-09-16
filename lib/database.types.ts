@@ -79,6 +79,50 @@ export type Database = {
           },
         ]
       }
+      cambios_precio_catalogo: {
+        Row: {
+          antes: Json
+          cambiado_por: string
+          created_at: string
+          despues: Json
+          fila_id: string
+          id: string
+          motivo: string
+          nombre: string
+          tabla: string
+        }
+        Insert: {
+          antes: Json
+          cambiado_por: string
+          created_at?: string
+          despues: Json
+          fila_id: string
+          id?: string
+          motivo: string
+          nombre: string
+          tabla: string
+        }
+        Update: {
+          antes?: Json
+          cambiado_por?: string
+          created_at?: string
+          despues?: Json
+          fila_id?: string
+          id?: string
+          motivo?: string
+          nombre?: string
+          tabla?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cambios_precio_catalogo_cambiado_por_fkey"
+            columns: ["cambiado_por"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       canjes: {
         Row: {
           created_at: string
@@ -487,6 +531,108 @@ export type Database = {
           },
         ]
       }
+      cresium_eventos: {
+        Row: {
+          external_id: string | null
+          id: string
+          intento: number
+          motivo: string | null
+          payload: Json
+          procesado_at: string | null
+          recibido_at: string
+          tipo: string
+          transaccion_id: number
+        }
+        Insert: {
+          external_id?: string | null
+          id?: string
+          intento?: number
+          motivo?: string | null
+          payload: Json
+          procesado_at?: string | null
+          recibido_at?: string
+          tipo: string
+          transaccion_id: number
+        }
+        Update: {
+          external_id?: string | null
+          id?: string
+          intento?: number
+          motivo?: string | null
+          payload?: Json
+          procesado_at?: string | null
+          recibido_at?: string
+          tipo?: string
+          transaccion_id?: number
+        }
+        Relationships: []
+      }
+      cresium_ordenes: {
+        Row: {
+          actualizado_at: string
+          alias: string
+          created_at: string
+          cvu: string | null
+          estado: string
+          external_id: string
+          id: string
+          lubricentro_id: string
+          monto: number
+          monto_pagado: number
+          orden_id: number | null
+          periodo: Database["public"]["Enums"]["periodo_suscripcion"]
+          periodo_hasta: string
+          suscripcion_id: string
+        }
+        Insert: {
+          actualizado_at?: string
+          alias: string
+          created_at?: string
+          cvu?: string | null
+          estado?: string
+          external_id: string
+          id?: string
+          lubricentro_id: string
+          monto: number
+          monto_pagado?: number
+          orden_id?: number | null
+          periodo: Database["public"]["Enums"]["periodo_suscripcion"]
+          periodo_hasta: string
+          suscripcion_id: string
+        }
+        Update: {
+          actualizado_at?: string
+          alias?: string
+          created_at?: string
+          cvu?: string | null
+          estado?: string
+          external_id?: string
+          id?: string
+          lubricentro_id?: string
+          monto?: number
+          monto_pagado?: number
+          orden_id?: number | null
+          periodo?: Database["public"]["Enums"]["periodo_suscripcion"]
+          periodo_hasta?: string
+          suscripcion_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cresium_ordenes_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cresium_ordenes_suscripcion_id_fkey"
+            columns: ["suscripcion_id"]
+            isOneToOne: false
+            referencedRelation: "suscripciones"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       landing_busquedas: {
         Row: {
           created_at: string
@@ -524,6 +670,7 @@ export type Database = {
           activo: boolean
           bienvenida_vista_at: string | null
           calcos_entregadas: number
+          cobranza_desde: string | null
           created_at: string
           diseno_confirmado_at: string | null
           id: string
@@ -532,11 +679,13 @@ export type Database = {
           plan_overrides: Json
           premio_omitido_at: string | null
           slug: string
+          suspension_automatica: boolean
         }
         Insert: {
           activo?: boolean
           bienvenida_vista_at?: string | null
           calcos_entregadas?: number
+          cobranza_desde?: string | null
           created_at?: string
           diseno_confirmado_at?: string | null
           id?: string
@@ -545,11 +694,13 @@ export type Database = {
           plan_overrides?: Json
           premio_omitido_at?: string | null
           slug: string
+          suspension_automatica?: boolean
         }
         Update: {
           activo?: boolean
           bienvenida_vista_at?: string | null
           calcos_entregadas?: number
+          cobranza_desde?: string | null
           created_at?: string
           diseno_confirmado_at?: string | null
           id?: string
@@ -558,6 +709,7 @@ export type Database = {
           plan_overrides?: Json
           premio_omitido_at?: string | null
           slug?: string
+          suspension_automatica?: boolean
         }
         Relationships: []
       }
@@ -626,6 +778,33 @@ export type Database = {
           },
         ]
       }
+      modulos: {
+        Row: {
+          activo: boolean
+          codigo: string
+          created_at: string
+          id: string
+          nombre: string
+          precio_mensual: number
+        }
+        Insert: {
+          activo?: boolean
+          codigo: string
+          created_at?: string
+          id?: string
+          nombre: string
+          precio_mensual: number
+        }
+        Update: {
+          activo?: boolean
+          codigo?: string
+          created_at?: string
+          id?: string
+          nombre?: string
+          precio_mensual?: number
+        }
+        Relationships: []
+      }
       notas_vehiculo: {
         Row: {
           contenido: string
@@ -691,35 +870,41 @@ export type Database = {
       pagos: {
         Row: {
           created_at: string
+          cresium_transaccion_id: number | null
           fecha_pago: string
           id: string
           lubricentro_id: string
           monto: number
+          origen: string
           periodo_desde: string
           periodo_hasta: string
-          registrado_por: string
+          registrado_por: string | null
           suscripcion_id: string
         }
         Insert: {
           created_at?: string
+          cresium_transaccion_id?: number | null
           fecha_pago: string
           id?: string
           lubricentro_id: string
           monto: number
+          origen?: string
           periodo_desde: string
           periodo_hasta: string
-          registrado_por: string
+          registrado_por?: string | null
           suscripcion_id: string
         }
         Update: {
           created_at?: string
+          cresium_transaccion_id?: number | null
           fecha_pago?: string
           id?: string
           lubricentro_id?: string
           monto?: number
+          origen?: string
           periodo_desde?: string
           periodo_hasta?: string
-          registrado_por?: string
+          registrado_por?: string | null
           suscripcion_id?: string
         }
         Relationships: [
@@ -1974,6 +2159,7 @@ export type Database = {
       }
     }
     Functions: {
+      acreditar_deposito_cresium: { Args: { p_payload: Json }; Returns: Json }
       activar_template: { Args: { p_template_id: string }; Returns: undefined }
       actualizar_lubricentro: {
         Args: {
@@ -2063,6 +2249,31 @@ export type Database = {
           vehiculo_id: string
         }[]
       }
+      cobranzas_pendientes: {
+        Args: { p_dias?: number }
+        Returns: {
+          activo: boolean
+          avisado_at: string
+          cortaria: boolean
+          descuento_pct: number
+          dias: number
+          en_el_reloj: boolean
+          estado_cobranza: string
+          lubricentro_id: string
+          monto: number
+          monto_modulo: number
+          nombre: string
+          orden_estado: string
+          orden_pagado: number
+          owner_nombre: string
+          periodo: Database["public"]["Enums"]["periodo_suscripcion"]
+          plan_nombre: string
+          slug: string
+          sub_estado: Database["public"]["Enums"]["estado_suscripcion"]
+          telefono: string
+          vencimiento: string
+        }[]
+      }
       completar_onboarding: { Args: never; Returns: Json }
       completar_templates_neumaticos: { Args: never; Returns: number }
       confirmar_diseno: { Args: never; Returns: Json }
@@ -2109,12 +2320,35 @@ export type Database = {
         }
         Returns: string
       }
+      cresium_actualizar_orden: {
+        Args: { p_external: string; p_orden: Json }
+        Returns: undefined
+      }
+      cresium_external_id: {
+        Args: { p_hasta: string; p_suscripcion: string }
+        Returns: string
+      }
       desbloquear_service: { Args: { p_service_id: string }; Returns: string }
       dias_de_aviso: { Args: never; Returns: number }
+      dias_de_gracia: { Args: never; Returns: number }
+      dias_de_gracia_restantes: {
+        Args: { p_vencimiento: string }
+        Returns: number
+      }
       dot_a_fecha: { Args: { p_dot: string }; Returns: string }
       estado_atencion: {
         Args: {
           p_estado: Database["public"]["Enums"]["estado_suscripcion"]
+          p_vencimiento: string
+        }
+        Returns: string
+      }
+      estado_cobranza: {
+        Args: {
+          p_activo: boolean
+          p_descuento_pct: number
+          p_desde: string
+          p_suspension: boolean
           p_vencimiento: string
         }
         Returns: string
@@ -2134,6 +2368,20 @@ export type Database = {
       features_plan_bien_formadas: { Args: { p: Json }; Returns: boolean }
       fijar_override_plan: {
         Args: { p_lubricentro: string; p_motivo: string; p_overrides: Json }
+        Returns: undefined
+      }
+      fijar_precio_modulo: {
+        Args: { p_modulo: string; p_motivo: string; p_precio: number }
+        Returns: undefined
+      }
+      fijar_precio_plan: {
+        Args: {
+          p_anual: number
+          p_motivo: string
+          p_plan: string
+          p_precio: number
+          p_semestral: number
+        }
         Returns: undefined
       }
       fm_unaccent: { Args: { "": string }; Returns: string }
@@ -2226,6 +2474,10 @@ export type Database = {
       }
       marca_canonica: { Args: { p_texto: string }; Returns: string }
       marcar_bienvenida_vista: { Args: never; Returns: undefined }
+      meses_del_periodo: {
+        Args: { p_periodo: Database["public"]["Enums"]["periodo_suscripcion"] }
+        Returns: number
+      }
       metricas_plataforma: { Args: never; Returns: Json }
       metricas_tenant: { Args: { p_lubricentro_id: string }; Returns: Json }
       mi_lubricentro_id: { Args: never; Returns: string }
@@ -2235,6 +2487,18 @@ export type Database = {
           modelo: string
           propio: boolean
         }[]
+      }
+      modulo_es_pago: {
+        Args: { p_codigo: string; p_lubricentro: string }
+        Returns: boolean
+      }
+      monto_de_renovacion: { Args: { p_lubricentro: string }; Returns: Json }
+      monto_de_renovacion_en: {
+        Args: {
+          p_lubricentro: string
+          p_periodo: Database["public"]["Enums"]["periodo_suscripcion"]
+        }
+        Returns: Json
       }
       normalizar_patente: { Args: { entrada: string }; Returns: string }
       normalizar_texto_vehiculo: { Args: { p: string }; Returns: string }
@@ -2285,6 +2549,10 @@ export type Database = {
           p_periodo_hasta: string
         }
         Returns: string
+      }
+      reloj_cobranza: {
+        Args: { l: Database["public"]["Tables"]["lubricentros"]["Row"] }
+        Returns: Json
       }
       resumen_inicio: { Args: { p_sucursal_id?: string }; Returns: Json }
       seed_demo: { Args: { p_password?: string }; Returns: string }

@@ -44,8 +44,10 @@ export default async function PaginaOnboarding({
 }) {
   const sesion = await obtenerSesion();
   if (!sesion?.lubricentroId) redirect("/login");
-  // Completo, o suspendido (no podría escribir): al panel.
-  if (sesion.onboardingCompleto || !sesion.lubricentroActivo) redirect("/panel");
+  // Completo, o suspendido (no podría escribir): al panel. `suspendido`
+  // cubre el interruptor manual y el reloj de cobranza a la vez; los cinco
+  // gates leen este mismo campo.
+  if (sesion.onboardingCompleto || sesion.suspendido) redirect("/panel");
 
   const supabase = await createClient();
   const { data: crudo } = await supabase.rpc("onboarding_estado", {

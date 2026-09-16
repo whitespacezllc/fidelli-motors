@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/database.types";
 import { RUTA_FEATURE, type CapacidadesPlan, type FeaturePlan } from "@/lib/planes";
+import { aCobranza, type Cobranza } from "@/lib/auth/cobranza";
 
 export type Rol = Database["public"]["Enums"]["rol_usuario"];
 
@@ -31,6 +32,24 @@ export type Sesion = {
   // Paso 3 del onboarding: dejó el premio para después. Lo mira el
   // checklist de Inicio para no seguir pidiéndoselo.
   premioOmitido: boolean;
+  // El reloj de cobranza, YA RESUELTO por la base (migración 20260916140000).
+  // Null para un superadmin, para un tenant afuera del reloj, y ante
+  // cualquier problema leyéndolo: el panel degrada a lo de siempre, nunca
+  // se rompe por esto.
+  cobranza: Cobranza | null;
+  // ⚠ EL ÚNICO PREDICADO DE SUSPENSIÓN DEL PANEL. Se calcula UNA vez, acá,
+  // y lo leen los cinco sitios que antes miraban `lubricentroActivo` a
+  // mano. Con el reloj apagado —`cobranza_desde` en null, que es el default
+  // y el estado de los 17 tenants el día del deploy— `cobranza` es null y
+  // esto colapsa EXACTAMENTE a `rol === "owner" && !lubricentroActivo`, que
+  // es el comportamiento de hoy, bit por bit.
+  //
+  // Que sea un campo y no cinco expresiones sueltas es lo que evita el bug
+  // que este sprint casi mete dos veces: cuatro gates de acuerdo y uno en
+  // desacuerdo arma un ping-pong de redirects del que el owner no sale, o
+  // apaga el AvisoSuspension dejando al suspendido con un panel de
+  // apariencia normal que lo rebota sin decirle por qué.
+  suspendido: boolean;
 };
 
 // El rol y el tenant salen de public.usuarios (RLS deja leer solo la fila propia).
@@ -47,13 +66,41 @@ export const obtenerSesion = cache(async (): Promise<Sesion | null> => {
   // features del plan viajan en esta misma consulta, resueltas por la
   // base. El parser de tipos de supabase-js no conoce los campos
   // calculados, de ahí el cast.
-  const { data: fila } = await supabase
+  // El campo calculado `reloj_cobranza` viaja en este MISMO select: la
+  // carga de un service no hace ni una consulta HTTP nueva.
+  //
+  // ⚠ Y POR ESO HAY UN PISO. Si el deploy de Vercel llega antes que el
+  // `db push`, PostgREST responde 400 por una clave desconocida, `data`
+  // vuelve null y TODOS los owners caen en /login sin un solo error a la
+  // vista — la sesión entera se cae por una columna nueva. El segundo
+  // intento, sin la clave, devuelve la sesión de siempre con `cobranza` en
+  // null: el panel degrada a lo de antes en vez de desloguear a los 17.
+  // Es la misma ventana que el repo ya defiende en Inicio con el `?? []`
+  // de `series`, pero acá no hay valor por defecto posible: es una clave
+  // del select, no del JSON.
+  const CAMPOS = (conReloj: boolean) =>
+    "id, rol, nombre, email, lubricentro_id, plan_capacidades, " +
+    `lubricentros(nombre, activo, onboarding_completado_at, bienvenida_vista_at, premio_omitido_at${conReloj ? ", reloj_cobranza" : ""})`;
+
+  const primero = await supabase
     .from("usuarios")
-    .select(
-      "id, rol, nombre, email, lubricentro_id, plan_capacidades, lubricentros(nombre, activo, onboarding_completado_at, bienvenida_vista_at, premio_omitido_at)",
-    )
+    .select(CAMPOS(true))
     .eq("id", sub)
     .single();
+
+  let fila = primero.data;
+
+  // PGRST116 es "no hay fila", que no se arregla reintentando. Cualquier
+  // otro error —típicamente un 400 por columna desconocida— sí: significa
+  // que la base todavía no tiene la migración.
+  if (primero.error && primero.error.code !== "PGRST116") {
+    const segundo = await supabase
+      .from("usuarios")
+      .select(CAMPOS(false))
+      .eq("id", sub)
+      .single();
+    fila = segundo.data;
+  }
 
   const usuario = fila as unknown as {
     id: string;
@@ -68,10 +115,14 @@ export const obtenerSesion = cache(async (): Promise<Sesion | null> => {
       onboarding_completado_at: string | null;
       bienvenida_vista_at: string | null;
       premio_omitido_at: string | null;
+      reloj_cobranza?: unknown;
     } | null;
   } | null;
 
   if (!usuario) return null;
+
+  const activo = usuario.lubricentros?.activo ?? true;
+  const cobranza = aCobranza(usuario.lubricentros?.reloj_cobranza);
 
   return {
     usuarioId: usuario.id,
@@ -81,7 +132,9 @@ export const obtenerSesion = cache(async (): Promise<Sesion | null> => {
     lubricentroId: usuario.lubricentro_id,
     lubricentroNombre: usuario.lubricentros?.nombre ?? null,
     // Un superadmin no tiene tenant: nunca está suspendido.
-    lubricentroActivo: usuario.lubricentros?.activo ?? true,
+    lubricentroActivo: activo,
+    cobranza,
+    suspendido: usuario.rol === "owner" && (!activo || cobranza?.estado === "suspendido"),
     capacidades: usuario.plan_capacidades,
     onboardingCompleto: usuario.lubricentros
       ? usuario.lubricentros.onboarding_completado_at !== null
@@ -112,7 +165,7 @@ export function featureHabilitada(
 // ninguna consulta.
 export async function panelSuspendido(): Promise<boolean> {
   const sesion = await obtenerSesion();
-  return sesion?.rol === "owner" && !sesion.lubricentroActivo;
+  return sesion?.suspendido === true;
 }
 
 // Un owner siempre tiene tenant: lo exige el trigger que crea la fila de
@@ -148,7 +201,7 @@ export async function sesionParaEscribir(
 ): Promise<SesionDeOwner> {
   const sesion = await obtenerSesion();
   if (!sesion?.lubricentroId) redirect("/login");
-  if (sesion.rol === "owner" && !sesion.lubricentroActivo) redirect("/panel");
+  if (sesion.suspendido) redirect("/panel");
   // El cuarto chequeo: el plan. La acción declara qué feature necesita y
   // la respuesta viene resuelta de la base vía plan_capacidades — acá no
   // se re-decide nada. Bloqueado → a la sección, donde BloqueoPlan explica

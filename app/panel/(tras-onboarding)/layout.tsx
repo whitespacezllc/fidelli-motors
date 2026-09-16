@@ -28,9 +28,16 @@ export default async function LayoutTrasOnboarding({
 }) {
   const sesion = await obtenerSesion();
 
+  // `!sesion.suspendido` y no `sesion.lubricentroActivo`: acá se corta el
+  // bucle. Un owner suspendido POR EL RELOJ tiene `activo = true`, así que
+  // con el predicado viejo este layout lo mandaba a /panel/onboarding, la
+  // acción del paso lo rebotaba a /panel por estar suspendido, y /panel lo
+  // devolvía acá. Sin salida y sin una pantalla que le explicara nada.
+  // Con el campo único no redirige, y /panel le muestra el checklist en
+  // solo lectura con el AvisoSuspension arriba.
   if (
     sesion?.rol === "owner" &&
-    sesion.lubricentroActivo &&
+    !sesion.suspendido &&
     !sesion.onboardingCompleto
   ) {
     redirect("/panel/onboarding");

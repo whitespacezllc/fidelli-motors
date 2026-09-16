@@ -39,6 +39,16 @@ export default async function LayoutFidelli({
           >
             Lubricentros
           </NavLink>
+          {/* OPERACIÓN: lo que se mira todos los días. Va segundo, justo
+              después del listado, porque es la pantalla que se abre a la
+              mañana — antes que el catálogo, que se toca una vez por
+              trimestre. */}
+          <NavLink
+            href="/fidelli/cobranzas"
+            className="flex h-10 items-center rounded-md px-3 text-ui transition-colors"
+          >
+            Cobranzas
+          </NavLink>
           <NavLink
             href="/fidelli/precios"
             className="flex h-10 items-center rounded-md px-3 text-ui transition-colors"

@@ -14,7 +14,26 @@ update lubricentros
 -- heredado todo lo que existía al momento de aplicarse, así que a este no
 -- llega a verlo: se marca acá. En dev y producción el plan es dato previo y
 -- la migración lo marca sola; esto es solo del entorno local.
-update planes set heredado = true where nombre = 'Fidelli Motors';
+--
+-- Y por la misma razón, el resto del arreglo de catálogo de
+-- 20260916100000: sacarlo del catálogo (`activo = false`) y ponerle los
+-- valores REALES de producción. Sin esto, cada `db reset` deja un catálogo
+-- que no es el de producción —el plan activo, a $45.000, con 15% anual y
+-- 10% semestral— y el cálculo de plata se prueba contra números que no
+-- existen. El semestral es el que más engaña: con 10 la pantalla de pago
+-- OFRECE el período semestral, y en producción (0) no lo ofrece.
+-- Lo exige R20b.
+do $$
+begin
+  perform set_config('fidelli.precio_de_catalogo', 'si', true);
+  update planes
+     set heredado                = true,
+         activo                  = false,
+         precio_mensual          = 46750,
+         descuento_anual_pct     = 25,
+         descuento_semestral_pct = 0
+   where nombre = 'Fidelli Motors';
+end $$;
 
 -- Mismo caso: las plantillas del demo nacen acá, después de las
 -- migraciones, así que el backfill de contenido_pendiente (bloque 3) no

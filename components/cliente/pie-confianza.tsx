@@ -3,7 +3,9 @@ import {
   IconoUbicacion,
   IconoReloj,
   IconoPremio,
+  IconoWhatsapp,
 } from "@/components/iconos";
+import { telefonoWhatsapp } from "@/lib/contacto";
 import type { Lubricentro, SucursalPublica } from "@/lib/cliente/landing";
 
 // El marco de confianza: quién es este lubricentro y dónde se lo
@@ -59,12 +61,26 @@ export function PieConfianza({ lubricentro }: { lubricentro: Lubricentro }) {
   const { premio, sucursales } = lubricentro;
   const { instagram, facebook } = lubricentro.contacto;
 
+  // El WhatsApp del taller. El encabezado de este archivo ya decía que
+  // "el WhatsApp y las redes salen de datos_contacto — cómo escribo",
+  // pero solo se renderizaban las redes: el número estaba cargado y no
+  // se veía en ningún lado de la vidriera. Solo aparecía en el cartón,
+  // o sea recién DESPUÉS de escribir una patente.
+  //
+  // Importa más de lo que parece para un tenant suspendido: su página
+  // sigue viva a propósito (regla 8), y lo único que tiene que poder
+  // hacer el cliente final es llegar igual a su taller. Un `tel:` lo
+  // resuelve a medias — acá se escribe por WhatsApp.
+  const whatsapp = lubricentro.contacto.whatsapp
+    ? telefonoWhatsapp(lubricentro.contacto.whatsapp)
+    : null;
+
   const redes = [
     instagram && { nombre: "Instagram", url: urlRed("https://instagram.com", instagram) },
     facebook && { nombre: "Facebook", url: urlRed("https://facebook.com", facebook) },
   ].filter(Boolean) as { nombre: string; url: string }[];
 
-  if (sucursales.length === 0 && !premio && redes.length === 0) return null;
+  if (sucursales.length === 0 && !premio && redes.length === 0 && !whatsapp) return null;
 
   return (
     <footer className="border-t border-line px-5 py-8 sm:px-8 sm:py-10 lg:py-8">
@@ -90,6 +106,23 @@ export function PieConfianza({ lubricentro }: { lubricentro: Lubricentro }) {
               <Sucursal key={s.nombre} sucursal={s} sola={sucursales.length === 1} />
             ))}
           </ul>
+        )}
+
+        {whatsapp && (
+          <p className={`flex justify-center ${sucursales.length > 0 || premio ? "mt-6 sm:mt-8" : ""}`}>
+            <a
+              href={`https://wa.me/${whatsapp}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              // 44px de área táctil: el cliente final puede tener 60 años
+              // y estar parado al lado del auto. Y en el color del tenant,
+              // nunca el rojo de marca: esta superficie es del lubricentro.
+              className="inline-flex h-11 items-center gap-2 rounded-md border border-tenant px-4 text-c-body font-bold text-tenant"
+            >
+              <IconoWhatsapp aria-hidden className="size-5 shrink-0" />
+              Escribinos por WhatsApp
+            </a>
+          </p>
         )}
 
         {redes.length > 0 && (

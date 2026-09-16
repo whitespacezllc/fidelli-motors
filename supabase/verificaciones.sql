@@ -2668,3 +2668,761 @@ begin
   delete from clientes where id = v_cli;
 end $$;
 -- <<< R19
+
+-- ============================================================
+-- R20 · El catálogo de cobranza (20260916100000)
+--
+-- Toda la plata es dato y no constante, y todo cambio de plata deja
+-- rastro con autor, fecha y motivo. Este bloque protege las tres mitades
+-- de esa regla:
+--
+--   a · El módulo existe con su precio, y su `codigo` coincide con la
+--       clave del override. No hay FK posible contra un tipo de
+--       TypeScript: si alguien escribe 'neumatico' en una de las dos
+--       puntas, el monto sale sin el módulo y nadie se entera.
+--   b · El catálogo local es el de PRODUCCIÓN. La drift de septiembre de
+--       2026 (semestral 10 vs 0, el plan del demo a 45.000 con 15% anual)
+--       hacía que la pantalla de pago ofreciera el período semestral en
+--       local y no en producción. Corre después del seed a propósito: el
+--       plan del demo nace en `seed.sql`, no en las migraciones.
+--   c · El candado. Un UPDATE suelto de precio se rechaza venga de donde
+--       venga, y la función oficial deja el rastro.
+--   d · El motivo es obligatorio de verdad, y un guardado que no mueve
+--       ningún número no ensucia la auditoría.
+-- ============================================================
+
+-- >>> R20
+do $$
+declare
+  v_super   uuid;
+  v_plan    uuid;
+  v_modulo  uuid;
+  v_precio  numeric;
+  v_n       integer;
+  v_catalogo text;
+  v_fila    record;
+  v_aud     record;
+begin
+  select u.id into v_super from usuarios u where u.rol = 'superadmin' limit 1;
+  if v_super is null then
+    raise exception 'R20 SIN PISO: el seed local no dejó ningún superadmin (ver supabase/seed.sql).';
+  end if;
+
+  -- ---------- a · El módulo y su código ----------
+  select id, precio_mensual into v_modulo, v_precio
+  from modulos where codigo = 'neumaticos';
+
+  if v_modulo is null then
+    raise exception 'R20a: no hay fila en `modulos` con codigo = ''neumaticos''. El cálculo del monto no tiene de dónde sacar el precio del módulo y lo cobraría en cero, en silencio.';
+  end if;
+  if v_precio is distinct from 25000 then
+    raise exception 'R20a: el módulo gomería vale % y tiene que valer 25000.', v_precio;
+  end if;
+
+  -- El código de `modulos` y la clave del override son la misma palabra,
+  -- en dos lugares que ningún tipo ata. El día que se agregue un módulo,
+  -- esto avisa antes que una factura.
+  if not exists (
+    select 1 from lubricentros
+    where plan_overrides ? 'neumaticos'
+  ) and exists (select 1 from lubricentros where plan_overrides <> '{}'::jsonb) then
+    raise exception 'R20a: hay overrides de plan cargados y ninguno usa la clave ''neumaticos'', que es el `codigo` del único módulo del catálogo. Una de las dos puntas se escribió distinto.';
+  end if;
+
+  -- ---------- b · El catálogo local es el de producción ----------
+  select activo, heredado, precio_mensual, descuento_anual_pct, descuento_semestral_pct
+    into v_fila
+  from planes where nombre = 'Fidelli Motors';
+
+  if not found then
+    raise exception 'R20b: el plan "Fidelli Motors" no existe después del seed. Los dos seeds lo buscan POR NOMBRE (20260723225403:58 y 20260724040841:144) y si no está lo recrean a $45.000, pisando el precio real.';
+  end if;
+  if v_fila.activo then
+    raise exception 'R20b: el plan "Fidelli Motors" quedó ACTIVO. Tiene que salir del catálogo con activo = false — ni borrado (lo bloquea on delete restrict y el seed lo recrea) ni renombrado (los seeds lo buscan por nombre y crearían un duplicado). Falta el backfill de supabase/seed.sql.';
+  end if;
+  if v_fila.precio_mensual is distinct from 46750
+     or v_fila.descuento_anual_pct is distinct from 25 then
+    raise exception 'R20b: el plan "Fidelli Motors" quedó en % / %%% anual y producción dice 46750 / 25%%. El `db reset` está dejando un catálogo que no es el real y el cálculo de plata se prueba contra números que no existen.',
+      v_fila.precio_mensual, v_fila.descuento_anual_pct;
+  end if;
+
+  select count(*) into v_n from planes where descuento_semestral_pct <> 0;
+  if v_n > 0 then
+    raise exception 'R20b: % plan(es) con descuento semestral distinto de 0. En producción los cuatro están en 0, y la pantalla de pago decide si OFRECE el período semestral mirando ese número: con la drift, la opción aparece en local y no en producción.', v_n;
+  end if;
+
+  select string_agg(nombre || '=' || precio_mensual, ' ' order by nombre) into v_catalogo
+  from planes where activo and not heredado;
+  if v_catalogo is distinct from 'Basic=39000.00 Pro=49000.00 Ultra=99000.00' then
+    raise exception 'R20b: el catálogo vigente quedó en «%» y tiene que ser Basic 39000 / Pro 49000 / Ultra 99000.', v_catalogo;
+  end if;
+
+  -- ---------- c · El candado ----------
+  select id into v_plan from planes where nombre = 'Pro' and not heredado;
+
+  begin
+    update planes set precio_mensual = 1 where id = v_plan;
+    raise exception 'R20c: un UPDATE suelto movió el precio de Pro. El candado no rige y /fidelli/precios puede cambiar la factura de los 17 tenants sin dejar rastro.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%precio_solo_por_funcion%' then raise; end if;
+  end;
+
+  begin
+    update planes set descuento_anual_pct = 30 where id = v_plan;
+    raise exception 'R20c: un UPDATE suelto movió el descuento anual de Pro. El 25%% del anual sale de esta columna: moverla sin rastro cambia el monto de todos los anuales.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%precio_solo_por_funcion%' then raise; end if;
+  end;
+
+  begin
+    update modulos set precio_mensual = 1 where id = v_modulo;
+    raise exception 'R20c: un UPDATE suelto movió el precio del módulo gomería.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%precio_solo_por_funcion%' then raise; end if;
+  end;
+
+  -- Lo que el candado NO bloquea, y no tiene que bloquear: activo,
+  -- heredado, features y limites tienen sus propios caminos. Si esto
+  -- empieza a fallar, el candado se comió el ABM de planes y el alta.
+  begin
+    update planes set activo = activo where id = v_plan;
+  exception when others then
+    raise exception 'R20c: el candado bloqueó un UPDATE que NO toca precios (%). Se comió el ABM de planes.', sqlerrm;
+  end;
+
+  -- ---------- d · La puerta oficial, el motivo y el rastro ----------
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  -- Sin motivo con sustancia, no pasa.
+  --
+  -- La afirmación es sobre el INVARIANTE ("un motivo corto no mueve un
+  -- precio"), no sobre QUÉ defensa lo rechaza. Son dos y a propósito: el
+  -- chequeo de fijar_precio_plan(), que da un mensaje legible, y el CHECK
+  -- `motivo_con_sustancia` de la tabla, que es el piso. Atar la prueba a
+  -- una sola las vuelve frágiles: sacarle el mínimo a la función ponía este
+  -- bloque en rojo con el mensaje del CHECK, o sea rojo por la razón
+  -- equivocada, que es justo lo que manda a arreglar la verificación en vez
+  -- del bug.
+  declare
+    v_paso boolean := false;
+  begin
+    begin
+      perform fijar_precio_plan(v_plan, 51000, 0, 25, 'ajuste');
+      v_paso := true;
+    exception when others then
+      null;  -- cualquiera de las dos defensas que lo rechace sirve
+    end;
+
+    if v_paso then
+      raise exception 'R20d: se movió un precio de lista con un motivo de 6 caracteres. Sin motivo, dentro de un año nadie puede contestar por qué un cliente paga lo que paga — que es la única razón por la que existe cambios_precio_catalogo.';
+    end if;
+  end;
+
+  select count(*) into v_n from cambios_precio_catalogo;
+
+  -- Con motivo, pasa y deja rastro.
+  perform fijar_precio_plan(v_plan, 51000, 0, 25, 'Regresión R20 · ajuste de prueba');
+
+  select precio_mensual into v_precio from planes where id = v_plan;
+  if v_precio is distinct from 51000 then
+    raise exception 'R20d: fijar_precio_plan() no movió el precio (quedó %).', v_precio;
+  end if;
+
+  select count(*) into v_precio from cambios_precio_catalogo;
+  if v_precio <> v_n + 1 then
+    raise exception 'R20d: el cambio de precio no dejó fila en cambios_precio_catalogo (% → %).', v_n, v_precio;
+  end if;
+
+  select antes->>'precio_mensual' as antes, despues->>'precio_mensual' as despues, cambiado_por
+    into v_aud
+  from cambios_precio_catalogo order by created_at desc limit 1;
+
+  if v_aud.cambiado_por is distinct from v_super then
+    raise exception 'R20d: la fila de auditoría no guardó al autor.';
+  end if;
+
+  -- Un guardado que no mueve ningún número no ensucia la auditoría:
+  -- /fidelli/precios manda el formulario entero en cada submit.
+  perform fijar_precio_plan(v_plan, 51000, 0, 25, 'Regresión R20 · el mismo valor otra vez');
+  select count(*) into v_precio from cambios_precio_catalogo;
+  if v_precio <> v_n + 1 then
+    raise exception 'R20d: un guardado que no cambió ningún número dejó una fila de auditoría. En seis meses la tabla es ilegible justo cuando hay que leerla.';
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- Un no-superadmin no puede ni llamar a la puerta.
+  declare
+    v_owner uuid;
+  begin
+    select u.id into v_owner from usuarios u where u.rol = 'owner' limit 1;
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+
+    begin
+      perform fijar_precio_plan(v_plan, 1, 0, 25, 'Regresión R20 · un owner intentando');
+      raise exception 'R20d: un OWNER movió el precio de lista de un plan.';
+    exception
+      when sqlstate '42501' then null;
+    end;
+
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+  end;
+
+  -- limpieza: el precio vuelve a lo que era y la auditoría de la prueba se va.
+  perform set_config('fidelli.precio_de_catalogo', 'si', true);
+  update planes set precio_mensual = 49000 where id = v_plan;
+  delete from cambios_precio_catalogo where motivo like 'Regresión R20 ·%';
+end $$;
+-- <<< R20
+
+-- ============================================================
+-- R21 · El reloj de cobranza (20260916140000)
+--
+--   a · Los cuatro estados, fecha por fecha, con los bordes EXACTOS de la
+--       spec (hoy, hoy−1, hoy−7, hoy−8) y el contador que ve el cliente.
+--       La función es pura, así que esto se prueba con literales: no hace
+--       falta crear un tenant por cada borde.
+--   b · Las exenciones y quién le gana a quién. `activo = false` gana
+--       SIEMPRE, incluso sobre estar afuera del reloj; `descuento_pct =
+--       100` queda fuera del circuito entero; sin `cobranza_desde` no hay
+--       reloj que corra.
+--   c · EL SEGUNDO INTERRUPTOR. Con `suspension_automatica` en false el
+--       reloj avisa pero NUNCA cierra el panel: el estado se topa en
+--       `gracia` y `activo` sigue en true. Es el "primer ciclo solo
+--       avisos", y es lo que separa un monto mal calculado de un monto
+--       mal calculado que además suspende a alguien.
+--   d · El contrato del payload: las NUEVE claves del jsonb, una por una.
+--       Viajan en snake_case a un tipo camelCase detrás de un cast que
+--       TypeScript no revisa —los campos calculados de PostgREST no
+--       aparecen en el `Row` de la tabla—, así que una clave renombrada
+--       de un lado no rompe del otro: deja un "te quedan undefined días".
+--   e · SEGURIDAD. El payload como `security definer` filtrando por un
+--       `lubricentro_id` que viene en el argumento se verificó EXPLOTABLE
+--       EN VIVO durante el diseño: un owner leía el vencimiento, el
+--       descuento negociado y el precio del vecino. Este bloque llama a la
+--       función con un composite FORJADO y exige que no devuelva los datos
+--       del otro tenant.
+--   f · Los montos, con los casos que decidió Santiago.
+-- ============================================================
+
+-- >>> R21a
+do $$
+declare
+  v_caso record;
+  v_dio  text;
+  v_hoy  date := current_date;
+begin
+  for v_caso in
+    select * from (values
+      ( 8, 'al_dia'),
+      ( 7, 'por_vencer'),   -- el borde del aviso, alineado con estado_atencion()
+      ( 1, 'por_vencer'),
+      ( 0, 'por_vencer'),   -- vence HOY: todavía no debe nada
+      (-1, 'gracia'),
+      (-6, 'gracia'),
+      (-7, 'gracia'),       -- el ÚLTIMO día de gracia
+      (-8, 'suspendido')    -- el primero sin gracia
+    ) as t(dias, esperado)
+  loop
+    v_dio := estado_cobranza(true, v_hoy + v_caso.dias, v_hoy - 1, true, 0);
+    if v_dio is distinct from v_caso.esperado then
+      raise exception 'R21a BORDE ROTO: con vencimiento = hoy % el reloj dio «%» y tenía que dar «%». El borde de la gracia es EXACTAMENTE vencimiento + dias_de_gracia().',
+        case when v_caso.dias >= 0 then '+' || v_caso.dias else v_caso.dias::text end,
+        coalesce(v_dio,'null'), v_caso.esperado;
+    end if;
+  end loop;
+
+  -- El contador que LEE EL CLIENTE. Vale 1 el último día útil y nunca 0:
+  -- un "te quedan 0 días" con el panel escribiendo normal es la clase de
+  -- detalle que hace que el dueño deje de creerle al aviso.
+  if dias_de_gracia_restantes(v_hoy - 1) is distinct from dias_de_gracia() then
+    raise exception 'R21a: el primer día de gracia el contador dice % y tenía que decir %.',
+      dias_de_gracia_restantes(v_hoy - 1), dias_de_gracia();
+  end if;
+  if dias_de_gracia_restantes(v_hoy - dias_de_gracia()) is distinct from 1 then
+    raise exception 'R21a OFF-BY-ONE: el ÚLTIMO día de gracia el contador dice % y tiene que decir 1 ("hoy es el último día"), con el panel todavía abierto.',
+      dias_de_gracia_restantes(v_hoy - dias_de_gracia());
+  end if;
+end $$;
+-- <<< R21a
+
+-- >>> R21b
+do $$
+declare v_hoy date := current_date;
+begin
+  -- `activo = false` gana sobre cualquier fecha...
+  if estado_cobranza(false, v_hoy + 999, v_hoy - 1, false, 0) is distinct from 'suspendido' then
+    raise exception 'R21b: el interruptor manual dejó de ganar sobre la fecha.';
+  end if;
+  -- ...y también sobre estar AFUERA del reloj. La rama @activo va PRIMERO.
+  if estado_cobranza(false, v_hoy + 999, null, false, 0) is distinct from 'suspendido' then
+    raise exception 'R21b: un tenant apagado a mano y afuera del reloj dio distinto de suspendido. La rama @activo tiene que ir ANTES que @desde, o apagar un tenant deja de tener efecto.';
+  end if;
+
+  -- Quien no paga nada no puede deber nada.
+  if estado_cobranza(true, v_hoy - 999, v_hoy - 1, true, 100) is distinct from 'al_dia' then
+    raise exception 'R21b: un tenant con descuento_pct = 100 entró al circuito de cobranza. No paga nada: no hay nada que reclamarle, ni barra, ni modal, ni orden de pago.';
+  end if;
+  -- ...pero el 50 del founding NO exime.
+  if estado_cobranza(true, v_hoy - 999, v_hoy - 1, true, 50) is distinct from 'suspendido' then
+    raise exception 'R21b: un descuento parcial (50) está eximiendo del reloj. Solo el 100 exime.';
+  end if;
+
+  -- Afuera del reloj, y el día que todavía no llegó.
+  if estado_cobranza(true, v_hoy - 999, null, true, 0) is distinct from 'al_dia' then
+    raise exception 'R21b LA RAMA @desde SE CAYÓ: un tenant AFUERA del reloj, con el vencimiento de hace tres años, dio distinto de al_dia. El día del deploy los 17 están así.';
+  end if;
+  if estado_cobranza(true, v_hoy - 999, v_hoy + 1, true, 0) is distinct from 'al_dia' then
+    raise exception 'R21b: el reloj corrió antes de la fecha de encendido.';
+  end if;
+
+  -- Sin suscripción no se le reclama a quien no sabemos qué debe.
+  if estado_cobranza(true, null, v_hoy - 1, true, 0) is distinct from 'al_dia' then
+    raise exception 'R21b: un tenant sin vencimiento entró al circuito.';
+  end if;
+
+  -- Y lo que pasa con `activo` en null, escrito porque la versión cómoda
+  -- de esta frase es falsa: NO cae a al_dia, sigue con las fechas.
+  if estado_cobranza(null, v_hoy + 999, v_hoy - 1, true, 0) is distinct from 'al_dia' then
+    raise exception 'R21b: con activo null y fecha sana esperaba al_dia.';
+  end if;
+  if estado_cobranza(null, v_hoy - 999, v_hoy - 1, true, 0) is distinct from 'suspendido' then
+    raise exception 'R21b: con activo null y vencido hace tres años esperaba suspendido — la rama @activo no se toma y la evaluación sigue con las fechas. Si esto cambió, corregí también el comentario de la migración, que documenta exactamente este caso.';
+  end if;
+end $$;
+-- <<< R21b
+
+-- >>> R21c
+do $$
+declare
+  v_hoy date := current_date;
+  v_lub uuid;
+  v_act boolean;
+begin
+  -- Pasada la ventana, CON el segundo interruptor: suspende.
+  if estado_cobranza(true, v_hoy - 8, v_hoy - 1, true, 0) is distinct from 'suspendido' then
+    raise exception 'R21c: con suspension_automatica prendida, un tenant a +8 días no llegó a suspendido.';
+  end if;
+  -- Pasada la ventana, SIN el segundo interruptor: avisa y NO suspende.
+  if estado_cobranza(true, v_hoy - 8, v_hoy - 1, false, 0) is distinct from 'gracia' then
+    raise exception 'R21c EL PRIMER CICLO DEJÓ DE SER SOLO AVISOS: con suspension_automatica APAGADA, un tenant a +8 días dio «%» y tenía que quedarse en gracia. El primer ciclo avisa; suspender se prende en el segundo, después de ver el cálculo de plata contra tenants reales.',
+      coalesce(estado_cobranza(true, v_hoy - 8, v_hoy - 1, false, 0), 'null');
+  end if;
+  -- Ni a los 300 días.
+  if estado_cobranza(true, v_hoy - 300, v_hoy - 1, false, 0) is distinct from 'gracia' then
+    raise exception 'R21c: con la suspensión apagada, un vencido de hace 300 días salió de gracia.';
+  end if;
+
+  -- Y el default de la columna es APAGADO, para todos.
+  if exists (select 1 from lubricentros where suspension_automatica) then
+    raise exception 'R21c: hay % lubricentro(s) con suspension_automatica prendida. Arranca apagada PARA TODOS; se prende tenant por tenant, a mano, en el segundo ciclo.',
+      (select count(*) from lubricentros where suspension_automatica);
+  end if;
+
+  -- El reloj NO escribe `activo`: no hay ningún cron dando vuelta booleanos.
+  select id, activo into v_lub, v_act from lubricentros where slug = 'demo';
+  if not v_act then
+    raise exception 'R21c SIN PISO: el demo quedó con activo = false.';
+  end if;
+end $$;
+-- <<< R21c
+
+-- >>> R21d
+do $$
+declare
+  v_json  jsonb;
+  v_falta text;
+  v_clave text;
+begin
+  select reloj_cobranza(l.*) into v_json from lubricentros l where l.slug = 'demo';
+
+  if v_json is null then
+    raise exception 'R21d: reloj_cobranza() devolvió null para el demo. El panel se queda sin el estado y la escalera no se muestra nunca.';
+  end if;
+
+  -- LAS NUEVE CLAVES, UNA POR UNA. El payload viaja en snake_case a un
+  -- tipo camelCase de TypeScript, detrás de un cast que el compilador no
+  -- revisa: una clave renombrada acá deja "te quedan undefined días" en
+  -- pantalla y NADA falla en el build. Este bloque es el contrato.
+  foreach v_clave in array array[
+    'estado','vencimiento','dias_restantes','dias_para_vencer',
+    'periodo','es_trial','exento','en_el_reloj','corta'
+  ] loop
+    if not (v_json ? v_clave) then
+      v_falta := coalesce(v_falta || ', ', '') || v_clave;
+    end if;
+  end loop;
+
+  if v_falta is not null then
+    raise exception E'R21d CONTRATO ROTO: al payload de reloj_cobranza() le faltan las claves: %.\nlib/auth/cobranza.ts las lee en snake_case y las expone en camelCase; una clave que cambia de nombre acá NO rompe el build, deja "te quedan undefined días" en la pantalla del cliente.', v_falta;
+  end if;
+
+  if not (v_json->>'estado' = any(array['al_dia','por_vencer','gracia','suspendido'])) then
+    raise exception 'R21d: el payload emite el estado «%», que no es uno de los cuatro de ESTADOS_COBRANZA.', v_json->>'estado';
+  end if;
+
+  -- EL DEMO NUNCA ENTRA AL RELOJ. Es la exención que la spec llama el peor
+  -- bug posible del sprint: verlo suspendido en medio de una venta.
+  if (select cobranza_desde is not null from lubricentros where slug = 'demo') then
+    raise exception 'R21d: el tenant demo quedó DENTRO del reloj de cobranza. Verlo suspendido en medio de una demo comercial es el peor bug de este sprint.';
+  end if;
+  if v_json->>'estado' is distinct from 'al_dia' then
+    raise exception 'R21d: el demo salió de al_dia (dio «%»).', v_json->>'estado';
+  end if;
+
+  -- Y el candado tiene que rechazar el intento de meterlo.
+  begin
+    update lubricentros set cobranza_desde = current_date where slug = 'demo';
+    raise exception 'R21d: el demo se pudo meter al reloj con un UPDATE suelto. El candado no rige, y el UPDATE de encendido con un `where` olvidado lo metería en silencio.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%demo_fuera_del_reloj%' then raise; end if;
+  end;
+end $$;
+-- <<< R21d
+
+-- >>> R21e
+do $$
+declare
+  v_owner uuid;
+  v_otro  uuid;
+  v_json  jsonb;
+begin
+  -- El owner del demo, y OTRO lubricentro que no es el suyo.
+  select u.id into v_owner from usuarios u
+  join lubricentros l on l.id = u.lubricentro_id
+  where l.slug = 'demo' and u.rol = 'owner' limit 1;
+
+  -- El vecino tiene que tener SUSCRIPCIÓN: es lo que se filtraría. Sin
+  -- ella el payload sale null por falta de datos y no por seguridad, y la
+  -- prueba pasa en verde sin haber probado nada. También se vio en rojo.
+  insert into lubricentros (nombre, slug) values ('Vecino R21', 'vecino-r21')
+  returning id into v_otro;
+
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, vencimiento)
+  select v_otro, p.id, 'activa', 'anual', 50, current_date + 5
+  from planes p where p.nombre = 'Pro' and not p.heredado;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  -- EL COMPOSITE FORJADO, armado a mano y SIN LEER la fila del vecino.
+  --
+  -- ⚠ ESTE DETALLE ES LA PRUEBA. La versión obvia —hacer un join contra
+  -- `lubricentros` para sacar la fila del vecino y pasarla— NO prueba
+  -- nada: el RLS ya bloquea ESE select, el join devuelve cero filas y el
+  -- bloque pasa en verde aunque la función sea `security definer`. Se vio
+  -- en rojo: con esa versión, la rotura de R21e se escapaba.
+  --
+  -- Un atacante no lee la fila, la INVENTA: `/rpc/reloj_cobranza` acepta
+  -- un objeto con el `id` que él elija, y el uuid de la víctima no es
+  -- secreto (viaja en el logo_url público de su propia vidriera).
+  -- `jsonb_populate_record` construye exactamente ese composite.
+  select reloj_cobranza(
+    jsonb_populate_record(null::lubricentros, jsonb_build_object('id', v_otro))
+  ) into v_json;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  if v_json is not null then
+    raise exception E'R21e LECTURA CRUZADA DE TENANTS: el owner del demo leyó el payload de cobranza de OTRO lubricentro (%).\nreloj_cobranza() tiene que ser SECURITY INVOKER para que el RLS recorte la subconsulta. Con definer, cualquier owner autenticado lee el vencimiento, el descuento negociado y el precio del vecino por /rpc/, y el uuid de la víctima no es secreto: viaja en el logo_url público de su vidriera.', v_json;
+  end if;
+
+  delete from suscripciones where lubricentro_id = v_otro;
+  delete from lubricentros where id = v_otro;
+end $$;
+-- <<< R21e
+
+-- >>> R21f
+do $$
+declare
+  v_lub   uuid;
+  v_plan  uuid;
+  v_super uuid;
+  v_m     jsonb;
+begin
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  select id into v_plan  from planes where nombre = 'Pro' and not heredado;
+
+  insert into lubricentros (nombre, slug) values ('Monto R21', 'monto-r21') returning id into v_lub;
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, vencimiento)
+  values (v_lub, v_plan, 'activa', 'anual', 0, current_date + 30);
+
+  -- Pro anual: 49.000 × 12 × 0,75 = 441.000. El 25% sale de `planes`.
+  v_m := monto_de_renovacion(v_lub);
+  if (v_m->>'total')::numeric is distinct from 441000 then
+    raise exception 'R21f: Pro anual dio % y tenía que dar 441000 (49.000 × 12 × 0,75). Si el 25%% se hardcodeó en vez de leerse de planes.descuento_anual_pct, esto se rompe.', v_m->>'total';
+  end if;
+
+  -- Con el módulo BONIFICADO no se cobra. Es el caso de Capuzzi, que lo
+  -- tiene de por vida: cobrarlo le facturaría $25.000 de más.
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  perform fijar_override_plan(v_lub, '{"neumaticos": true}'::jsonb,
+    'Módulo gomería · bonificado · 15/09/2026 · DE POR VIDA — regresión R21f');
+  execute 'reset role';
+  -- Los dos cambios de este bloque corren en la MISMA transacción, así que
+  -- `now()` les da el mismo created_at y el «más reciente» queda al azar.
+  -- Se separa a mano: en producción son dos requests distintos.
+  update cambios_override_plan set created_at = now() - interval '1 hour'
+  where lubricentro_id = v_lub;
+  perform set_config('request.jwt.claims', '{}', true);
+
+  v_m := monto_de_renovacion(v_lub);
+  if (v_m->>'modulo')::numeric is distinct from 0 then
+    raise exception 'R21f SE LE COBRÓ A UN BONIFICADO: con el motivo en «bonificado» el módulo sumó % y tenía que sumar 0. Hoy los dos tenants con gomería la tienen bonificada de por vida.', v_m->>'modulo';
+  end if;
+
+  -- Y con el motivo en `pago` sí: 25.000 × 12 × 0,75 = 225.000. El módulo
+  -- lleva el descuento del PERÍODO pero no el del tenant.
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  perform fijar_override_plan(v_lub, '{"neumaticos": true}'::jsonb,
+    'Módulo gomería · pago · 15/09/2026 · regresión R21f');
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  v_m := monto_de_renovacion(v_lub);
+  if (v_m->>'modulo')::numeric is distinct from 225000 then
+    raise exception 'R21f: el módulo pago anual dio % y tenía que dar 225000 (25.000 × 12 × 0,75: lleva el descuento del período).', v_m->>'modulo';
+  end if;
+  if (v_m->>'total')::numeric is distinct from 666000 then
+    raise exception 'R21f: Pro + gomería paga anual dio % y tenía que dar 666000.', v_m->>'total';
+  end if;
+
+  -- El founding NO se le aplica al módulo: se negoció sobre el plan, antes
+  -- de que el módulo existiera.
+  update suscripciones set descuento_pct = 50 where lubricentro_id = v_lub;
+  v_m := monto_de_renovacion(v_lub);
+  if (v_m->>'plan')::numeric is distinct from 220500 then
+    raise exception 'R21f: founding 50%% anual dio % de plan y tenía que dar 220500.', v_m->>'plan';
+  end if;
+  if (v_m->>'modulo')::numeric is distinct from 225000 then
+    raise exception 'R21f EL FOUNDING SE LE APLICÓ AL MÓDULO: dio % y tenía que quedar en 225000. El 50%% se negoció sobre el PLAN, antes de que el módulo existiera.', v_m->>'modulo';
+  end if;
+
+  delete from cambios_override_plan where lubricentro_id = v_lub;
+  delete from suscripciones where lubricentro_id = v_lub;
+  delete from lubricentros where id = v_lub;
+end $$;
+-- <<< R21f
+
+-- ============================================================
+-- R22 · El cobro por Cresium (20260916180000)
+--
+-- Lo que esta red cubre es lo que el script de webhook NO puede cubrir:
+-- los invariantes de la BASE, que tienen que seguir en pie aunque alguien
+-- llame a la función desde otro lado o inserte a mano.
+--
+--   a · El cobro sin dueño. `pagos.registrado_por` es anulable ahora, y
+--       el CHECK es lo que evita que eso sea un agujero: un pago MANUAL
+--       sin autor no entra, y uno de Cresium sin id de transacción
+--       tampoco. Sin el CHECK, el null se filtra al histórico y en seis
+--       meses nadie distingue un cobro automático de uno que cargó
+--       Santiago a mano.
+--   b · La idempotencia, en la base y no en la ruta. Cresium reintenta
+--       hasta cinco veces: el unique es lo único que impide que un
+--       reintento le regale doce meses a alguien.
+--   c · `PARTIAL` no mueve el vencimiento ni un día.
+--   d · La evidencia se guarda SIEMPRE, incluso cuando no se acredita.
+-- ============================================================
+
+-- >>> R22
+do $$
+declare
+  v_lub uuid; v_sus uuid; v_plan uuid; v_super uuid;
+  v_ext text; v_hasta date; v_venc date; v_r jsonb; v_n integer;
+begin
+  select id into v_plan from planes where nombre = 'Pro' and not heredado;
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+
+  insert into lubricentros (nombre, slug) values ('Cresium R22', 'cresium-r22') returning id into v_lub;
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, vencimiento)
+  values (v_lub, v_plan, 'activa', 'mensual', 0, current_date + 3) returning id into v_sus;
+
+  v_hasta := current_date + 33;
+  v_ext   := cresium_external_id(v_sus, v_hasta);
+
+  -- ---------- a · El CHECK que hace que el null no sea un agujero ----------
+  begin
+    insert into pagos (lubricentro_id, suscripcion_id, registrado_por, origen,
+                       periodo_desde, periodo_hasta, monto, fecha_pago)
+    values (v_lub, v_sus, null, 'manual', current_date, v_hasta, 1, current_date);
+    raise exception 'R22a: entró un pago MANUAL sin autor. `registrado_por` se hizo anulable para el cobro por webhook, y el CHECK es lo único que evita que ese null se filtre a los pagos que carga una persona — con el null suelto, en seis meses nadie distingue un cobro automático de uno tipeado a mano.';
+  exception
+    when check_violation then null;
+  end;
+
+  begin
+    insert into pagos (lubricentro_id, suscripcion_id, registrado_por, origen,
+                       cresium_transaccion_id, periodo_desde, periodo_hasta, monto, fecha_pago)
+    values (v_lub, v_sus, null, 'cresium', null, current_date, v_hasta, 1, current_date);
+    raise exception 'R22a: entró un pago de Cresium SIN id de transacción. Ese id es toda la idempotencia: sin él, el reintento número dos acredita de nuevo.';
+  exception
+    when check_violation then null;
+  end;
+
+  -- ---------- b · La idempotencia ----------
+  v_r := acreditar_deposito_cresium(jsonb_build_object(
+    'type', 'DEPOSIT', 'retry', 1,
+    'data', jsonb_build_object('id', 990001, 'paymentOrder', jsonb_build_object(
+      'externalId', v_ext, 'status', 'PAID', 'amount', 49000, 'amountPaid', 49000))));
+
+  if v_r->>'resultado' is distinct from 'acreditado' then
+    raise exception 'R22b: un DEPOSIT en PAID no acreditó (%).', v_r;
+  end if;
+
+  select vencimiento into v_venc from suscripciones where id = v_sus;
+  if v_venc is distinct from v_hasta then
+    raise exception 'R22b: el vencimiento quedó en % y tenía que moverse a %.', v_venc, v_hasta;
+  end if;
+
+  -- Los cuatro reintentos que faltan.
+  for v_n in 2..5 loop
+    v_r := acreditar_deposito_cresium(jsonb_build_object(
+      'type', 'DEPOSIT', 'retry', v_n,
+      'data', jsonb_build_object('id', 990001, 'paymentOrder', jsonb_build_object(
+        'externalId', v_ext, 'status', 'PAID', 'amount', 49000, 'amountPaid', 49000))));
+    if v_r->>'resultado' is distinct from 'ya_acreditado' then
+      raise exception 'R22b: el reintento % devolvió «%» en vez de ya_acreditado. Cresium reintenta CINCO veces: sin idempotencia, cada reintento le regala otro período al tenant.',
+        v_n, v_r->>'resultado';
+    end if;
+  end loop;
+
+  select count(*) into v_n from pagos where lubricentro_id = v_lub;
+  if v_n <> 1 then
+    raise exception 'R22b LA IDEMPOTENCIA SE CAYÓ: cinco entregas del MISMO depósito dejaron % pagos. Tiene que quedar uno.', v_n;
+  end if;
+
+  select vencimiento into v_venc from suscripciones where id = v_sus;
+  if v_venc is distinct from v_hasta then
+    raise exception 'R22b: los reintentos movieron el vencimiento a %. Tenía que quedar en %.', v_venc, v_hasta;
+  end if;
+
+  -- ---------- c · PARTIAL no activa nada ----------
+  v_r := acreditar_deposito_cresium(jsonb_build_object(
+    'type', 'DEPOSIT', 'retry', 1,
+    'data', jsonb_build_object('id', 990002, 'paymentOrder', jsonb_build_object(
+      'externalId', cresium_external_id(v_sus, current_date + 63),
+      'status', 'PARTIAL', 'amount', 49000, 'amountPaid', 20000))));
+
+  if v_r->>'resultado' is distinct from 'sin_acreditar' then
+    raise exception 'R22c: un PARTIAL acreditó (%). Solo PAID extiende el vencimiento; el CVU sigue vivo para completar.', v_r;
+  end if;
+  if (v_r->>'falta')::numeric is distinct from 29000 then
+    raise exception 'R22c: el PARTIAL informó que faltan % y faltan 29000. La pantalla muestra ese número.', v_r->>'falta';
+  end if;
+
+  select vencimiento into v_venc from suscripciones where id = v_sus;
+  if v_venc is distinct from v_hasta then
+    raise exception 'R22c EL PARTIAL MOVIÓ EL VENCIMIENTO: quedó en % y tenía que quedar en %.', v_venc, v_hasta;
+  end if;
+
+  -- ---------- d · La evidencia, incluso de lo que no acreditó ----------
+  select count(*) into v_n from cresium_eventos where external_id like v_sus::text || ':%';
+  if v_n <> 6 then
+    raise exception 'R22d: se guardaron % eventos y tenían que ser 6 (cinco entregas del cobro + el PARTIAL). La evidencia es append-only: guarda CADA entrega, no cada transacción — si no, no se puede saber si el cobro entró al primer intento o al quinto.', v_n;
+  end if;
+  if exists (select 1 from cresium_eventos where procesado_at is null and external_id like v_sus::text || ':%') then
+    raise exception 'R22d: quedó un evento sin procesar_at. Todo evento que entra se resuelve: acreditado, reintento o el motivo por el que no.';
+  end if;
+
+  delete from pagos where lubricentro_id = v_lub;
+  delete from cresium_eventos where external_id like v_sus::text || ':%';
+  delete from suscripciones where lubricentro_id = v_lub;
+  delete from lubricentros where id = v_lub;
+end $$;
+-- <<< R22
+
+-- ============================================================
+-- R23 · La pantalla de cobranzas de /fidelli (20260916220000)
+--
+--   a · Es SOLO del superadmin. La función es `security definer` porque
+--       cruza `usuarios` y `contactos_fidelli` de todos los tenants, así
+--       que el RLS no la protege: la guarda está adentro y tiene que
+--       rechazar a un owner devolviendo CERO FILAS, no los datos de la
+--       plataforma entera.
+--   b · El monto sale de `monto_de_renovacion_en()`, la MISMA función que
+--       usa la pantalla de pago del cliente. Si las dos pantallas dijeran
+--       números distintos, la conversación por WhatsApp arrancaría con el
+--       dueño y Santiago mirando cosas diferentes.
+--   c · Quien no paga nada NO aparece: perseguir una cobranza de alguien
+--       con el plan bonificado es trabajo inventado.
+-- ============================================================
+
+-- >>> R23
+do $$
+declare
+  v_super uuid; v_owner uuid; v_plan uuid;
+  v_lub uuid; v_lub2 uuid;
+  v_n integer; v_monto numeric; v_esperado numeric;
+begin
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  select id into v_plan  from planes where nombre = 'Pro' and not heredado;
+
+  -- Uno que vence pronto y paga, y otro bonificado al 100.
+  insert into lubricentros (nombre, slug) values ('Cobranza R23', 'cobranza-r23') returning id into v_lub;
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, inicio, vencimiento)
+  values (v_lub, v_plan, 'activa', 'mensual', 0, current_date - 27, current_date + 3);
+
+  insert into lubricentros (nombre, slug) values ('Bonificado R23', 'bonificado-r23') returning id into v_lub2;
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, inicio, vencimiento)
+  values (v_lub2, v_plan, 'activa', 'mensual', 100, current_date - 27, current_date + 3);
+
+  -- ---------- a · Un OWNER no ve nada ----------
+  select u.id into v_owner from usuarios u where u.rol = 'owner' limit 1;
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  select count(*) into v_n from cobranzas_pendientes(15);
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  if v_n <> 0 then
+    raise exception 'R23a FUGA ENTRE TENANTS: un owner leyó % filas de cobranzas_pendientes(). La función es SECURITY DEFINER y cruza usuarios y contactos_fidelli de TODA la plataforma: si la guarda soy_superadmin() se cae, cualquier dueño de lubricentro ve el vencimiento, el monto y el teléfono de todos los demás.', v_n;
+  end if;
+
+  -- ---------- b y c · Como superadmin ----------
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  select count(*) into v_n from cobranzas_pendientes(15) where lubricentro_id = v_lub;
+  if v_n <> 1 then
+    raise exception 'R23b: el tenant que vence en 3 días no aparece en la lista (% filas).', v_n;
+  end if;
+
+  select monto into v_monto from cobranzas_pendientes(15) where lubricentro_id = v_lub;
+  v_esperado := (monto_de_renovacion_en(v_lub, 'mensual') ->> 'total')::numeric;
+  if v_monto is distinct from v_esperado then
+    raise exception 'R23b DOS CUENTAS PARA LA MISMA PLATA: la pantalla de cobranzas dice % y monto_de_renovacion_en() dice %. Tienen que salir de la MISMA función, o el mensaje de WhatsApp le cotiza al cliente un número distinto del que ve en su pantalla de pago.',
+      v_monto, v_esperado;
+  end if;
+
+  select count(*) into v_n from cobranzas_pendientes(15) where lubricentro_id = v_lub2;
+  if v_n <> 0 then
+    raise exception 'R23c: un tenant con descuento_pct = 100 apareció en la lista de cobranzas. No paga nada: perseguirle una cobranza es trabajo inventado.';
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  delete from suscripciones where lubricentro_id in (v_lub, v_lub2);
+  delete from lubricentros where id in (v_lub, v_lub2);
+end $$;
+-- <<< R23
