@@ -5,7 +5,7 @@ import * as RadixDialog from "@radix-ui/react-dialog";
 import { IconoWhatsapp } from "@/components/iconos";
 import { clasesBoton } from "@/components/ui/boton";
 import { Dialog, DialogContenido } from "@/components/ui/dialog";
-import { textoDeCobranza, enlaceDePagoDe } from "@/lib/cobranza/copy";
+import { textoDeCobranza, enlaceDePagoDe, esEnlaceExterno } from "@/lib/cobranza/copy";
 import type { Cobranza } from "@/lib/auth/cobranza";
 
 // ============================================================
@@ -83,6 +83,9 @@ export function ModalGracia({
   const texto = textoDeCobranza(cobranza, monto);
   if (!texto) return null;
 
+  const href = enlaceDePagoDe(cobranza, monto, taller);
+  const externo = esEnlaceExterno(href);
+
   return (
     <Dialog open={abierto} onOpenChange={setAbierto}>
       <DialogContenido titulo={texto.titulo}>
@@ -95,9 +98,8 @@ export function ModalGracia({
 
         <div className="mt-6 flex flex-col gap-2 sm:flex-row-reverse">
           <a
-            href={enlaceDePagoDe(cobranza, monto, taller)}
-            target="_blank"
-            rel="noreferrer"
+            href={href}
+            {...(externo ? { target: "_blank", rel: "noreferrer" } : {})}
             className={clasesBoton("primario")}
           >
             <IconoWhatsapp aria-hidden className="size-4" />

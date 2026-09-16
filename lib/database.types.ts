@@ -567,6 +567,72 @@ export type Database = {
         }
         Relationships: []
       }
+      cresium_ordenes: {
+        Row: {
+          actualizado_at: string
+          alias: string
+          created_at: string
+          cvu: string | null
+          estado: string
+          external_id: string
+          id: string
+          lubricentro_id: string
+          monto: number
+          monto_pagado: number
+          orden_id: number | null
+          periodo: Database["public"]["Enums"]["periodo_suscripcion"]
+          periodo_hasta: string
+          suscripcion_id: string
+        }
+        Insert: {
+          actualizado_at?: string
+          alias: string
+          created_at?: string
+          cvu?: string | null
+          estado?: string
+          external_id: string
+          id?: string
+          lubricentro_id: string
+          monto: number
+          monto_pagado?: number
+          orden_id?: number | null
+          periodo: Database["public"]["Enums"]["periodo_suscripcion"]
+          periodo_hasta: string
+          suscripcion_id: string
+        }
+        Update: {
+          actualizado_at?: string
+          alias?: string
+          created_at?: string
+          cvu?: string | null
+          estado?: string
+          external_id?: string
+          id?: string
+          lubricentro_id?: string
+          monto?: number
+          monto_pagado?: number
+          orden_id?: number | null
+          periodo?: Database["public"]["Enums"]["periodo_suscripcion"]
+          periodo_hasta?: string
+          suscripcion_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cresium_ordenes_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cresium_ordenes_suscripcion_id_fkey"
+            columns: ["suscripcion_id"]
+            isOneToOne: false
+            referencedRelation: "suscripciones"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       landing_busquedas: {
         Row: {
           created_at: string
@@ -2229,6 +2295,10 @@ export type Database = {
         }
         Returns: string
       }
+      cresium_actualizar_orden: {
+        Args: { p_external: string; p_orden: Json }
+        Returns: undefined
+      }
       cresium_external_id: {
         Args: { p_hasta: string; p_suscripcion: string }
         Returns: string
@@ -2398,6 +2468,13 @@ export type Database = {
         Returns: boolean
       }
       monto_de_renovacion: { Args: { p_lubricentro: string }; Returns: Json }
+      monto_de_renovacion_en: {
+        Args: {
+          p_lubricentro: string
+          p_periodo: Database["public"]["Enums"]["periodo_suscripcion"]
+        }
+        Returns: Json
+      }
       normalizar_patente: { Args: { entrada: string }; Returns: string }
       normalizar_texto_vehiculo: { Args: { p: string }; Returns: string }
       omitir_premio: { Args: never; Returns: Json }

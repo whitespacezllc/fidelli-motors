@@ -124,21 +124,35 @@ export function textoDeCobranza(
 // ============================================================
 // A dónde va el botón
 //
-// En la Fase 1 no hay pantalla de pago: el cobro sigue siendo una
-// transferencia coordinada por WhatsApp, que es como se cobra hoy. El
-// mensaje sale armado con el dato concreto para que Santiago no tenga que
-// preguntarlo.
+// Desde la Fase 2 hay pantalla de pago propia, así que el botón lleva ahí:
+// el dueño elige período, ve el desglose y se lleva un CVU suyo para
+// transferir desde el home banking.
 //
-// En la Fase 2 cambia SOLO este `href`: la pantalla de pago se enchufa acá
-// y ninguna de las tres piezas de la escalera se entera.
+// Cambió SOLO esta función: las tres piezas de la escalera —la barra de
+// Inicio, la barra de gracia y el modal— no se enteraron. Era el punto de
+// la Fase 1 y funcionó.
+//
+// EL TRIAL SIGUE YENDO A WHATSAPP, y no es una omisión: el que está en
+// prueba todavía no decidió comprar. Mandarlo a una pantalla de pago es
+// contestar una pregunta que no hizo; lo que necesita es una conversación.
+// Mismo criterio que "se elige período, nunca plan".
 // ============================================================
 export function enlaceDePago(c: Cobranza, monto: string | null): string {
+  if (!c.esTrial) return "/panel/suscripcion";
+
   const texto = c.esTrial
     ? `Hola! Soy de ${"{taller}"}. Mi prueba de Fidelli Motors termina el ${fecha(c.vencimiento)} y quiero seguir.`
     : `Hola! Soy de ${"{taller}"}. Quiero pagar mi plan de Fidelli Motors` +
       (monto ? ` (${monto})` : "") +
       `, que vence el ${fecha(c.vencimiento)}.`;
   return `https://wa.me/${WHATSAPP_SOPORTE}?text=${encodeURIComponent(texto)}`;
+}
+
+/** ¿El enlace sale del sitio? Decide si el botón abre una pestaña nueva:
+ *  mandar /panel/suscripcion a `target="_blank"` deja al dueño con dos
+ *  pestañas del panel y la de atrás mostrando datos viejos. */
+export function esEnlaceExterno(href: string): boolean {
+  return /^https?:\/\//.test(href);
 }
 
 /** El mismo enlace, con el nombre del taller ya puesto. */

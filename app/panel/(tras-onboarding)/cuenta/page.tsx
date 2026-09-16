@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
+import { clasesBoton } from "@/components/ui/boton";
 import { createClient } from "@/lib/supabase/server";
 import { obtenerSesion, panelSuspendido } from "@/lib/auth/session";
 import { FEATURES_PLAN, ETIQUETA_FEATURE } from "@/lib/planes";
@@ -224,6 +226,21 @@ export default async function PaginaCuenta() {
                 </>
               )}
             </p>
+
+            {/* La puerta a la pantalla de pago.
+                Va acá y no en el sidebar a propósito: renovar no es una
+                tarea de todos los días, y una entrada permanente en la
+                navegación le pondría al dueño un recordatorio de que paga
+                cada vez que abre el panel. Cuando el vencimiento se acerca
+                de verdad, la escalera se lo trae sola. */}
+            {sub.estado !== "trial" && Number(sub.descuento_pct) < 100 && (
+              <Link
+                href="/panel/suscripcion"
+                className={`${clasesBoton("secundario")} mt-4`}
+              >
+                Pagar o renovar
+              </Link>
+            )}
 
             {/* Qué incluye el plan, YA RESUELTO por la base (con overrides).
                 Es la superficie natural para que el owner sepa qué más hay:
