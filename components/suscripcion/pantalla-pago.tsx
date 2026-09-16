@@ -18,6 +18,9 @@ export type OrdenAbierta = {
   montoPagado: number;
   monto: number;
   periodoHasta: string;
+  /** El período que el dueño YA eligió al generar la orden. Manda sobre el
+   *  selector: una vez emitido el CVU, el monto está fijado. */
+  periodo: Periodo;
 };
 
 export type DatosPago = {
@@ -92,11 +95,19 @@ function Dato({ k, v, copiable }: { k: string; v: string; copiable?: boolean }) 
 export function PantallaPago({ datos }: { datos: DatosPago }) {
   const router = useRouter();
 
-  // Anual por defecto. Sin tarjeta no hay débito automático: cada
-  // renovación es alguien abriendo su home banking, así que el anual son
-  // once oportunidades menos de que se caiga en el año.
+  // Anual por defecto MIENTRAS SE ELIGE. Sin tarjeta no hay débito
+  // automático: cada renovación es alguien abriendo su home banking, así
+  // que el anual son once oportunidades menos de que se caiga en el año.
+  //
+  // ⚠ PERO SI YA HAY UNA ORDEN, MANDA SU PERÍODO. Con una orden abierta el
+  // selector se esconde —el CVU ya está emitido y el monto fijado— y sin
+  // esto el desglose seguía mostrando el total del período por DEFECTO:
+  // la pantalla decía "Total a transferir ARS 4.207,50" (anual) al lado de
+  // una orden de $467,50 (mensual). El dueño leía un número y la cuenta
+  // esperaba otro, que es la peor cosa que puede hacer una pantalla de
+  // pago.
   const [periodo, setPeriodo] = useState<Periodo>(
-    datos.opciones.anual ? "anual" : "mensual",
+    datos.orden?.periodo ?? (datos.opciones.anual ? "anual" : "mensual"),
   );
   const [estado, accion, enviando] = useActionState(crearOrden, INICIAL);
 
@@ -133,7 +144,22 @@ export function PantallaPago({ datos }: { datos: DatosPago }) {
     );
   }
 
-  const opcion = datos.opciones[periodo];
+  // Con una orden abierta el desglose se arma sobre SU período. Y el total
+  // que se muestra es el de la orden, no el que recalcula el catálogo: si
+  // el precio de lista se movió entre que se emitió el CVU y ahora, lo que
+  // hay que transferir sigue siendo lo que dice la orden.
+  const opcion = orden
+    ? (() => {
+        const base = datos.opciones[orden.periodo];
+        if (!base) return null;
+        return {
+          ...base,
+          renglones: base.renglones.map((r) =>
+            r.total ? { ...r, valor: pesos(orden.monto) } : r,
+          ),
+        };
+      })()
+    : datos.opciones[periodo];
 
   return (
     <div className="surface-card overflow-hidden">
