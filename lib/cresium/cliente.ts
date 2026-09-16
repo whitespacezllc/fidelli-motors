@@ -30,10 +30,35 @@ export type Credenciales = {
   baseUrl: string;
 };
 
+/**
+ * Los 8 primeros hex del sha256. Identifica una credencial SIN revelarla.
+ *
+ * Existe para que un 401 se pueda diagnosticar sin pedirle a nadie que
+ * pegue un secret en un chat: comparando la huella que loguea producción
+ * contra la de la credencial que uno cree haber cargado, se sabe en un
+ * segundo si el par está desparejo.
+ */
+export function huella(valor: string): string {
+  return crypto.createHash("sha256").update(valor).digest("hex").slice(0, 8);
+}
+
 export function credenciales(): Credenciales {
-  const apiKey = process.env.CRESIUM_API_KEY;
-  const secret = process.env.CRESIUM_SECRET;
-  const companyId = process.env.CRESIUM_COMPANY_ID;
+  // ⚠ `.trim()` SOBRE LAS TRES, y no es paranoia: es una diferencia real
+  // entre local y Vercel. El cargador de `.env` de Next recorta espacios,
+  // retornos de carro y comillas envolventes; el panel de Vercel guarda el
+  // string LITERAL que se pegó.
+  //
+  // Y de las tres, la basura invisible solo es letal en el secret: la capa
+  // de fetch recorta los valores de header antes de mandarlos, así que una
+  // apiKey con un salto de línea al final viaja limpia igual — pero
+  // createHmac con el secret más ese salto es OTRA CLAVE. El partner se
+  // resuelve bien, el HMAC no coincide, y Cresium contesta exactamente
+  // "Invalid signature when checking partner authentication", que es el
+  // error que manda a revisar la construcción del string — donde no está
+  // el problema.
+  const apiKey = process.env.CRESIUM_API_KEY?.trim();
+  const secret = process.env.CRESIUM_SECRET?.trim();
+  const companyId = process.env.CRESIUM_COMPANY_ID?.trim();
 
   if (!apiKey || !secret || !companyId) {
     // Fallar temprano y con nombres: un 401 de Cresium por una variable
@@ -48,7 +73,8 @@ export function credenciales(): Credenciales {
     apiKey,
     secret,
     companyId,
-    baseUrl: (process.env.CRESIUM_BASE_URL ?? "https://api.cresium.app").replace(/\/$/, ""),
+    // `/+$` y no `/$`: dos barras al final también rompen el path firmado.
+    baseUrl: (process.env.CRESIUM_BASE_URL?.trim() || "https://api.cresium.app").replace(/\/+$/, ""),
   };
 }
 
@@ -101,8 +127,48 @@ async function llamar<T>(
   });
 
   const texto = await r.text();
-  if (!r.ok) throw new ErrorCresium(r.status, texto, path);
-  return (texto ? JSON.parse(texto) : null) as T;
+
+  if (!r.ok) {
+    // ⚠ UN 401 DE CRESIUM NO DICE CUÁL DE LAS DOS MITADES ESTÁ MAL.
+    //
+    // "Invalid signature when checking partner authentication" significa
+    // que la apiKey SE RESOLVIÓ y después falló el HMAC: o el secret no es
+    // el de esa key, o llegó con basura. Una cuenta puede tener hasta tres
+    // keys sobre la misma empresa y el secret se muestra UNA sola vez al
+    // crearla, así que cargar la key de una con el secret de otra es el
+    // error más fácil de cometer y el más difícil de ver.
+    //
+    // Por eso el log lleva las HUELLAS: no revelan nada y contestan la
+    // pregunta sin que nadie tenga que pegar un secret en ningún lado.
+    // La ruta del webhook ya tenía esta defensa para los eventos que
+    // ENTRAN (compara el x-api-key); del lado que SALE no había nada.
+    if (r.status === 401) {
+      console.error(
+        `[cresium] 401 firmando ${metodo} ${path} · apiKey=${huella(apiKey)} ` +
+          `secret=${huella(secret)} company=${companyId} · largos ${apiKey.length}/${secret.length} · base ${baseUrl}`,
+      );
+    }
+    throw new ErrorCresium(r.status, texto, path);
+  }
+  if (!texto) return null as T;
+
+  // ⚠ CRESIUM ENVUELVE TODO EN `data`, y no está en el OpenAPI: el schema
+  // de la respuesta describe el objeto de adentro. Se descubrió haciendo
+  // la primera llamada de verdad —200, orden creada— y viendo que
+  // `paymentOrder` y `depositAddress` no estaban donde el tipo decía.
+  //
+  // Sin esto el cobro "funciona" y falla en silencio de la peor manera: la
+  // orden se crea en Cresium, se guarda en `cresium_ordenes` con el CVU en
+  // NULL, y el dueño ve la pantalla de pago con el alias y SIN LA CUENTA A
+  // LA QUE TIENE QUE TRANSFERIR.
+  //
+  // Se desenvuelve acá y no en cada llamador porque es de TODAS las
+  // respuestas: lo confirmamos en payment-order, transaction/search y el
+  // listado de órdenes.
+  const crudo = JSON.parse(texto);
+  return (crudo && typeof crudo === "object" && "data" in crudo
+    ? (crudo as { data: unknown }).data
+    : crudo) as T;
 }
 
 // ============================================================
