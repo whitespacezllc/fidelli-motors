@@ -2249,6 +2249,31 @@ export type Database = {
           vehiculo_id: string
         }[]
       }
+      cobranzas_pendientes: {
+        Args: { p_dias?: number }
+        Returns: {
+          activo: boolean
+          avisado_at: string
+          cortaria: boolean
+          descuento_pct: number
+          dias: number
+          en_el_reloj: boolean
+          estado_cobranza: string
+          lubricentro_id: string
+          monto: number
+          monto_modulo: number
+          nombre: string
+          orden_estado: string
+          orden_pagado: number
+          owner_nombre: string
+          periodo: Database["public"]["Enums"]["periodo_suscripcion"]
+          plan_nombre: string
+          slug: string
+          sub_estado: Database["public"]["Enums"]["estado_suscripcion"]
+          telefono: string
+          vencimiento: string
+        }[]
+      }
       completar_onboarding: { Args: never; Returns: Json }
       completar_templates_neumaticos: { Args: never; Returns: number }
       confirmar_diseno: { Args: never; Returns: Json }
