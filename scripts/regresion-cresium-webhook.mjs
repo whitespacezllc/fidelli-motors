@@ -229,6 +229,25 @@ try {
     const r = await enviar({ type: "OTRA_COSA", retry: 1, data: { id: 90040 } });
     check("evento de tipo desconocido → 200 e ignorado", r.status === 200 && (await r.json()).ignorado === "OTRA_COSA");
   }
+
+  // ---- El ping de prueba de Cresium ----
+  // Llega SIN `data.id`. Devolvía 500 y Cresium reintentaba cinco veces —
+  // un evento que nunca va a tener id no mejora por reintentarlo. Y el
+  // `raise` ocurría ANTES de guardar la evidencia, así que el payload se
+  // perdía justo en el caso donde más falta hace tenerlo.
+  {
+    const antes = Number(sql(`select count(*) from cresium_eventos`));
+    const r = await enviar({ type: "DEPOSIT", retry: 1, data: { type: "DEPOSIT", status: "SUCCESS" } });
+    const j = await r.json();
+    check("ping SIN data.id → 200 (no 500: reintentar no le da un id)", r.status === 200, `dio ${r.status}`);
+    check("y no acredita", j.resultado === "sin_transaccion", JSON.stringify(j));
+    check(
+      "pero SÍ queda guardado como evidencia",
+      Number(sql(`select count(*) from cresium_eventos`)) === antes + 1,
+    );
+    check("con el motivo escrito", /no trae data.id/.test(
+      sql(`select coalesce(motivo,'') from cresium_eventos where transaccion_id is null order by recibido_at desc limit 1`)));
+  }
 } finally {
   limpiar();
   sql(`delete from cresium_eventos`);

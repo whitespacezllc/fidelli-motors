@@ -541,7 +541,7 @@ export type Database = {
           procesado_at: string | null
           recibido_at: string
           tipo: string
-          transaccion_id: number
+          transaccion_id: number | null
         }
         Insert: {
           external_id?: string | null
@@ -552,7 +552,7 @@ export type Database = {
           procesado_at?: string | null
           recibido_at?: string
           tipo: string
-          transaccion_id: number
+          transaccion_id?: number | null
         }
         Update: {
           external_id?: string | null
@@ -563,7 +563,7 @@ export type Database = {
           procesado_at?: string | null
           recibido_at?: string
           tipo?: string
-          transaccion_id?: number
+          transaccion_id?: number | null
         }
         Relationships: []
       }
