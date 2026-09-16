@@ -15,8 +15,11 @@ export type Sesion = {
   lubricentroId: string | null;
   lubricentroNombre: string | null;
   // false = suspendido por falta de pago. El owner entra igual y ve todo:
-  // lo que cambia es que el panel pasa a solo lectura y la landing pública
-  // deja de responder. Ver components/panel/aviso-suspension.tsx.
+  // lo que cambia es que el panel pasa a SOLO LECTURA. La vidriera pública
+  // sigue respondiendo —`get_landing` y `get_carton` no filtran por
+  // `activo`, es la regla 8 y la vigila R4—; lo que sí se apaga con el
+  // interruptor manual es el premio y el mensaje al escanear.
+  // Ver components/panel/aviso-suspension.tsx.
   lubricentroActivo: boolean;
   // Lo que el plan del tenant habilita, YA RESUELTO por la base (override →
   // plan vigente → cerrado). Viene del campo calculado plan_capacidades en

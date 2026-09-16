@@ -372,8 +372,11 @@ export async function editarLubricentro(
 // Baja y reactivación
 //
 // Nunca DELETE. Un lubricentro suspendido conserva todo: sus clientes,
-// sus services, su historial. Lo único que cambia es que la landing deja
-// de responder y el panel del owner queda en modo lectura.
+// sus services, su historial. El panel del owner queda en modo lectura y
+// la vidriera SIGUE RESPONDIENDO: `get_landing` y `get_carton` no filtran
+// por `activo` (la regla 8 de CLAUDE.md, la vigila R4). Lo que sí apaga
+// este interruptor es el premio, el mensaje al escanear y el slug en el
+// sitemap (`slugs_publicos()`).
 // ============================================================
 
 export async function cambiarEstadoLubricentro(

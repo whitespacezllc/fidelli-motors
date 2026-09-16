@@ -86,11 +86,19 @@ const deposito = (id, externalId, status, amount, amountPaid, retry = 1) => ({
 
 // ── Preparar un tenant de prueba ────────────────────────────────────
 const SLUG = "cresium-regresion";
+// ⚠ NO BORRA `cresium_eventos`, Y ESO ES EL ARREGLO, NO UN OLVIDO. Este
+// script tenía dos borrados de la tabla de evidencia —uno acá y un
+// `delete from cresium_eventos` sin WHERE en el `finally`— y ese es
+// exactamente el gesto que dejó sin una sola fila el cobro de $390 del
+// 16/09/2026 y quemó el externalId (la regla 20 de CLAUDE.md). Desde
+// 20260917110000 la tabla tiene candado y los dos borrados fallarían.
+//
+// Las filas de prueba quedan, y está bien que queden: es lo que esta tabla
+// dice ser. Si hace falta una base limpia, la puerta es `supabase db reset`.
 function limpiar() {
   sql(`delete from pagos where lubricentro_id in (select id from lubricentros where slug='${SLUG}');
        delete from suscripciones where lubricentro_id in (select id from lubricentros where slug='${SLUG}');
-       delete from lubricentros where slug='${SLUG}';
-       delete from cresium_eventos where external_id like '%:%' and external_id in (select id::text || ':' || to_char(current_date + 30,'YYYY-MM-DD') from suscripciones);`);
+       delete from lubricentros where slug='${SLUG}';`);
 }
 limpiar();
 
@@ -273,7 +281,6 @@ try {
   }
 } finally {
   limpiar();
-  sql(`delete from cresium_eventos`);
 }
 
 console.log(

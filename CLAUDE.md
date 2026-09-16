@@ -626,9 +626,10 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R18** | La clase del vehículo: `vehiculos.clase` es anulable y sin default; el enum es exactamente `(liviano, pesado)`; `crear_cliente_con_vehiculo` guarda la clase contestada y deja null la omitida; `vista_vehiculos` y `get_carton` la exponen (null como null) | Alguien marcó los ~1.800 vehículos como autos "para simplificar", el alta perdió la clase, o el papel del cliente volvió a ser el de un auto para un camión |
 | **R19** | Editar un vehículo sin contestar la clase la deja como estaba: el update de `editarVehiculo` sin la clave no la toca, null o contestada, y nada de la base la inventa | Una sugerencia pasó a ser una respuesta: un trigger o un default clasifica autos que nadie clasificó, o una edición pisa una clase guardada |
 | **R21** | El reloj de cobranza: los cuatro estados con sus bordes exactos y el contador que vale 1 el último día útil; `activo = false` gana sobre todo, `descuento_pct = 100` exime y sin `cobranza_desde` no hay reloj; el SEGUNDO interruptor (con `suspension_automatica` apagada avisa pero no cierra el panel); las nueve claves del payload; la lectura cruzada de tenants con un composite forjado; y los montos (Pro anual, módulo pago vs bonificado, el founding que no toca el módulo) | Un cliente que pagó se suspende solo, un bonificado recibe una factura de $25.000, el primer ciclo dejó de ser solo avisos, o un owner está leyendo la negociación comercial del de al lado |
-| **R22** | El cobro por Cresium: `pagos.registrado_por` es anulable pero el CHECK impide un pago manual sin autor y uno de Cresium sin id de transacción; cinco entregas del mismo depósito dejan UN pago; `PARTIAL` no mueve el vencimiento; la evidencia se guarda siempre, acredite o no; y la referencia con sufijo de intento (`sub:hasta:2`) acredita a la misma suscripción | Un reintento le regaló otro período a alguien, un cobro automático quedó indistinguible de uno tipeado a mano, o una transferencia parcial activó una suscripción que no se pagó |
+| **R22** | El cobro por Cresium: `pagos.registrado_por` es anulable pero el CHECK impide un pago manual sin autor y uno de Cresium sin id de transacción; cinco entregas del mismo depósito dejan UN pago; `PARTIAL` no mueve el vencimiento; la evidencia se guarda siempre, acredite o no; la referencia con sufijo de intento (`sub:hasta:2`) acredita a la misma suscripción; y **la evidencia no se borra, no se edita y no se vacía** —los tres candados, más el contra-chequeo de que no se coman las seis escrituras del webhook | Un reintento le regaló otro período a alguien, un cobro automático quedó indistinguible de uno tipeado a mano, una transferencia parcial activó una suscripción que no se pagó, o la tabla de evidencia volvió a ser un log que se puede vaciar |
 | **R23** | La pantalla de cobranzas de `/fidelli`: un owner lee CERO filas (la función es definer y cruza `usuarios` y `contactos_fidelli` de toda la plataforma); el monto sale de `monto_de_renovacion_en()`, la misma función que la pantalla de pago del cliente; y quien tiene el plan bonificado no aparece | Un dueño de lubricentro está leyendo el vencimiento, el monto y el teléfono de todos los demás, o el WhatsApp le cotiza un número distinto del que el cliente ve en su pantalla |
 | **R20** | El catálogo de cobranza: `modulos` existe con su precio y su `codigo` coincide con la clave del override; el catálogo local es el de producción (el plan del demo afuera, el semestral en 0); el candado rechaza un `UPDATE` suelto de precio pero NO bloquea `activo`/`features`; el motivo es obligatorio y un guardado que no mueve ningún número no ensucia la auditoría | Un precio se movió sin dejar rastro, el módulo se cobra mal o no se cobra, o el `db reset` volvió a dejar un catálogo que no es el real y el cálculo de plata se prueba contra números que no existen |
+| **R24** | La atención de `/fidelli` exime al 100%: un tenant bonificado no aparece con ninguno de los cuatro estados, en ninguna fecha —tampoco como `trial_vencido`, porque el precio ya es cero— y el listado y la ficha lo dicen igual porque comparten `estado_atencion()`. Con el contracaso en las dos posiciones del caso real: sin descuento, a 4 días y vencido hace 4, los dos estados vuelven | Se está llamando para cobrarle a alguien que no debe nada (el caso Brothers Oil del 20/09/2026), o —peor— la exención se comió la lista entera y la pantalla que trae la plata se vació sola |
 | **R25** | El alias fijo por tenant: el interruptor `alias_confirmado_por_cresium()` está APAGADO y la puerta rechaza incluso un alias con la forma correcta; no hay un solo alias asignado en la base; un alias escrito no se cambia ni por UPDATE directo; la unicidad (puerta e índice, que son dos defensas distintas); el formato y los dos largos con su contracaso; y el alta, que asigna por la MISMA puerta y aborta entera si el alias falla | Se asignó un alias antes de que Cresium confirmara el formato —y no hay vuelta atrás barata, porque el tope de cambios por CVU es un número que todavía no sabemos—, o un tenant terminó con un alias distinto del que ya dejó cargado en su home banking |
 | **R26** | El alta prende el reloj y el primer pago define el ciclo: el tenant nuevo nace PAGANDO con `cobranza_desde` escrito y el vencimiento al día siguiente, **y ningún otro tenant entra al reloj por eso**; el primer pago que llega TARDE corre `inicio` y `vencimiento` a la fecha del pago con el largo contratado, y el que llega en plazo —o una renovación— no; las dos puertas del cobro hacen lo mismo; y la marca de la cuarta pantalla del onboarding es definer y se escribe una sola vez | El rollout volvió a ser el UPDATE peligroso contra 17 filas, un tenant que tardó cinco días en terminar el onboarding perdió cinco días de su primer mes, o el cobro manual —el que se va a usar en las primeras altas— quedó fuera del cambio |
 
@@ -641,6 +642,7 @@ Además, fuera del reset, **las roturas a mano** (regla 13):
 ./scripts/regresion-cobranza.sh
 ./scripts/regresion-cobranza-reloj.sh
 ./scripts/regresion-cobranza-cresium.sh
+./scripts/regresion-cobranza-deudas.sh
 ./scripts/regresion-cobranza-alias.sh
 ./scripts/regresion-cobranza-alta.sh
 ```
@@ -670,7 +672,25 @@ segundo interruptor ignorado**, el candado del demo desarmado, el payload
 como `security definer` y el módulo cobrado sin mirar el motivo. El
 sexto rompe R22e: el parser del webhook apretado a exactamente dos partes,
 con lo que la referencia del segundo intento (`sub:hasta:2`) deja de
-encontrar la suscripción. El octavo rompe R25 (diez roturas) y es de una clase distinta a
+encontrar la suscripción. El séptimo rompe R24 y el candado de R22 (catorce
+roturas): la exención del 100% corrida al 101 y achicada a los dos estados
+de cobranza —con lo que un trial bonificado vuelve a contar como venta por
+cerrar—, los dos llamadores pasando un 0 en vez del descuento (que es la
+forma más probable del bug: **el cuerpo de una función SQL no se valida al
+aplicarla**, así que arreglar la función y olvidarse del llamador no hace
+fallar ninguna migración), y los tres candados de `cresium_eventos`
+bajados a `notice` de a uno. Tres de sus roturas no rompen nada visible y
+por eso son las que importan: **la lista de columnas del candado de edición
+acortada** (una lista se acorta sola en un refactor y deja `external_id`
+editable sin que nada chille), **la ficha que deja de marcar a nadie** en
+vez de marcar de más, y **los tres triggers bajados de `ALWAYS` a
+`ORIGIN`**, que no cambia ningún comportamiento hasta que alguien escribe
+`set session_replication_role = replica` — por eso R22g lo chequea contra
+`pg_trigger.tgenabled` y no contra lo que la base hace. Y **dos van contra
+el candado de edición en direcciones opuestas** —una que deja pasar todo y
+una pasada de rosca que bloquea las seis escrituras del webhook— porque un
+candado de evidencia se rompe por defecto Y por exceso, y el exceso rompe
+el cobro sin dar un error visible. El octavo rompe R25 (diez roturas) y es de una clase distinta a
 todas las anteriores: **la mitad de lo que R25 vigila es que NADA PASE**
 mientras Cresium no conteste el largo máximo, el formato exacto y el tope
 de cambios de alias. Una conducta que consiste en no hacer nada es
