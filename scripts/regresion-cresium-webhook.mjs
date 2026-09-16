@@ -43,12 +43,17 @@ const check = (nombre, cond, detalle = "") => {
 // Firma el body CRUDO, igual que la ruta. Si acá se serializara distinto
 // que en el `fetch`, la firma no coincidiría — por eso se manda el mismo
 // string que se firmó, nunca el objeto.
-function enviar(cuerpo, { firmaRota = false, timestamp = null, sinHeaders = false } = {}) {
+function enviar(cuerpo, { firmaRota = false, timestamp = null, sinHeaders = false, urlCompleta = false } = {}) {
   const crudo = typeof cuerpo === "string" ? cuerpo : JSON.stringify(cuerpo);
   const ts = timestamp ?? String(Date.now());
+  // ⚠ CRESIUM FIRMA LA URL COMPLETA, no el path, aunque su doc diga lo
+  // contrario. Medido con una entrega real el 16/09/2026. Esta prueba
+  // firmaba SOLO con el path, y por eso daba verde mientras producción
+  // rechazaba todo: el doble reproducía la doc, no la realidad.
+  const aFirmar = urlCompleta ? BASE + RUTA : RUTA;
   const firma = crypto
     .createHmac("sha256", SECRET)
-    .update(`${ts}|POST|${RUTA}|${crudo}`)
+    .update(`${ts}|POST|${aFirmar}|${crudo}`)
     .digest("base64");
 
   return fetch(BASE + RUTA, {
@@ -148,6 +153,24 @@ try {
   {
     const r = await fetch(BASE + RUTA);
     check("GET a la ruta → 405", r.status === 405, `dio ${r.status}`);
+  }
+
+  // ---- La forma en que Cresium firma DE VERDAD ----
+  // Es el caso que faltaba y el que costó una noche: la doc documenta el
+  // path, la implementación manda la URL completa. Se aceptan las dos.
+  {
+    // Con un externalId ajeno: lo que se prueba es que la PUERTA acepte la
+    // firma, no que acredite. Así no ensucia el conteo de evidencia de más
+    // abajo, que cuenta las entregas de EXT.
+    const r = await enviar(
+      deposito(90005, "00000000-0000-0000-0000-000000000000:2099-01-01", "PAID", 1, 1),
+      { urlCompleta: true },
+    );
+    check(
+      "firmado con la URL COMPLETA (como firma Cresium) → 200",
+      r.status === 200,
+      `dio ${r.status}`,
+    );
   }
 
   // ── 2 · El cobro entra, una sola vez ──────────────────────────────

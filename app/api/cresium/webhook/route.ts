@@ -3,7 +3,6 @@ import { crearClienteAdmin } from "@/lib/supabase/admin";
 import {
   firmar,
   firmaCoincide,
-  stringAFirmar,
   timestampEnVentana,
   VENTANA_WEBHOOK_SEGUNDOS,
 } from "@/lib/cresium/firma";
@@ -108,12 +107,33 @@ export async function POST(request: Request) {
   const url = new URL(request.url);
   const path = url.pathname + url.search;
 
-  const esperada = firmar(
-    { timestamp, metodo: "POST", path, body: crudo },
-    secret,
-  );
+  // ⚠ CRESIUM FIRMA LA URL COMPLETA, NO EL PATH — y su documentación dice
+  // lo contrario.
+  //
+  // La página "Webhooks - Autenticación y generación" define el segmento
+  // como «PATH: El path completo del endpoint de webhook del Partner
+  // (incluyendo cualquier query parameter)» y da de ejemplo
+  // `/webhooks/partner?token=xyz`. Su implementación manda
+  // `https://fidellimotors.app/api/cresium/webhook`.
+  //
+  // Medido con una entrega real el 16/09/2026: el diagnóstico recalculó la
+  // firma con las tres variantes y solo la URL completa coincidió.
+  //
+  // Se aceptan LAS DOS y no solo la que hoy funciona: la doc puede estar
+  // describiendo la intención, y el día que lo corrijan —o que difiera
+  // entre entornos— el webhook tiene que seguir entrando. Aceptar las dos
+  // no abre nada: las dos son HMAC con NUESTRO secret, y sin el secret no
+  // se puede producir ninguna de las dos.
+  const candidatos = [
+    // La forma documentada, primero: es la que debería ser.
+    firmar({ timestamp, metodo: "POST", path, body: crudo }, secret),
+    // Y la que Cresium manda de verdad.
+    firmar({ timestamp, metodo: "POST", path: request.url, body: crudo }, secret),
+  ];
 
-  if (!firmaCoincide(firmaRecibida, esperada)) {
+  const esperada = candidatos[0];
+
+  if (!candidatos.some((c) => firmaCoincide(firmaRecibida, c))) {
     // ⚠ EL DIAGNÓSTICO, y por qué es seguro publicarlo.
     //
     // Un 401 de firma no dice DÓNDE difiere el string, y sin eso la única
@@ -126,7 +146,9 @@ export async function POST(request: Request) {
     // manda la request. Lo que sí hacen es contestar, con UNA entrega, si
     // Cresium firmó otro path, otro cuerpo o con otro secret.
     //
-    // Se saca cuando el webhook ande. No es logging permanente.
+    // Se queda: corre SOLO en el camino de rechazo, así que en régimen no
+    // escribe nada, y el día que Cresium cambie algo de la firma esto lo
+    // contesta en una entrega en vez de en una tarde.
     const u2 = new URL(request.url);
     console.error(
       `[cresium/webhook] DIAGNÓSTICO de firma:\n` +
@@ -135,9 +157,6 @@ export async function POST(request: Request) {
         `  url cruda de la request   : "${request.url}"\n` +
         `  timestamp recibido        : "${timestamp}" (${/^\d+$/.test(timestamp) ? "epoch ms" : "ISO"})\n` +
         `  body                      : ${crudo.length} caracteres · ${Buffer.byteLength(crudo, "utf8")} bytes\n` +
-        `  body empieza              : ${JSON.stringify(crudo.slice(0, 80))}\n` +
-        `  body termina              : ${JSON.stringify(crudo.slice(-40))}\n` +
-        `  string firmado empieza    : ${JSON.stringify(stringAFirmar({ timestamp, metodo: "POST", path, body: crudo }).slice(0, 60))}\n` +
         `  firma recibida (huella)   : ${huella(firmaRecibida)} · largo ${firmaRecibida.length}\n` +
         `  firma esperada (huella)   : ${huella(esperada)} · largo ${esperada.length}\n` +
         `  secret en uso (huella)    : ${huella(secret)} · largo ${secret.length}\n` +

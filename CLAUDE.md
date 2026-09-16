@@ -547,6 +547,24 @@ join contra la tabla: leer la fila del vecino ya lo bloquea el RLS, así que
 la versión con join pasa en verde aunque la función sea definer. Las dos
 veces que se escribió mal, la rotura de R21e se escapó. Lo vigila R21e.
 
+**19 · Cresium FIRMA LA URL COMPLETA en sus webhooks, y su documentación
+dice lo contrario.** La página "Webhooks - Autenticación y generación"
+define el segmento como *"PATH: el path completo del endpoint de webhook
+del Partner"* y da de ejemplo `/webhooks/partner?token=xyz`. Su
+implementación manda `https://fidellimotors.app/api/cresium/webhook`.
+Medido con una entrega real el 16/09/2026: catorce intentos rechazados con
+401 antes de encontrarlo. La ruta acepta **las dos formas** — las dos son
+HMAC con nuestro secret, así que aceptar ambas no abre nada, y el día que
+lo corrijan el webhook sigue entrando.
+
+Y el corolario, que es la regla de verdad: **un doble de pruebas que
+reproduce la DOCUMENTACIÓN en vez de la REALIDAD da verde mientras
+producción rechaza todo.** Pasó dos veces en el mismo sprint — con la
+firma del webhook y con el envoltorio `data` de las respuestas. Cuando el
+doble y el original no se pueden contrastar contra una llamada real, el
+verde del doble no prueba nada: prueba que dos piezas escritas por la
+misma cabeza están de acuerdo.
+
 ---
 
 ## La red de regresión — qué protege cada cosa
