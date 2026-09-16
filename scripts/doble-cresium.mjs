@@ -127,10 +127,16 @@ const server = http.createServer((req, res) => {
         return responder(res, 400, { code: 400, error: "BAD_REQUEST",
                                      message: "paymentOrder.externalId and a positive amount are required" });
       }
-      // `externalId` único por company, igual que el de verdad.
+      // `externalId` único por company, PARA SIEMPRE: también después de
+      // PAID o EXPIRED. Y con ESTOS bytes, medidos en producción el
+      // 16/09/2026 (log de Vercel): 400 y el código EXISTING_EXTERNAL_ID,
+      // no el 409 CONFLICT que uno escribiría. El doble contestaba el 409,
+      // y con eso el reintento de la acción —que busca el código— jamás se
+      // hubiera disparado acá mientras en producción sí. Regla 19, otra
+      // vez: el doble copia la realidad, no lo que suena razonable.
       if (ordenes.has(ext)) {
-        return responder(res, 409, { code: 409, error: "CONFLICT",
-                                     message: "externalId already exists for this company" });
+        return responder(res, 400, { code: 400, error: "EXISTING_EXTERNAL_ID",
+                                     message: "A payment order already exists for this externalId" });
       }
       // Y el alias es único en todo el país.
       for (const o of ordenes.values()) {

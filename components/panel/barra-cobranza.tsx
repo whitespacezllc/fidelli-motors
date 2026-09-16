@@ -57,7 +57,7 @@ export function BarraCobranza({
         {...(externo ? { target: "_blank", rel: "noreferrer" } : {})}
         className={`${clasesBoton("primario")} shrink-0`}
       >
-        <IconoWhatsapp aria-hidden className="size-4" />
+        {externo && <IconoWhatsapp aria-hidden className="size-4" />}
         {texto.accion}
       </a>
     </div>

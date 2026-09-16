@@ -565,6 +565,23 @@ doble y el original no se pueden contrastar contra una llamada real, el
 verde del doble no prueba nada: prueba que dos piezas escritas por la
 misma cabeza están de acuerdo.
 
+**20 · El `externalId` de una orden es único en Cresium PARA SIEMPRE**,
+también después de `PAID` o `EXPIRED`, y borrar nuestra fila no lo
+libera. Medido el 16/09/2026: la orden de los $390 quedó pagada, se limpió
+`cresium_ordenes` para volver a probar, y el intento siguiente —mismo
+vencimiento, misma referencia— volvió con `400 EXISTING_EXTERNAL_ID`. Y
+no era de las pruebas: un tenant que genera la cuenta, deja pasar los
+siete días y vuelve, caía en el mismo callejón. Por eso la referencia
+lleva número de intento (`sub:hasta`, `sub:hasta:2`, …; todo en
+`lib/cresium/orden.ts`), el parser del webhook lee SOLO las dos primeras
+partes, y una orden sin pagar de más de siete días se trata como vencida
+aunque la fila diga `NOT_PAID`: el único webhook es el de `DEPOSIT`, nadie
+avisa cuando una orden vence. Lo vigilan R22e,
+`scripts/regresion-cobranza-cresium.sh` y
+`node --no-warnings scripts/regresion-cresium-orden.mjs`, que además
+sostiene que el doble conteste los bytes reales del rechazo (400 y el
+código, no el 409 que uno escribiría).
+
 ---
 
 ## La red de regresión — qué protege cada cosa
@@ -598,7 +615,7 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R18** | La clase del vehículo: `vehiculos.clase` es anulable y sin default; el enum es exactamente `(liviano, pesado)`; `crear_cliente_con_vehiculo` guarda la clase contestada y deja null la omitida; `vista_vehiculos` y `get_carton` la exponen (null como null) | Alguien marcó los ~1.800 vehículos como autos "para simplificar", el alta perdió la clase, o el papel del cliente volvió a ser el de un auto para un camión |
 | **R19** | Editar un vehículo sin contestar la clase la deja como estaba: el update de `editarVehiculo` sin la clave no la toca, null o contestada, y nada de la base la inventa | Una sugerencia pasó a ser una respuesta: un trigger o un default clasifica autos que nadie clasificó, o una edición pisa una clase guardada |
 | **R21** | El reloj de cobranza: los cuatro estados con sus bordes exactos y el contador que vale 1 el último día útil; `activo = false` gana sobre todo, `descuento_pct = 100` exime y sin `cobranza_desde` no hay reloj; el SEGUNDO interruptor (con `suspension_automatica` apagada avisa pero no cierra el panel); las nueve claves del payload; la lectura cruzada de tenants con un composite forjado; y los montos (Pro anual, módulo pago vs bonificado, el founding que no toca el módulo) | Un cliente que pagó se suspende solo, un bonificado recibe una factura de $25.000, el primer ciclo dejó de ser solo avisos, o un owner está leyendo la negociación comercial del de al lado |
-| **R22** | El cobro por Cresium: `pagos.registrado_por` es anulable pero el CHECK impide un pago manual sin autor y uno de Cresium sin id de transacción; cinco entregas del mismo depósito dejan UN pago; `PARTIAL` no mueve el vencimiento; y la evidencia se guarda siempre, acredite o no | Un reintento le regaló otro período a alguien, un cobro automático quedó indistinguible de uno tipeado a mano, o una transferencia parcial activó una suscripción que no se pagó |
+| **R22** | El cobro por Cresium: `pagos.registrado_por` es anulable pero el CHECK impide un pago manual sin autor y uno de Cresium sin id de transacción; cinco entregas del mismo depósito dejan UN pago; `PARTIAL` no mueve el vencimiento; la evidencia se guarda siempre, acredite o no; y la referencia con sufijo de intento (`sub:hasta:2`) acredita a la misma suscripción | Un reintento le regaló otro período a alguien, un cobro automático quedó indistinguible de uno tipeado a mano, o una transferencia parcial activó una suscripción que no se pagó |
 | **R23** | La pantalla de cobranzas de `/fidelli`: un owner lee CERO filas (la función es definer y cruza `usuarios` y `contactos_fidelli` de toda la plataforma); el monto sale de `monto_de_renovacion_en()`, la misma función que la pantalla de pago del cliente; y quien tiene el plan bonificado no aparece | Un dueño de lubricentro está leyendo el vencimiento, el monto y el teléfono de todos los demás, o el WhatsApp le cotiza un número distinto del que el cliente ve en su pantalla |
 | **R20** | El catálogo de cobranza: `modulos` existe con su precio y su `codigo` coincide con la clave del override; el catálogo local es el de producción (el plan del demo afuera, el semestral en 0); el candado rechaza un `UPDATE` suelto de precio pero NO bloquea `activo`/`features`; el motivo es obligatorio y un guardado que no mueve ningún número no ensucia la auditoría | Un precio se movió sin dejar rastro, el módulo se cobra mal o no se cobra, o el `db reset` volvió a dejar un catálogo que no es el real y el cálculo de plata se prueba contra números que no existen |
 
@@ -610,6 +627,7 @@ Además, fuera del reset, **las roturas a mano** (regla 13):
 ./scripts/regresion-pesado.sh
 ./scripts/regresion-cobranza.sh
 ./scripts/regresion-cobranza-reloj.sh
+./scripts/regresion-cobranza-cresium.sh
 ```
 
 El primero rompe la vista de retención de dos formas —le saca el filtro de
@@ -634,8 +652,10 @@ Son la prueba de que las pruebas sirven de verdad. El quinto rompe R21
 el contador sin el `+1`, la exención bajada al 50, el interruptor manual
 que deja de ganar, el reloj corriendo para los que están afuera, **el
 segundo interruptor ignorado**, el candado del demo desarmado, el payload
-como `security definer` y el módulo cobrado sin mirar el motivo. Se
-corren antes de un release, no en cada cambio, y **un bloque nuevo de la red
+como `security definer` y el módulo cobrado sin mirar el motivo. El
+sexto rompe R22e: el parser del webhook apretado a exactamente dos partes,
+con lo que la referencia del segundo intento (`sub:hasta:2`) deja de
+encontrar la suscripción. Se corren antes de un release, no en cada cambio, y **un bloque nuevo de la red
 trae su rotura en uno de estos scripts**.
 
 Y en cualquier momento, a mano:

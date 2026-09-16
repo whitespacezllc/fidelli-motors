@@ -15,6 +15,7 @@ import { redirect } from "next/navigation";
 import { obtenerSesion } from "@/lib/auth/session";
 import { crearClienteAdmin } from "@/lib/supabase/admin";
 import { aliasDeOrden, crearOrdenDePago, cvuDe, ErrorCresium } from "@/lib/cresium/cliente";
+import { conIntentos, estadoEfectivo } from "@/lib/cresium/orden";
 import { MESES_DEL_PERIODO, type Periodo } from "@/lib/fidelli/plan";
 
 export type EstadoOrden = { error?: string; ok?: boolean };
@@ -31,7 +32,8 @@ const PERIODOS_VALIDOS: Periodo[] = ["mensual", "semestral", "anual"];
 // ⚠ ESTA ACCIÓN MUEVE PLATA DE VERDAD. Crea un CVU real en Cresium que
 // puede recibir transferencias reales, y no hay entorno de pruebas donde
 // ensayarlo (ver lib/cresium/cliente.ts). Las pruebas van contra el doble
-// local de scripts/regresion-cresium-orden.mjs.
+// local (scripts/doble-cresium.mjs); la regresión de la orden es
+// scripts/regresion-cresium-orden.mjs.
 // ============================================================
 export async function crearOrden(
   _prev: EstadoOrden,
@@ -40,6 +42,7 @@ export async function crearOrden(
   const sesion = await obtenerSesion();
   if (!sesion?.lubricentroId) redirect("/login");
   if (sesion.rol !== "owner") redirect("/panel");
+  const lubricentroId = sesion.lubricentroId;
 
   const periodo = String(formData.get("periodo") ?? "");
   if (!PERIODOS_VALIDOS.includes(periodo as Periodo)) {
@@ -99,59 +102,99 @@ export async function crearOrden(
 
   if (!externalId) return { error: "No pudimos armar la referencia del pago." };
 
-  // ¿Ya hay una orden abierta para esta renovación? Se reusa. Emitir un
-  // CVU nuevo cada vez que alguien vuelve a la pantalla dejaría al dueño
-  // con dos CVUs distintos copiados y la plata en el que ya no miramos.
-  const { data: yaExiste } = await supabase
+  // ¿Ya hay una orden VIVA para esta renovación? Se reusa. Emitir un CVU
+  // nuevo cada vez que alguien vuelve a la pantalla dejaría al dueño con
+  // dos CVUs distintos copiados y la plata en el que ya no miramos.
+  //
+  // "Viva" = sin pagar y sin vencer. Una orden vencida no se reusa: su CVU
+  // está dado de baja y transferirle no acredita nada — y como nadie nos
+  // avisa del vencimiento, se calcula (`estadoEfectivo`), no se lee. Una
+  // PAID tampoco: esa renovación ya se cobró, lo que corresponde es la
+  // siguiente.
+  const { data: previas } = await supabase
     .from("cresium_ordenes")
-    .select("id")
-    .eq("external_id", externalId)
-    .maybeSingle();
+    .select("id, external_id, estado, created_at")
+    .eq("suscripcion_id", sub.id)
+    .eq("periodo_hasta", hastaISO)
+    .order("created_at", { ascending: false });
 
-  if (yaExiste) {
+  const viva = (previas ?? []).find((o) => {
+    const estado = estadoEfectivo(o.estado, o.created_at);
+    return estado === "NOT_PAID" || estado === "PARTIAL";
+  });
+  if (viva) {
     revalidatePath("/panel/suscripcion");
     return { ok: true };
   }
 
-  const alias = aliasDeOrden(sesion.lubricentroNombre ?? "taller", externalId);
+  // ⚠ EL externalId ES ÚNICO EN CRESIUM PARA SIEMPRE, también después de
+  // PAID o EXPIRED (la historia completa, en lib/cresium/orden.ts). Por eso
+  // la referencia lleva un NÚMERO DE INTENTO: `sub:hasta` la primera vez,
+  // `sub:hasta:2` la segunda, y así.
+  //
+  // El punto de partida es lo que sabemos localmente; y si Cresium igual
+  // dice "ya existe" (una fila borrada, una drift), se sube el número y se
+  // reintenta, hasta cinco veces. Cinco es un límite para no colgar la
+  // pantalla, no una expectativa: en la práctica alcanza con el primero.
+  const externalIdBase = String(externalId);
+  const intentoInicial = (previas?.length ?? 0) + 1;
 
-  try {
-    const orden = await crearOrdenDePago({
-      externalId,
-      monto,
-      alias,
-      titulo: `Fidelli Motors · ${sesion.lubricentroNombre ?? "suscripción"}`,
-      descripcion: `Renovación hasta el ${hastaISO}`,
-      metadata: {
-        lubricentro: sesion.lubricentroId,
-        suscripcion: sub.id,
-        periodo,
-      },
-    });
+  const resultado = await conIntentos(
+    externalIdBase,
+    intentoInicial,
+    async (externalIdIntento, intento) => {
+      const alias = aliasDeOrden(sesion.lubricentroNombre ?? "taller", externalIdIntento);
+      const orden = await crearOrdenDePago({
+        externalId: externalIdIntento,
+        monto,
+        alias,
+        titulo: `Fidelli Motors · ${sesion.lubricentroNombre ?? "suscripción"}`,
+        descripcion: `Renovación hasta el ${hastaISO}`,
+        metadata: {
+          lubricentro: lubricentroId,
+          suscripcion: sub.id,
+          periodo,
+          intento: String(intento),
+        },
+      });
+      return { orden, alias };
+    },
+    // Solo este error justifica reintentar con otro número. Se busca el
+    // CÓDIGO y no el status: en producción llegó como 400 —no el 409 que
+    // uno escribiría—, y el día que lo muevan el reintento tiene que
+    // seguir disparándose.
+    (e) => e instanceof ErrorCresium && e.cuerpo.includes("EXISTING_EXTERNAL_ID"),
+  );
 
-    await supabase.from("cresium_ordenes").insert({
-      lubricentro_id: sesion.lubricentroId,
-      suscripcion_id: sub.id,
-      external_id: externalId,
-      periodo: periodo as Periodo,
-      periodo_hasta: hastaISO,
-      monto,
-      alias,
-      cvu: cvuDe(orden),
-      orden_id: orden.paymentOrder?.id ?? null,
-      estado: orden.paymentOrder?.status ?? "NOT_PAID",
-    });
-  } catch (e) {
-    if (e instanceof ErrorCresium) {
-      console.error(`[cresium] no se pudo crear la orden ${externalId}: ${e.message}`);
-      return {
-        error:
-          "No pudimos generar la cuenta para transferir. Probá de nuevo en un momento; " +
-          "si sigue igual, escribinos y lo resolvemos por WhatsApp.",
-      };
-    }
-    throw e;
+  if (!resultado.ok) {
+    if (!(resultado.error instanceof ErrorCresium)) throw resultado.error;
+    console.error(`[cresium] no se pudo crear la orden ${resultado.externalId}: ${resultado.error.message}`);
+    return {
+      error:
+        "No pudimos generar la cuenta para transferir. Probá de nuevo en un momento; " +
+        "si sigue igual, escribinos y lo resolvemos por WhatsApp.",
+    };
   }
+
+  if (resultado.intento > intentoInicial) {
+    // Queda en el log a propósito: es la huella de una fila borrada o de
+    // una drift entre nuestra tabla y Cresium, y conviene verla.
+    console.warn(`[cresium] ${externalIdBase} ya existía en Cresium; la orden salió como ${resultado.externalId}`);
+  }
+
+  const { orden, alias } = resultado.valor;
+  await supabase.from("cresium_ordenes").insert({
+    lubricentro_id: lubricentroId,
+    suscripcion_id: sub.id,
+    external_id: resultado.externalId,
+    periodo: periodo as Periodo,
+    periodo_hasta: hastaISO,
+    monto,
+    alias,
+    cvu: cvuDe(orden),
+    orden_id: orden.paymentOrder?.id ?? null,
+    estado: orden.paymentOrder?.status ?? "NOT_PAID",
+  });
 
   revalidatePath("/panel/suscripcion");
   return { ok: true };
