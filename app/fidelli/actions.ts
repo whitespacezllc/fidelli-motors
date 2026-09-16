@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { ALIAS_FORMATO, esEstadoAlias, type EstadoAlias } from "@/lib/cresium/alias";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { obtenerSesion } from "@/lib/auth/session";
@@ -44,6 +45,15 @@ const MENSAJES: Record<string, string> = {
   sin_permiso_lubricentro: "No se pudo guardar: la base rechazó el cambio.",
   sin_permiso_suscripcion:
     "Se guardaron los datos de la marca pero no la suscripción. Volvé a abrir la ficha y revisá el plan.",
+  // El candado del sprint del alias: no es un error del que carga el alta,
+  // es una espera. El mensaje lo dice sin códigos y sin culpar a nadie.
+  alias_sin_confirmar:
+    "Todavía no asignamos alias: falta que Cresium confirme el formato y el tope de cambios. El lubricentro se cobra igual, con el alias que se genera en cada orden.",
+  alias_ya_asignado:
+    "Este lubricentro ya tiene alias, y el alias no se cambia: es el que su dueño dejó cargado en el home banking.",
+  alias_vacio: "Escribí el alias, o dejalo vacío para asignarlo después.",
+  alias_largo: ALIAS_FORMATO,
+  alias_formato: ALIAS_FORMATO,
 };
 
 function traducir(mensaje: string): string {
@@ -59,6 +69,12 @@ function traducir(mensaje: string): string {
   }
   if (mensaje.includes("slug_no_reservado")) {
     return "Ese slug está reservado para una ruta del producto.";
+  }
+  if (mensaje.includes("lubricentros_cresium_alias_key")) {
+    return "Ese alias ya lo tiene otro lubricentro nuestro.";
+  }
+  if (mensaje.includes("alias_inmutable")) {
+    return "El alias de un lubricentro se escribe una vez y no se cambia.";
   }
   if (mensaje.includes("slug_formato") || mensaje.includes("slug_largo")) {
     return "El slug va en minúsculas, con números y guiones, entre 3 y 60 caracteres.";
@@ -86,6 +102,44 @@ export async function verificarSlug(slug: string): Promise<EstadoSlug> {
   // sin veredicto y la constraint decide al guardar.
   if (error || !data) return "invalido";
   return data as EstadoSlug;
+}
+
+// ============================================================
+// Validación del alias — el mismo molde que el slug, con una diferencia
+//
+// ⚠ EL VEREDICTO SALE SOLO DE NUESTRA BASE. La unicidad del alias es
+// NACIONAL y Cresium no expone ninguna consulta de disponibilidad: lo único
+// que devuelve `EXISTING_ALIAS` es el intento de crear la cuenta. Así que
+// "disponible" acá significa «libre entre nuestros tenants y con la forma
+// correcta», y el formulario tiene que decirlo con esas palabras — un
+// "disponible" a secas prometería algo que no podemos prometer.
+// ============================================================
+
+export async function verificarAlias(alias: string): Promise<EstadoAlias> {
+  await exigirSuperadmin();
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("alias_estado", { p_alias: alias });
+
+  // Misma postura que con el slug: sin respuesta no se afirma que esté
+  // libre. Acá pesa más, porque el que decide al final no es un CHECK
+  // nuestro sino una API ajena con un tope de reintentos.
+  if (error || !esEstadoAlias(data)) return "invalido";
+  return data;
+}
+
+/**
+ * ¿Ya se pueden asignar alias?
+ *
+ * Es `alias_confirmado_por_cresium()`, que hoy devuelve false porque faltan
+ * el largo máximo, el formato exacto y el tope de cambios. Mientras sea
+ * false el wizard no muestra el campo: un campo que el servidor va a
+ * rechazar siempre es peor que ningún campo.
+ */
+export async function aliasHabilitado(): Promise<boolean> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("alias_confirmado_por_cresium");
+  return !error && data === true;
 }
 
 // ============================================================
@@ -129,6 +183,11 @@ export type DatosAlta = {
   periodo: Periodo;
   descuentoPct: number;
   diasTrial: number;
+  /** El alias elegido, o "" si el campo no se mostró (que es el caso
+   *  mientras Cresium no confirme el formato). Cadena vacía viaja como
+   *  null a la base y el tenant nace sin alias, cobrando por el camino de
+   *  siempre. */
+  alias: string;
 };
 
 export type ResultadoAlta = {
@@ -180,12 +239,16 @@ export async function altaDeLubricentro(
     p_periodo: datos.periodo,
     p_descuento_pct: datos.descuentoPct,
     p_dias_trial: datos.diasTrial,
+    // `undefined` y no `null`: el parámetro tiene default en SQL, así que
+    // omitirlo es lo que lo deja en null. Mandar null explícito sería lo
+    // mismo para la base, pero el tipo generado no lo admite.
+    p_alias: datos.alias?.trim().toLowerCase() || undefined,
   });
 
   if (error || !id) {
     const texto = traducir(error?.message ?? "");
-    // El slug es del paso 1; lo demás, del 3.
-    const paso = /slug/i.test(texto) ? 1 : /sucursal/i.test(texto) ? 2 : 3;
+    // El slug y el alias son del paso 1; lo demás, del 3.
+    const paso = /slug|alias/i.test(texto) ? 1 : /sucursal/i.test(texto) ? 2 : 3;
     return { error: texto, paso };
   }
 
@@ -312,8 +375,11 @@ export async function editarLubricentro(
 // Baja y reactivación
 //
 // Nunca DELETE. Un lubricentro suspendido conserva todo: sus clientes,
-// sus services, su historial. Lo único que cambia es que la landing deja
-// de responder y el panel del owner queda en modo lectura.
+// sus services, su historial. El panel del owner queda en modo lectura y
+// la vidriera SIGUE RESPONDIENDO: `get_landing` y `get_carton` no filtran
+// por `activo` (la regla 8 de CLAUDE.md, la vigila R4). Lo que sí apaga
+// este interruptor es el premio, el mensaje al escanear y el slug en el
+// sitemap (`slugs_publicos()`).
 // ============================================================
 
 export async function cambiarEstadoLubricentro(

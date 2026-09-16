@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { aliasHabilitado } from "@/app/fidelli/actions";
 import { WizardAlta } from "@/components/fidelli/wizard-alta";
 import type { PlanCompleto } from "@/components/fidelli/tipos";
 
@@ -21,6 +22,11 @@ export default async function PaginaAlta() {
     .order("precio_mensual");
 
   const planes = (data ?? []) as unknown as PlanCompleto[];
+
+  // Mientras Cresium no confirme el formato, el campo del alias no se
+  // muestra. No es una decisión de diseño: el servidor rechaza cualquier
+  // alias que se mande, así que el campo solo podría frustrar.
+  const conAlias = await aliasHabilitado();
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -44,7 +50,7 @@ export default async function PaginaAlta() {
           antes de dar de alta un lubricentro: la suscripción necesita un plan.
         </p>
       ) : (
-        <WizardAlta planes={planes} />
+        <WizardAlta planes={planes} aliasHabilitado={conAlias} />
       )}
     </div>
   );

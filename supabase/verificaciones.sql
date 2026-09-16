@@ -3241,6 +3241,15 @@ end $$;
 --       misma suscripción y hasta la misma fecha: el parser lee las dos
 --       primeras partes e ignora el resto.
 --   d · La evidencia se guarda SIEMPRE, incluso cuando no se acredita.
+--   f · Y NO SE PUEDE BORRAR NI EDITAR (20260917110000). La tabla dice ser
+--       append-only desde que nació y se vació en su primera semana: sin un
+--       candado, la promesa vivía en un comentario. Se prueban los dos
+--       caminos —el delete y el update del payload— y, sobre todo, que el
+--       candado NO se coma las seis escrituras del webhook, que tocan solo
+--       procesado_at y motivo.
+--   g · Ni vaciar: el trigger por fila no se despierta con un `truncate`,
+--       así que hace falta el de statement. Se prueba por catálogo y a lo
+--       bruto.
 -- ============================================================
 
 -- >>> R22
@@ -3248,6 +3257,7 @@ do $$
 declare
   v_lub uuid; v_sus uuid; v_plan uuid; v_super uuid;
   v_ext text; v_hasta date; v_venc date; v_r jsonb; v_n integer;
+  v_evento uuid;
 begin
   select id into v_plan from planes where nombre = 'Pro' and not heredado;
   select id into v_super from usuarios where rol = 'superadmin' limit 1;
@@ -3369,8 +3379,141 @@ begin
     raise exception 'R22d: quedó un evento sin procesar_at. Todo evento que entra se resuelve: acreditado, reintento o el motivo por el que no.';
   end if;
 
+  -- ---------- f · El candado: la evidencia no se borra ni se edita ----------
+  --
+  -- Se prueba ACÁ y no en un bloque aparte porque acá ya están las siete
+  -- filas de evidencia reales, hechas por el camino de verdad. Borrar una
+  -- fila inventada no prueba lo mismo.
+  select id into v_evento from cresium_eventos
+   where external_id like v_sus::text || ':%' order by recibido_at limit 1;
+
+  begin
+    delete from cresium_eventos where id = v_evento;
+    raise exception 'R22f LA EVIDENCIA SE PUEDE BORRAR: un delete sobre cresium_eventos pasó. La tabla se diseñó append-only y ya se vació una vez, en su primera semana: del cobro de $390 del 16/09/2026 no quedó una fila, y ese borrado quemó el externalId (único en Cresium PARA SIEMPRE, también después de PAID). Sin candado no es evidencia: es un log.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%evidencia_no_se_borra%' then raise; end if;
+  end;
+
+  -- Peor que el delete, porque la fila queda y sigue pareciendo evidencia:
+  -- el conteo de R22d pasaría en verde con el payload en blanco.
+  begin
+    update cresium_eventos set payload = '{}'::jsonb where id = v_evento;
+    raise exception 'R22f LA EVIDENCIA SE PUEDE EDITAR: se le cambió el payload a un evento. Una fila con el payload pisado sigue contando en R22d y ya no contesta «yo transferí». La inmutabilidad que cubre la existencia de la fila y no su contenido no es inmutabilidad.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%evidencia_no_se_edita%' then raise; end if;
+  end;
+
+  -- LAS SEIS COLUMNAS, UNA POR UNA Y NO DE MUESTRA. El candado es una lista
+  -- de `is distinct from`, y una lista se acorta sin que nada se note:
+  -- probando solo `payload` y `transaccion_id`, una versión con las otras
+  -- cuatro afuera pasa en verde. Y `external_id` es justamente la
+  -- referencia cuyo quemado es toda la historia de la regla 20.
+  begin
+    update cresium_eventos set transaccion_id = 1 where id = v_evento;
+    raise exception 'R22f: se le cambió el id de transacción a un evento. Es la identidad de la entrega y la llave de la idempotencia.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%evidencia_no_se_edita%' then raise; end if;
+  end;
+
+  begin
+    update cresium_eventos set external_id = 'otra:cosa' where id = v_evento;
+    raise exception 'R22f: se le cambió el external_id a un evento. Es la referencia que ata la entrega a una suscripción y a un período, y la que Cresium reserva PARA SIEMPRE: una fila con la referencia pisada es evidencia que ya no contesta a quién se le acreditó.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%evidencia_no_se_edita%' then raise; end if;
+  end;
+
+  begin
+    update cresium_eventos set tipo = 'OTRO' where id = v_evento;
+    raise exception 'R22f: se le cambió el tipo a un evento.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%evidencia_no_se_edita%' then raise; end if;
+  end;
+
+  begin
+    update cresium_eventos set intento = 5 where id = v_evento;
+    raise exception 'R22f: se le cambió el número de intento a un evento. Es lo que contesta si el cobro entró al primer intento o al quinto, que es lo que se mira cuando algo salió mal.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%evidencia_no_se_edita%' then raise; end if;
+  end;
+
+  begin
+    update cresium_eventos set recibido_at = now() - interval '1 year' where id = v_evento;
+    raise exception 'R22f: se le cambió la hora de recepción a un evento. Es el «cuándo» de «qué nos mandaron y cuándo».';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%evidencia_no_se_edita%' then raise; end if;
+  end;
+
+  -- Lo que el candado NO bloquea, y no tiene que bloquear: el DICTAMEN.
+  -- El webhook escribe seis veces sobre esta tabla y las seis tocan solo
+  -- procesado_at y motivo (cresium_reprocesar_evento toca motivo SOLO).
+  -- Si esto empieza a fallar, el candado se comió el cobro: la ruta
+  -- devuelve 500, Cresium reintenta cinco veces y el dueño ve una pantalla
+  -- que sigue diciendo "esperando tu transferencia" con la plata adentro.
+  begin
+    update cresium_eventos set procesado_at = now(), motivo = 'regresión R22f' where id = v_evento;
+    update cresium_eventos set motivo = motivo || ' · reprocesado' where id = v_evento;
+  exception when others then
+    raise exception 'R22f EL CANDADO SE COMIÓ EL COBRO: bloqueó un UPDATE de procesado_at/motivo (%), que es exactamente lo que el webhook escribe en sus seis escrituras. Tiene que mirar SOLO las columnas de evidencia.', sqlerrm;
+  end;
+
+  -- ---------- g · El candado: la evidencia no se vacía ----------
+  --
+  -- Un trigger `before delete ... for each row` NO se despierta con un
+  -- truncate, y authenticated, service_role y postgres tienen los tres ese
+  -- privilegio. Hace falta el de statement, y se prueba en dos pasos: el
+  -- catálogo primero (atrapa un trigger borrado sin llegar a ejecutar nada)
+  -- y recién después el truncate de verdad (atrapa una función vaciada).
+  if not exists (
+    select 1 from pg_trigger
+     where tgrelid = 'cresium_eventos'::regclass
+       and not tgisinternal
+       and (tgtype & 32) = 32          -- 32 = TRUNCATE en pg_trigger.tgtype
+  ) then
+    raise exception 'R22g NO HAY CANDADO DE TRUNCATE: cresium_eventos no tiene un trigger `before truncate ... for each statement`. El de borrado por fila no se despierta con un truncate, así que la tabla entera se vacía en una línea y el candado de R22f no se entera.';
+  end if;
+
+  -- LOS TRES CANDADOS, `ALWAYS` Y NO `ORIGIN`. Es lo único que impide
+  -- apagarlos a los tres juntos con `set session_replication_role =
+  -- replica`, que en esta base `postgres` puede ejecutar — y `postgres` es
+  -- exactamente el rol con el que corre un script de limpieza de pruebas,
+  -- que es cómo se vació esta tabla la primera vez.
+  --
+  -- Va como chequeo de CATÁLOGO y no de comportamiento porque el estado de
+  -- habilitación de un trigger no se puede observar desde adentro de este
+  -- bloque sin cambiarlo: un `set session_replication_role` acá dejaría el
+  -- resto del reset corriendo sin ningún trigger de la base.
+  select count(*) into v_n from pg_trigger
+   where tgrelid = 'cresium_eventos'::regclass
+     and not tgisinternal
+     and tgenabled = 'A';             -- 'A' = ALWAYS · 'O' = ORIGIN (el default)
+  if v_n <> 3 then
+    raise exception 'R22g LOS CANDADOS TIENEN UNA PERILLA DE APAGADO AL LADO: % de 3 triggers de cresium_eventos están en ALWAYS. Los que quedaron en ORIGIN se apagan enteros con `set session_replication_role = replica`, y ahí el delete y el truncate vuelven a pasar. Es una línea `alter table cresium_eventos enable always trigger <nombre>` por candado.', v_n;
+  end if;
+
+  begin
+    truncate cresium_eventos;
+    raise exception 'R22g LA EVIDENCIA SE PUEDE VACIAR: un truncate sobre cresium_eventos pasó. Es el borrado de la primera semana otra vez, pero entero y en una línea.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%evidencia_no_se_vacia%' then raise; end if;
+  end;
+
+  -- ---------- La limpieza ----------
+  --
+  -- ⚠ LOS SIETE EVENTOS NO SE BORRAN, Y NO ES UN OLVIDO: con el candado
+  -- puesto, el `delete from cresium_eventos` que había acá hacía fallar
+  -- TODO `supabase db reset`. Quedan en la base del reset y está bien que
+  -- queden — es lo que dice ser esta tabla. No ensucian a nadie: los dos
+  -- conteos de R22d filtran por el uuid de suscripción, que es nuevo en
+  -- cada reset.
   delete from pagos where lubricentro_id = v_lub;
-  delete from cresium_eventos where external_id like v_sus::text || ':%';
   delete from suscripciones where lubricentro_id = v_lub;
   delete from lubricentros where id = v_lub;
 end $$;
@@ -3455,3 +3598,433 @@ begin
   delete from lubricentros where id in (v_lub, v_lub2);
 end $$;
 -- <<< R23
+
+
+-- ============================================================
+-- R24 · La atención de /fidelli exime al 100% (20260917100000)
+--
+-- `estado_atencion()` decidía con dos datos —estado y vencimiento— y la
+-- lista de "a quién llamar" le reclamaba a quien no debe nada. El caso que
+-- lo disparó tenía fecha: el 20/09/2026 Brothers Oil aparecía como
+-- `cobranza_por_vencer` y el 28/09 como `cobranza_vencida`, con el plan
+-- bonificado al 100 y una deuda de cero pesos.
+--
+-- Este bloque es la red de la REGLA, no de la fila: prueba la función pura
+-- con literales en las dos fechas del caso real y en los cuatro estados, y
+-- después prueba que los dos llamadores —el listado y la ficha— la
+-- consuman con el descuento puesto. Mover la fecha de un tenant lo saca de
+-- la lista hasta diciembre; esto es lo que protege al próximo al 100%.
+--
+--   a · La función pura: el exento no tiene ninguno de los cuatro estados,
+--       en ninguna fecha. Y el contracaso, que es lo que hace que el verde
+--       signifique algo: el MISMO tenant con descuento 0 sí aparece, y un
+--       descuento parcial (50) no exime.
+--   b · listado_lubricentros(): el bonificado sale de la lista, del
+--       contador del chip y del ORDER BY de una sola vez.
+--   c · atencion_tenant(): la ficha dice lo mismo que el listado sobre el
+--       mismo tenant. Que compartan la función es toda la razón por la que
+--       no pueden contradecirse.
+-- ============================================================
+
+-- >>> R24
+do $$
+declare
+  v_hoy   date := current_date;
+  v_lub   uuid;
+  v_sus   uuid;
+  v_plan  uuid;
+  v_super uuid;
+  v_at    text;
+  v_json  jsonb;
+  v_n     integer;
+begin
+  -- ---------- a · La función, con literales ----------
+  --
+  -- Los cuatro estados que el exento NO puede tener, cada uno con la
+  -- combinación que lo produciría si el descuento no se mirara.
+  if estado_atencion('activa', v_hoy - 30, 100) is not null then
+    raise exception 'R24a: un tenant al 100%% dio «%» estando vencido hace 30 días. Quien no paga nada no puede deber nada: queda fuera del circuito ENTERO, que es la regla 17 de CLAUDE.md y lo que estado_cobranza() ya hacía en su rama @exento.',
+      estado_atencion('activa', v_hoy - 30, 100);
+  end if;
+  if estado_atencion('activa', v_hoy + 3, 100) is not null then
+    raise exception 'R24a: un tenant al 100%% apareció como cobranza_por_vencer.';
+  end if;
+  if estado_atencion('trial', v_hoy - 1, 100) is not null then
+    raise exception 'R24a LA EXENCIÓN SE QUEDÓ CORTA: un trial al 100%% dio «%». El exento no es una venta por cerrar tampoco: el precio ya es cero. Los CUATRO estados se apagan, no solo los dos de cobranza.',
+      estado_atencion('trial', v_hoy - 1, 100);
+  end if;
+  if estado_atencion('trial', v_hoy + 3, 100) is not null then
+    raise exception 'R24a: un trial al 100%% apareció como trial_por_vencer.';
+  end if;
+
+  -- LAS DOS FECHAS DEL CASO REAL, y por qué van relativas a hoy.
+  --
+  -- El caso es: vencimiento el 24/09/2026 y plan al 100%. El 20/09 faltaban
+  -- 4 días (`cobranza_por_vencer`) y el 28/09 hacían 4 que había vencido
+  -- (`cobranza_vencida`). Las fechas literales NO lo reproducen:
+  -- `current_date` adentro de la función es el día real del reset, así que
+  -- un 2026-09-24 escrito a mano deja de estar a 4 días apenas pasa el
+  -- sábado, y a partir de ahí la prueba queda verde por la fecha y no por
+  -- la regla. Lo que se conserva es la POSICIÓN relativa, que es lo único
+  -- que el CASE mira.
+  if estado_atencion('activa', v_hoy + 4, 100) is not null then
+    raise exception 'R24a EL CASO BROTHERS OIL SIGUE VIVO: un tenant al 100%% que vence en 4 días dio «%». Es el 20/09/2026 del caso real, y es la fila que alguien iba a llamar para cobrarle cero pesos.',
+      estado_atencion('activa', v_hoy + 4, 100);
+  end if;
+  if estado_atencion('activa', v_hoy - 4, 100) is not null then
+    raise exception 'R24a EL CASO BROTHERS OIL SIGUE VIVO: un tenant al 100%% que venció hace 4 días dio «%». Es el 28/09/2026 del caso real.',
+      estado_atencion('activa', v_hoy - 4, 100);
+  end if;
+  -- Y LAS MISMAS DOS POSICIONES SIN EL DESCUENTO, que es lo que convierte
+  -- lo de arriba en una prueba: si la exención no estuviera, acá aparecen
+  -- los dos estados del caso, con ese nombre.
+  if estado_atencion('activa', v_hoy + 4, 0) is distinct from 'cobranza_por_vencer'
+     or estado_atencion('activa', v_hoy - 4, 0) is distinct from 'cobranza_vencida' then
+    raise exception 'R24a: las dos posiciones del caso —a 4 días y vencido hace 4— dejaron de dar cobranza_por_vencer y cobranza_vencida sin descuento. Sin este par, el chequeo de arriba pasaría en verde con una función que no reclama nunca.';
+  end if;
+
+  -- EL CONTRACASO. Sin esto el bloque pasaría en verde con una función que
+  -- devuelve null siempre, que es la peor forma de "arreglar" esto: la
+  -- lista de a quién llamar se vacía y nadie se entera.
+  if estado_atencion('activa', v_hoy - 30, 0) is distinct from 'cobranza_vencida' then
+    raise exception 'R24a LA LISTA SE VACIÓ: un tenant SIN descuento y vencido hace 30 días dio «%» en vez de cobranza_vencida. La exención se comió la pantalla que trae la plata.',
+      estado_atencion('activa', v_hoy - 30, 0);
+  end if;
+  if estado_atencion('activa', v_hoy + 3, 0) is distinct from 'cobranza_por_vencer' then
+    raise exception 'R24a: un tenant sin descuento que vence en 3 días dejó de aparecer como cobranza_por_vencer.';
+  end if;
+  if estado_atencion('trial', v_hoy - 1, 0) is distinct from 'trial_vencido' then
+    raise exception 'R24a: un trial vencido ayer dejó de aparecer como trial_vencido.';
+  end if;
+  if estado_atencion('trial', v_hoy + 3, 0) is distinct from 'trial_por_vencer' then
+    raise exception 'R24a: un trial que termina en 3 días dejó de aparecer como trial_por_vencer.';
+  end if;
+
+  -- El descuento PARCIAL no exime. El founding tiene 50 y paga la mitad:
+  -- si el corte se aflojara, el reclamo desaparece para media cartera.
+  if estado_atencion('activa', v_hoy - 30, 50) is distinct from 'cobranza_vencida' then
+    raise exception 'R24a: un descuento parcial (50) está eximiendo de la lista de atención. Solo el 100 exime — el founding paga la mitad, no cero.';
+  end if;
+
+  -- Sin suscripción no hay descuento que mirar, y el coalesce del llamador
+  -- manda un 0: no puede explotar ni eximir por null.
+  if estado_atencion('activa', v_hoy - 30, null) is distinct from 'cobranza_vencida' then
+    raise exception 'R24a: con descuento null la función dejó de reclamar. Un tenant sin suscripción entra por LEFT JOIN y trae null: el coalesce interno tiene que tratarlo como 0.';
+  end if;
+
+  -- ---------- b · El listado ----------
+  select id into v_plan  from planes where nombre = 'Pro' and not heredado;
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+
+  insert into lubricentros (nombre, slug) values ('Bonificado R24', 'bonificado-r24')
+    returning id into v_lub;
+  -- Vencido hace 30 días: sin la exención sería `cobranza_vencida`, el
+  -- primer renglón de la lista. El `inicio` va explícito y anterior —hay un
+  -- CHECK `vencimiento >= inicio` y el default de inicio es hoy.
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, inicio, vencimiento)
+  values (v_lub, v_plan, 'activa', 'mensual', 100, v_hoy - 60, v_hoy - 30) returning id into v_sus;
+
+  -- El listado es SECURITY INVOKER: sin impersonar al superadmin el RLS no
+  -- devuelve la fila y el bloque pasaría en verde por la razón equivocada.
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  select atencion into v_at from listado_lubricentros() where id = v_lub;
+  if v_at is not null then
+    raise exception 'R24b: el bonificado aparece en el listado de /fidelli con atencion = «%». La columna alimenta el filtro "necesitan atención", el contador del chip y el ORDER BY: con esto puesto, alguien lo va a llamar para cobrarle cero pesos.', v_at;
+  end if;
+
+  select atencion_orden into v_n from listado_lubricentros() where id = v_lub;
+  if v_n is distinct from 99 then
+    raise exception 'R24b: el bonificado quedó con atencion_orden = % y tenía que ser 99 (el fondo de la lista). orden_atencion(null) es lo que lo manda abajo sin un CASE en el front.', v_n;
+  end if;
+
+  -- ---------- c · La ficha ----------
+  v_json := atencion_tenant(v_lub);
+  if v_json->>'atencion' is not null then
+    raise exception 'R24c LA FICHA Y EL LISTADO SE CONTRADICEN: atencion_tenant() dice «%» para un tenant que el listado deja en null. Comparten estado_atencion() justamente para que eso no pueda pasar — si difieren, a uno de los dos le falta el descuento.', v_json->>'atencion';
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', null, true);
+
+  -- EL CONTRACASO, con el descuento bajado a cero sobre el MISMO tenant:
+  -- los dos caminos tienen que volver a reclamar. Va para los DOS —el
+  -- listado y la ficha— porque un contracaso que solo mira uno deja al otro
+  -- libre de devolver null siempre, que es la forma silenciosa de romper
+  -- esto: la pantalla no da error, deja de marcar.
+  update suscripciones set descuento_pct = 0 where id = v_sus;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  select atencion into v_at from listado_lubricentros() where id = v_lub;
+  if v_at is distinct from 'cobranza_vencida' then
+    raise exception 'R24b LA LISTA SE VACIÓ: el mismo tenant con descuento 0 y vencido hace 30 días dio «%» en vez de cobranza_vencida. Sin este contracaso, una función que devuelve null siempre pasaría en verde.', v_at;
+  end if;
+
+  v_json := atencion_tenant(v_lub);
+  if v_json->>'atencion' is distinct from 'cobranza_vencida' then
+    raise exception 'R24c LA FICHA DEJÓ DE MARCAR: atencion_tenant() dio «%» para un tenant con descuento 0 y vencido hace 30 días. El chequeo de arriba pasaría en verde con una ficha que no marca a nadie nunca — un subselect roto, un order by cambiado o un coalesce al revés se ven exactamente así.', v_json->>'atencion';
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', null, true);
+
+  delete from suscripciones where lubricentro_id = v_lub;
+  delete from lubricentros where id = v_lub;
+end $$;
+-- <<< R24
+
+-- R25 · El alias fijo por tenant (20260917120000)
+--
+-- El bloque tiene una particularidad y conviene decirla arriba: la mitad
+-- de lo que vigila es que NADA PASE. Mientras Cresium no confirme el
+-- formato, el largo y el tope de cambios, la única conducta correcta es
+-- rechazar todo — y una conducta que consiste en no hacer nada es
+-- exactamente la que se rompe sin que nadie se entere.
+--
+--   a · El interruptor está APAGADO y la puerta rechaza. Con un alias
+--       perfectamente válido. Es el invariante del sprint.
+--   b · Los 17 tenants (y el demo) siguen en null, y un tenant en null NO
+--       es un estado roto: es "todavía no se le asignó". Con el
+--       interruptor prendido a mano, la puerta escribe.
+--   c · El alias es INMUTABLE. Escrito una vez, ni un UPDATE directo lo
+--       mueve. Es la promesa entera: el dueño ya lo cargó en su banco.
+--   d · La unicidad de nuestro lado, incluida la de mayúsculas, y que el
+--       índice parcial deje convivir a los 17 nulls.
+--   e · El formato y los dos largos, con su contracaso.
+--   f · El alta puede traer el alias, y lo asigna por la MISMA puerta —o
+--       sea que hoy, con el interruptor apagado, un alta con alias falla
+--       entera en vez de dejar un tenant a medias.
+-- ============================================================
+
+-- >>> R25
+do $$
+declare
+  v_plan  uuid;
+  v_lub   uuid;
+  v_lub2  uuid;
+  v_lub3  uuid;
+  v_super uuid;
+  v_n     integer;
+  v_alias text;
+begin
+  select id into v_plan  from planes where nombre = 'Pro' and not heredado;
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+
+  insert into lubricentros (nombre, slug) values ('Alias R25', 'alias-r25')
+    returning id into v_lub;
+
+  -- ---------- a · El interruptor apagado ----------
+  if alias_confirmado_por_cresium() then
+    raise exception 'R25a EL INTERRUPTOR DEL ALIAS ESTÁ PRENDIDO: alias_confirmado_por_cresium() devolvió true. Arranca APAGADO y se prende recién cuando Cresium confirme el largo máximo, el formato exacto y el tope de cambios por CVU. Un alias asignado con el formato equivocado no se corrige barato: TOO_MANY_ALIAS_UPDATES es un tope y no sabemos cuál.';
+  end if;
+
+  begin
+    perform fijar_alias_de_tenant(v_lub, 'fm.aliasr25');
+    raise exception 'R25a SE ASIGNÓ UN ALIAS: la puerta escribió con el interruptor apagado. Mientras Cresium no conteste, ningún tenant recibe alias — ni siquiera uno con la forma correcta.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%alias_sin_confirmar%' then raise; end if;
+  end;
+
+  if exists (select 1 from lubricentros where cresium_alias is not null) then
+    raise exception 'R25a HAY ALIAS ASIGNADOS EN LA BASE. Tienen que ser CERO: el sprint entero se escribió para no asignar ninguno hasta que Cresium conteste.';
+  end if;
+
+  -- ---------- b · El null no es un estado roto ----------
+  --
+  -- A partir de acá el interruptor se prende A MANO para poder probar el
+  -- camino de verdad. Es el mismo recurso que usa R21d con el candado del
+  -- demo: se redefine la función adentro de la transacción del reset.
+  create or replace function alias_confirmado_por_cresium()
+  returns boolean language sql immutable parallel safe as $f$ select true; $f$;
+
+  select fijar_alias_de_tenant(v_lub, 'fm.aliasr25') into v_alias;
+  if v_alias is distinct from 'fm.aliasr25' then
+    raise exception 'R25b: la puerta devolvió «%» en vez del alias asignado.', v_alias;
+  end if;
+
+  select cresium_alias into v_alias from lubricentros where id = v_lub;
+  if v_alias is distinct from 'fm.aliasr25' then
+    raise exception 'R25b: el alias no quedó escrito en la fila (quedó «%»).', v_alias;
+  end if;
+
+  if (select cresium_alias_asignado_at from lubricentros where id = v_lub) is null then
+    raise exception 'R25b: se escribió el alias y no la fecha. El día que alguien pregunte desde cuándo tiene ese alias, la fila tiene que contestarlo — y es lo único con lo que vamos a poder contar los cambios contra el tope de Cresium.';
+  end if;
+
+  -- ---------- c · Inmutable ----------
+  begin
+    update lubricentros set cresium_alias = 'fm.otroalias' where id = v_lub;
+    raise exception 'R25c EL ALIAS SE PUDO CAMBIAR: un UPDATE directo lo movió. Es el alias que el dueño YA dejó cargado en su home banking para la transferencia programada; cambiarlo rompe exactamente lo que el alias fijo vino a habilitar, y además gasta uno de los cambios que Cresium permite por CVU.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%alias_inmutable%' then raise; end if;
+  end;
+
+  begin
+    perform fijar_alias_de_tenant(v_lub, 'fm.otroalias');
+    raise exception 'R25c: la puerta reasignó el alias de un tenant que ya tenía.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%alias_ya_asignado%' then raise; end if;
+  end;
+
+  -- Lo que el candado NO tiene que bloquear: cualquier otro UPDATE sobre
+  -- la fila. Si esto empieza a fallar, el candado se comió el ABM entero
+  -- de /fidelli — editar el nombre de un tenant con alias dejaría de andar.
+  begin
+    update lubricentros set nombre = 'Alias R25 editado' where id = v_lub;
+  exception when others then
+    raise exception 'R25c EL CANDADO SE COMIÓ EL ABM: bloqueó un UPDATE que no toca el alias (%). Tiene que mirar SOLO cresium_alias.', sqlerrm;
+  end;
+
+  -- ---------- d · La unicidad, y el índice parcial ----------
+  insert into lubricentros (nombre, slug) values ('Alias R25 dos', 'alias-r25-dos')
+    returning id into v_lub2;
+
+  begin
+    perform fijar_alias_de_tenant(v_lub2, 'fm.aliasr25');
+    raise exception 'R25d: dos tenants se quedaron con el mismo alias. Un alias repetido es la plata de un lubricentro entrando al CVU de otro.';
+  exception
+    when unique_violation then null;
+  end;
+
+  -- Y la de mayúsculas: para un banco, dos alias que difieren solo en el
+  -- case son EL MISMO alias. Por eso el índice va sobre lower().
+  begin
+    perform fijar_alias_de_tenant(v_lub2, 'FM.ALIASR25');
+    raise exception 'R25d: entró un alias que difiere del de otro tenant SOLO en mayúsculas. Para el banco es el mismo alias.';
+  exception
+    when unique_violation then null;
+  end;
+
+  -- Varios tenants sin alias conviven. Esto lo garantiza Postgres solo
+  -- —dos NULL nunca colisionan en un unique— y NO el `where` del índice, que
+  -- está por tamaño y no por corrección. Se afirma igual porque es la
+  -- condición de todos los días mientras Cresium no conteste: los 17 en null.
+  select count(*) into v_n from lubricentros where cresium_alias is null;
+  if v_n < 2 then
+    raise exception 'R25d: hay % tenants sin alias y tendría que haber al menos dos. Mientras Cresium no confirme el formato, TODOS están en null: si dos nulls no pueden convivir, no se puede dar de alta a nadie.', v_n;
+  end if;
+
+  -- ⚠ Y AHORA CONTRA EL ÍNDICE, NO CONTRA LA PUERTA. Las dos pruebas de
+  -- arriba pasan por `fijar_alias_de_tenant()`, así que lo que demuestran
+  -- es que la puerta valida — no que el índice exista. Un UPDATE directo no
+  -- pasa por la puerta, y ahí el índice es la única defensa que queda. Un
+  -- alias repetido es la plata de un lubricentro entrando al CVU de otro.
+  --
+  -- Va en minúsculas a propósito: el CHECK `alias_formato` rechaza las
+  -- mayúsculas antes de que el índice llegue a opinar, así que un duplicado
+  -- en mayúsculas probaría el CHECK y no el índice. (El `lower()` del
+  -- índice es seguro para el día que Cresium conteste que sí acepta
+  -- mayúsculas y el formato se abra: ahí pasa a hacer trabajo. Hoy no se
+  -- puede probar, y por eso no tiene rotura.)
+  insert into lubricentros (nombre, slug) values ('Alias R25 tres', 'alias-r25-tres')
+    returning id into v_lub3;
+  begin
+    update lubricentros set cresium_alias = 'fm.aliasr25' where id = v_lub3;
+    raise exception 'R25d NO HAY ÍNDICE ÚNICO: entró por UPDATE directo un alias que otro tenant ya tiene. La puerta no es suficiente — lo que no pasa por la puerta solo lo frena el índice.';
+  exception
+    when unique_violation then null;
+  end;
+
+  -- ---------- e · El formato y los largos ----------
+  if not alias_formato_valido('fm.taller') then
+    raise exception 'R25e: se rechazó un alias con la forma que Cresium ya aceptó en producción (minúsculas, dígitos y puntos simples). Es la única forma MEDIDA que tenemos.';
+  end if;
+  if alias_formato_valido('FM.taller')  then raise exception 'R25e: entró un alias con mayúsculas, que no está medido contra Cresium.'; end if;
+  if alias_formato_valido('fm-taller')  then raise exception 'R25e: entró un alias con guiones, que no está medido contra Cresium.'; end if;
+  if alias_formato_valido('fm..taller') then raise exception 'R25e: entró un alias con dos puntos seguidos.'; end if;
+  if alias_formato_valido('.fmtaller')  then raise exception 'R25e: entró un alias que empieza con punto.'; end if;
+  if alias_formato_valido('fmtaller.')  then raise exception 'R25e: entró un alias que termina en punto.'; end if;
+
+  begin
+    perform fijar_alias_de_tenant(v_lub2, 'fm.x');   -- 4 caracteres
+    -- ⚠ EL MENSAJE NO PUEDE NOMBRAR `alias_largo`, y no es cosmético: el
+    -- handler de abajo filtra por esa misma palabra, así que un mensaje que
+    -- la contenga se traga a sí mismo y el bloque pasa en verde con la
+    -- rotura puesta. Se vio exactamente así, con el mínimo bajado a 1.
+    raise exception 'R25e SE ACEPTÓ UN ALIAS DEMASIADO CORTO: entró uno de 4 caracteres. El piso del estándar argentino de alias CBU/CVU es 6, y uno más corto lo rechaza el banco cuando el dueño lo tipea.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%alias_largo%' then raise; end if;
+  end;
+
+  begin
+    perform fijar_alias_de_tenant(v_lub2, 'fm.aliasdemasiadolargoparaelbanco');
+    raise exception 'R25e SE ACEPTÓ UN ALIAS DEMASIADO LARGO: entró uno de 32 caracteres. El estándar argentino de alias CBU/CVU topa en 20 y el banco del dueño lo va a rechazar cuando lo tipee. (El mensaje no nombra la excepción a propósito: el handler filtra por esa palabra.)';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%alias_largo%' then raise; end if;
+  end;
+
+  -- El contracaso de los dos largos: uno que SÍ entra.
+  select fijar_alias_de_tenant(v_lub2, 'fm.segundo') into v_alias;
+  if v_alias is distinct from 'fm.segundo' then
+    raise exception 'R25e: un alias de largo válido no entró (dio «%»).', v_alias;
+  end if;
+
+  -- ---------- f · El alta ----------
+  --
+  -- Con el interruptor PRENDIDO el alta puede traerlo; con el apagado la
+  -- transacción del alta falla entera, que es lo correcto: un tenant a
+  -- medias es peor que un alta rechazada.
+  perform crear_lubricentro(
+    'Alta con alias R25', 'alta-alias-r25',
+    '[{"nombre":"Casa Central"}]'::jsonb, v_plan, 'mensual', 0, 30, 'fm.altar25');
+
+  if (select cresium_alias from lubricentros where slug = 'alta-alias-r25') is distinct from 'fm.altar25' then
+    raise exception 'R25f: el alta no guardó el alias que le pasaron.';
+  end if;
+
+  -- Y con el interruptor apagado, el alta entera se cae.
+  create or replace function alias_confirmado_por_cresium()
+  returns boolean language sql immutable parallel safe as $f$ select false; $f$;
+
+  begin
+    perform crear_lubricentro(
+      'Alta sin confirmar R25', 'alta-sin-confirmar-r25',
+      '[{"nombre":"Casa Central"}]'::jsonb, v_plan, 'mensual', 0, 30, 'fm.nodebe');
+    raise exception 'R25f: un alta CON alias pasó con el interruptor apagado.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%alias_sin_confirmar%' then raise; end if;
+  end;
+
+  if exists (select 1 from lubricentros where slug = 'alta-sin-confirmar-r25') then
+    raise exception 'R25f EL ALTA QUEDÓ A MEDIAS: el alias falló y el tenant se creó igual. Tiene que abortar la transacción entera — un lubricentro sin suscripción ni templates es peor que un alta rechazada.';
+  end if;
+
+  -- Y un alta SIN alias sigue andando con el interruptor apagado, que es
+  -- el caso de todos los días mientras Cresium no conteste.
+  perform crear_lubricentro(
+    'Alta sin alias R25', 'alta-sin-alias-r25',
+    '[{"nombre":"Casa Central"}]'::jsonb, v_plan, 'mensual', 0, 30);
+
+  if (select cresium_alias from lubricentros where slug = 'alta-sin-alias-r25') is not null then
+    raise exception 'R25f: un alta sin alias le inventó uno. El null es la respuesta «todavía no se le asignó», y es lo que lo deja cobrando por el alias de cada orden.';
+  end if;
+
+  -- ---------- La limpieza ----------
+  perform set_config('request.jwt.claims', null, true);
+
+  delete from sucursales  where lubricentro_id in (
+    select id from lubricentros where slug in ('alta-alias-r25', 'alta-sin-alias-r25'));
+  delete from mensaje_templates where lubricentro_id in (
+    select id from lubricentros where slug in ('alta-alias-r25', 'alta-sin-alias-r25'));
+  delete from config_experiencia where lubricentro_id in (
+    select id from lubricentros where slug in ('alta-alias-r25', 'alta-sin-alias-r25'));
+  delete from suscripciones where lubricentro_id in (
+    select id from lubricentros where slug in ('alta-alias-r25', 'alta-sin-alias-r25'));
+  delete from lubricentros where slug in ('alta-alias-r25', 'alta-sin-alias-r25');
+  delete from lubricentros where id in (v_lub, v_lub2, v_lub3);
+end $$;
+-- <<< R25
