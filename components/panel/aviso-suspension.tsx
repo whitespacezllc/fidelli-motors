@@ -14,6 +14,23 @@ export const MOTIVO_SUSPENSION =
 // ve sus clientes, sus vehículos y todo su historial intacto. Lo único que
 // no puede es cargar cosas nuevas.
 //
+// ⚠ ACÁ NO SE AFIRMA NADA SOBRE LA PÁGINA PÚBLICA, y no es una omisión.
+// Hasta hoy este cartel decía "tu página pública tampoco está respondiendo:
+// los clientes que escaneen el QR no van a encontrarla", y era falso por
+// partida doble: `get_landing` perdió el filtro por `activo` el 22/08 a
+// propósito (la regla 8 de CLAUDE.md, la vigila R4) y el reloj de cobranza
+// NUNCA escribe `activo` —la suspensión es derivada—, así que bajo ninguna
+// de las dos vías la frase era cierta. Estaba en la pantalla donde le
+// pedimos plata a alguien, y era lo primero que ese alguien podía desmentir
+// abriendo su propia vidriera (el link se lo damos nosotros, en
+// /panel/cuenta).
+//
+// Y no se reemplaza por la frase contraria porque el cartel se muestra con
+// LAS DOS vías —`sesion.suspendido` colapsa el interruptor manual y el
+// reloj— y las dos no apagan lo mismo: con `activo = false` se dejan de
+// ofrecer el premio y el mensaje al escanear. Lo único cierto en los dos
+// casos es lo que se dice acá: el panel pasa a solo lectura.
+//
 // Cortarle el acceso sería peor que inútil: alguien que se atrasó un día
 // tiene que poder mirar sus datos y entender qué pasó — y sobre todo, tiene
 // que poder resolverlo. Por eso lo importante del aviso no es la advertencia
@@ -33,10 +50,9 @@ export function AvisoSuspension() {
       </p>
 
       <p className="mt-1.5 text-ui text-ink-60">
-        Podés consultar todos tus datos, pero no vas a poder cargar services
-        ni dar de alta clientes, vehículos o productos hasta que se reactive.
-        Tu página pública tampoco está respondiendo: los clientes que escaneen
-        el QR no van a encontrarla.
+        El panel pasa a solo lectura: podés consultar todos tus datos, pero no
+        vas a poder cargar services ni dar de alta clientes, vehículos o
+        productos hasta que se reactive.
       </p>
 
       <p className="mt-1.5 text-ui text-ink-60">

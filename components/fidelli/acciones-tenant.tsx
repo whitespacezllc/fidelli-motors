@@ -221,16 +221,20 @@ function DialogEstado({ fila }: { fila: FilaLubricentro }) {
             <div className="flex flex-col gap-3 text-ui text-ink-60">
               <p>
                 <span className="font-semibold text-ink">
-                  fidellimotors.app/{fila.slug} deja de responder.
+                  fidellimotors.app/{fila.slug} sigue respondiendo.
                 </span>{" "}
-                Los clientes que escaneen el QR van a ver que la página no
-                existe.
+                Los calcos ya pegados en los parasoles siguen funcionando: el
+                cliente que escanee el QR ve su historial igual. Lo que se
+                apaga es lo que la página le ofrece: el premio y el mensaje al
+                escanear, los que tenga configurados —no se promete un
+                beneficio que el local no puede entregar—. Y el slug sale del
+                sitemap.
               </p>
               <p>
-                Bruno sigue pudiendo entrar al panel con su contraseña y sigue
-                viendo todos sus datos, pero no va a poder cargar services ni
-                editar nada hasta que se reactive. Le mostramos un aviso con el
-                WhatsApp de Fidelli.
+                El dueño sigue pudiendo entrar al panel con su contraseña y
+                sigue viendo todos sus datos, pero el panel le queda en solo
+                lectura: no va a poder cargar services ni editar nada hasta que
+                se reactive. Le mostramos un aviso con el WhatsApp de Fidelli.
               </p>
               <p>
                 <span className="font-semibold text-ink">No se borra nada.</span>{" "}
@@ -241,11 +245,12 @@ function DialogEstado({ fila }: { fila: FilaLubricentro }) {
           ) : (
             <div className="flex flex-col gap-3 text-ui text-ink-60">
               <p>
-                Vuelve a responder{" "}
+                El owner recupera la carga de services al instante, y{" "}
                 <span className="font-semibold text-ink">
                   fidellimotors.app/{fila.slug}
                 </span>{" "}
-                y el owner recupera la carga de services al instante.
+                vuelve a ofrecer el premio y el mensaje al escanear que tenga
+                configurados.
               </p>
               <p>El aviso de suspensión desaparece de su panel.</p>
             </div>

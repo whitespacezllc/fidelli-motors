@@ -120,8 +120,15 @@ export default async function PaginaLanding({ params, searchParams }: Props) {
   const { slug } = await params;
   const { nohay } = await searchParams;
 
-  // El slug no existe o el lubri está inactivo: los dos casos se ven igual
-  // y responden 404. Ver app/(cliente)/[slug]/not-found.tsx.
+  // El slug no existe: 404. Ver app/(cliente)/[slug]/not-found.tsx.
+  //
+  // ⚠ UN LUBRICENTRO SUSPENDIDO NO CAE ACÁ, aunque este comentario lo dijo
+  // hasta hoy: `get_landing` perdió el filtro por `activo` el 22/08 a
+  // propósito —apagar la vidriera mataría todos los calcos ya pegados en los
+  // parasoles de sus clientes— así que devuelve la fila igual y la página
+  // responde. Es la regla 8 de CLAUDE.md y la vigila R4. Lo único que se
+  // apaga con `activo = false` es el premio (acá) y el mensaje al escanear
+  // (en get_carton).
   const lubricentro = await obtenerLanding(slug);
   if (!lubricentro) notFound();
 
