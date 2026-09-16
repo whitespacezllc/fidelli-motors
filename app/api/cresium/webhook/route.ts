@@ -226,9 +226,18 @@ export async function POST(request: Request) {
   }
 
   const resultado = (data as { resultado?: string } | null)?.resultado ?? "desconocido";
-  console.info(
-    `[cresium/webhook] transacción ${evento.data?.id}: ${resultado}`,
-  );
+
+  if (resultado === "sin_transaccion") {
+    // El ping de prueba de Cresium llega sin `data.id`. Se guardó como
+    // evidencia y no se acredita —sin id no hay idempotencia posible— y se
+    // contesta 2xx: reintentar no va a hacer aparecer un id, y cinco
+    // reintentos por cada ping es ruido que tapa los problemas de verdad.
+    console.warn(
+      "[cresium/webhook] evento sin data.id (¿un ping de prueba?): guardado como evidencia, sin acreditar",
+    );
+  } else {
+    console.info(`[cresium/webhook] transacción ${evento.data?.id}: ${resultado}`);
+  }
 
   // 200 para TODOS los caminos que ya no son un error nuestro —acreditado,
   // reintento, PARTIAL, orden ajena—. Si respondiéramos otra cosa, Cresium
