@@ -3237,6 +3237,9 @@ end $$;
 --       hasta cinco veces: el unique es lo único que impide que un
 --       reintento le regale doce meses a alguien.
 --   c · `PARTIAL` no mueve el vencimiento ni un día.
+--   e · La referencia con sufijo de intento (`sub:hasta:2`) acredita a la
+--       misma suscripción y hasta la misma fecha: el parser lee las dos
+--       primeras partes e ignora el resto.
 --   d · La evidencia se guarda SIEMPRE, incluso cuando no se acredita.
 -- ============================================================
 
@@ -3331,10 +3334,36 @@ begin
     raise exception 'R22c EL PARTIAL MOVIÓ EL VENCIMIENTO: quedó en % y tenía que quedar en %.', v_venc, v_hasta;
   end if;
 
+  -- ---------- e · La referencia con número de intento ----------
+  -- `sub:hasta:2` es lo que manda la acción cuando la primera referencia
+  -- ya existe en Cresium (lib/cresium/orden.ts): el externalId es único
+  -- ALLÁ para siempre, también después de PAID o EXPIRED. El parser lee
+  -- las DOS primeras partes y tiene que ignorar el sufijo. Si alguien lo
+  -- "aprieta" para exigir exactamente dos, el segundo intento de cualquier
+  -- tenant se cobra en Cresium y acá queda como «externalId no corresponde
+  -- a ninguna suscripción»: la plata entró y el panel sigue vencido.
+  -- Va con la forma real (data.transaction), que es la que manda un
+  -- DEPOSIT de verdad.
+  v_r := acreditar_deposito_cresium(jsonb_build_object(
+    'type', 'DEPOSIT',
+    'data', jsonb_build_object('transaction', jsonb_build_object(
+      'id', 990003, 'paymentOrder', jsonb_build_object(
+        'externalId', cresium_external_id(v_sus, current_date + 63) || ':2',
+        'status', 'PAID', 'amount', 49000, 'amountPaid', 49000)))));
+
+  if v_r->>'resultado' is distinct from 'acreditado' then
+    raise exception 'R22e: un DEPOSIT con la referencia del SEGUNDO intento (sub:hasta:2) no acreditó (%). El sufijo del intento existe porque el externalId es único en Cresium para siempre; el parser tiene que leer las dos primeras partes e ignorar el resto.', v_r;
+  end if;
+
+  select vencimiento into v_venc from suscripciones where id = v_sus;
+  if v_venc is distinct from current_date + 63 then
+    raise exception 'R22e: el vencimiento quedó en % y tenía que moverse a % — el sufijo del intento no cambia hasta cuándo se acredita.', v_venc, current_date + 63;
+  end if;
+
   -- ---------- d · La evidencia, incluso de lo que no acreditó ----------
   select count(*) into v_n from cresium_eventos where external_id like v_sus::text || ':%';
-  if v_n <> 6 then
-    raise exception 'R22d: se guardaron % eventos y tenían que ser 6 (cinco entregas del cobro + el PARTIAL). La evidencia es append-only: guarda CADA entrega, no cada transacción — si no, no se puede saber si el cobro entró al primer intento o al quinto.', v_n;
+  if v_n <> 7 then
+    raise exception 'R22d: se guardaron % eventos y tenían que ser 7 (cinco entregas del cobro + el PARTIAL + el segundo intento). La evidencia es append-only: guarda CADA entrega, no cada transacción — si no, no se puede saber si el cobro entró al primer intento o al quinto.', v_n;
   end if;
   if exists (select 1 from cresium_eventos where procesado_at is null and external_id like v_sus::text || ':%') then
     raise exception 'R22d: quedó un evento sin procesar_at. Todo evento que entra se resuelve: acreditado, reintento o el motivo por el que no.';

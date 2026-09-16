@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { obtenerSesion } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
+import { estadoEfectivo } from "@/lib/cresium/orden";
 import { CabeceraSeccion } from "@/components/panel/cabecera-seccion";
 import {
   PantallaPago,
@@ -92,7 +93,7 @@ export default async function PaginaSuscripcion() {
       .maybeSingle(),
     supabase
       .from("cresium_ordenes")
-      .select("alias, cvu, estado, monto, monto_pagado, periodo_hasta, periodo")
+      .select("alias, cvu, estado, monto, monto_pagado, periodo_hasta, periodo, created_at")
       .eq("lubricentro_id", sesion.lubricentroId)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -165,28 +166,44 @@ export default async function PaginaSuscripcion() {
       : null,
   };
 
+  // El estado que hay que creerle, no el que quedó escrito: una orden sin
+  // pagar de hace más de siete días está vencida aunque la fila diga
+  // NOT_PAID, porque nadie nos avisa del vencimiento (lib/cresium/orden.ts).
+  const estadoOrden = orden ? estadoEfectivo(orden.estado, orden.created_at) : null;
+  const vencida = estadoOrden === "EXPIRED";
+
   // ¿Ya está pagada? La orden en PAID es lo que dispara la pantalla de
   // éxito, y llega ahí por el webhook: el dueño ve cambiar la pantalla sin
   // tocar nada.
-  const pagada = orden?.estado === "PAID";
+  //
+  // ⚠ PERO NO PARA SIEMPRE. La orden PAID queda en la tabla como la última
+  // del tenant, y sin la segunda condición el éxito se mostraría en cada
+  // renovación siguiente —con el reloj ya reclamando el próximo período y
+  // sin ningún botón para pagarlo. Mientras el reloj diga al día (o no
+  // corra) el éxito se queda; cuando vuelva a avisar, vuelve el pago.
+  const reclamando = sesion.cobranza !== null && sesion.cobranza.estado !== "al_dia";
+  const pagada = estadoOrden === "PAID" && !reclamando;
 
   const datos: DatosPago = {
     plan: (sub.planes as { nombre?: string } | null)?.nombre ?? "—",
     modulos: nombreModulo ? [nombreModulo] : [],
     vencimiento: sub.vencimiento,
     opciones,
+    // Una orden vencida no es una orden abierta: se le da el selector y el
+    // botón de nuevo, con el aviso de que la cuenta anterior ya no sirve.
     orden:
-      orden && !pagada
+      orden && !pagada && !vencida
         ? {
             alias: orden.alias,
             cvu: orden.cvu,
-            estado: orden.estado,
+            estado: estadoOrden!,
             montoPagado: Number(orden.monto_pagado),
             monto: Number(orden.monto),
             periodoHasta: orden.periodo_hasta,
             periodo: orden.periodo as Periodo,
           }
         : null,
+    ordenVencida: vencida,
     alDiaHasta: pagada ? sub.vencimiento : null,
     montoCobrado: pagada && orden ? Number(orden.monto_pagado) : null,
   };

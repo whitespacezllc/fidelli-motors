@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Boton, clasesBoton } from "@/components/ui/boton";
 import { crearOrden, type EstadoOrden } from "@/app/panel/(tras-onboarding)/suscripcion/actions";
 import { pesos, ETIQUETA_PERIODO, MESES_DEL_PERIODO, type Periodo } from "@/lib/fidelli/plan";
+import { DIAS_DE_VIDA_DE_LA_ORDEN } from "@/lib/cresium/orden";
 import { TITULAR_CVU } from "@/lib/config";
 
 const INICIAL: EstadoOrden = {};
@@ -31,6 +32,8 @@ export type DatosPago = {
   /** Por período: el total y el desglose ya calculados POR LA BASE. */
   opciones: Record<Periodo, { total: number; ahorro: number; renglones: Renglon[] } | null>;
   orden: OrdenAbierta | null;
+  /** La última orden venció sin pagarse: se avisa y se ofrece una nueva. */
+  ordenVencida: boolean;
   /** Se muestra la pantalla de éxito: el webhook ya acreditó. */
   alDiaHasta: string | null;
   /** Lo que entró, para decirlo en el éxito. Va aparte de `orden` porque
@@ -270,6 +273,13 @@ export function PantallaPago({ datos }: { datos: DatosPago }) {
         {/* ---------- Generar la cuenta, o mostrarla ---------- */}
         {!orden ? (
           <form action={accion} className="mt-5">
+            {datos.ordenVencida && (
+              <p className="mb-4 rounded-lg border border-line bg-surface px-4 py-3 text-ui text-ink-60">
+                La cuenta que habías generado venció a los {DIAS_DE_VIDA_DE_LA_ORDEN} días
+                sin recibir la transferencia. Elegí el período y te damos una nueva. Si
+                ya habías transferido, no se pierde: escribinos y lo acreditamos.
+              </p>
+            )}
             <input type="hidden" name="periodo" value={periodo} />
             <Boton type="submit" tam="lg" disabled={enviando} className="w-full sm:w-auto">
               {enviando ? "Generando tu cuenta…" : "Quiero pagar"}
@@ -324,18 +334,6 @@ function EstadoDeLaOrden({ orden }: { orden: OrdenAbierta }) {
             mismo alias: se acumula sobre lo que ya mandaste.
           </p>
         </div>
-      </div>
-    );
-  }
-
-  if (orden.estado === "EXPIRED") {
-    return (
-      <div className="mt-4 rounded-lg border border-line bg-surface px-4 py-3.5">
-        <p className="font-brand text-body font-bold">Esta cuenta venció</p>
-        <p className="mt-0.5 text-ui text-ink-60">
-          Recargá la pantalla y te damos una nueva. Lo que hayas transferido no se pierde:
-          escribinos y lo acreditamos.
-        </p>
       </div>
     );
   }
