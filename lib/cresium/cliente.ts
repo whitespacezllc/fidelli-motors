@@ -1,6 +1,7 @@
 import "server-only";
 import crypto from "node:crypto";
 import { firmar, timestampAhora } from "@/lib/cresium/firma";
+import { DIAS_DE_VIDA_DE_LA_ORDEN } from "@/lib/cresium/orden";
 
 // ============================================================
 // EL CLIENTE DE CRESIUM
@@ -245,7 +246,7 @@ export async function crearOrdenDePago(d: DatosOrden): Promise<OrdenCreada> {
       // barra. Una orden vencida obliga a rehacerla y a que el CVU
       // copiado deje de servir, que es exactamente el momento en que
       // alguien abandona.
-      expiresIn: d.expiraEn ?? "7d",
+      expiresIn: d.expiraEn ?? `${DIAS_DE_VIDA_DE_LA_ORDEN}d`,
       ...(d.metadata ? { metadata: d.metadata } : {}),
     },
   });
