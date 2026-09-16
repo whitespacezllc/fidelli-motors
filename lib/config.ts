@@ -10,6 +10,17 @@ export function urlWhatsappSoporte(): string {
   return `https://wa.me/${WHATSAPP_SOPORTE}`;
 }
 
+// El TITULAR de los CVUs que emite Cresium para cobrar. Es el nombre que el
+// banco del dueño le muestra al confirmar la transferencia, así que tiene
+// que decir EXACTAMENTE lo que el banco dice, o el dueño frena con la plata
+// en la mano pensando que se equivocó de cuenta.
+//
+// Hoy la company de Cresium está a nombre de la persona y no de la marca:
+// el webhook real del 16/09/2026 trae `to.ownerName: "SANTIAGO AFUR"`. La
+// pantalla decía "Fidelli Motors" y estaba MAL. Cuando la company pase a
+// nombre de la sociedad, se cambia acá y en ningún otro lado.
+export const TITULAR_CVU = "SANTIAGO AFUR";
+
 // ============================================================
 // Los dos mensajes del aviso de vencimiento
 //

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Boton, clasesBoton } from "@/components/ui/boton";
 import { crearOrden, type EstadoOrden } from "@/app/panel/(tras-onboarding)/suscripcion/actions";
 import { pesos, ETIQUETA_PERIODO, MESES_DEL_PERIODO, type Periodo } from "@/lib/fidelli/plan";
+import { TITULAR_CVU } from "@/lib/config";
 
 const INICIAL: EstadoOrden = {};
 
@@ -289,7 +290,7 @@ export function PantallaPago({ datos }: { datos: DatosPago }) {
               </p>
               <Dato k="Alias" v={orden.alias} copiable />
               {orden.cvu && <Dato k="CVU" v={orden.cvu} copiable />}
-              <Dato k="Titular" v="Fidelli Motors" />
+              <Dato k="Titular" v={TITULAR_CVU} />
             </div>
 
             <EstadoDeLaOrden orden={orden} />
