@@ -195,19 +195,28 @@ export async function simularDeposito(externalId, monto, urlWebhook, intento = 1
   o.amountPaid += monto;
   o.status = o.amountPaid >= o.amount ? "PAID" : "PARTIAL";
 
+  // ⚠ LA FORMA REAL: data.transaction, un nivel más de lo que dice la doc.
+  // Medida con el DEPOSIT de $390 del 16/09/2026. El doble mandaba `data`
+  // pelado —como la doc— y por eso dio verde mientras producción dejaba
+  // la plata acreditada en Cresium y la pantalla en "esperando".
   const payload = {
     type: "DEPOSIT",
+    // El DEPOSIT real de las 01:30 no traía `retry`; el ping del panel sí.
+    // Se manda igual: la función lo lee con default 1 y no le importa.
     retry: intento,
     data: {
-      id: 8000 + o.id,
-      type: "DEPOSIT",
-      status: "SUCCESS",
-      totalAmount: monto,
-      currency: { code: "ARS", symbol: "$", decimals: 2 },
-      paymentOrder: {
-        id: o.id, externalId, status: o.status,
-        amount: o.amount, amountPaid: o.amountPaid,
-        metadata: o.metadata, currency: { code: "ARS" },
+      transaction: {
+        id: 8000 + o.id,
+        type: "DEPOSIT",
+        status: "SUCCESS",
+        totalAmount: monto,
+        currency: { code: "ARS", symbol: "$", decimals: 2 },
+        to: { type: "CVU", value: o.cvu, ownerName: "SANTIAGO AFUR" },
+        paymentOrder: {
+          id: o.id, externalId, status: o.status,
+          amount: o.amount, amountPaid: o.amountPaid,
+          metadata: o.metadata, currency: { code: "ARS" },
+        },
       },
     },
   };

@@ -100,6 +100,7 @@ sql(`insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descue
      select '${lub}', id, 'activa', 'mensual', 0, current_date + 3 from planes where nombre='Pro' and not heredado`);
 const sus = sql(`select id from suscripciones where lubricentro_id='${lub}'`);
 const HASTA = sql(`select to_char(current_date + 33,'YYYY-MM-DD')`);
+const HASTA2 = sql(`select to_char(current_date + 63,'YYYY-MM-DD')`);
 const EXT = `${sus}:${HASTA}`;
 const vencAntes = sql(`select vencimiento from suscripciones where id='${sus}'`);
 
@@ -230,6 +231,28 @@ try {
     check("evento de tipo desconocido → 200 e ignorado", r.status === 200 && (await r.json()).ignorado === "OTRA_COSA");
   }
 
+  // ---- LA FORMA REAL, con los bytes que mandó Cresium ----
+  // scripts/fixtures-cresium-deposit-real.json es el DEPOSIT de $390 del
+  // 16/09/2026 a la 01:30, guardado como evidencia en producción. Tiene
+  // `data.transaction.id`, un nivel más de lo que dice la doc. Es el caso
+  // que dejó la plata acreditada en Cresium y la pantalla en "esperando".
+  // Se cambia SOLO el externalId, para que apunte al tenant de prueba.
+  {
+    const real = JSON.parse(fs.readFileSync(new URL("./fixtures-cresium-deposit-real.json", import.meta.url), "utf8"));
+    real.data.transaction.id = 90050;
+    real.data.transaction.paymentOrder.externalId = `${sus}:${HASTA2}`;
+    real.data.transaction.paymentOrder.status = "PAID";
+    real.data.transaction.paymentOrder.amount = 49000;
+    real.data.transaction.paymentOrder.amountPaid = 49000;
+    const antesP = pagos();
+    const r = await enviar(real);
+    const j = await r.json();
+    check("el DEPOSIT real de Cresium (data.transaction) → 200", r.status === 200, `dio ${r.status}`);
+    check("y ACREDITA", j.resultado === "acreditado", JSON.stringify(j));
+    check("un pago más", pagos() === antesP + 1, `hay ${pagos()}`);
+    check(`el vencimiento se movió a ${HASTA2}`, venc() === HASTA2, `quedó en ${venc()}`);
+  }
+
   // ---- El ping de prueba de Cresium ----
   // Llega SIN `data.id`. Devolvía 500 y Cresium reintentaba cinco veces —
   // un evento que nunca va a tener id no mejora por reintentarlo. Y el
@@ -245,7 +268,7 @@ try {
       "pero SÍ queda guardado como evidencia",
       Number(sql(`select count(*) from cresium_eventos`)) === antes + 1,
     );
-    check("con el motivo escrito", /no trae data.id/.test(
+    check("con el motivo escrito", /no trae el id de la transacci/.test(
       sql(`select coalesce(motivo,'') from cresium_eventos where transaccion_id is null order by recibido_at desc limit 1`)));
   }
 } finally {
