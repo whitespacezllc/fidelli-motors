@@ -153,10 +153,17 @@ const server = http.createServer((req, res) => {
       };
       ordenes.set(ext, orden);
       console.log(`  ✓ orden creada ${ext} · ${d.alias} · $${orden.amount}`);
+      // ⚠ CON EL ENVOLTORIO `data`, como el de verdad. El doble devolvía
+      // el objeto pelado y por eso dejó pasar el bug: el cliente leía
+      // `paymentOrder` del nivel superior, acá lo encontraba, y en
+      // producción no. Un doble más permisivo que el original es un doble
+      // que da verde con el bug adentro.
       return responder(res, 201, {
-        paymentOrder: { id, externalId: ext, status: "NOT_PAID",
-                        amount: orden.amount, amountPaid: 0 },
-        depositAddress: { type: "CVU", value: orden.cvu, alias: d.alias },
+        data: {
+          paymentOrder: { id, externalId: ext, status: "NOT_PAID",
+                          amount: orden.amount, amountPaid: 0 },
+          depositAddress: { id, type: "CVU", value: orden.cvu, alias: d.alias },
+        },
       });
     }
 
@@ -165,12 +172,12 @@ const server = http.createServer((req, res) => {
       const ext = decodeURIComponent(path.slice("/v3/payment-order/".length).split("?")[0]);
       const o = ordenes.get(ext);
       if (!o) return responder(res, 404, { code: 404, error: "NOT_FOUND", message: "payment order not found" });
-      return responder(res, 200, o);
+      return responder(res, 200, { data: o });
     }
 
     // ---------- GET /v3/transaction/search ----------
     if (req.method === "GET" && path.startsWith("/v3/transaction/search")) {
-      return responder(res, 200, { data: [], total: 0 });
+      return responder(res, 200, { data: { transactions: [], total: 0 } });
     }
 
     console.log(`  ? ${req.method} ${path} → 404 (el doble no implementa esto)`);
