@@ -3,9 +3,11 @@ import { crearClienteAdmin } from "@/lib/supabase/admin";
 import {
   firmar,
   firmaCoincide,
+  stringAFirmar,
   timestampEnVentana,
   VENTANA_WEBHOOK_SEGUNDOS,
 } from "@/lib/cresium/firma";
+import { huella } from "@/lib/cresium/cliente";
 
 // ============================================================
 // EL WEBHOOK DE CRESIUM — la parte peligrosa
@@ -81,12 +83,12 @@ export async function POST(request: Request) {
   // "firma inválida" — un 401 que manda a revisar la construcción del
   // string, que es donde nunca está el problema. Con el chequeo, el log
   // dice exactamente qué pasó.
-  const apiKeyEsperada = process.env.CRESIUM_API_KEY;
-  if (apiKeyEsperada && apiKey !== apiKeyEsperada) {
+  const apiKeyEsperada = process.env.CRESIUM_API_KEY?.trim();
+  if (apiKeyEsperada && apiKey.trim() !== apiKeyEsperada) {
     return rechazar(
-      "el webhook lo firmó OTRA API Key de la cuenta: el secret configurado " +
-        "no es el que corresponde. Revisá qué key tiene asociado el webhook " +
-        "en cresium.app → Configuración → Desarrolladores.",
+      `el webhook lo firmó OTRA API Key de la cuenta: llegó ${huella(apiKey.trim())} ` +
+        `y esperábamos ${huella(apiKeyEsperada)}. Si hay DOS webhooks configurados, ` +
+        "borrá el que no corresponde en cresium.app → Configuración → Desarrolladores.",
     );
   }
 
@@ -112,7 +114,59 @@ export async function POST(request: Request) {
   );
 
   if (!firmaCoincide(firmaRecibida, esperada)) {
-    // No se logea la firma esperada: sería el oráculo otra vez.
+    // ⚠ EL DIAGNÓSTICO, y por qué es seguro publicarlo.
+    //
+    // Un 401 de firma no dice DÓNDE difiere el string, y sin eso la única
+    // salida es adivinar entre el path, el body y el timestamp. Acá se
+    // publica la FORMA de cada pieza —nunca su contenido— más una huella
+    // de 8 hex de las dos firmas.
+    //
+    // Ninguna de esas cosas sirve para forjar una firma: la huella es un
+    // sha256 truncado, y el largo del body y el path ya los conoce quien
+    // manda la request. Lo que sí hacen es contestar, con UNA entrega, si
+    // Cresium firmó otro path, otro cuerpo o con otro secret.
+    //
+    // Se saca cuando el webhook ande. No es logging permanente.
+    const u2 = new URL(request.url);
+    console.error(
+      `[cresium/webhook] DIAGNÓSTICO de firma:\n` +
+        `  path firmado por nosotros : "${path}"\n` +
+        `  pathname / search         : "${u2.pathname}" / "${u2.search}"\n` +
+        `  url cruda de la request   : "${request.url}"\n` +
+        `  timestamp recibido        : "${timestamp}" (${/^\d+$/.test(timestamp) ? "epoch ms" : "ISO"})\n` +
+        `  body                      : ${crudo.length} caracteres · ${Buffer.byteLength(crudo, "utf8")} bytes\n` +
+        `  body empieza              : ${JSON.stringify(crudo.slice(0, 80))}\n` +
+        `  body termina              : ${JSON.stringify(crudo.slice(-40))}\n` +
+        `  string firmado empieza    : ${JSON.stringify(stringAFirmar({ timestamp, metodo: "POST", path, body: crudo }).slice(0, 60))}\n` +
+        `  firma recibida (huella)   : ${huella(firmaRecibida)} · largo ${firmaRecibida.length}\n` +
+        `  firma esperada (huella)   : ${huella(esperada)} · largo ${esperada.length}\n` +
+        `  secret en uso (huella)    : ${huella(secret)} · largo ${secret.length}\n` +
+        `  api-key recibida (huella) : ${huella(apiKey.trim())}`,
+    );
+
+    // Y la prueba que cierra el caso: si la firma coincide firmando la URL
+    // COMPLETA en vez del path, el problema es de ellos y se arregla sin
+    // tocar credenciales. Es la divergencia más probable, porque la doc
+    // dice "path" pero su propio ejemplo de webhooks lo deja ambiguo.
+    const conUrlCompleta = firmar(
+      { timestamp, metodo: "POST", path: request.url, body: crudo },
+      secret,
+    );
+    const conPathSinBarra = firmar(
+      { timestamp, metodo: "POST", path: u2.pathname.replace(/\/$/, ""), body: crudo },
+      secret,
+    );
+    const conBarraFinal = firmar(
+      { timestamp, metodo: "POST", path: u2.pathname + "/", body: crudo },
+      secret,
+    );
+    console.error(
+      `[cresium/webhook] ¿alguna variante coincide?` +
+        ` urlCompleta=${firmaCoincide(firmaRecibida, conUrlCompleta)}` +
+        ` sinBarraFinal=${firmaCoincide(firmaRecibida, conPathSinBarra)}` +
+        ` conBarraFinal=${firmaCoincide(firmaRecibida, conBarraFinal)}`,
+    );
+
     return rechazar(`firma inválida para POST ${path}`);
   }
 
