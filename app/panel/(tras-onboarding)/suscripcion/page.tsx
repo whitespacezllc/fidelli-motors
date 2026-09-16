@@ -92,7 +92,7 @@ export default async function PaginaSuscripcion() {
       .maybeSingle(),
     supabase
       .from("cresium_ordenes")
-      .select("alias, cvu, estado, monto, monto_pagado, periodo_hasta")
+      .select("alias, cvu, estado, monto, monto_pagado, periodo_hasta, periodo")
       .eq("lubricentro_id", sesion.lubricentroId)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -184,6 +184,7 @@ export default async function PaginaSuscripcion() {
             montoPagado: Number(orden.monto_pagado),
             monto: Number(orden.monto),
             periodoHasta: orden.periodo_hasta,
+            periodo: orden.periodo as Periodo,
           }
         : null,
     alDiaHasta: pagada ? sub.vencimiento : null,
