@@ -509,10 +509,21 @@ que la opción aparecía en local y no en producción. Quien probara ahí
 concluiría que la regla anda. Lo vigila R20b, que corre **después** del
 seed porque el plan del demo nace en `seed.sql` y no en las migraciones.
 
-**17 · El reloj de cobranza tiene DOS interruptores, y el segundo arranca
-apagado.** `lubricentros.cobranza_desde` (NULL = este tenant está afuera
+**17 · El reloj de cobranza tiene TRES interruptores, y dos arrancan
+apagados.** `lubricentros.cobranza_desde` (NULL = este tenant está afuera
 del reloj) decide si el reloj **avisa**; `lubricentros.suspension_automatica`
-decide si puede **cerrar el panel**. El primer ciclo es solo avisos: la
+decide si puede **cerrar el panel**; y desde `20260917140000`
+`bloqueo_de_alta_activo()` decide si puede cerrarle el panel **al que nunca
+pagó**, que es una escalera distinta —de dos escalones, sin gracia— y por eso
+tiene su propio interruptor.
+
+El tercero es una FUNCIÓN y no una columna, y eso no contradice lo de abajo:
+lo que sigue dice que *prendido en prod y apagado en local* tiene que ser un
+dato. Los dos primeros son exactamente ese caso (rollout tenant por tenant,
+solo en producción). El tercero no: está apagado en todas partes y el día que
+se prenda, se prende en todas a la vez, porque lo que lo destraba es un hecho
+del mundo —un pago real con el monto correcto— y no un rollout. Mismo caso que
+`alias_confirmado_por_cresium()`. El primer ciclo es solo avisos: la
 primera vez que esto corre es la primera vez que el cálculo de plata se
 encuentra con tenants reales, y un monto mal calculado que ADEMÁS suspende
 a alguien no se arregla con una disculpa.
@@ -620,6 +631,7 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R20** | El catálogo de cobranza: `modulos` existe con su precio y su `codigo` coincide con la clave del override; el catálogo local es el de producción (el plan del demo afuera, el semestral en 0); el candado rechaza un `UPDATE` suelto de precio pero NO bloquea `activo`/`features`; el motivo es obligatorio y un guardado que no mueve ningún número no ensucia la auditoría | Un precio se movió sin dejar rastro, el módulo se cobra mal o no se cobra, o el `db reset` volvió a dejar un catálogo que no es el real y el cálculo de plata se prueba contra números que no existen |
 | **R24** | La atención de `/fidelli` exime al 100%: un tenant bonificado no aparece con ninguno de los cuatro estados, en ninguna fecha —tampoco como `trial_vencido`, porque el precio ya es cero— y el listado y la ficha lo dicen igual porque comparten `estado_atencion()`. Con el contracaso en las dos posiciones del caso real: sin descuento, a 4 días y vencido hace 4, los dos estados vuelven | Se está llamando para cobrarle a alguien que no debe nada (el caso Brothers Oil del 20/09/2026), o —peor— la exención se comió la lista entera y la pantalla que trae la plata se vació sola |
 | **R25** | El alias fijo por tenant: el interruptor `alias_confirmado_por_cresium()` está APAGADO y la puerta rechaza incluso un alias con la forma correcta; no hay un solo alias asignado en la base; un alias escrito no se cambia ni por UPDATE directo; la unicidad (puerta e índice, que son dos defensas distintas); el formato y los dos largos con su contracaso; y el alta, que asigna por la MISMA puerta y aborta entera si el alias falla | Se asignó un alias antes de que Cresium confirmara el formato —y no hay vuelta atrás barata, porque el tope de cambios por CVU es un número que todavía no sabemos—, o un tenant terminó con un alias distinto del que ya dejó cargado en su home banking |
+| **R26** | El alta prende el reloj y el primer pago define el ciclo: el tenant nuevo nace PAGANDO con `cobranza_desde` escrito y el vencimiento al día siguiente, **y ningún otro tenant entra al reloj por eso**; el primer pago que llega TARDE corre `inicio` y `vencimiento` a la fecha del pago con el largo contratado, y el que llega en plazo —o una renovación— no; las dos puertas del cobro hacen lo mismo; y la marca de la cuarta pantalla del onboarding es definer y se escribe una sola vez | El rollout volvió a ser el UPDATE peligroso contra 17 filas, un tenant que tardó cinco días en terminar el onboarding perdió cinco días de su primer mes, o el cobro manual —el que se va a usar en las primeras altas— quedó fuera del cambio |
 
 Además, fuera del reset, **las roturas a mano** (regla 13):
 
@@ -632,6 +644,7 @@ Además, fuera del reset, **las roturas a mano** (regla 13):
 ./scripts/regresion-cobranza-cresium.sh
 ./scripts/regresion-cobranza-deudas.sh
 ./scripts/regresion-cobranza-alias.sh
+./scripts/regresion-cobranza-alta.sh
 ```
 
 El primero rompe la vista de retención de dos formas —le saca el filtro de
@@ -691,7 +704,28 @@ parcial no rompe nada (dos NULL nunca colisionan en un unique) y sacarle
 el `lower()` tampoco, porque el CHECK de formato rechaza las mayúsculas
 antes de que el índice opine. Una rotura que no rompe nada es una prueba
 que miente sobre lo que cubre, así que no se escribe: se escribe el
-comentario que dice por qué no está. Se corren antes de un release, no en cada cambio, y **un bloque nuevo de la red
+comentario que dice por qué no está. El noveno rompe R21g y R26 (doce roturas), y su rotura
+central es de una clase que ninguna otra red podía atrapar: **la rama del que
+nunca pagó movida de lugar**. Está guardada por `p_nunca_pago` y las catorce
+llamadas literales de R21a/b/c pasan cinco argumentos, así que se la puede
+poner arriba de `@activo`, arriba de `@exento` o abajo de `@borde` y las diez
+roturas del reloj siguen en verde — puesta abajo del borde, el tenant nuevo
+atraviesa la ventana de gracia entera, que es exactamente lo que el bloque
+prohíbe. También rompe el `>` del plazo por un `>=` (con lo que un alta a las
+23:50 tiene diez minutos), el alta que le prende el reloj a TODOS, y la
+condición «y tarde» del primer pago, sin la cual un cliente viejo del que
+nunca registramos un pago pierde días en su próxima renovación.
+
+⚠ Y DOS DE ESTOS SCRIPTS APUNTAN A MÁS DE UNA MIGRACIÓN, porque
+`estado_cobranza`, `reloj_cobranza` y `crear_lubricentro` se redefinieron en
+migraciones posteriores a las que las crearon. Un script que las extrae del
+archivo VIEJO reinstala la firma vieja, queda una sobrecarga y todas las
+llamadas contestan «is not unique»: el script dice «SE ESCAPÓ» por una razón
+que no tiene nada que ver con la regla, y el guard del sed no lo ve porque el
+sed sí muerde. Se vio en rojo. **Cuando redefinas una función que algún script
+de regresión muerde, buscá su nombre en `scripts/` y actualizá el `M`.**
+
+Se corren antes de un release, no en cada cambio, y **un bloque nuevo de la red
 trae su rotura en uno de estos scripts**.
 
 Y en cualquier momento, a mano:

@@ -32,6 +32,11 @@ export type Sesion = {
   onboardingCompleto: boolean;
   // Completó el onboarding y todavía no vio la animación de bienvenida.
   bienvenidaPendiente: boolean;
+  // Completó el onboarding y todavía no pasó por la CUARTA pantalla, la del
+  // pago. Es lo único que distingue "recién terminó" de "terminó hace tres
+  // semanas": sin esta marca, /panel/onboarding le mostraría la pantalla de
+  // pago cada vez que entre, para siempre.
+  pagoPendiente: boolean;
   // Paso 3 del onboarding: dejó el premio para después. Lo mira el
   // checklist de Inicio para no seguir pidiéndoselo.
   premioOmitido: boolean;
@@ -83,7 +88,7 @@ export const obtenerSesion = cache(async (): Promise<Sesion | null> => {
   // del select, no del JSON.
   const CAMPOS = (conReloj: boolean) =>
     "id, rol, nombre, email, lubricentro_id, plan_capacidades, " +
-    `lubricentros(nombre, activo, onboarding_completado_at, bienvenida_vista_at, premio_omitido_at${conReloj ? ", reloj_cobranza" : ""})`;
+    `lubricentros(nombre, activo, onboarding_completado_at, bienvenida_vista_at, pago_presentado_at, premio_omitido_at${conReloj ? ", reloj_cobranza" : ""})`;
 
   const primero = await supabase
     .from("usuarios")
@@ -117,6 +122,7 @@ export const obtenerSesion = cache(async (): Promise<Sesion | null> => {
       activo: boolean;
       onboarding_completado_at: string | null;
       bienvenida_vista_at: string | null;
+      pago_presentado_at: string | null;
       premio_omitido_at: string | null;
       reloj_cobranza?: unknown;
     } | null;
@@ -145,6 +151,12 @@ export const obtenerSesion = cache(async (): Promise<Sesion | null> => {
     bienvenidaPendiente:
       usuario.lubricentros?.onboarding_completado_at != null &&
       usuario.lubricentros.bienvenida_vista_at === null,
+    // Completo y sin pasar por el pago. El `rol === "owner"` no hace falta
+    // acá —un superadmin no tiene tenant y la fila viene null— pero la
+    // condición se lee igual que la de la bienvenida a propósito.
+    pagoPendiente:
+      usuario.lubricentros?.onboarding_completado_at != null &&
+      usuario.lubricentros.pago_presentado_at === null,
     premioOmitido: usuario.lubricentros?.premio_omitido_at != null,
   };
 });

@@ -32,6 +32,14 @@ cd "$(dirname "$0")/.."
 DB="docker exec -i supabase_db_fidelli-motors psql -U postgres -d postgres -X"
 V=supabase/verificaciones.sql
 M=supabase/migrations/20260916140000_reloj_cobranza.sql
+# ⚠ DOS ARCHIVOS, Y NO ES OPCIONAL. `estado_cobranza` y `reloj_cobranza` se
+# redefinieron en 20260917140000 (la rama del que nunca pagó y el sexto
+# argumento). Extrayéndolas del archivo VIEJO, el `create or replace`
+# reinstala la versión de cinco argumentos, queda una SOBRECARGA y todas las
+# llamadas contestan «function estado_cobranza(...) is not unique»: el script
+# imprime «SE ESCAPÓ» por una razón que no tiene nada que ver con la regla, y
+# el guard del sed no lo ve porque el sed sí muerde. Se vio en rojo.
+M_NUEVO=supabase/migrations/20260917140000_alta_prende_el_reloj.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
 
@@ -42,8 +50,8 @@ bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
 # por una razón que no tiene nada que ver con la regla que quería probar.
 # Es el modo de falla más caro de este molde: manda a arreglar la
 # verificación en vez del bug.
-funcion_rota() {
-  bloque "$1" "$M" | sed "s/^create function/create or replace function/" | sed "$2"
+funcion_rota() { # $1 = función · $2 = sed · $3 = migración
+  bloque "$1" "$3" | sed "s/^create function/create or replace function/" | sed "$2"
 }
 
 fallas=0
@@ -60,10 +68,11 @@ correr() { # $1 = nombre · $2 = SQL de la rotura · $3 = bloque · $4 = patrón
   fi
 }
 
-correr_funcion() { # $1 = nombre · $2 = función · $3 = sed · $4 = bloque · $5 = patrón
-  local orig roto
-  orig=$(bloque "$2" "$M" | sed "s/^create function/create or replace function/")
-  roto=$(funcion_rota "$2" "$3")
+correr_funcion() { # $1 = nombre · $2 = función · $3 = sed · $4 = bloque · $5 = patrón · $6 = migración (opcional)
+  local orig roto archivo
+  archivo="${6:-$M}"
+  orig=$(bloque "$2" "$archivo" | sed "s/^create function/create or replace function/")
+  roto=$(funcion_rota "$2" "$3" "$archivo")
   # El guard del sed: si el patrón no muerde, la "rotura" es un no-op y el
   # bloque pasa en verde. Un falso VERDE es peor que un falso rojo.
   if [ "$orig" = "$roto" ]; then
@@ -76,7 +85,7 @@ correr_funcion() { # $1 = nombre · $2 = función · $3 = sed · $4 = bloque · 
 
 echo "── R21a · los bordes del reloj ──"
 correr_funcion "el borde corrido un día (>= en vez de >)" estado_cobranza \
-  "/@borde/s/current_date > p_vencimiento + dias_de_gracia()/current_date >= p_vencimiento + dias_de_gracia()/" R21a "R21a"
+  "/@borde/s/current_date > p_vencimiento + dias_de_gracia()/current_date >= p_vencimiento + dias_de_gracia()/" R21a "R21a" "$M_NUEVO"
 correr_funcion "la ventana de gracia en cero" dias_de_gracia \
   "/@gracia_n/s/select 7/select 0/" R21a "R21a"
 correr_funcion "el contador sin el +1 (dice 0 el último día útil)" dias_de_gracia_restantes \
@@ -84,15 +93,15 @@ correr_funcion "el contador sin el +1 (dice 0 el último día útil)" dias_de_gr
 
 echo "── R21b · las exenciones y quién le gana a quién ──"
 correr_funcion "la exención bajada al 50 (perdona a los founding)" estado_cobranza \
-  "/@exento/s/>= 100/>= 50/" R21b "R21b"
+  "/@exento/s/>= 100/>= 50/" R21b "R21b" "$M_NUEVO"
 correr_funcion "el interruptor manual que deja de ganar" estado_cobranza \
-  "/@activo/s/when not p_activo/when not p_activo and false/" R21b "R21b"
+  "/@activo/s/when not p_activo/when not p_activo and false/" R21b "R21b" "$M_NUEVO"
 correr_funcion "el reloj corriendo para los que están afuera" estado_cobranza \
-  "/@desde/s/p_desde is null or //" R21b "R21b"
+  "/@desde/s/p_desde is null or //" R21b "R21b" "$M_NUEVO"
 
 echo "── R21c · el segundo interruptor ignorado ──"
 correr_funcion "suspende aunque suspension_automatica esté apagada" estado_cobranza \
-  "/@corta/s/case when p_suspension then 'suspendido' else 'gracia' end/'suspendido'/" R21c "R21c"
+  "/@corta/s/case when p_suspension then 'suspendido' else 'gracia' end/'suspendido'/" R21c "R21c" "$M_NUEVO"
 
 echo "── R21d · el candado del demo ──"
 correr "el demo puede entrar al reloj" \
@@ -101,7 +110,7 @@ correr "el demo puede entrar al reloj" \
 
 echo "── R21e · la lectura cruzada de tenants ──"
 correr_funcion "el payload como security definer" reloj_cobranza \
-  "/@modo/s/^stable/stable security definer/" R21e "R21e"
+  "/@modo/s/^stable/stable security definer/" R21e "R21e" "$M_NUEVO"
 
 echo "── R21f · el módulo cobrado sin mirar el motivo ──"
 correr_funcion "se le cobra al bonificado" modulo_es_pago \

@@ -40,7 +40,14 @@ export default async function LayoutPanel({
   // Recién completado y con la bienvenida sin ver, los ítems nacen con
   // candado y se desbloquean uno por uno cuando el telón se levanta.
   const bloqueado = !suspendido && !sesion.onboardingCompleto;
-  const desbloqueando = sesion.bienvenidaPendiente;
+  // ⚠ Y NO MIENTRAS ESTÉ LA CUARTA PANTALLA. `bienvenidaPendiente` se
+  // prende en el MISMO render en que se escribe `onboarding_completado_at`,
+  // así que sin el `&& !pagoPendiente` la coreografía de desbloqueo corre
+  // detrás de la pantalla de pago, sin telón: cuando el dueño finalmente
+  // entra, el telón se levanta sobre un sidebar que ya se desbloqueó solo.
+  // Todo el CSS está escrito sobre la premisa de que telón y nav se pintan
+  // en el mismo render (globals.css · "La bienvenida").
+  const desbloqueando = sesion.bienvenidaPendiente && !sesion.pagoPendiente;
   const pasosOnboarding = featureHabilitada(sesion, "premios") ? 3 : 2;
 
   // El badge de "A quién llamar": los contactos que están esperando, como

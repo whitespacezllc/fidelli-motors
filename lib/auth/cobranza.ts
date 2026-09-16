@@ -13,6 +13,11 @@ import type { Periodo } from "@/lib/fidelli/plan";
 //   por_vencer  hoy <= vencimiento < hoy + dias_de_aviso()
 //   gracia      vencimiento < hoy <= vencimiento + dias_de_gracia()
 //   suspendido  hoy > vencimiento + dias_de_gracia()  ·  o  activo = false
+//
+// Con una excepción, que es el bloque D del sprint del 16/09/2026: EL QUE
+// NUNCA PAGÓ NO TIENE GRACIA. Su escalera es de dos escalones —`por_vencer`
+// y bloqueado— y salta la ventana entera. La decide la base
+// (`estado_cobranza`, rama @sin_pagos); acá solo se lee.
 // ============================================================
 
 export const ESTADOS_COBRANZA = ["al_dia", "por_vencer", "gracia", "suspendido"] as const;
@@ -37,6 +42,16 @@ export type Cobranza = {
   enElReloj: boolean;
   /** El segundo: si es false, el reloj avisa pero nunca cierra el panel. */
   corta: boolean;
+  /** ¿Tiene ALGÚN pago acreditado? Es lo que elige la voz del copy: el que
+   *  todavía no pagó ninguno no está renovando, le falta el primer pago, y
+   *  esa es otra conversación (lib/cobranza/copy.ts, voz `alta`).
+   *
+   *  ⚠ SE LEE EN POSITIVO Y EL DEFAULT ES "YA PAGÓ". La base lo calcula con
+   *  un `exists` sobre `pagos` desde una función INVOKER, así que un
+   *  contexto sin permiso vería cero filas y concluiría "nunca pagó" para
+   *  alguien que pagó — y con el tercer interruptor prendido, eso lo
+   *  bloquea. Ante la duda se falla hacia el lado barato. */
+  tienePago: boolean;
 };
 
 // El jsonb de `reloj_cobranza()` viaja en snake_case y este tipo es
@@ -61,6 +76,7 @@ type CobranzaCruda = {
   exento: unknown;
   en_el_reloj: unknown;
   corta: unknown;
+  tiene_pago: unknown;
 };
 
 function esEstado(v: unknown): v is EstadoCobranza {
@@ -96,5 +112,10 @@ export function aCobranza(crudo: unknown): Cobranza | null {
     exento: c.exento === true,
     enElReloj: c.en_el_reloj === true,
     corta: c.corta === true,
+    // ⚠ `!== false` Y NO `=== true`: si la clave falta o llega null, el
+    // default tiene que ser "ya pagó". Con `=== true`, un payload viejo o
+    // un permiso recortado le hablaría con la voz del alta a un cliente de
+    // hace dos años — y lo bloquearía en cuanto se prenda el interruptor.
+    tienePago: c.tiene_pago !== false,
   };
 }
