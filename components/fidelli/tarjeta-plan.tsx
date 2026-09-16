@@ -27,6 +27,11 @@ import { FEATURES_PLAN, ETIQUETA_FEATURE } from "@/lib/planes";
 
 const INICIAL: EstadoPlan = {};
 
+// El mínimo lo exige la BASE (fijar_precio_plan / fijar_precio_modulo). Acá
+// se repite solo para avisar antes del rechazo, igual que lib/texto.ts
+// repite el formato de patente: la fuente de verdad es SQL.
+export const MOTIVO_MINIMO = 10;
+
 type Suscripto = {
   id: string;
   nombre: string;
@@ -50,6 +55,34 @@ export function TarjetaPlan({
     descuento_anual_pct: plan.descuento_anual_pct,
   });
 
+  // ---------- El borrador se rinde ante el servidor ----------
+  // `revalidatePath` vuelve a renderizar esta tarjeta con los valores nuevos,
+  // pero `useState` solo mira su inicial en el montaje: sin esto el input
+  // seguía mostrando el precio VIEJO con el cartel "Precios guardados"
+  // debajo. Visto en vivo: la base quedaba en 52.000 y la pantalla decía
+  // 49.000. Con la auditoría eso dejó de ser cosmético — el siguiente
+  // guardado escribe una fila «52.000 → 49.000» con el motivo que se tipee,
+  // o sea una vuelta atrás silenciosa disfrazada de ajuste.
+  //
+  // Es el patrón de "ajustar estado durante el render" de React: se compara
+  // contra lo último que mandó el servidor y se resincroniza en el acto, sin
+  // un efecto y sin un render intermedio con el número equivocado.
+  const [ultimoDelServidor, setUltimoDelServidor] = useState(plan);
+  if (
+    ultimoDelServidor.precio_mensual !== plan.precio_mensual ||
+    ultimoDelServidor.descuento_semestral_pct !== plan.descuento_semestral_pct ||
+    ultimoDelServidor.descuento_anual_pct !== plan.descuento_anual_pct
+  ) {
+    setUltimoDelServidor(plan);
+    setBorrador({
+      precio_mensual: plan.precio_mensual,
+      descuento_semestral_pct: plan.descuento_semestral_pct,
+      descuento_anual_pct: plan.descuento_anual_pct,
+    });
+  }
+
+  const [motivo, setMotivo] = useState("");
+
   const [estado, guardar, guardando] = useActionState(
     async (previo: EstadoPlan, formData: FormData) => {
       const r = await guardarPlan(previo, formData);
@@ -61,6 +94,10 @@ export function TarjetaPlan({
           descuento_semestral_pct: Number(formData.get("descuento_semestral_pct")),
           descuento_anual_pct: Number(formData.get("descuento_anual_pct")),
         });
+        // El motivo se vacía: es de ESE cambio, no del formulario. Dejarlo
+        // escrito invita a que el próximo ajuste viaje con el motivo del
+        // anterior, y la auditoría pasa a mentir con todas las letras.
+        setMotivo("");
       }
       return r;
     },
@@ -219,8 +256,42 @@ export function TarjetaPlan({
             </div>
           </div>
 
+          {/* ---------- El motivo ----------
+              Obligatorio en la BASE (fijar_precio_plan lo exige y deja la
+              fila en cambios_precio_catalogo). Acá solo se avisa antes del
+              viaje. Aparece únicamente cuando hay algo que registrar: pedir
+              un motivo para un formulario que no movió ningún número es
+              ruido, y la propia función no registraría nada. */}
+          {cambiado && (
+            <div>
+              <label htmlFor={`motivo-${plan.id}`} className={CLASE_LABEL}>
+                Por qué se mueve
+              </label>
+              <textarea
+                id={`motivo-${plan.id}`}
+                name="motivo"
+                rows={2}
+                required
+                minLength={MOTIVO_MINIMO}
+                value={motivo}
+                onChange={(e) => setMotivo(e.target.value)}
+                placeholder="Ajuste trimestral por IPC de septiembre"
+                className={CLASE_CAMPO}
+              />
+              <p className={CLASE_AYUDA}>
+                Queda registrado con tu nombre y la fecha. Dentro de un año,
+                con un cliente preguntando por qué paga lo que paga, esta línea
+                es la única respuesta.
+              </p>
+            </div>
+          )}
+
           <div className="flex items-center gap-3">
-            <Boton type="submit" disabled={guardando || !cambiado} className="min-w-[150px]">
+            <Boton
+              type="submit"
+              disabled={guardando || !cambiado || motivo.trim().length < MOTIVO_MINIMO}
+              className="min-w-[150px]"
+            >
               {guardando ? "Guardando…" : "Guardar precios"}
             </Boton>
             {estado.ok && !cambiado && (

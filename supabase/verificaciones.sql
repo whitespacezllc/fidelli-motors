@@ -2668,3 +2668,218 @@ begin
   delete from clientes where id = v_cli;
 end $$;
 -- <<< R19
+
+-- ============================================================
+-- R20 · El catálogo de cobranza (20260916100000)
+--
+-- Toda la plata es dato y no constante, y todo cambio de plata deja
+-- rastro con autor, fecha y motivo. Este bloque protege las tres mitades
+-- de esa regla:
+--
+--   a · El módulo existe con su precio, y su `codigo` coincide con la
+--       clave del override. No hay FK posible contra un tipo de
+--       TypeScript: si alguien escribe 'neumatico' en una de las dos
+--       puntas, el monto sale sin el módulo y nadie se entera.
+--   b · El catálogo local es el de PRODUCCIÓN. La drift de septiembre de
+--       2026 (semestral 10 vs 0, el plan del demo a 45.000 con 15% anual)
+--       hacía que la pantalla de pago ofreciera el período semestral en
+--       local y no en producción. Corre después del seed a propósito: el
+--       plan del demo nace en `seed.sql`, no en las migraciones.
+--   c · El candado. Un UPDATE suelto de precio se rechaza venga de donde
+--       venga, y la función oficial deja el rastro.
+--   d · El motivo es obligatorio de verdad, y un guardado que no mueve
+--       ningún número no ensucia la auditoría.
+-- ============================================================
+
+-- >>> R20
+do $$
+declare
+  v_super   uuid;
+  v_plan    uuid;
+  v_modulo  uuid;
+  v_precio  numeric;
+  v_n       integer;
+  v_catalogo text;
+  v_fila    record;
+  v_aud     record;
+begin
+  select u.id into v_super from usuarios u where u.rol = 'superadmin' limit 1;
+  if v_super is null then
+    raise exception 'R20 SIN PISO: el seed local no dejó ningún superadmin (ver supabase/seed.sql).';
+  end if;
+
+  -- ---------- a · El módulo y su código ----------
+  select id, precio_mensual into v_modulo, v_precio
+  from modulos where codigo = 'neumaticos';
+
+  if v_modulo is null then
+    raise exception 'R20a: no hay fila en `modulos` con codigo = ''neumaticos''. El cálculo del monto no tiene de dónde sacar el precio del módulo y lo cobraría en cero, en silencio.';
+  end if;
+  if v_precio is distinct from 25000 then
+    raise exception 'R20a: el módulo gomería vale % y tiene que valer 25000.', v_precio;
+  end if;
+
+  -- El código de `modulos` y la clave del override son la misma palabra,
+  -- en dos lugares que ningún tipo ata. El día que se agregue un módulo,
+  -- esto avisa antes que una factura.
+  if not exists (
+    select 1 from lubricentros
+    where plan_overrides ? 'neumaticos'
+  ) and exists (select 1 from lubricentros where plan_overrides <> '{}'::jsonb) then
+    raise exception 'R20a: hay overrides de plan cargados y ninguno usa la clave ''neumaticos'', que es el `codigo` del único módulo del catálogo. Una de las dos puntas se escribió distinto.';
+  end if;
+
+  -- ---------- b · El catálogo local es el de producción ----------
+  select activo, heredado, precio_mensual, descuento_anual_pct, descuento_semestral_pct
+    into v_fila
+  from planes where nombre = 'Fidelli Motors';
+
+  if not found then
+    raise exception 'R20b: el plan "Fidelli Motors" no existe después del seed. Los dos seeds lo buscan POR NOMBRE (20260723225403:58 y 20260724040841:144) y si no está lo recrean a $45.000, pisando el precio real.';
+  end if;
+  if v_fila.activo then
+    raise exception 'R20b: el plan "Fidelli Motors" quedó ACTIVO. Tiene que salir del catálogo con activo = false — ni borrado (lo bloquea on delete restrict y el seed lo recrea) ni renombrado (los seeds lo buscan por nombre y crearían un duplicado). Falta el backfill de supabase/seed.sql.';
+  end if;
+  if v_fila.precio_mensual is distinct from 46750
+     or v_fila.descuento_anual_pct is distinct from 25 then
+    raise exception 'R20b: el plan "Fidelli Motors" quedó en % / %%% anual y producción dice 46750 / 25%%. El `db reset` está dejando un catálogo que no es el real y el cálculo de plata se prueba contra números que no existen.',
+      v_fila.precio_mensual, v_fila.descuento_anual_pct;
+  end if;
+
+  select count(*) into v_n from planes where descuento_semestral_pct <> 0;
+  if v_n > 0 then
+    raise exception 'R20b: % plan(es) con descuento semestral distinto de 0. En producción los cuatro están en 0, y la pantalla de pago decide si OFRECE el período semestral mirando ese número: con la drift, la opción aparece en local y no en producción.', v_n;
+  end if;
+
+  select string_agg(nombre || '=' || precio_mensual, ' ' order by nombre) into v_catalogo
+  from planes where activo and not heredado;
+  if v_catalogo is distinct from 'Basic=39000.00 Pro=49000.00 Ultra=99000.00' then
+    raise exception 'R20b: el catálogo vigente quedó en «%» y tiene que ser Basic 39000 / Pro 49000 / Ultra 99000.', v_catalogo;
+  end if;
+
+  -- ---------- c · El candado ----------
+  select id into v_plan from planes where nombre = 'Pro' and not heredado;
+
+  begin
+    update planes set precio_mensual = 1 where id = v_plan;
+    raise exception 'R20c: un UPDATE suelto movió el precio de Pro. El candado no rige y /fidelli/precios puede cambiar la factura de los 17 tenants sin dejar rastro.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%precio_solo_por_funcion%' then raise; end if;
+  end;
+
+  begin
+    update planes set descuento_anual_pct = 30 where id = v_plan;
+    raise exception 'R20c: un UPDATE suelto movió el descuento anual de Pro. El 25%% del anual sale de esta columna: moverla sin rastro cambia el monto de todos los anuales.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%precio_solo_por_funcion%' then raise; end if;
+  end;
+
+  begin
+    update modulos set precio_mensual = 1 where id = v_modulo;
+    raise exception 'R20c: un UPDATE suelto movió el precio del módulo gomería.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%precio_solo_por_funcion%' then raise; end if;
+  end;
+
+  -- Lo que el candado NO bloquea, y no tiene que bloquear: activo,
+  -- heredado, features y limites tienen sus propios caminos. Si esto
+  -- empieza a fallar, el candado se comió el ABM de planes y el alta.
+  begin
+    update planes set activo = activo where id = v_plan;
+  exception when others then
+    raise exception 'R20c: el candado bloqueó un UPDATE que NO toca precios (%). Se comió el ABM de planes.', sqlerrm;
+  end;
+
+  -- ---------- d · La puerta oficial, el motivo y el rastro ----------
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  -- Sin motivo con sustancia, no pasa.
+  --
+  -- La afirmación es sobre el INVARIANTE ("un motivo corto no mueve un
+  -- precio"), no sobre QUÉ defensa lo rechaza. Son dos y a propósito: el
+  -- chequeo de fijar_precio_plan(), que da un mensaje legible, y el CHECK
+  -- `motivo_con_sustancia` de la tabla, que es el piso. Atar la prueba a
+  -- una sola las vuelve frágiles: sacarle el mínimo a la función ponía este
+  -- bloque en rojo con el mensaje del CHECK, o sea rojo por la razón
+  -- equivocada, que es justo lo que manda a arreglar la verificación en vez
+  -- del bug.
+  declare
+    v_paso boolean := false;
+  begin
+    begin
+      perform fijar_precio_plan(v_plan, 51000, 0, 25, 'ajuste');
+      v_paso := true;
+    exception when others then
+      null;  -- cualquiera de las dos defensas que lo rechace sirve
+    end;
+
+    if v_paso then
+      raise exception 'R20d: se movió un precio de lista con un motivo de 6 caracteres. Sin motivo, dentro de un año nadie puede contestar por qué un cliente paga lo que paga — que es la única razón por la que existe cambios_precio_catalogo.';
+    end if;
+  end;
+
+  select count(*) into v_n from cambios_precio_catalogo;
+
+  -- Con motivo, pasa y deja rastro.
+  perform fijar_precio_plan(v_plan, 51000, 0, 25, 'Regresión R20 · ajuste de prueba');
+
+  select precio_mensual into v_precio from planes where id = v_plan;
+  if v_precio is distinct from 51000 then
+    raise exception 'R20d: fijar_precio_plan() no movió el precio (quedó %).', v_precio;
+  end if;
+
+  select count(*) into v_precio from cambios_precio_catalogo;
+  if v_precio <> v_n + 1 then
+    raise exception 'R20d: el cambio de precio no dejó fila en cambios_precio_catalogo (% → %).', v_n, v_precio;
+  end if;
+
+  select antes->>'precio_mensual' as antes, despues->>'precio_mensual' as despues, cambiado_por
+    into v_aud
+  from cambios_precio_catalogo order by created_at desc limit 1;
+
+  if v_aud.cambiado_por is distinct from v_super then
+    raise exception 'R20d: la fila de auditoría no guardó al autor.';
+  end if;
+
+  -- Un guardado que no mueve ningún número no ensucia la auditoría:
+  -- /fidelli/precios manda el formulario entero en cada submit.
+  perform fijar_precio_plan(v_plan, 51000, 0, 25, 'Regresión R20 · el mismo valor otra vez');
+  select count(*) into v_precio from cambios_precio_catalogo;
+  if v_precio <> v_n + 1 then
+    raise exception 'R20d: un guardado que no cambió ningún número dejó una fila de auditoría. En seis meses la tabla es ilegible justo cuando hay que leerla.';
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- Un no-superadmin no puede ni llamar a la puerta.
+  declare
+    v_owner uuid;
+  begin
+    select u.id into v_owner from usuarios u where u.rol = 'owner' limit 1;
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+
+    begin
+      perform fijar_precio_plan(v_plan, 1, 0, 25, 'Regresión R20 · un owner intentando');
+      raise exception 'R20d: un OWNER movió el precio de lista de un plan.';
+    exception
+      when sqlstate '42501' then null;
+    end;
+
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+  end;
+
+  -- limpieza: el precio vuelve a lo que era y la auditoría de la prueba se va.
+  perform set_config('fidelli.precio_de_catalogo', 'si', true);
+  update planes set precio_mensual = 49000 where id = v_plan;
+  delete from cambios_precio_catalogo where motivo like 'Regresión R20 ·%';
+end $$;
+-- <<< R20
