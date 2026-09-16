@@ -531,6 +531,42 @@ export type Database = {
           },
         ]
       }
+      cresium_eventos: {
+        Row: {
+          external_id: string | null
+          id: string
+          intento: number
+          motivo: string | null
+          payload: Json
+          procesado_at: string | null
+          recibido_at: string
+          tipo: string
+          transaccion_id: number
+        }
+        Insert: {
+          external_id?: string | null
+          id?: string
+          intento?: number
+          motivo?: string | null
+          payload: Json
+          procesado_at?: string | null
+          recibido_at?: string
+          tipo: string
+          transaccion_id: number
+        }
+        Update: {
+          external_id?: string | null
+          id?: string
+          intento?: number
+          motivo?: string | null
+          payload?: Json
+          procesado_at?: string | null
+          recibido_at?: string
+          tipo?: string
+          transaccion_id?: number
+        }
+        Relationships: []
+      }
       landing_busquedas: {
         Row: {
           created_at: string
@@ -768,35 +804,41 @@ export type Database = {
       pagos: {
         Row: {
           created_at: string
+          cresium_transaccion_id: number | null
           fecha_pago: string
           id: string
           lubricentro_id: string
           monto: number
+          origen: string
           periodo_desde: string
           periodo_hasta: string
-          registrado_por: string
+          registrado_por: string | null
           suscripcion_id: string
         }
         Insert: {
           created_at?: string
+          cresium_transaccion_id?: number | null
           fecha_pago: string
           id?: string
           lubricentro_id: string
           monto: number
+          origen?: string
           periodo_desde: string
           periodo_hasta: string
-          registrado_por: string
+          registrado_por?: string | null
           suscripcion_id: string
         }
         Update: {
           created_at?: string
+          cresium_transaccion_id?: number | null
           fecha_pago?: string
           id?: string
           lubricentro_id?: string
           monto?: number
+          origen?: string
           periodo_desde?: string
           periodo_hasta?: string
-          registrado_por?: string
+          registrado_por?: string | null
           suscripcion_id?: string
         }
         Relationships: [
@@ -2051,6 +2093,7 @@ export type Database = {
       }
     }
     Functions: {
+      acreditar_deposito_cresium: { Args: { p_payload: Json }; Returns: Json }
       activar_template: { Args: { p_template_id: string }; Returns: undefined }
       actualizar_lubricentro: {
         Args: {
@@ -2184,6 +2227,10 @@ export type Database = {
           p_slug: string
           p_sucursales: Json
         }
+        Returns: string
+      }
+      cresium_external_id: {
+        Args: { p_hasta: string; p_suscripcion: string }
         Returns: string
       }
       desbloquear_service: { Args: { p_service_id: string }; Returns: string }

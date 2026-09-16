@@ -3219,3 +3219,130 @@ begin
   delete from lubricentros where id = v_lub;
 end $$;
 -- <<< R21f
+
+-- ============================================================
+-- R22 · El cobro por Cresium (20260916180000)
+--
+-- Lo que esta red cubre es lo que el script de webhook NO puede cubrir:
+-- los invariantes de la BASE, que tienen que seguir en pie aunque alguien
+-- llame a la función desde otro lado o inserte a mano.
+--
+--   a · El cobro sin dueño. `pagos.registrado_por` es anulable ahora, y
+--       el CHECK es lo que evita que eso sea un agujero: un pago MANUAL
+--       sin autor no entra, y uno de Cresium sin id de transacción
+--       tampoco. Sin el CHECK, el null se filtra al histórico y en seis
+--       meses nadie distingue un cobro automático de uno que cargó
+--       Santiago a mano.
+--   b · La idempotencia, en la base y no en la ruta. Cresium reintenta
+--       hasta cinco veces: el unique es lo único que impide que un
+--       reintento le regale doce meses a alguien.
+--   c · `PARTIAL` no mueve el vencimiento ni un día.
+--   d · La evidencia se guarda SIEMPRE, incluso cuando no se acredita.
+-- ============================================================
+
+-- >>> R22
+do $$
+declare
+  v_lub uuid; v_sus uuid; v_plan uuid; v_super uuid;
+  v_ext text; v_hasta date; v_venc date; v_r jsonb; v_n integer;
+begin
+  select id into v_plan from planes where nombre = 'Pro' and not heredado;
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+
+  insert into lubricentros (nombre, slug) values ('Cresium R22', 'cresium-r22') returning id into v_lub;
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, vencimiento)
+  values (v_lub, v_plan, 'activa', 'mensual', 0, current_date + 3) returning id into v_sus;
+
+  v_hasta := current_date + 33;
+  v_ext   := cresium_external_id(v_sus, v_hasta);
+
+  -- ---------- a · El CHECK que hace que el null no sea un agujero ----------
+  begin
+    insert into pagos (lubricentro_id, suscripcion_id, registrado_por, origen,
+                       periodo_desde, periodo_hasta, monto, fecha_pago)
+    values (v_lub, v_sus, null, 'manual', current_date, v_hasta, 1, current_date);
+    raise exception 'R22a: entró un pago MANUAL sin autor. `registrado_por` se hizo anulable para el cobro por webhook, y el CHECK es lo único que evita que ese null se filtre a los pagos que carga una persona — con el null suelto, en seis meses nadie distingue un cobro automático de uno tipeado a mano.';
+  exception
+    when check_violation then null;
+  end;
+
+  begin
+    insert into pagos (lubricentro_id, suscripcion_id, registrado_por, origen,
+                       cresium_transaccion_id, periodo_desde, periodo_hasta, monto, fecha_pago)
+    values (v_lub, v_sus, null, 'cresium', null, current_date, v_hasta, 1, current_date);
+    raise exception 'R22a: entró un pago de Cresium SIN id de transacción. Ese id es toda la idempotencia: sin él, el reintento número dos acredita de nuevo.';
+  exception
+    when check_violation then null;
+  end;
+
+  -- ---------- b · La idempotencia ----------
+  v_r := acreditar_deposito_cresium(jsonb_build_object(
+    'type', 'DEPOSIT', 'retry', 1,
+    'data', jsonb_build_object('id', 990001, 'paymentOrder', jsonb_build_object(
+      'externalId', v_ext, 'status', 'PAID', 'amount', 49000, 'amountPaid', 49000))));
+
+  if v_r->>'resultado' is distinct from 'acreditado' then
+    raise exception 'R22b: un DEPOSIT en PAID no acreditó (%).', v_r;
+  end if;
+
+  select vencimiento into v_venc from suscripciones where id = v_sus;
+  if v_venc is distinct from v_hasta then
+    raise exception 'R22b: el vencimiento quedó en % y tenía que moverse a %.', v_venc, v_hasta;
+  end if;
+
+  -- Los cuatro reintentos que faltan.
+  for v_n in 2..5 loop
+    v_r := acreditar_deposito_cresium(jsonb_build_object(
+      'type', 'DEPOSIT', 'retry', v_n,
+      'data', jsonb_build_object('id', 990001, 'paymentOrder', jsonb_build_object(
+        'externalId', v_ext, 'status', 'PAID', 'amount', 49000, 'amountPaid', 49000))));
+    if v_r->>'resultado' is distinct from 'ya_acreditado' then
+      raise exception 'R22b: el reintento % devolvió «%» en vez de ya_acreditado. Cresium reintenta CINCO veces: sin idempotencia, cada reintento le regala otro período al tenant.',
+        v_n, v_r->>'resultado';
+    end if;
+  end loop;
+
+  select count(*) into v_n from pagos where lubricentro_id = v_lub;
+  if v_n <> 1 then
+    raise exception 'R22b LA IDEMPOTENCIA SE CAYÓ: cinco entregas del MISMO depósito dejaron % pagos. Tiene que quedar uno.', v_n;
+  end if;
+
+  select vencimiento into v_venc from suscripciones where id = v_sus;
+  if v_venc is distinct from v_hasta then
+    raise exception 'R22b: los reintentos movieron el vencimiento a %. Tenía que quedar en %.', v_venc, v_hasta;
+  end if;
+
+  -- ---------- c · PARTIAL no activa nada ----------
+  v_r := acreditar_deposito_cresium(jsonb_build_object(
+    'type', 'DEPOSIT', 'retry', 1,
+    'data', jsonb_build_object('id', 990002, 'paymentOrder', jsonb_build_object(
+      'externalId', cresium_external_id(v_sus, current_date + 63),
+      'status', 'PARTIAL', 'amount', 49000, 'amountPaid', 20000))));
+
+  if v_r->>'resultado' is distinct from 'sin_acreditar' then
+    raise exception 'R22c: un PARTIAL acreditó (%). Solo PAID extiende el vencimiento; el CVU sigue vivo para completar.', v_r;
+  end if;
+  if (v_r->>'falta')::numeric is distinct from 29000 then
+    raise exception 'R22c: el PARTIAL informó que faltan % y faltan 29000. La pantalla muestra ese número.', v_r->>'falta';
+  end if;
+
+  select vencimiento into v_venc from suscripciones where id = v_sus;
+  if v_venc is distinct from v_hasta then
+    raise exception 'R22c EL PARTIAL MOVIÓ EL VENCIMIENTO: quedó en % y tenía que quedar en %.', v_venc, v_hasta;
+  end if;
+
+  -- ---------- d · La evidencia, incluso de lo que no acreditó ----------
+  select count(*) into v_n from cresium_eventos where external_id like v_sus::text || ':%';
+  if v_n <> 6 then
+    raise exception 'R22d: se guardaron % eventos y tenían que ser 6 (cinco entregas del cobro + el PARTIAL). La evidencia es append-only: guarda CADA entrega, no cada transacción — si no, no se puede saber si el cobro entró al primer intento o al quinto.', v_n;
+  end if;
+  if exists (select 1 from cresium_eventos where procesado_at is null and external_id like v_sus::text || ':%') then
+    raise exception 'R22d: quedó un evento sin procesar_at. Todo evento que entra se resuelve: acreditado, reintento o el motivo por el que no.';
+  end if;
+
+  delete from pagos where lubricentro_id = v_lub;
+  delete from cresium_eventos where external_id like v_sus::text || ':%';
+  delete from suscripciones where lubricentro_id = v_lub;
+  delete from lubricentros where id = v_lub;
+end $$;
+-- <<< R22
