@@ -4163,6 +4163,8 @@ declare
   v_desde date;
   v_venc  date;
   v_ini   date;
+  v_pd    date;
+  v_ph    date;
   v_n     integer;
   v_c     record;
 begin
@@ -4265,7 +4267,12 @@ begin
   --
   -- El cobro manual, que es el que va a usar Santiago durante las primeras
   -- altas. Se le cobra al tenant del alta, tarde.
-  perform registrar_pago(v_lub, v_hoy + 5, v_hoy + 35, 49000, v_hoy + 5);
+  -- La ventana TIPEADA arranca en el vencimiento viejo (hoy + 1), que es lo
+  -- que una persona tipea naturalmente —"desde que venció"—, y el pago cae
+  -- cuatro días después. Que difieran es lo que hace que la afirmación de
+  -- abajo sobre `pagos` pruebe algo: si la ventana tipeada coincidiera con
+  -- la calculada, un pago que guardara la tipeada pasaría en verde.
+  perform registrar_pago(v_lub, v_hoy + 1, v_hoy + 31, 49000, v_hoy + 5);
 
   select inicio, vencimiento into v_ini, v_venc from suscripciones where id = v_sus;
   if v_ini is distinct from v_hoy + 5 then
@@ -4273,6 +4280,18 @@ begin
   end if;
   if v_venc is distinct from v_hoy + 35 then
     raise exception 'R26c: la puerta manual dejó el vencimiento en % y tenía que ser % (el pago + los 30 días que se tipearon).', v_venc, v_hoy + 35;
+  end if;
+
+  -- Y EL PAGO REGISTRA EL PERÍODO QUE CUBRE DE VERDAD, no el tipeado. Es el
+  -- invariante `vencimiento = max(pagos.periodo_hasta)` que la auditoría de
+  -- producción del 15/09 encontró intacto en las 15 filas con pagos: un
+  -- ciclo corrido con el pago escrito con la ventana vieja lo rompe, y la
+  -- próxima auditoría lo lee como data sucia.
+  select periodo_desde, periodo_hasta into v_pd, v_ph
+    from pagos where lubricentro_id = v_lub order by created_at desc limit 1;
+  if v_pd is distinct from v_hoy + 5 or v_ph is distinct from v_hoy + 35 then
+    raise exception 'R26c EL PAGO GUARDÓ LA VENTANA TIPEADA (% → %) y el ciclo se corrió a % → %. `vencimiento` dejó de coincidir con max(pagos.periodo_hasta): es el invariante que la auditoría de producción mira, y acá se acaba de romper.',
+      v_pd, v_ph, v_ini, v_venc;
   end if;
 
   -- Y el SEGUNDO pago del mismo tenant ya no corre nada: extiende.

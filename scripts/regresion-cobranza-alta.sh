@@ -141,6 +141,15 @@ correr "la puerta manual que llama con «no es el primero»" \
   "$(awk '/^create or replace function registrar_pago\(/,/^\$\$;$/' "$M_CICLO" \
      | sed 's/from ciclo_tras_el_pago(v_primero, v_inicio, v_vencimiento, p_fecha_pago,/from ciclo_tras_el_pago(false, v_inicio, v_vencimiento, p_fecha_pago,/')" \
   R26 "R26c"
+# El pago que guarda la ventana TIPEADA aunque el ciclo se haya corrido. La
+# suscripción queda bien (el bloque de arriba no lo ve) y `vencimiento` deja
+# de coincidir con max(pagos.periodo_hasta): el invariante que la auditoría
+# de prod encontró intacto en las 15 filas, roto en silencio.
+correr "la puerta manual que guarda en el pago la ventana tipeada" \
+  "$(awk '/^create or replace function registrar_pago\(/,/^\$\$;$/' "$M_CICLO" \
+     | sed 's/    case when v_corre then v_nuevo_ini else p_periodo_desde end,/    p_periodo_desde,/' \
+     | sed 's/    case when v_corre then v_nuevo     else p_periodo_hasta end,/    p_periodo_hasta,/')" \
+  R26 "R26c"
 
 echo "── R26d · la cuarta pantalla ──"
 correr_marcada "la función de la marca como invoker" marcar_pago_presentado "$M_PAGO" \

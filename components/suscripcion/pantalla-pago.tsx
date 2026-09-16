@@ -373,8 +373,7 @@ function NotaDelTitular() {
   return (
     <p className="mt-2 text-label text-ink-40">
       La cuenta está a nombre de {TITULAR_CVU.split(" ").map((w) => w[0] + w.slice(1).toLowerCase()).join(" ")},
-      fundador de Fidelli Motors: todavía no tenemos sociedad y la facturación sale
-      a su nombre.
+      fundador de Fidelli Motors: todavía no tenemos sociedad.
     </p>
   );
 }

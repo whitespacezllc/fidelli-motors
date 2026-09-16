@@ -126,6 +126,7 @@ declare
   v_vencimiento date;
   v_inicio      date;
   v_primero     boolean;
+  v_corre       boolean;
   v_nuevo       date;
   v_nuevo_ini   date;
   v_pago        uuid;
@@ -166,21 +167,38 @@ begin
   v_primero := not exists (
     select 1 from pagos p where p.lubricentro_id = p_lubricentro_id);       -- @primer_pago
 
+  -- El ciclo se calcula ANTES de escribir el pago, porque el pago tiene que
+  -- registrar el período que de verdad cubre. El largo, del lado manual,
+  -- es la ventana que la persona tipeó.
+  select c.inicio, c.vencimiento into v_nuevo_ini, v_nuevo
+  from ciclo_tras_el_pago(v_primero, v_inicio, v_vencimiento, p_fecha_pago,
+                          p_periodo_hasta,
+                          (p_periodo_hasta - p_periodo_desde) * interval '1 day') c;
+
+  -- ¿Se corrió el ciclo? Se lee del RESULTADO, no repitiendo la condición:
+  -- la regla vive en ciclo_tras_el_pago() y acá solo se mira si movió
+  -- `inicio`. Y solo lo mueve el primer pago tardío, que es siempre
+  -- posterior al inicio vigente (fecha_pago > vencimiento >= inicio): no
+  -- hay empate posible.
+  v_corre := v_nuevo_ini is distinct from v_inicio;
+
+  -- ⚠ EL PAGO REGISTRA EL PERÍODO QUE CUBRE DE VERDAD. Si el ciclo se corrió
+  -- a la fecha del pago, la ventana del pago es esa y no la que se tipeó.
+  -- De lo contrario `vencimiento` deja de coincidir con
+  -- `max(pagos.periodo_hasta)`, que es exactamente el invariante que la
+  -- auditoría de producción del 15/09 encontró intacto en las 15 filas con
+  -- pagos — y que la próxima auditoría volvería a mirar.
   insert into pagos (
     lubricentro_id, suscripcion_id, registrado_por,
     periodo_desde, periodo_hasta, monto, fecha_pago
   )
   values (
     p_lubricentro_id, v_suscripcion, auth.uid(),
-    p_periodo_desde, p_periodo_hasta, p_monto, p_fecha_pago
+    case when v_corre then v_nuevo_ini else p_periodo_desde end,
+    case when v_corre then v_nuevo     else p_periodo_hasta end,
+    p_monto, p_fecha_pago
   )
   returning id into v_pago;
-
-  -- El largo, del lado manual, es la ventana que la persona tipeó.
-  select c.inicio, c.vencimiento into v_nuevo_ini, v_nuevo
-  from ciclo_tras_el_pago(v_primero, v_inicio, v_vencimiento, p_fecha_pago,
-                          p_periodo_hasta,
-                          (p_periodo_hasta - p_periodo_desde) * interval '1 day') c;
 
   update suscripciones
   set vencimiento = v_nuevo,
@@ -246,6 +264,7 @@ declare
   v_venc        date;
   v_inicio      date;
   v_primero     boolean;
+  v_corre       boolean;
   v_meses       integer;
   v_nuevo       date;
   v_nuevo_ini   date;
@@ -326,16 +345,6 @@ begin
   -- el ciclo no se correría nunca y nadie vería un error.
   v_primero := not exists (select 1 from pagos p where p.lubricentro_id = v_lub);  -- @primer_pago
 
-  insert into pagos (
-    lubricentro_id, suscripcion_id, registrado_por, origen, cresium_transaccion_id,
-    periodo_desde, periodo_hasta, monto, fecha_pago
-  )
-  values (
-    v_lub, v_suscripcion, null, 'cresium', v_tx,
-    greatest(v_venc, current_date), v_hasta, v_pagado, current_date
-  )
-  returning id into v_pago;
-
   -- EL PRIMER PAGO QUE LLEGA TARDE CORRE EL CICLO (20260917130000). Un
   -- tenant que tarda cinco días en terminar el onboarding no puede perder
   -- cinco días de su primer mes.
@@ -349,9 +358,25 @@ begin
   select coalesce(meses_del_periodo(o.periodo), 1) into v_meses
   from cresium_ordenes o where o.external_id = v_external;
 
+  -- Y se calcula ANTES de escribir el pago, porque el pago tiene que
+  -- registrar el período que de verdad cubre (ver la puerta manual).
   select c.inicio, c.vencimiento into v_nuevo_ini, v_nuevo
   from ciclo_tras_el_pago(v_primero, v_inicio, v_venc, current_date, v_hasta,
                           coalesce(v_meses, 1) * interval '1 month') c;
+
+  v_corre := v_nuevo_ini is distinct from v_inicio;
+
+  insert into pagos (
+    lubricentro_id, suscripcion_id, registrado_por, origen, cresium_transaccion_id,
+    periodo_desde, periodo_hasta, monto, fecha_pago
+  )
+  values (
+    v_lub, v_suscripcion, null, 'cresium', v_tx,
+    case when v_corre then v_nuevo_ini else greatest(v_venc, current_date) end,
+    case when v_corre then v_nuevo     else v_hasta end,
+    v_pagado, current_date
+  )
+  returning id into v_pago;
 
   update suscripciones
   set vencimiento = v_nuevo,
