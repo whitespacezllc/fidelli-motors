@@ -85,9 +85,16 @@ export async function TabConfiguracion({ tenant }: { tenant: Tenant }) {
               >
                 fidellimotors.app/{tenant.slug}
               </Link>
+              {/* ⚠ ACÁ DECÍA «suspendida: no responde», y era falso: la
+                  vidriera de un suspendido SIGUE respondiendo —get_landing
+                  perdió el filtro por `activo` el 22/08 a propósito, es la
+                  regla 8 y la vigila R4—. Estaba a dos píxeles de un link
+                  que lo desmiente en un clic, y en la pantalla donde un
+                  superadmin decide suspender. Lo que sí se apaga es lo que
+                  la página le OFRECE al cliente. */}
               {!tenant.activo && (
                 <span className="block text-label text-overdue">
-                  suspendida: no responde
+                  suspendida: la página responde, sin premio ni mensaje al escanear
                 </span>
               )}
             </Dato>

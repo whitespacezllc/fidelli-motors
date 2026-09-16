@@ -2351,6 +2351,7 @@ export type Database = {
       dot_a_fecha: { Args: { p_dot: string }; Returns: string }
       estado_atencion: {
         Args: {
+          p_descuento_pct: number
           p_estado: Database["public"]["Enums"]["estado_suscripcion"]
           p_vencimiento: string
         }

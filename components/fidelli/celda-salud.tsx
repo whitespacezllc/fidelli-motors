@@ -8,12 +8,14 @@ export function CeldaSalud({
   estado,
   vencimiento,
   ultimoService,
+  descuentoPct,
 }: {
   estado: EstadoSuscripcion | null;
   vencimiento: string | null;
   ultimoService: string | null;
+  descuentoPct: number | null;
 }) {
-  const salud = saludDe({ estado, vencimiento, ultimoService });
+  const salud = saludDe({ estado, vencimiento, ultimoService, descuentoPct });
 
   if (!salud) return <span className="text-ink-40">—</span>;
 
