@@ -3220,6 +3220,109 @@ begin
 end $$;
 -- <<< R21f
 
+-- >>> R21g
+do $$
+declare v_hoy date := current_date;
+begin
+  -- ============================================================
+  -- R21g · EL QUE NUNCA PAGÓ NO TIENE GRACIA (20260917140000)
+  --
+  -- La rama nueva está guardada por `p_nunca_pago`, y las CATORCE llamadas
+  -- literales de R21a, R21b y R21c pasan cinco argumentos: para todas
+  -- ellas el sexto es `false` y la rama queda inerte. O sea que se la
+  -- podría haber puesto arriba de @activo, arriba de @exento o abajo de
+  -- @borde y las diez roturas del reloj seguirían en verde.
+  --
+  -- Este bloque es la única red que tiene, y por eso repite con el
+  -- argumento en TRUE los cuatro casos en los que la rama NO tiene que
+  -- ganar, además del caso en que sí.
+  -- ============================================================
+
+  -- ---------- Lo que le gana a la rama nueva ----------
+  -- El interruptor manual, primero que todo.
+  if estado_cobranza(false, v_hoy - 99, v_hoy - 1, false, 0, true) is distinct from 'suspendido' then
+    raise exception 'R21g: el interruptor manual dejó de ganarle a la rama del que nunca pagó.';
+  end if;
+  -- El exento: quien no paga nada tampoco "nunca pagó" en el sentido que
+  -- importa. Si esta rama le ganara, un bonificado vería "te falta el
+  -- primer pago" para siempre.
+  if estado_cobranza(true, v_hoy - 99, v_hoy - 1, false, 100, true) is distinct from 'al_dia' then
+    raise exception 'R21g UN BONIFICADO ENTRÓ AL CIRCUITO: la rama del que nunca pagó le ganó a la exención del 100%%. Nunca pagó porque no tiene nada que pagar.';
+  end if;
+  -- Afuera del reloj: los 16 tenants viejos no tienen cobranza_desde, y
+  -- muchos de ellos tampoco tienen pagos registrados. Si la rama les
+  -- ganara, el día del deploy les aparecería un aviso a todos.
+  if estado_cobranza(true, v_hoy - 99, null, false, 0, true) is distinct from 'al_dia' then
+    raise exception 'R21g LOS DE AFUERA DEL RELOJ ENTRARON: un tenant sin cobranza_desde y sin pagos dio distinto de al_dia. El día del deploy son 16.';
+  end if;
+  -- Y sin vencimiento no se le reclama a quien no sabemos qué debe.
+  if estado_cobranza(true, null, v_hoy - 1, false, 0, true) is distinct from 'al_dia' then
+    raise exception 'R21g: un tenant sin vencimiento y sin pagos entró al circuito.';
+  end if;
+
+  -- ---------- La escalera de dos escalones ----------
+  -- EL DÍA DEL ALTA: vencimiento mañana, todavía en plazo.
+  if estado_cobranza(true, v_hoy + 1, v_hoy, false, 0, true) is distinct from 'por_vencer' then
+    raise exception 'R21g: el día del alta, con el vencimiento mañana, dio «%» en vez de por_vencer.',
+      estado_cobranza(true, v_hoy + 1, v_hoy, false, 0, true);
+  end if;
+
+  -- EL DÍA DEL VENCIMIENTO: todavía NO se bloquea. Es el redondeo a favor
+  -- del cliente (D2): un alta a las 23:50 tendría diez minutos si esto
+  -- fuera `>=`.
+  if estado_cobranza(true, v_hoy, v_hoy - 1, false, 0, true) is distinct from 'por_vencer' then
+    raise exception 'R21g EL PLAZO SE CORTÓ A MEDIANOCHE: el DÍA del vencimiento ya dio «%». El bloqueo cae al día SIGUIENTE, nunca el mismo: con el vencimiento a un día del alta, un `>=` acá le da diez minutos a quien se dio de alta a las 23:50.',
+      estado_cobranza(true, v_hoy, v_hoy - 1, false, 0, true);
+  end if;
+
+  -- AL DÍA SIGUIENTE: con el tercer interruptor APAGADO, avisa y no bloquea.
+  if bloqueo_de_alta_activo() then
+    raise exception 'R21g EL TERCER INTERRUPTOR ESTÁ PRENDIDO: bloqueo_de_alta_activo() dio true. Arranca APAGADO y se prende recién cuando entre un pago real con el monto correcto — el cálculo de plata nunca se verificó contra uno.';
+  end if;
+  if estado_cobranza(true, v_hoy - 1, v_hoy - 2, false, 0, true) is distinct from 'por_vencer' then
+    raise exception 'R21g SE BLOQUEÓ CON EL INTERRUPTOR APAGADO: pasado el plazo dio «%» y tenía que quedarse avisando. El primer cliente que se bloquee podría ser uno bloqueado por un monto mal calculado, en su segundo día de uso.',
+      estado_cobranza(true, v_hoy - 1, v_hoy - 2, false, 0, true);
+  end if;
+
+  -- Y NUNCA, EN NINGÚN CASO, PASA POR GRACIA. Se recorre la ventana entera
+  -- día por día: del vencimiento hasta bastante después del borde de los
+  -- siete días. La gracia es para el que YA es cliente y se atrasó.
+  for i in 0..20 loop
+    if estado_cobranza(true, v_hoy - i, v_hoy - i - 1, false, 0, true) = 'gracia' then
+      raise exception 'R21g EL QUE NUNCA PAGÓ CAYÓ EN GRACIA (a % días del vencimiento). Su escalera es de DOS escalones y salta la ventana entera: la gracia de siete días está escrita para el mes trece de una relación, y le diría «te quedan 5 días» a alguien que es cliente hace 48 horas.', i;
+    end if;
+  end loop;
+  -- Ni con el segundo interruptor prendido, que es el de la gracia.
+  for i in 0..20 loop
+    if estado_cobranza(true, v_hoy - i, v_hoy - i - 1, true, 0, true) = 'gracia' then
+      raise exception 'R21g: con suspension_automatica prendida, el que nunca pagó cayó en gracia a los % días.', i;
+    end if;
+  end loop;
+
+  -- ---------- Y con el tercer interruptor PRENDIDO ----------
+  -- Se prende a mano acá adentro, como hace R21d con el candado del demo.
+  create or replace function bloqueo_de_alta_activo()
+  returns boolean language sql immutable parallel safe as $f$ select true; $f$;
+
+  if estado_cobranza(true, v_hoy, v_hoy - 1, false, 0, true) is distinct from 'por_vencer' then
+    raise exception 'R21g: con el interruptor prendido, el DÍA del vencimiento igual se bloqueó. El redondeo a favor del cliente no depende del interruptor.';
+  end if;
+  if estado_cobranza(true, v_hoy - 1, v_hoy - 2, false, 0, true) is distinct from 'suspendido' then
+    raise exception 'R21g: con el interruptor prendido, pasado el plazo NO se bloqueó (dio «%»).',
+      estado_cobranza(true, v_hoy - 1, v_hoy - 2, false, 0, true);
+  end if;
+  -- Y el que SÍ pagó sigue teniendo su gracia, con el interruptor prendido
+  -- o apagado: los dos interruptores son independientes.
+  if estado_cobranza(true, v_hoy - 1, v_hoy - 2, false, 0, false) is distinct from 'gracia' then
+    raise exception 'R21g EL TERCER INTERRUPTOR SE COMIÓ LA GRACIA DE TODOS: un tenant CON pagos, vencido ayer, dio «%» en vez de gracia. El bloqueo del alta gobierna SOLO al que nunca pagó.',
+      estado_cobranza(true, v_hoy - 1, v_hoy - 2, false, 0, false);
+  end if;
+
+  create or replace function bloqueo_de_alta_activo()
+  returns boolean language sql immutable parallel safe as $f$ select false; $f$;
+end $$;
+-- <<< R21g
+
 -- ============================================================
 -- R22 · El cobro por Cresium (20260916180000)
 --
@@ -3659,7 +3762,7 @@ begin
   -- medias es peor que un alta rechazada.
   perform crear_lubricentro(
     'Alta con alias R25', 'alta-alias-r25',
-    '[{"nombre":"Casa Central"}]'::jsonb, v_plan, 'mensual', 0, 30, 'fm.altar25');
+    '[{"nombre":"Casa Central"}]'::jsonb, v_plan, 'mensual', 0, 'fm.altar25');
 
   if (select cresium_alias from lubricentros where slug = 'alta-alias-r25') is distinct from 'fm.altar25' then
     raise exception 'R25f: el alta no guardó el alias que le pasaron.';
@@ -3672,7 +3775,7 @@ begin
   begin
     perform crear_lubricentro(
       'Alta sin confirmar R25', 'alta-sin-confirmar-r25',
-      '[{"nombre":"Casa Central"}]'::jsonb, v_plan, 'mensual', 0, 30, 'fm.nodebe');
+      '[{"nombre":"Casa Central"}]'::jsonb, v_plan, 'mensual', 0, 'fm.nodebe');
     raise exception 'R25f: un alta CON alias pasó con el interruptor apagado.';
   exception
     when sqlstate 'P0001' then
@@ -3687,7 +3790,7 @@ begin
   -- el caso de todos los días mientras Cresium no conteste.
   perform crear_lubricentro(
     'Alta sin alias R25', 'alta-sin-alias-r25',
-    '[{"nombre":"Casa Central"}]'::jsonb, v_plan, 'mensual', 0, 30);
+    '[{"nombre":"Casa Central"}]'::jsonb, v_plan, 'mensual', 0);
 
   if (select cresium_alias from lubricentros where slug = 'alta-sin-alias-r25') is not null then
     raise exception 'R25f: un alta sin alias le inventó uno. El null es la respuesta «todavía no se le asignó», y es lo que lo deja cobrando por el alias de cada orden.';
@@ -3708,3 +3811,188 @@ begin
   delete from lubricentros where id in (v_lub, v_lub2, v_lub3);
 end $$;
 -- <<< R25
+
+
+-- ============================================================
+-- R26 · El alta prende el reloj, y el primer pago define el ciclo
+--       (20260917130000 · 20260917140000 · 20260917150000)
+--
+--   a · El alta escribe `cobranza_desde` y nace PAGANDO, con el
+--       vencimiento al día siguiente. Y los que ya estaban NO se tocan:
+--       es la garantía de que el rollout no es un script peligroso.
+--   b · El primer pago que llega TARDE corre el ciclo entero a la fecha
+--       del pago, con el largo contratado. El que llega en plazo, no — y
+--       una renovación, tampoco.
+--   c · Las dos puertas del cobro hacen lo mismo. Si solo cambiara el
+--       webhook, el cobro manual —que es el que va a usar Santiago en las
+--       primeras altas— dejaría el ciclo corrido.
+--   d · La cuarta pantalla del onboarding: `pago_presentado_at` arranca en
+--       null, la función lo escribe una sola vez y es definer.
+-- ============================================================
+
+-- >>> R26
+do $$
+declare
+  v_hoy   date := current_date;
+  v_plan  uuid;
+  v_super uuid;
+  v_lub   uuid;
+  v_otro  uuid;
+  v_pago  uuid;
+  v_sus   uuid;
+  v_desde date;
+  v_venc  date;
+  v_ini   date;
+  v_n     integer;
+  v_c     record;
+begin
+  select id into v_plan  from planes where nombre = 'Pro' and not heredado;
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+
+  -- ---------- a · El alta ----------
+  --
+  -- UN TENANT "VIEJO": de los 16 que están afuera del reloj y tienen que
+  -- seguir afuera. Sin esta fila, la afirmación de más abajo —"no se le
+  -- prendió a nadie más"— pasaría en verde por casualidad, porque en la
+  -- base local del reset no hay ningún otro tenant al que prendérselo.
+  insert into lubricentros (nombre, slug) values ('Viejo R26', 'viejo-r26')
+    returning id into v_otro;
+
+  -- Antes de dar de alta a nadie: cuántos están HOY adentro del reloj. Es
+  -- el número que no tiene que moverse.
+  select count(*) into v_n from lubricentros where cobranza_desde is not null;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+
+  select crear_lubricentro('Alta R26', 'alta-r26',
+    '[{"nombre":"Casa Central"}]'::jsonb, v_plan, 'mensual', 0) into v_lub;
+
+  select cobranza_desde into v_desde from lubricentros where id = v_lub;
+  if v_desde is distinct from v_hoy then
+    raise exception 'R26a EL ALTA NO PRENDIÓ EL RELOJ: cobranza_desde quedó en «%». Es TODO el bloque: si el alta no lo escribe, prenderlo vuelve a ser un UPDATE a mano contra producción con un `where`, con 16 tenants sin proteger.', v_desde;
+  end if;
+
+  select id, inicio, vencimiento into v_sus, v_ini, v_venc
+  from suscripciones where lubricentro_id = v_lub;
+
+  if v_venc is distinct from v_hoy + 1 then
+    raise exception 'R26a: el alta dejó el vencimiento en % y tenía que ser mañana (%).', v_venc, v_hoy + 1;
+  end if;
+  if (select estado from suscripciones where id = v_sus) is distinct from 'activa' then
+    raise exception 'R26a NACIÓ EN TRIAL: la suscripción del alta quedó en «%». El tenant nuevo nace PAGANDO — si nace en trial, el copy le habla con la voz de la prueba y el reloj no tiene nada que reclamar.',
+      (select estado from suscripciones where id = v_sus);
+  end if;
+
+  -- Y LOS QUE YA ESTABAN NO SE MOVIERON. Es la mitad que se olvida: el
+  -- valor del cambio no es solo que los nuevos entren, es que los viejos
+  -- NO. Se cuenta contra el número de arriba, +1 por el que se acaba de
+  -- crear.
+  if (select count(*) from lubricentros where cobranza_desde is not null) <> v_n + 1 then
+    raise exception 'R26a SE LE PRENDIÓ EL RELOJ A ALGUIEN MÁS: había % tenants adentro y ahora hay %. El alta prende el reloj del que se da de alta y de nadie más — los 16 viejos se prenden de a uno, a mano, cuando Santiago quiera.',
+      v_n, (select count(*) from lubricentros where cobranza_desde is not null);
+  end if;
+  if (select cobranza_desde from lubricentros where id = v_otro) is not null then
+    raise exception 'R26a EL TENANT VIEJO ENTRÓ AL RELOJ: dar de alta a uno nuevo le prendió el reloj a otro que estaba afuera. Es exactamente el UPDATE peligroso que este bloque vino a hacer innecesario, escrito adentro del alta.';
+  end if;
+
+  -- El tenant recién nacido, mirado por el reloj: en plazo y sin pagos.
+  if estado_cobranza(true, v_venc, v_desde, false, 0, true) is distinct from 'por_vencer' then
+    raise exception 'R26a: el tenant recién dado de alta no dio por_vencer.';
+  end if;
+
+  -- ---------- b · El primer pago que llega tarde ----------
+  --
+  -- El caso del brief: se da de alta el día 1, el vencimiento es el 2, y
+  -- transfiere el 6. Sin esto pierde cuatro días de su primer mes.
+  select * into v_c from ciclo_tras_el_pago(
+    true,                    -- es el primero
+    v_hoy,                   -- inicio: el día del alta
+    v_hoy + 1,               -- vencimiento: mañana
+    v_hoy + 5,               -- paga cinco días después
+    v_hoy + 31,              -- el `hasta` que quedó congelado en la orden
+    interval '1 month');
+  if v_c.inicio is distinct from v_hoy + 5 then
+    raise exception 'R26b: el primer pago no movió `inicio` a la fecha del pago (quedó en %).', v_c.inicio;
+  end if;
+  if v_c.vencimiento is distinct from (v_hoy + 5 + interval '1 month')::date then
+    raise exception 'R26b EL TENANT PERDIÓ LOS DÍAS QUE TARDÓ: pagó el día 6 un mes y el vencimiento quedó en % en vez de %. Un tenant que tarda cinco días en terminar el onboarding no puede perder cinco días de su primer mes.',
+      v_c.vencimiento, (v_hoy + 5 + interval '1 month')::date;
+  end if;
+
+  -- EL PRIMERO PERO EN PLAZO: no se toca nada. Si el dueño transfiere
+  -- dentro del plazo no pierde un solo día, y el comportamiento de siempre
+  -- ya es el correcto.
+  select * into v_c from ciclo_tras_el_pago(
+    true, v_hoy, v_hoy + 5, v_hoy, v_hoy + 35, interval '1 month');
+  if v_c.inicio is distinct from v_hoy or v_c.vencimiento is distinct from v_hoy + 35 then
+    raise exception 'R26b SE LE RECORTÓ EL CICLO A ALGUIEN QUE PAGÓ EN PLAZO: quedó % → %. La regla es "el primero Y tarde", no "el primero" a secas — sin la segunda mitad, un cliente viejo del que nunca registramos un pago pierde días en su próxima renovación.',
+      v_c.inicio, v_c.vencimiento;
+  end if;
+
+  -- Y UNA RENOVACIÓN, aunque llegue tarde, extiende desde el vencimiento
+  -- vigente: pagar tres días antes no puede regalar tres días menos.
+  select * into v_c from ciclo_tras_el_pago(
+    false, v_hoy - 300, v_hoy - 5, v_hoy, v_hoy + 25, interval '1 month');
+  if v_c.inicio is distinct from v_hoy - 300 then
+    raise exception 'R26b: una renovación movió `inicio`. Solo lo mueve el primer pago.';
+  end if;
+  if v_c.vencimiento is distinct from v_hoy + 25 then
+    raise exception 'R26b: una renovación dejó el vencimiento en % en vez de %.', v_c.vencimiento, v_hoy + 25;
+  end if;
+
+  -- ---------- c · Las dos puertas ----------
+  --
+  -- El cobro manual, que es el que va a usar Santiago durante las primeras
+  -- altas. Se le cobra al tenant del alta, tarde.
+  perform registrar_pago(v_lub, v_hoy + 5, v_hoy + 35, 49000, v_hoy + 5);
+
+  select inicio, vencimiento into v_ini, v_venc from suscripciones where id = v_sus;
+  if v_ini is distinct from v_hoy + 5 then
+    raise exception 'R26c LA PUERTA MANUAL NO CORRE EL CICLO: `inicio` quedó en %. Es la puerta que más se va a usar en las primeras altas, según la decisión de cobrar a mano hasta verificar el monto.', v_ini;
+  end if;
+  if v_venc is distinct from v_hoy + 35 then
+    raise exception 'R26c: la puerta manual dejó el vencimiento en % y tenía que ser % (el pago + los 30 días que se tipearon).', v_venc, v_hoy + 35;
+  end if;
+
+  -- Y el SEGUNDO pago del mismo tenant ya no corre nada: extiende.
+  perform registrar_pago(v_lub, v_hoy + 35, v_hoy + 65, 49000, v_hoy + 20);
+  select inicio, vencimiento into v_ini, v_venc from suscripciones where id = v_sus;
+  if v_ini is distinct from v_hoy + 5 then
+    raise exception 'R26c EL SEGUNDO PAGO VOLVIÓ A MOVER `inicio` (a %). Solo lo mueve el PRIMERO: `inicio` es por lo que todo el repo ordena para saber cuál es la suscripción vigente.', v_ini;
+  end if;
+  if v_venc is distinct from v_hoy + 65 then
+    raise exception 'R26c: el segundo pago dejó el vencimiento en % en vez de %.', v_venc, v_hoy + 65;
+  end if;
+
+  -- Y ahora que tiene pagos, el reloj le habla con la voz de siempre.
+  if estado_cobranza(true, v_hoy - 1, v_hoy - 30, false, 0,
+                     not exists (select 1 from pagos p where p.lubricentro_id = v_lub))
+     is distinct from 'gracia' then
+    raise exception 'R26c: un tenant que YA pagó no entró en gracia al vencerse.';
+  end if;
+
+  -- ---------- d · La cuarta pantalla ----------
+  insert into lubricentros (nombre, slug) values ('Pago R26', 'pago-r26') returning id into v_pago;
+
+  if (select pago_presentado_at from lubricentros where id = v_pago) is not null then
+    raise exception 'R26d: un tenant nuevo nació con pago_presentado_at escrito. Null es "todavía no vio la pantalla de pago", y es lo que hace que la vea.';
+  end if;
+
+  if not exists (
+    select 1 from pg_proc where proname = 'marcar_pago_presentado' and prosecdef
+  ) then
+    raise exception 'R26d: marcar_pago_presentado() no es SECURITY DEFINER. El owner no puede tocar `lubricentros` por RLS, así que sin definer la marca nunca se escribe — y el dueño vuelve a ver la pantalla de pago cada vez que entre, para siempre.';
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', null, true);
+
+  delete from pagos where lubricentro_id = v_lub;
+  delete from sucursales where lubricentro_id = v_lub;
+  delete from mensaje_templates where lubricentro_id = v_lub;
+  delete from config_experiencia where lubricentro_id = v_lub;
+  delete from suscripciones where lubricentro_id = v_lub;
+  delete from lubricentros where id in (v_lub, v_otro, v_pago);
+end $$;
+-- <<< R26

@@ -36,6 +36,10 @@ type Fila = {
   orden_estado: string | null;
   orden_pagado: number | null;
   cortaria: boolean;
+  /** ¿No tiene NINGÚN pago acreditado? Es lo que parte la pantalla en dos
+   *  listas, y no es lo mismo que estar vencido: el que nunca pagó puede
+   *  estar todavía en plazo. */
+  nunca_pago: boolean;
 };
 
 // Ámbar y gris, nunca el rojo de marca: esto es estado, no acción. Lo
@@ -66,9 +70,26 @@ export default async function PaginaCobranzas() {
   const { data } = await supabase.rpc("cobranzas_pendientes", { p_dias: DIAS });
   const filas = (data ?? []) as unknown as Fila[];
 
-  // Los vencidos arriba: es el orden en que se trabaja, no el alfabético.
-  const vencidos = filas.filter((f) => f.dias < 0);
-  const porVencer = filas.filter((f) => f.dias >= 0);
+  // ============================================================
+  // DOS LISTAS, Y EL PRIMER CORTE ES "NUNCA PAGÓ"
+  //
+  // Son dos llamados distintos: al que nunca pagó se le cierra una VENTA
+  // —firmó, todavía no transfirió, y del otro lado hay un vendedor que
+  // acaba de cerrarlo—; al que se atrasó se le COBRA. Mezclarlos hace que
+  // el segundo mensaje se escriba con el tono del primero.
+  //
+  // El corte NO es el signo de `dias`, que es el que había antes: el que
+  // nunca pagó tiene `dias >= 0` el día del alta y `dias < 0` al siguiente,
+  // así que quedaba repartido entre los dos grupos. Es una columna de la
+  // base (`nunca_pago`), no una inferencia de acá.
+  // ============================================================
+  const nuncaPagaron = filas.filter((f) => f.nunca_pago);
+  const seAtrasaron = filas.filter((f) => !f.nunca_pago);
+
+  // Y dentro de los que ya son clientes, los vencidos arriba: es el orden
+  // en que se trabaja, no el alfabético.
+  const vencidos = seAtrasaron.filter((f) => f.dias < 0);
+  const porVencer = seAtrasaron.filter((f) => f.dias >= 0);
 
   return (
     <div>
@@ -87,6 +108,13 @@ export default async function PaginaCobranzas() {
         </p>
       ) : (
         <div className="flex flex-col gap-8">
+          {nuncaPagaron.length > 0 && (
+            <Grupo
+              titulo="Todavía no hicieron el primer pago"
+              ayuda="Se dieron de alta y no transfirieron nunca. Es cerrar la venta, no cobrar: del otro lado hay alguien que firmó hace días."
+              filas={nuncaPagaron}
+            />
+          )}
           {vencidos.length > 0 && (
             <Grupo titulo="Ya vencieron" filas={vencidos} />
           )}
@@ -99,7 +127,15 @@ export default async function PaginaCobranzas() {
   );
 }
 
-function Grupo({ titulo, filas }: { titulo: string; filas: Fila[] }) {
+function Grupo({
+  titulo,
+  ayuda,
+  filas,
+}: {
+  titulo: string;
+  ayuda?: string;
+  filas: Fila[];
+}) {
   const total = filas.reduce((n, f) => n + Number(f.monto), 0);
 
   return (
@@ -110,6 +146,8 @@ function Grupo({ titulo, filas }: { titulo: string; filas: Fila[] }) {
           {filas.length} {filas.length === 1 ? "tenant" : "tenants"} · {pesos(total)}
         </p>
       </div>
+
+      {ayuda && <p className="mb-3 max-w-2xl text-ui text-ink-60">{ayuda}</p>}
 
       <div className="flex flex-col gap-2.5">
         {filas.map((f) => (

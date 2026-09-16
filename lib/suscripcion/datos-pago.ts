@@ -1,0 +1,215 @@
+import "server-only";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { estadoEfectivo } from "@/lib/cresium/orden";
+import type { DatosPago, Renglon } from "@/components/suscripcion/pantalla-pago";
+import { pesos, MESES_DEL_PERIODO, type Periodo } from "@/lib/fidelli/plan";
+import { ETIQUETA_MODULO, MODULOS_PAGOS } from "@/lib/planes";
+import type { Cobranza } from "@/lib/auth/cobranza";
+
+// ============================================================
+// LO QUE LA PANTALLA DE PAGO NECESITA, ARMADO UNA SOLA VEZ
+//
+// `PantallaPago` es un componente de cliente que no toca ni la base ni la
+// sesión: recibe todo por `datos`. Lo que lo arma vivía en la página de
+// /panel/suscripcion, y desde el sprint del onboarding hay DOS pantallas
+// que lo necesitan — la de siempre y la cuarta del onboarding.
+//
+// ⚠ POR QUÉ ESTO ES UN MÓDULO Y NO UNA COPIA. Son ~150 líneas con el
+// desglose, los dos montos y las tres condiciones de estado. Dos pantallas
+// de pago copiadas se separan en tres semanas y una de las dos muestra el
+// monto viejo. Es el punto textual del brief: "Reusa la pantalla de pago
+// que ya existe. No una copia".
+// ============================================================
+
+type MontoBase = {
+  periodo: Periodo;
+  meses: number;
+  precio_mensual: number;
+  off_periodo: number;
+  descuento_pct: number;
+  plan: number;
+  modulo: number;
+  total: number;
+};
+
+// El desglose, línea por línea, para que el número sea VERIFICABLE: el
+// dueño tiene que poder seguir la cuenta con el dedo antes de transferir.
+// Se arma desde lo que devolvió la BASE, nunca recalculando en el front —
+// dos cuentas que tienen que dar lo mismo terminan dando distinto.
+function renglones(m: MontoBase, nombreModulo: string | null): Renglon[] {
+  const r: Renglon[] = [
+    { clave: "Plan", valor: `${pesos(m.precio_mensual)} / mes` },
+  ];
+
+  const moduloMensual = m.meses > 0 && m.off_periodo < 100
+    ? m.modulo / m.meses / (1 - m.off_periodo / 100)
+    : 0;
+
+  if (m.modulo > 0 && nombreModulo) {
+    r.push({ clave: nombreModulo, valor: `${pesos(Math.round(moduloMensual))} / mes` });
+  }
+
+  if (m.meses > 1) {
+    const bruto = m.precio_mensual * m.meses + Math.round(moduloMensual) * m.meses;
+    r.push({ clave: `${m.meses} meses`, valor: pesos(Math.round(bruto)) });
+
+    if (m.off_periodo > 0) {
+      const ahorro = Math.round(bruto * (m.off_periodo / 100));
+      r.push({
+        clave: `Descuento por pago ${m.periodo} ${m.off_periodo}%`,
+        valor: `−${pesos(ahorro)}`,
+        descuento: true,
+      });
+    }
+  }
+
+  // El descuento propio del tenant va después del de período y se nombra
+  // sin decir "founding": el dueño no sabe que le decimos así.
+  if (m.descuento_pct > 0) {
+    r.push({
+      clave: `Tu descuento ${m.descuento_pct}%`,
+      valor: `−${pesos(Math.round((m.plan / (1 - m.descuento_pct / 100)) * (m.descuento_pct / 100)))}`,
+      descuento: true,
+    });
+  }
+
+  r.push({ clave: "Total a transferir", valor: pesos(m.total), total: true });
+  return r;
+}
+
+/** Los tres desenlaces posibles. Las dos pantallas los pintan distinto —una
+ *  con su cabecera de sección, la otra dentro del marco del onboarding—
+ *  pero ninguna de las dos puede inventarse un cuarto. */
+export type Suscripcion =
+  | { tipo: "sin_suscripcion" }
+  | { tipo: "bonificado" }
+  | { tipo: "pago"; datos: DatosPago };
+
+/**
+ * Todo lo que la pantalla de pago necesita, en una función.
+ *
+ * `cobranza` es el payload del reloj que ya viajó con la sesión: entra por
+ * parámetro y no se vuelve a pedir.
+ */
+export async function armarPagoDelTenant(
+  // El cliente de Supabase del server, tipado por inferencia en los dos
+  // llamadores. `any` acotado a este parámetro: importar el tipo generado
+  // completo acá obliga a los dos llamadores a pasarlo explícito.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any, any, any>,
+  lubricentroId: string,
+  cobranza: Cobranza | null,
+): Promise<Suscripcion> {
+  const [{ data: sub }, { data: orden }] = await Promise.all([
+    supabase
+      .from("suscripciones")
+      .select("id, vencimiento, periodo, descuento_pct, planes(nombre)")
+      .eq("lubricentro_id", lubricentroId)
+      .order("inicio", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("cresium_ordenes")
+      .select("alias, cvu, estado, monto, monto_pagado, periodo_hasta, periodo, created_at")
+      .eq("lubricentro_id", lubricentroId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  if (!sub) return { tipo: "sin_suscripcion" };
+
+  // Un tenant con el 100% de descuento no paga nada: no se le muestra una
+  // pantalla para transferir cero pesos. Va ACÁ y no en cada página, porque
+  // olvidarlo en una de las dos deja a un bonificado —Capuzzi es el caso—
+  // terminando su onboarding contra una tarjeta que le pide plata.
+  if (Number(sub.descuento_pct) >= 100) return { tipo: "bonificado" };
+
+  // El monto de CADA período, calculado por la base. Se piden los dos para
+  // que tocar el selector no dispare una consulta: el dueño compara anual
+  // contra mensual en el mismo instante en que lo está decidiendo.
+  const montos = await Promise.all(
+    (["anual", "mensual"] as const).map(async (p) => {
+      const { data } = await supabase.rpc("monto_de_renovacion_en", {
+        p_lubricentro: lubricentroId,
+        p_periodo: p,
+      });
+      return [p, data as MontoBase | null] as const;
+    }),
+  );
+
+  const porPeriodo = Object.fromEntries(montos) as Record<Periodo, MontoBase | null>;
+
+  const nombreModulo =
+    porPeriodo.anual && porPeriodo.anual.modulo > 0
+      ? ETIQUETA_MODULO[MODULOS_PAGOS[0]]
+      : null;
+
+  const mensualTotal = porPeriodo.mensual?.total ?? 0;
+
+  const opciones: DatosPago["opciones"] = {
+    mensual: porPeriodo.mensual
+      ? { total: porPeriodo.mensual.total, ahorro: 0, renglones: renglones(porPeriodo.mensual, nombreModulo) }
+      : null,
+    semestral: null,
+    anual: porPeriodo.anual
+      ? {
+          total: porPeriodo.anual.total,
+          // El ahorro EN PESOS contra pagar mes a mes: es el número que
+          // mueve la decisión. "25% off" no se siente; "ahorrás $222.000" sí.
+          ahorro: Math.max(0, mensualTotal * MESES_DEL_PERIODO.anual - porPeriodo.anual.total),
+          renglones: renglones(porPeriodo.anual, nombreModulo),
+        }
+      : null,
+  };
+
+  // El estado que hay que creerle, no el que quedó escrito: una orden sin
+  // pagar de hace más de siete días está vencida aunque la fila diga
+  // NOT_PAID, porque nadie nos avisa del vencimiento (lib/cresium/orden.ts).
+  const estadoOrden = orden ? estadoEfectivo(orden.estado, orden.created_at) : null;
+  const vencida = estadoOrden === "EXPIRED";
+
+  // ¿Ya está pagada? La orden en PAID es lo que dispara la pantalla de
+  // éxito, y llega ahí por el webhook: el dueño ve cambiar la pantalla sin
+  // tocar nada.
+  //
+  // ⚠ PERO NO PARA SIEMPRE. La orden PAID queda en la tabla como la última
+  // del tenant, y sin la segunda condición el éxito se mostraría en cada
+  // renovación siguiente —con el reloj ya reclamando el próximo período y
+  // sin ningún botón para pagarlo. Mientras el reloj diga al día (o no
+  // corra) el éxito se queda; cuando vuelva a avisar, vuelve el pago.
+  const reclamando = cobranza !== null && cobranza.estado !== "al_dia";
+  const pagada = estadoOrden === "PAID" && !reclamando;
+
+  return {
+    tipo: "pago",
+    datos: {
+      plan: (sub.planes as { nombre?: string } | null)?.nombre ?? "—",
+      modulos: nombreModulo ? [nombreModulo] : [],
+      vencimiento: sub.vencimiento,
+      opciones,
+      // LA VOZ. El que todavía no pagó ninguna vez no está renovando: su
+      // período no "vence", le falta el primero. La decide el reloj, que ya
+      // trae el dato en la sesión.
+      voz: cobranza && !cobranza.tienePago ? "alta" : "renovacion",
+      // Una orden vencida no es una orden abierta: se le da el selector y el
+      // botón de nuevo, con el aviso de que la cuenta anterior ya no sirve.
+      orden:
+        orden && !pagada && !vencida
+          ? {
+              alias: orden.alias,
+              cvu: orden.cvu,
+              estado: estadoOrden!,
+              montoPagado: Number(orden.monto_pagado),
+              monto: Number(orden.monto),
+              periodoHasta: orden.periodo_hasta,
+              periodo: orden.periodo as Periodo,
+            }
+          : null,
+      ordenVencida: vencida,
+      alDiaHasta: pagada ? sub.vencimiento : null,
+      montoCobrado: pagada && orden ? Number(orden.monto_pagado) : null,
+    },
+  };
+}

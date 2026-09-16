@@ -678,6 +678,7 @@ export type Database = {
           id: string
           nombre: string
           onboarding_completado_at: string | null
+          pago_presentado_at: string | null
           plan_overrides: Json
           premio_omitido_at: string | null
           slug: string
@@ -695,6 +696,7 @@ export type Database = {
           id?: string
           nombre: string
           onboarding_completado_at?: string | null
+          pago_presentado_at?: string | null
           plan_overrides?: Json
           premio_omitido_at?: string | null
           slug: string
@@ -712,6 +714,7 @@ export type Database = {
           id?: string
           nombre?: string
           onboarding_completado_at?: string | null
+          pago_presentado_at?: string | null
           plan_overrides?: Json
           premio_omitido_at?: string | null
           slug?: string
@@ -2226,6 +2229,7 @@ export type Database = {
       alias_largo_maximo: { Args: never; Returns: number }
       alias_largo_minimo: { Args: never; Returns: number }
       atencion_tenant: { Args: { p_lubricentro_id: string }; Returns: Json }
+      bloqueo_de_alta_activo: { Args: never; Returns: boolean }
       buscar_vehiculo_por_patente: {
         Args: { p_patente: string }
         Returns: {
@@ -2253,6 +2257,20 @@ export type Database = {
       }
       catalogo_features_plan: { Args: never; Returns: string[] }
       catalogo_limites_plan: { Args: never; Returns: string[] }
+      ciclo_tras_el_pago: {
+        Args: {
+          p_es_el_primero: boolean
+          p_fecha_pago: string
+          p_inicio_actual: string
+          p_largo: string
+          p_periodo_hasta: string
+          p_venc_actual: string
+        }
+        Returns: {
+          inicio: string
+          vencimiento: string
+        }[]
+      }
       ciclos_fidelizacion: {
         Args: never
         Returns: {
@@ -2274,6 +2292,7 @@ export type Database = {
           monto: number
           monto_modulo: number
           nombre: string
+          nunca_pago: boolean
           orden_estado: string
           orden_pagado: number
           owner_nombre: string
@@ -2323,7 +2342,6 @@ export type Database = {
         Args: {
           p_alias?: string
           p_descuento_pct: number
-          p_dias_trial: number
           p_nombre: string
           p_periodo: Database["public"]["Enums"]["periodo_suscripcion"]
           p_plan_id: string
@@ -2361,6 +2379,7 @@ export type Database = {
           p_activo: boolean
           p_descuento_pct: number
           p_desde: string
+          p_nunca_pago?: boolean
           p_suspension: boolean
           p_vencimiento: string
         }
@@ -2491,6 +2510,7 @@ export type Database = {
       }
       marca_canonica: { Args: { p_texto: string }; Returns: string }
       marcar_bienvenida_vista: { Args: never; Returns: undefined }
+      marcar_pago_presentado: { Args: never; Returns: Json }
       meses_del_periodo: {
         Args: { p_periodo: Database["public"]["Enums"]["periodo_suscripcion"] }
         Returns: number

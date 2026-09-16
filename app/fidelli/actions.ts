@@ -36,7 +36,6 @@ const MENSAJES: Record<string, string> = {
   limite_sucursales:
     "Las sucursales cargadas superan el límite del plan elegido. Sacá alguna del paso 2 o elegí un plan con más lugares.",
   descuento_invalido: "El descuento va de 0 a 100.",
-  trial_invalido: "El trial va de 0 a 365 días.",
   calcos_invalidas: "Las calcos entregadas no pueden ser un número negativo.",
   no_existe: "Ese lubricentro ya no existe.",
   sin_suscripcion: "Este lubricentro no tiene ninguna suscripción para editar.",
@@ -182,7 +181,6 @@ export type DatosAlta = {
   planId: string;
   periodo: Periodo;
   descuentoPct: number;
-  diasTrial: number;
   /** El alias elegido, o "" si el campo no se mostró (que es el caso
    *  mientras Cresium no confirme el formato). Cadena vacía viaja como
    *  null a la base y el tenant nace sin alias, cobrando por el camino de
@@ -238,7 +236,6 @@ export async function altaDeLubricentro(
     p_plan_id: datos.planId,
     p_periodo: datos.periodo,
     p_descuento_pct: datos.descuentoPct,
-    p_dias_trial: datos.diasTrial,
     // `undefined` y no `null`: el parámetro tiene default en SQL, así que
     // omitirlo es lo que lo deja en null. Mandar null explícito sería lo
     // mismo para la base, pero el tipo generado no lo admite.
