@@ -145,5 +145,12 @@ correr "la puerta manual que llama con «no es el primero»" \
 echo "── R26d · la cuarta pantalla ──"
 correr_marcada "la función de la marca como invoker" marcar_pago_presentado "$M_PAGO" \
   "s/^security definer$//" R26 "R26d"
+# Un tenant que YA existía con el onboarding completo y la marca del pago en
+# null: es lo que quedaría en producción si a la migración le faltara el
+# backfill (17 clientes de meses leyendo "te falta el primer pago"), o lo que
+# queda en local si al seed le falta la línea. La rotura lo fabrica sobre el
+# demo, que es exactamente el tenant que el seed marca.
+correr "un tenant viejo con el onboarding completo y el pago sin presentar" \
+  "update lubricentros set pago_presentado_at = null where slug = 'demo';" R26 "R26d"
 
 exit $fallas

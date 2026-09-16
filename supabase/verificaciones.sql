@@ -4305,6 +4305,20 @@ begin
     raise exception 'R26d: marcar_pago_presentado() no es SECURITY DEFINER. El owner no puede tocar `lubricentros` por RLS, así que sin definer la marca nunca se escribe — y el dueño vuelve a ver la pantalla de pago cada vez que entre, para siempre.';
   end if;
 
+  -- LOS QUE YA ESTABAN NO VEN LA PANTALLA. Ninguna cuenta con el onboarding
+  -- completo puede quedar con `pago_presentado_at` en null: los 17 tenants
+  -- de producción los marcó el backfill de la migración, y al demo lo marca
+  -- el seed (que corre después de la migración y lo crea de cero). Mismo
+  -- criterio que R14 con `onboarding_completado_at`: un cliente que paga
+  -- hace meses no puede entrar a /panel/onboarding y leer "te falta el
+  -- primer pago". Acá se afirma el invariante sobre los datos del reset; el
+  -- backfill sobre los 17 reales se verifica contra prod después del push.
+  select count(*) into v_n from lubricentros
+   where onboarding_completado_at is not null and pago_presentado_at is null;
+  if v_n <> 0 then
+    raise exception 'R26d HAY % CUENTA(S) CON EL ONBOARDING COMPLETO Y EL PAGO SIN PRESENTAR. Si es el demo, al seed le falta la marca; si es un tenant de prueba de otro bloque, ese bloque completó un onboarding sin marcar el pago. En producción esto es un cliente de meses leyendo "te falta el primer pago".', v_n;
+  end if;
+
   execute 'reset role';
   perform set_config('request.jwt.claims', null, true);
 

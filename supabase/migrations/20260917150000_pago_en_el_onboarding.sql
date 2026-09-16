@@ -44,6 +44,36 @@ alter table lubricentros
 comment on column lubricentros.pago_presentado_at is
   'Cuándo el dueño pasó por la pantalla de pago del final del onboarding. NULL con el onboarding completo = todavía no la vio, y /panel/onboarding se la muestra. No dice nada sobre si pagó: eso vive en `pagos`.';
 
+-- ---------- El backfill: los que ya estaban no ven la pantalla ----------
+--
+-- ⚠ SIN ESTO, LOS 17 TENANTS DE PRODUCCIÓN VERÍAN "FALTA EL PRIMER PAGO".
+-- Todos tienen el onboarding completo (lo recibieron por backfill en
+-- 20260909180000) y esta columna nace en null, así que `pagoPendiente`
+-- daría true para todos: cualquiera que entrara a /panel/onboarding
+-- —el link está en Ayuda— vería la cuarta pantalla con la voz del alta,
+-- pidiéndole el primer pago a un cliente que paga hace meses.
+--
+-- La cuarta pantalla es para el que TERMINA el onboarding a partir de hoy.
+-- Quien ya lo tenía completo antes de esta migración, ya pasó por ahí en
+-- espíritu: se le marca con la misma fecha en que completó, igual que el
+-- backfill de 20260909180000 marcó el onboarding con la fecha del alta.
+-- Es el mismo criterio que `vehiculos.clase` al revés: acá null NO puede
+-- significar "nunca se preguntó" para los que existían, porque la pregunta
+-- no existía todavía.
+update lubricentros
+   set pago_presentado_at = onboarding_completado_at
+ where onboarding_completado_at is not null
+   and pago_presentado_at is null;
+
+do $$
+declare v_pendientes integer;
+begin
+  select count(*) into v_pendientes
+    from lubricentros
+   where onboarding_completado_at is not null and pago_presentado_at is null;
+  raise notice 'pago en el onboarding · tenants con onboarding completo y pago sin presentar tras el backfill: %', v_pendientes;
+end $$;
+
 
 -- >>> marcar_pago_presentado
 create or replace function marcar_pago_presentado()
