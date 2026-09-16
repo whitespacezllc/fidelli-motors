@@ -13,6 +13,11 @@
 //   3 · `conIntentos()` —el bucle que usa la acción— sube el número solo
 //       ante ese error, corta ante cualquier otro y se rinde a las cinco.
 //   4 · Los bordes de la vida de la orden: siete días, ni uno más.
+//   5 · EL ALIAS FIJO (bloque B): que el alias de un tenant que lo tiene
+//       asignado NO se recalcule entre períodos ni entre intentos, que uno
+//       sin asignar siga por el camino por orden de siempre, y que la
+//       sugerencia del formulario nunca supere el largo válido —ni con el
+//       slug más largo que existe, ni con el más largo que la base permite.
 //
 // Correr:  node --no-warnings scripts/regresion-cresium-orden.mjs
 //
@@ -26,8 +31,10 @@ import fs from "node:fs";
 
 process.env.PUERTO = "4017";
 const { arrancar, parar } = await import("./doble-cresium.mjs");
-const { conIntentos, externalIdDelIntento, estadoEfectivo, ordenVencida, DIAS_DE_VIDA_DE_LA_ORDEN } =
+const { aliasParaLaOrden, conIntentos, externalIdDelIntento, estadoEfectivo, ordenVencida, DIAS_DE_VIDA_DE_LA_ORDEN } =
   await import("../lib/cresium/orden.ts");
+const { aliasSugerido, esAliasValido, ALIAS_LARGO_MAXIMO } =
+  await import("../lib/cresium/alias.ts");
 
 const env = Object.fromEntries(
   fs.readFileSync(new URL("../.env.local", import.meta.url), "utf8")
@@ -156,6 +163,72 @@ try {
   check("externalIdDelIntento(1) es la referencia pelada",
         externalIdDelIntento("a:b", 1) === "a:b" && externalIdDelIntento("a:b", 0) === "a:b");
   check("externalIdDelIntento(2) agrega :2", externalIdDelIntento("a:b", 2) === "a:b:2");
+  // ════════════════════════════════════════════════════════════
+  console.log("\n5 · El alias fijo por tenant");
+  // ════════════════════════════════════════════════════════════
+  //
+  // `aliasDeOrden()` vive en lib/cresium/cliente.ts, que es `server-only` y
+  // no se puede importar acá. Se reproduce su cuerpo tal cual —son dos
+  // líneas— para poder contrastar los dos caminos en la misma corrida. Si
+  // algún día cambia allá y no acá, este check lo dice.
+  const derivado = (nombre, ext) =>
+    `fm.${(nombre.replace(/[^a-z0-9]/gi, "").slice(0, 8).toLowerCase() || "taller")}.${
+      crypto.createHash("sha256").update(ext).digest("hex").slice(0, 6)}`;
+
+  const sub = "11111111-1111-1111-1111-111111111111";
+  const octubre = externalIdDelIntento(`${sub}:2026-10-16`, 1);
+  const noviembre = externalIdDelIntento(`${sub}:2026-11-16`, 1);
+  const octubreIntento2 = externalIdDelIntento(`${sub}:2026-10-16`, 2);
+
+  // --- El tenant CON alias: el alias no se mueve. Es el punto entero.
+  const fijoOct = aliasParaLaOrden("fm.psm", () => derivado("PSM", octubre));
+  const fijoNov = aliasParaLaOrden("fm.psm", () => derivado("PSM", noviembre));
+  const fijoRe = aliasParaLaOrden("fm.psm", () => derivado("PSM", octubreIntento2));
+
+  check("dos órdenes de PERÍODOS distintos dan el mismo alias",
+        fijoOct.alias === fijoNov.alias, `${fijoOct.alias} vs ${fijoNov.alias}`);
+  check("y el REINTENTO de la misma orden también",
+        fijoOct.alias === fijoRe.alias, `${fijoOct.alias} vs ${fijoRe.alias}`);
+  check("el alias fijo es el del tenant, sin tocarlo", fijoOct.alias === "fm.psm", fijoOct.alias);
+  check("y se declara fijo", fijoOct.fijo === true);
+
+  // --- El tenant SIN alias: nada cambia. Es el caso de los 17 de hoy.
+  const sinOct = aliasParaLaOrden(null, () => derivado("PSM", octubre));
+  const sinNov = aliasParaLaOrden(null, () => derivado("PSM", noviembre));
+  check("sin alias asignado, el alias sale de la orden", sinOct.fijo === false);
+  check("y CAMBIA entre períodos, exactamente como hasta hoy",
+        sinOct.alias !== sinNov.alias, `${sinOct.alias} / ${sinNov.alias}`);
+  check("con la forma de siempre", /^fm\.[a-z0-9]{1,8}\.[0-9a-f]{6}$/.test(sinOct.alias), sinOct.alias);
+  check("una cadena vacía NO cuenta como alias asignado",
+        aliasParaLaOrden("", () => "derivado").fijo === false);
+  check("ni una de solo espacios", aliasParaLaOrden("   ", () => "derivado").fijo === false);
+
+  // --- La sugerencia del formulario, contra los slugs reales y el borde.
+  //     El techo NO es 29 (`lubricentro-y-gomeria-el-colo`): slug_estado()
+  //     acepta hasta 60, así que el caso peor es un slug de 60.
+  const slugs = [
+    "psm",
+    "brothers-oil",
+    "ferrari-mecanica",
+    "pg-taller-lubricentro",
+    "lubricentro-fassetta",
+    "lubricentro-y-gomeria-el-colo",
+    "a".repeat(60),
+  ];
+  for (const slug of slugs) {
+    const propuesto = aliasSugerido(slug);
+    check(`sugerencia de «${slug}» (${slug.length}) → «${propuesto}» (${propuesto.length})`,
+          propuesto.length <= ALIAS_LARGO_MAXIMO && propuesto !== "" && esAliasValido(propuesto),
+          `largo ${propuesto.length}, válido ${esAliasValido(propuesto)}`);
+  }
+  check("un slug vacío no sugiere nada", aliasSugerido("") === "");
+  // El camino viejo BORRA los acentos («Gomería» → «Gomera»); la sugerencia
+  // los translitera. Es la diferencia que no se puede descubrir después de
+  // asignar: un alias es lo que alguien tipea en su home banking.
+  check("el acento se translitera, no se come",
+        aliasSugerido("gomeria-el-colo").includes("gomeria") &&
+        aliasSugerido("gomería-el-colo") === aliasSugerido("gomeria-el-colo"),
+        aliasSugerido("gomería-el-colo"));
 } finally {
   parar();
 }

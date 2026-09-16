@@ -672,6 +672,8 @@ export type Database = {
           calcos_entregadas: number
           cobranza_desde: string | null
           created_at: string
+          cresium_alias: string | null
+          cresium_alias_asignado_at: string | null
           diseno_confirmado_at: string | null
           id: string
           nombre: string
@@ -687,6 +689,8 @@ export type Database = {
           calcos_entregadas?: number
           cobranza_desde?: string | null
           created_at?: string
+          cresium_alias?: string | null
+          cresium_alias_asignado_at?: string | null
           diseno_confirmado_at?: string | null
           id?: string
           nombre: string
@@ -702,6 +706,8 @@ export type Database = {
           calcos_entregadas?: number
           cobranza_desde?: string | null
           created_at?: string
+          cresium_alias?: string | null
+          cresium_alias_asignado_at?: string | null
           diseno_confirmado_at?: string | null
           id?: string
           nombre?: string
@@ -2214,6 +2220,11 @@ export type Database = {
         }
         Returns: undefined
       }
+      alias_confirmado_por_cresium: { Args: never; Returns: boolean }
+      alias_estado: { Args: { p_alias: string }; Returns: string }
+      alias_formato_valido: { Args: { p_alias: string }; Returns: boolean }
+      alias_largo_maximo: { Args: never; Returns: number }
+      alias_largo_minimo: { Args: never; Returns: number }
       atencion_tenant: { Args: { p_lubricentro_id: string }; Returns: Json }
       buscar_vehiculo_por_patente: {
         Args: { p_patente: string }
@@ -2310,6 +2321,7 @@ export type Database = {
       }
       crear_lubricentro: {
         Args: {
+          p_alias?: string
           p_descuento_pct: number
           p_dias_trial: number
           p_nombre: string
@@ -2368,6 +2380,10 @@ export type Database = {
       }
       feature_plan_valida: { Args: { p_feature: string }; Returns: boolean }
       features_plan_bien_formadas: { Args: { p: Json }; Returns: boolean }
+      fijar_alias_de_tenant: {
+        Args: { p_alias: string; p_lubricentro: string }
+        Returns: string
+      }
       fijar_override_plan: {
         Args: { p_lubricentro: string; p_motivo: string; p_overrides: Json }
         Returns: undefined
