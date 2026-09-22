@@ -683,6 +683,7 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R28** | Las consultas sin resultado no guardan la patente: cero filas con `not encontrada and patente is not null` tras el seed; el índice de leads no existe; el CHECK y el trigger existen; `get_carton` registra la consulta sin resultado con patente null y la de un auto encontrado con su patente; un insert directo la anula; `resumen_inicio` sigue contando los leads | La vidriera volvió a guardar patentes de gente que no es cliente de nadie —la política promete lo contrario—, o la métrica de escaneo del Inicio se apagó |
 | **R29** | La retención y la purga: `cancelada_at` se escribe al cancelar y se limpia al volver; la simulación escribe en `purgas` (conteos y logo pendiente) sin borrar ni tocar `lubricentros`; la purga real borra las tablas listadas, no toca `pagos`, `suscripciones`, `sucursales` ni `usuarios`, deja `activo = false` y `purgado_at`, y respeta el plazo (el de 11 meses y el demo cancelado hace 13 no se tocan); dos veces no; a pedido exige motivo, rechaza al demo y al ya purgado, y queda auditada con quién; un owner no la ejecuta; el reloj está en `cron.job` EN SIMULACIÓN; `purgas` tiene los tres candados en `ALWAYS` | "Solo cuenta" y borró, se llevó la contabilidad, purgó a alguien antes de los 12 meses (o al demo), el reloj se prendió en real antes de ver una simulación, o la purga no dejó evidencia |
 | **R30** | La supresión de un cliente final: el owner de otro tenant no puede; sin motivo no; los cuatro sentinelas quedan escritos y el vehículo y el service siguen; la auditoría dice quién y por qué; `vista_clientes` sigue devolviendo al cliente (la ficha abre); el teléfono sentinela no tiene dígitos; dos veces no; el libro no se escribe por fuera de la función; el superadmin también puede | Cualquier owner anonimiza a cualquiera, anonimizar se llevó los trabajos, o la supresión no quedó auditada |
+| **R31** | Los cimientos de las métricas (docs/METRICAS.md): `tenant_eventos` es inmutable (UPDATE, DELETE y TRUNCATE fallan); un pago deja exactamente UN evento y el pago sobrevive a un trigger roto; `cerrar_dia()` es idempotente y no cierra hoy; `mrr_plataforma()` = Σ `mrr_de_tenant()`, con el módulo pago adentro y el anual dividido 12; `es_activo()` es false con `activo = false` y con el reloj en `suspendido`; suspender exige motivo y deja `suspension` con motivo y actor; el alta, el origen, el override y el cambio de plan dejan su evento; y tras el seed hay un `alta` por tenant y un evento por pago | La memoria de las bajas y del churn se puede editar o vaciar, un cobro se pierde por un trigger, el cron duplica fotos, o el MRR volvió a calcularse sin el módulo o sin mensualizar |
 
 Además, fuera del reset, **las roturas a mano** (regla 13):
 
@@ -698,6 +699,7 @@ Además, fuera del reset, **las roturas a mano** (regla 13):
 ./scripts/regresion-cobranza-alta.sh
 ./scripts/regresion-legal.sh
 ./scripts/regresion-legal-datos.sh
+./scripts/regresion-metricas.sh
 ```
 
 El primero rompe la vista de retención de dos formas —le saca el filtro de
@@ -796,6 +798,8 @@ más cara del bug); la que no deja evidencia; la que se lleva `pagos`; el
 plazo corrido; el guard que deja pasar a un owner; el reloj programado en
 real; y en la supresión, el guard abierto, la auditoría que no se escribe,
 el sentinela del teléfono con dígitos y la función como invoker.
+
+El undécimo rompe R31 (catorce roturas): los tres candados de `tenant_eventos` bajados a `notice` de a uno; el trigger de pagos sin el envoltorio defensivo, con lo que el sabotaje del evento bloquea el cobro; `cerrar_dia()` que dice «cerrado» la segunda vez, la que pierde el chequeo de «ya cerrado» (el segundo cierre revienta por la PK) y la que cierra hoy; el MRR sin mensualizar y la exención corrida al 101; `es_activo()` mirando solo la columna sin el reloj; suspender sin motivo; el alta como trigger inmediato (nace sin plan) y el evento de módulo sin el motivo del override. Una de ellas encontró un `not like` con motivo null que pasaba en verde: por eso R31g compara con `is null or`.
 
 ⚠ Y DOS DE ESTOS SCRIPTS APUNTAN A MÁS DE UNA MIGRACIÓN, porque
 `estado_cobranza`, `reloj_cobranza` y `crear_lubricentro` se redefinieron en

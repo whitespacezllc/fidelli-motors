@@ -18,6 +18,21 @@ import {
 } from "@/app/fidelli/actions";
 import type { Periodo } from "@/lib/fidelli/plan";
 import type { FilaLubricentro, PlanCompleto } from "@/components/fidelli/tipos";
+import {
+  ETIQUETA_MOTIVO_SUSPENSION,
+  ETIQUETA_ORIGEN,
+  MOTIVOS_SUSPENSION,
+  ORIGENES_TENANT,
+  type MotivoSuspension,
+  type OrigenTenant,
+} from "@/lib/fidelli/eventos";
+
+/** El origen ya cargado del tenant, para prellenar la edición. Null en
+ *  los dos campos = todavía no se cargó (los anteriores al 22/09/2026). */
+export type OrigenDeFila = {
+  origen: OrigenTenant | null;
+  detalle: string | null;
+};
 
 const INICIAL: EstadoEdicion = {};
 
@@ -27,13 +42,15 @@ const CLASE_ACCION =
 export function AccionesTenant({
   fila,
   planes,
+  origen,
 }: {
   fila: FilaLubricentro;
   planes: PlanCompleto[];
+  origen: OrigenDeFila;
 }) {
   return (
     <span className="flex items-center justify-end gap-1 whitespace-nowrap">
-      <DialogEditar fila={fila} planes={planes} />
+      <DialogEditar fila={fila} planes={planes} origen={origen} />
       <DialogEstado fila={fila} />
     </span>
   );
@@ -42,9 +59,11 @@ export function AccionesTenant({
 function DialogEditar({
   fila,
   planes,
+  origen,
 }: {
   fila: FilaLubricentro;
   planes: PlanCompleto[];
+  origen: OrigenDeFila;
 }) {
   const [abierto, setAbierto] = useState(false);
 
@@ -155,6 +174,41 @@ function DialogEditar({
             </p>
           </div>
 
+          {/* El origen (docs/METRICAS.md § 1). Acá es opcional: es donde se
+              cargan a mano los tenants que existían antes del campo. Cada
+              cambio deja un evento `origen`. */}
+          <div>
+            <label htmlFor={`ed-origen-${fila.id}`} className={CLASE_LABEL}>
+              ¿Cómo llegó?
+            </label>
+            <select
+              id={`ed-origen-${fila.id}`}
+              name="origen"
+              defaultValue={origen.origen ?? ""}
+              className={CLASE_CAMPO}
+            >
+              <option value="">Sin cargar</option>
+              {ORIGENES_TENANT.map((o) => (
+                <option key={o} value={o}>
+                  {ETIQUETA_ORIGEN[o]}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor={`ed-origen-detalle-${fila.id}`} className={CLASE_LABEL}>
+              Detalle del origen
+            </label>
+            <input
+              id={`ed-origen-detalle-${fila.id}`}
+              name="origen_detalle"
+              defaultValue={origen.detalle ?? ""}
+              placeholder="Quién lo refirió, qué distribuidor, qué campaña…"
+              className={CLASE_CAMPO}
+            />
+          </div>
+
           <CamposPlan
             planes={planes}
             valores={plan}
@@ -197,6 +251,13 @@ function DialogEstado({ fila }: { fila: FilaLubricentro }) {
   );
 
   const suspender = fila.activo;
+
+  // El motivo de la suspensión (docs/METRICAS.md § 1 "Baja"): obligatorio,
+  // y con «Otro» el detalle también. Es lo que separa el churn voluntario
+  // del involuntario. Al reactivar no se pregunta nada.
+  const [motivo, setMotivo] = useState<MotivoSuspension | "">("");
+  const [detalle, setDetalle] = useState("");
+  const faltaMotivo = suspender && (motivo === "" || (motivo === "otro" && detalle.trim() === ""));
 
   return (
     <Dialog open={abierto} onOpenChange={setAbierto}>
@@ -241,6 +302,47 @@ function DialogEstado({ fila }: { fila: FilaLubricentro }) {
                 Clientes, vehículos e historial quedan intactos y vuelven tal
                 cual al reactivar.
               </p>
+
+              <div>
+                <label htmlFor={`sus-motivo-${fila.id}`} className={CLASE_LABEL}>
+                  Motivo
+                </label>
+                <select
+                  id={`sus-motivo-${fila.id}`}
+                  name="motivo"
+                  required
+                  value={motivo}
+                  onChange={(e) => setMotivo(e.target.value as MotivoSuspension | "")}
+                  className={CLASE_CAMPO}
+                >
+                  <option value="">Elegí un motivo</option>
+                  {MOTIVOS_SUSPENSION.map((m) => (
+                    <option key={m} value={m}>
+                      {ETIQUETA_MOTIVO_SUSPENSION[m]}
+                    </option>
+                  ))}
+                </select>
+                <p className={CLASE_AYUDA}>
+                  Queda en el historial del lubricentro con tu nombre y la fecha.
+                </p>
+              </div>
+
+              <div>
+                <label htmlFor={`sus-detalle-${fila.id}`} className={CLASE_LABEL}>
+                  Detalle{" "}
+                  <span className="text-ink-40 normal-case">
+                    {motivo === "otro" ? "(obligatorio con «Otro»)" : "(opcional)"}
+                  </span>
+                </label>
+                <input
+                  id={`sus-detalle-${fila.id}`}
+                  name="detalle"
+                  required={motivo === "otro"}
+                  value={detalle}
+                  onChange={(e) => setDetalle(e.target.value)}
+                  className={CLASE_CAMPO}
+                />
+              </div>
             </div>
           ) : (
             <div className="flex flex-col gap-3 text-ui text-ink-60">
@@ -256,7 +358,12 @@ function DialogEstado({ fila }: { fila: FilaLubricentro }) {
             </div>
           )}
 
-          <Boton type="submit" tam="lg" disabled={cambiando} className="mt-1 w-full">
+          <Boton
+            type="submit"
+            tam="lg"
+            disabled={cambiando || faltaMotivo}
+            className="mt-1 w-full"
+          >
             {cambiando
               ? suspender
                 ? "Suspendiendo…"

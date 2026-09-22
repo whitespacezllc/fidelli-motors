@@ -8,6 +8,11 @@ import { obtenerSesion } from "@/lib/auth/session";
 import { enviarInvitacion } from "@/lib/auth/invitacion";
 import type { Periodo } from "@/lib/fidelli/plan";
 import type { MotivoAviso } from "@/lib/config";
+import {
+  esMotivoSuspension,
+  esOrigenTenant,
+  type OrigenTenant,
+} from "@/lib/fidelli/eventos";
 
 // Toda acción de esta superficie es de Fidelli. La base lo exige igual
 // (RLS + el guard de cada función), así que esto no es la única defensa:
@@ -53,6 +58,10 @@ const MENSAJES: Record<string, string> = {
   alias_vacio: "Escribí el alias, o dejalo vacío para asignarlo después.",
   alias_largo: ALIAS_FORMATO,
   alias_formato: ALIAS_FORMATO,
+  // Suspender con motivo (20260922201000) y el origen (20260922200000).
+  motivo_vacio: "Elegí el motivo de la suspensión.",
+  detalle_vacio: "Con «Otro», contá en una línea por qué se suspende.",
+  origen_vacio: "Elegí cómo llegó el lubricentro.",
 };
 
 function traducir(mensaje: string): string {
@@ -186,6 +195,10 @@ export type DatosAlta = {
    *  null a la base y el tenant nace sin alias, cobrando por el camino de
    *  siempre. */
   alias: string;
+  /** De dónde vino (docs/METRICAS.md § 1). Obligatorio en el wizard; se
+   *  fija DESPUÉS de crear el tenant, fuera de su transacción, como la
+   *  invitación: si falla, el tenant queda creado y la pantalla lo dice. */
+  origen: OrigenTenant | "";
 };
 
 export type ResultadoAlta = {
@@ -199,6 +212,10 @@ export type ResultadoAlta = {
     ownerEmail: string;
     invitacion: "enviada" | "fallo";
     motivo?: string;
+    // El origen es la tercera llamada del alta. Se cuenta aparte, como la
+    // invitación: puede fallar con el tenant ya creado.
+    origen: "guardado" | "fallo";
+    motivoOrigen?: string;
   };
 };
 
@@ -225,6 +242,9 @@ export async function altaDeLubricentro(
     return { error: "Revisá el email del owner: falta el @ o el dominio.", paso: 2 };
   }
   if (!datos.planId) return { error: "Elegí un plan.", paso: 3 };
+  if (!esOrigenTenant(datos.origen)) {
+    return { error: MENSAJES.origen_vacio, paso: 1 };
+  }
 
   const supabase = await createClient();
 
@@ -253,6 +273,15 @@ export async function altaDeLubricentro(
   // listado tiene que mostrarlo.
   revalidatePath("/fidelli");
 
+  // ---------- Fase 1b: el origen, por su propia puerta ----------
+  // Fuera de la transacción del alta a propósito: crear_lubricentro() no
+  // cambia de firma. Si esto falla, el tenant ya está y se corrige desde
+  // Editar; la pantalla final lo cuenta igual que a la invitación.
+  const { error: errorOrigen } = await supabase.rpc("fijar_origen_tenant", {
+    p_id: id,
+    p_origen: datos.origen,
+  });
+
   // ---------- Fase 2: la invitación ----------
   const motivo = await enviarInvitacion(id, ownerNombre, ownerEmail);
 
@@ -264,6 +293,8 @@ export async function altaDeLubricentro(
       ownerEmail,
       invitacion: motivo ? "fallo" : "enviada",
       motivo: motivo ?? undefined,
+      origen: errorOrigen ? "fallo" : "guardado",
+      motivoOrigen: errorOrigen ? traducir(errorOrigen.message) : undefined,
     },
   };
 }
@@ -364,6 +395,23 @@ export async function editarLubricentro(
 
   if (error) return { error: traducir(error.message) };
 
+  // El origen, por su puerta. Opcional en la edición: los tenants
+  // anteriores al 22/09/2026 no lo tienen y se completa a mano desde acá.
+  // Si no cambió, la base no registra ningún evento (el trigger compara).
+  const origen = String(formData.get("origen") ?? "");
+  if (esOrigenTenant(origen)) {
+    const { error: errorOrigen } = await supabase.rpc("fijar_origen_tenant", {
+      p_id: String(formData.get("id") ?? ""),
+      p_origen: origen,
+      p_detalle: String(formData.get("origen_detalle") ?? "").trim() || undefined,
+    });
+    if (errorOrigen) {
+      return {
+        error: `Se guardaron los datos, pero no el origen: ${traducir(errorOrigen.message)}`,
+      };
+    }
+  }
+
   revalidatePath("/fidelli");
   return { ok: true };
 }
@@ -377,6 +425,12 @@ export async function editarLubricentro(
 // por `activo` (la regla 8 de CLAUDE.md, la vigila R4). Lo que sí apaga
 // este interruptor es el premio, el mensaje al escanear y el slug en el
 // sitemap (`slugs_publicos()`).
+//
+// Desde 20260922201000 la única puerta es cambiar_estado_lubricentro():
+// suspender exige un motivo (y un detalle si el motivo es «Otro»), y la
+// base deja el evento `suspension` / `reactivacion` con quién, cuándo y
+// por qué (docs/METRICAS.md § 3). El update directo que había acá no
+// dejaba rastro.
 // ============================================================
 
 export async function cambiarEstadoLubricentro(
@@ -387,21 +441,25 @@ export async function cambiarEstadoLubricentro(
 
   const id = String(formData.get("id") ?? "");
   const activar = formData.get("activar") === "true";
+  const motivo = String(formData.get("motivo") ?? "");
+  const detalle = String(formData.get("detalle") ?? "").trim();
+
+  // Lo mismo que exige la función, dicho antes del viaje.
+  if (!activar) {
+    if (!esMotivoSuspension(motivo)) return { error: MENSAJES.motivo_vacio };
+    if (motivo === "otro" && !detalle) return { error: MENSAJES.detalle_vacio };
+  }
 
   const supabase = await createClient();
-  // El .select() no es decorativo: RLS rechaza los UPDATE en silencio
-  // —cero filas, sin error— y sin mirar lo devuelto un rechazo se vería
-  // en pantalla como un guardado exitoso.
-  const { data, error } = await supabase
-    .from("lubricentros")
-    .update({ activo: activar })
-    .eq("id", id)
-    .select("id");
+  const { error } = await supabase.rpc("cambiar_estado_lubricentro", {
+    p_id: id,
+    p_activo: activar,
+    // Al reactivar no viaja motivo: la función lo acepta en null.
+    p_motivo: !activar && esMotivoSuspension(motivo) ? motivo : undefined,
+    p_detalle: detalle || undefined,
+  });
 
   if (error) return { error: traducir(error.message) };
-  if (!data || data.length === 0) {
-    return { error: "No se pudo cambiar el estado: la base rechazó el cambio." };
-  }
 
   revalidatePath("/fidelli");
   revalidatePath("/panel", "layout");

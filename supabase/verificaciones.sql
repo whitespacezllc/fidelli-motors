@@ -5186,3 +5186,496 @@ begin
   delete from lubricentros where id = v_otro_lub;
 end $$;
 -- <<< R30
+
+
+-- ============================================================
+-- R31 · Los cimientos de las métricas (20260922200000 … 20260922205000)
+--
+-- El bloque MÉTRICAS 1 (docs/METRICAS.md) deja la memoria que el admin no
+-- tenía: tenant_eventos, el tipo de cambio, los snapshots diarios y una
+-- sola definición de "activo" y de la plata. Todo lo de abajo se rompe sin
+-- avisar —los triggers son defensivos a propósito, y un trigger que falla
+-- baja a WARNING y el reset sigue en verde—, así que este bloque CUENTA
+-- eventos y filas, nunca mira las warnings.
+--
+--   a · tenant_eventos es inmutable: UPDATE, DELETE y TRUNCATE fallan.
+--   b · Un pago genera exactamente UN evento `pago`, y el pago queda
+--       registrado aunque el trigger falle (se sabotea el insert del
+--       evento dentro de un savepoint y el pago tiene que sobrevivir).
+--   c · cerrar_dia() es idempotente: la segunda llamada devuelve
+--       'ya cerrado' y no cambia ninguna fila.
+--   d · mrr_plataforma() = Σ mrr_de_tenant(); con módulo pago,
+--       mrr_de_tenant = monto_de_renovacion_en()/meses (mensual y anual);
+--       un exento da 0.
+--   e · es_activo() es false con activo = false y con el reloj en
+--       'suspendido'; true al reactivar.
+--   f · Suspender con motivo deja `suspension` con el motivo y el actor;
+--       reactivar deja `reactivacion`; sin motivo, o con «Otro» sin
+--       detalle, la puerta rechaza.
+--   g · El alta deja `alta` con plan y período; fijar el origen deja
+--       `origen`; el override deja `modulo_activado` con el motivo; el
+--       cambio de plan deja `cambio_plan`.
+--   h · Después del seed: un `alta` por lubricentro, y cada pago tiene
+--       exactamente un evento.
+-- ============================================================
+
+-- >>> R31
+create or replace function r31_sabotaje()
+returns trigger
+language plpgsql
+as $$
+begin
+  raise exception 'sabotaje R31: el insert del evento falla a propósito';
+end;
+$$;
+
+do $$
+declare
+  v_hoy      date := current_date;
+  v_super    uuid;
+  v_plan     uuid;
+  v_lub      uuid;
+  v_lub2     uuid;
+  v_sus      uuid;
+  v_sus2     uuid;
+  v_pago     uuid;
+  v_ev       tenant_eventos;
+  v_l        lubricentros;
+  v_n        integer;
+  v_m        integer;
+  v_ok       boolean;
+  v_res      text;
+  v_esperado numeric;
+  v_suma     numeric;
+  v_venta    numeric;
+  -- Un día del pasado lejano, distinto en cada corrida: los snapshots son
+  -- inmutables y quedan, así que el bloque tiene que poder correr de nuevo
+  -- (scripts/regresion-metricas.sh lo corre en una transacción con
+  -- rollback, pero el reset ya dejó cerrado el día que usó).
+  v_dia      date := date '1990-01-01' + (extract(epoch from clock_timestamp())::bigint % 3650)::integer;
+begin
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  select id into v_plan  from planes where nombre = 'Pro' and not heredado;
+  if v_super is null or v_plan is null then
+    raise exception 'R31 SIN PISO: falta el superadmin o el plan Pro del seed.';
+  end if;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  -- Como `authenticated`, que es el rol con el que escribe el superadmin
+  -- desde PostgREST: los triggers tienen que poder emitir bajo ESE rol. Como
+  -- postgres pasaba todo aunque el trigger no tuviera permiso de escribir.
+  execute 'set local role authenticated';
+
+  -- ---------- g · El alta y el origen ----------
+  select crear_lubricentro('Metricas R31', 'metricas-r27',
+    '[{"nombre":"Casa Central"}]'::jsonb, v_plan, 'mensual', 0) into v_lub;
+
+  -- El alta es un trigger DIFERIDO: dispara al commit, o acá, a mano.
+  set constraints all immediate;
+
+  select count(*) into v_n from tenant_eventos where lubricentro_id = v_lub and tipo = 'alta';
+  if v_n <> 1 then
+    raise exception 'R31g EL ALTA NO DEJÓ EVENTO (% en vez de 1). Sin `alta` no hay altas por mes ni activación: crear_lubricentro() insertó el tenant y el trigger diferido no escribió nada — mirá las WARNING del reset, ahí está el error real.', v_n;
+  end if;
+  select * into v_ev from tenant_eventos where lubricentro_id = v_lub and tipo = 'alta';
+  if v_ev.despues ->> 'plan_id' is distinct from v_plan::text
+     or v_ev.despues ->> 'periodo' is distinct from 'mensual'
+     or v_ev.despues ->> 'slug' is distinct from 'metricas-r27' then
+    raise exception 'R31g: el evento alta no trae el plan y el período de la suscripción (despues = %). El trigger tiene que ser diferido para verla: crear_lubricentro() la inserta DESPUÉS del tenant.', v_ev.despues;
+  end if;
+  if v_ev.actor is distinct from v_super or v_ev.origen_evento <> 'admin' then
+    raise exception 'R31g: el alta quedó con actor % y origen_evento «%»; tenía que ser el superadmin de la sesión y «admin».', v_ev.actor, v_ev.origen_evento;
+  end if;
+
+  perform fijar_origen_tenant(v_lub, 'meta', 'campaña R31');
+  select count(*) into v_n from tenant_eventos where lubricentro_id = v_lub and tipo = 'origen';
+  if v_n <> 1 then
+    raise exception 'R31g: fijar_origen_tenant() no dejó el evento origen (% en vez de 1).', v_n;
+  end if;
+  select * into v_ev from tenant_eventos where lubricentro_id = v_lub and tipo = 'origen';
+  if v_ev.despues ->> 'origen' is distinct from 'meta' or v_ev.despues ->> 'origen_detalle' is distinct from 'campaña R31' then
+    raise exception 'R31g: el evento origen no trae el origen y el detalle (%).', v_ev.despues;
+  end if;
+  -- Volver a fijar el MISMO origen no es un cambio: cero eventos nuevos.
+  perform fijar_origen_tenant(v_lub, 'meta', 'campaña R31');
+  select count(*) into v_n from tenant_eventos where lubricentro_id = v_lub and tipo = 'origen';
+  if v_n <> 1 then
+    raise exception 'R31g: fijar el mismo origen dos veces dejó % eventos. El trigger compara con `is distinct from`: sin cambio no hay evento.', v_n;
+  end if;
+
+  -- ---------- a · Inmutable ----------
+  -- Como postgres, el dueño de la tabla: el candado es contra el script de
+  -- limpieza que corre con ese rol. (A `authenticated` el RLS ya le
+  -- contesta cero filas sin error.)
+  execute 'reset role';
+  v_ok := false;
+  begin
+    update tenant_eventos set motivo = 'x' where id = v_ev.id;
+    v_ok := true;
+  exception when others then
+    if sqlerrm not like '%evento_no_se_edita%' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R31a UN UPDATE SOBRE tenant_eventos PASÓ. La tabla es append-only: sin el candado de edición, un `update … set motivo` reescribe la historia y sigue pareciendo historia.';
+  end if;
+
+  v_ok := false;
+  begin
+    delete from tenant_eventos where id = v_ev.id;
+    v_ok := true;
+  exception when others then
+    if sqlerrm not like '%evento_no_se_borra%' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R31a UN DELETE SOBRE tenant_eventos PASÓ con el tenant vivo. Es la memoria de las bajas y el churn: no se borra mientras el lubricentro exista.';
+  end if;
+
+  v_ok := false;
+  begin
+    truncate tenant_eventos;
+    v_ok := true;
+  exception when others then
+    if sqlerrm not like '%eventos_no_se_vacian%' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R31a UN TRUNCATE SOBRE tenant_eventos PASÓ. Un trigger `before delete for each row` no se despierta con un truncate: hace falta el `for each statement`.';
+  end if;
+
+  execute 'set local role authenticated';
+
+  -- ---------- f · Suspender con motivo ----------
+  v_ok := false;
+  begin
+    perform cambiar_estado_lubricentro(v_lub, false, null, null);
+    v_ok := true;
+  exception when others then
+    if sqlerrm not like '%motivo_vacio%' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R31f: se suspendió un lubricentro SIN motivo. El motivo es lo que separa el churn voluntario del involuntario; sin él la métrica no existe.';
+  end if;
+
+  v_ok := false;
+  begin
+    perform cambiar_estado_lubricentro(v_lub, false, 'otro', '   ');
+    v_ok := true;
+  exception when others then
+    if sqlerrm not like '%detalle_vacio%' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R31f: «Otro» sin detalle pasó. Un «otro» pelado en el historial no le dice nada a nadie seis meses después.';
+  end if;
+
+  perform cambiar_estado_lubricentro(v_lub, false, 'falta_de_pago', null);
+
+  select * into v_l from lubricentros where id = v_lub;
+  if v_l.activo then
+    raise exception 'R31f: cambiar_estado_lubricentro(false) no apagó `activo`. El panel del owner sigue escribiendo.';
+  end if;
+
+  select count(*) into v_n from tenant_eventos where lubricentro_id = v_lub and tipo = 'suspension';
+  if v_n <> 1 then
+    raise exception 'R31f LA SUSPENSIÓN NO DEJÓ EVENTO (% en vez de 1). Sin `suspension` no hay bajas por mes.', v_n;
+  end if;
+  select * into v_ev from tenant_eventos where lubricentro_id = v_lub and tipo = 'suspension';
+  if v_ev.motivo is distinct from 'falta_de_pago' then
+    raise exception 'R31f: el evento suspension quedó con motivo «%» en vez de «falta_de_pago». El GUC app.motivo_evento no llegó del set_config() de la función al trigger.', v_ev.motivo;
+  end if;
+  if v_ev.actor is distinct from v_super then
+    raise exception 'R31f: el evento suspension quedó con actor % en vez del superadmin de la sesión.', v_ev.actor;
+  end if;
+
+  -- ---------- e · es_activo con el interruptor manual ----------
+  if es_activo(v_l) then
+    raise exception 'R31e: es_activo() dio true para un tenant con activo = false. Es LA definición de docs/METRICAS.md § 1 y acaba de fallar en su caso más simple.';
+  end if;
+  if mrr_de_tenant(v_lub) <> 0 then
+    raise exception 'R31d: un tenant suspendido a mano tiene MRR % en vez de 0.', mrr_de_tenant(v_lub);
+  end if;
+
+  perform cambiar_estado_lubricentro(v_lub, true, null, null);
+  select * into v_l from lubricentros where id = v_lub;
+  if not es_activo(v_l) then
+    raise exception 'R31e: reactivado, es_activo() sigue en false.';
+  end if;
+  select count(*) into v_n from tenant_eventos where lubricentro_id = v_lub and tipo = 'reactivacion';
+  if v_n <> 1 then
+    raise exception 'R31f: la reactivación no dejó el evento reactivacion (% en vez de 1).', v_n;
+  end if;
+
+  -- ---------- e · es_activo con el reloj en 'suspendido' ----------
+  -- Adentro del reloj, con el segundo interruptor prendido, con UN pago
+  -- (para no caer en la rama del que nunca pagó) y vencido hace 30 días:
+  -- pasada la gracia de 7, estado_cobranza() da 'suspendido' con activo
+  -- todavía en true. Es exactamente la baja que nadie apagó a mano.
+  -- Con created_at anterior a v_dia: es el tenant que va a aparecer en las
+  -- fotos de la sección c.
+  insert into lubricentros (nombre, slug, cobranza_desde, suspension_automatica, created_at)
+  values ('Reloj R31', 'reloj-r27', v_hoy - 60, true,
+          (v_dia - 10)::timestamp at time zone 'America/Argentina/Buenos_Aires')
+  returning id into v_lub2;
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, inicio, vencimiento)
+  values (v_lub2, v_plan, 'activa', 'mensual', 0, v_hoy - 60, v_hoy - 30) returning id into v_sus2;
+  insert into pagos (lubricentro_id, suscripcion_id, registrado_por, periodo_desde, periodo_hasta, monto, fecha_pago)
+  values (v_lub2, v_sus2, v_super, v_hoy - 60, v_hoy - 30, 49000, v_hoy - 60);
+
+  select * into v_l from lubricentros where id = v_lub2;
+  if reloj_cobranza(v_l) ->> 'estado' is distinct from 'suspendido' then
+    raise exception 'R31e SIN PISO: el tenant de prueba tenía que estar en «suspendido» por reloj y está en «%».', reloj_cobranza(v_l) ->> 'estado';
+  end if;
+  if v_l.activo is distinct from true then
+    raise exception 'R31e SIN PISO: lubricentros.activo tenía que seguir en true (nadie lo apagó a mano).';
+  end if;
+  if es_activo(v_l) then
+    raise exception 'R31e es_activo() DIO TRUE PARA UN TENANT QUE EL RELOJ TIENE EN «suspendido». "Activo" es lubricentros.activo Y el reloj (docs/METRICAS.md § 1): mirando solo la columna, los suspendidos por reloj cuentan como activos y el MRR y el churn mienten.';
+  end if;
+  if mrr_de_tenant(v_lub2) <> 0 then
+    raise exception 'R31d: un tenant suspendido por reloj tiene MRR % en vez de 0.', mrr_de_tenant(v_lub2);
+  end if;
+
+  -- ---------- b · Un pago, un evento; y el pago sobrevive al trigger roto ----------
+  select count(*) into v_n from tenant_eventos where lubricentro_id = v_lub2 and tipo = 'pago';
+  if v_n <> 1 then
+    raise exception 'R31b UN INSERT EN pagos DEJÓ % EVENTOS `pago` (tenía que dejar exactamente 1). El trigger de pagos es lo único que cubre las dos puertas del cobro sin tocarlas.', v_n;
+  end if;
+  select * into v_ev from tenant_eventos where lubricentro_id = v_lub2 and tipo = 'pago';
+  if (v_ev.despues ->> 'monto')::numeric <> 49000 or v_ev.despues ->> 'origen' is distinct from 'manual' then
+    raise exception 'R31b: el evento pago no trae el monto y el origen (%).', v_ev.despues;
+  end if;
+
+  -- El sabotaje: un BEFORE INSERT sobre tenant_eventos que revienta. El
+  -- pago tiene que entrar igual (savepoint) y NO dejar evento. Crear el
+  -- trigger es cosa del dueño de la tabla.
+  execute 'reset role';
+  execute 'create trigger r31_sabotaje before insert on tenant_eventos for each row execute function r31_sabotaje()';
+  begin
+    insert into pagos (lubricentro_id, suscripcion_id, registrado_por, periodo_desde, periodo_hasta, monto, fecha_pago)
+    values (v_lub2, v_sus2, v_super, v_hoy - 29, v_hoy + 1, 49000, v_hoy - 29)
+    returning id into v_pago;
+  exception when others then
+    execute 'drop trigger r31_sabotaje on tenant_eventos';
+    raise exception 'R31b EL TRIGGER ROTO BLOQUEÓ EL PAGO: «%». La instrumentación tiene que ser defensiva (begin … exception when others then raise warning): un fallo al registrar el evento NUNCA puede impedir que se registre un cobro.', sqlerrm;
+  end;
+  execute 'drop trigger r31_sabotaje on tenant_eventos';
+  execute 'set local role authenticated';
+
+  if not exists (select 1 from pagos where id = v_pago) then
+    raise exception 'R31b: el pago no quedó registrado con el trigger roto.';
+  end if;
+  select count(*) into v_n from tenant_eventos where lubricentro_id = v_lub2 and tipo = 'pago';
+  if v_n <> 1 then
+    raise exception 'R31b: con el insert del evento saboteado igual aparecieron % eventos pago (tenía que seguir en 1).', v_n;
+  end if;
+
+  -- ---------- g · El override deja el módulo con su motivo ----------
+  perform fijar_override_plan(v_lub, '{"neumaticos": true}'::jsonb,
+    'Módulo gomería · pago · ' || to_char(v_hoy, 'DD/MM/YYYY') || ' · prueba R31');
+  select count(*) into v_n from tenant_eventos where lubricentro_id = v_lub and tipo = 'modulo_activado';
+  if v_n <> 1 then
+    raise exception 'R31g: prender el módulo no dejó el evento modulo_activado (% en vez de 1).', v_n;
+  end if;
+  select * into v_ev from tenant_eventos where lubricentro_id = v_lub and tipo = 'modulo_activado';
+  -- `is null or`: un motivo null NO matchea el `not like` (da null, no true) y
+  -- el chequeo pasaba en verde sin motivo. Lo vio scripts/regresion-metricas.sh.
+  if v_ev.motivo is null or v_ev.motivo not like 'Módulo gomería · pago · %'
+     or v_ev.despues ->> 'modulo' is distinct from 'neumaticos' then
+    raise exception 'R31g: el evento modulo_activado no trae el motivo del override ni el módulo (motivo «%», despues %). El motivo es la única constancia de si el módulo se cobra.', v_ev.motivo, v_ev.despues;
+  end if;
+
+  -- ---------- d · La plata: una sola cuenta ----------
+  if (monto_de_renovacion_en(v_lub, 'mensual') ->> 'modulo')::numeric <= 0 then
+    raise exception 'R31d SIN PISO: el módulo pago no entra en monto_de_renovacion_en() (modulo_es_pago no lo cobra).';
+  end if;
+  v_esperado := round((monto_de_renovacion_en(v_lub, 'mensual') ->> 'total')::numeric / meses_del_periodo('mensual'), 2);
+  if mrr_de_tenant(v_lub) is distinct from v_esperado then
+    raise exception 'R31d DOS CUENTAS PARA LA MISMA PLATA: mrr_de_tenant() dice % y monto_de_renovacion_en()/meses dice %. El MRR sale de la MISMA función que la pantalla de pago del cliente, con el módulo adentro.', mrr_de_tenant(v_lub), v_esperado;
+  end if;
+  if v_esperado <= (monto_de_renovacion_en(v_lub, 'mensual') ->> 'plan')::numeric then
+    raise exception 'R31d: el MRR con módulo pago (%) no es mayor que el plan solo (%). El módulo se quedó afuera del MRR otra vez.', v_esperado, monto_de_renovacion_en(v_lub, 'mensual') ->> 'plan';
+  end if;
+
+  -- Anual: el total del año, dividido 12. Y el cambio de período deja su evento.
+  select id into v_sus from suscripciones where lubricentro_id = v_lub order by inicio desc, created_at desc limit 1;
+  update suscripciones set periodo = 'anual' where id = v_sus;
+  v_esperado := round((monto_de_renovacion_en(v_lub, 'anual') ->> 'total')::numeric / 12, 2);
+  if mrr_de_tenant(v_lub) is distinct from v_esperado then
+    raise exception 'R31d: con período anual mrr_de_tenant() dice % y el total del año dividido 12 es %. El MRR es el abono MENSUALIZADO: el anual entra dividido 12 y el semestral dividido 6.', mrr_de_tenant(v_lub), v_esperado;
+  end if;
+  select count(*) into v_n from tenant_eventos where lubricentro_id = v_lub and tipo = 'cambio_plan';
+  if v_n <> 1 then
+    raise exception 'R31g: cambiar el período no dejó el evento cambio_plan (% en vez de 1).', v_n;
+  end if;
+
+  -- Exento: activo con MRR 0.
+  update suscripciones set descuento_pct = 100 where id = v_sus;
+  select * into v_l from lubricentros where id = v_lub;
+  if not es_activo(v_l) then
+    raise exception 'R31e: un exento (descuento 100) dejó de ser activo. Los exentos son activos con MRR 0.';
+  end if;
+  if mrr_de_tenant(v_lub) <> 0 then
+    raise exception 'R31d: un exento tiene MRR % en vez de 0.', mrr_de_tenant(v_lub);
+  end if;
+  update suscripciones set descuento_pct = 0, periodo = 'mensual' where id = v_sus;
+
+  -- La suma.
+  select coalesce(sum(mrr_de_tenant(id)), 0) into v_suma from lubricentros;
+  if mrr_plataforma() is distinct from round(v_suma, 2) then
+    raise exception 'R31d: mrr_plataforma() dice % y la suma de mrr_de_tenant() da %.', mrr_plataforma(), v_suma;
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- ---------- c · cerrar_dia: idempotente, y las transiciones del reloj ----------
+  -- Se cierra un día del pasado lejano (v_dia), único por corrida. El
+  -- único tenant que existía ese día es el del reloj (v_lub2, nacido
+  -- diez días antes): la foto tiene que traerlo y a nadie más.
+  select cerrar_dia(v_dia, 1450, 1430, 'prueba R31') into v_res;
+  if v_res is distinct from 'cerrado' then
+    raise exception 'R31c: la primera llamada a cerrar_dia() devolvió «%» en vez de «cerrado».', v_res;
+  end if;
+  select count(*) into v_n from snapshots_diarios where fecha = v_dia;
+  select count(*) into v_m from snapshots_tenant_diarios where fecha = v_dia;
+  if v_n <> 1 then
+    raise exception 'R31c: cerrar_dia() dejó % filas en snapshots_diarios para la fecha (tenía que dejar 1).', v_n;
+  end if;
+  select count(*) into v_esperado from lubricentros
+   where created_at < ((v_dia + 1)::timestamp at time zone 'America/Argentina/Buenos_Aires');
+  if v_m <> v_esperado or v_m <> 1 then
+    raise exception 'R31c: snapshots_tenant_diarios tiene % filas para la fecha, había % tenants ese día y tenía que ser 1 (el del reloj). La foto entra por created_at.', v_m, v_esperado;
+  end if;
+  if (select activo from snapshots_tenant_diarios where fecha = v_dia and lubricentro_id = v_lub2) then
+    raise exception 'R31c: la foto del tenant suspendido por reloj dice activo = true. La foto usa es_activo(), la única definición.';
+  end if;
+  if (select tenants_suspendidos from snapshots_diarios where fecha = v_dia) <> 1
+     or (select mrr_ars from snapshots_diarios where fecha = v_dia) <> 0 then
+    raise exception 'R31c: el agregado del día no cuadra con la foto del tenant (suspendidos = %, mrr = %).',
+      (select tenants_suspendidos from snapshots_diarios where fecha = v_dia),
+      (select mrr_ars from snapshots_diarios where fecha = v_dia);
+  end if;
+  select venta into v_venta from tipo_cambio where fecha = v_dia;
+  if v_venta is distinct from 1450 then
+    raise exception 'R31c: cerrar_dia() no dejó el tipo de cambio del día (venta = %).', v_venta;
+  end if;
+
+  -- La segunda vez: nada.
+  select cerrar_dia(v_dia, 9999, 9999, 'segunda vez') into v_res;
+  if v_res is distinct from 'ya cerrado' then
+    raise exception 'R31c CERRAR DOS VECES EL MISMO DÍA NO DEVOLVIÓ «ya cerrado» (dio «%»). El cron reintenta; sin idempotencia, la segunda corrida pisa o duplica la foto.', v_res;
+  end if;
+  if (select count(*) from snapshots_diarios where fecha = v_dia) <> 1
+     or (select count(*) from snapshots_tenant_diarios where fecha = v_dia) <> 1
+     or (select venta from tipo_cambio where fecha = v_dia) is distinct from 1450 then
+    raise exception 'R31c: la segunda llamada a cerrar_dia() cambió filas (snapshots o tipo de cambio).';
+  end if;
+
+  -- LAS TRANSICIONES. El tenant vuelve a estar al día (vence en 30 días):
+  -- el cierre del día siguiente lo ve pasar de inactivo a activo sin un
+  -- evento manual, y tiene que escribir reactivacion_reloj.
+  update suscripciones set vencimiento = v_hoy + 30 where id = v_sus2;
+  select cerrar_dia(v_dia + 1, 1450, 1430, 'prueba R31') into v_res;
+  if v_res is distinct from 'cerrado' then
+    raise exception 'R31c: el cierre del segundo día devolvió «%».', v_res;
+  end if;
+  select count(*) into v_n from tenant_eventos
+   where lubricentro_id = v_lub2 and tipo = 'reactivacion_reloj';
+  if v_n <> 1 then
+    raise exception 'R31c EL CIERRE NO VIO LA REACTIVACIÓN POR RELOJ (% eventos reactivacion_reloj). Comparar la foto de hoy con la del último día cerrado es lo único que registra las vueltas que nadie hizo a mano.', v_n;
+  end if;
+
+  -- Y al revés: vence de nuevo hace 30 días, nadie lo apagó a mano, y el
+  -- cierre del tercer día escribe suspension_reloj — que es una BAJA del día.
+  update suscripciones set vencimiento = v_hoy - 30 where id = v_sus2;
+  select cerrar_dia(v_dia + 2, 1450, 1430, 'prueba R31') into v_res;
+  select count(*) into v_n from tenant_eventos
+   where lubricentro_id = v_lub2 and tipo = 'suspension_reloj';
+  if v_n <> 1 then
+    raise exception 'R31c EL CIERRE NO VIO LA SUSPENSIÓN POR RELOJ (% eventos suspension_reloj). Sin esto, las bajas involuntarias no existen: el reloj suspende sin dejar rastro.', v_n;
+  end if;
+  select * into v_ev from tenant_eventos where lubricentro_id = v_lub2 and tipo = 'suspension_reloj';
+  if v_ev.origen_evento <> 'sistema' or v_ev.actor is not null
+     or v_ev.despues ->> 'estado_reloj' is distinct from 'suspendido' then
+    raise exception 'R31c: el evento suspension_reloj no es del sistema o no trae el estado del reloj (origen «%», actor %, despues %).', v_ev.origen_evento, v_ev.actor, v_ev.despues;
+  end if;
+  if (select bajas_dia from snapshots_diarios where fecha = v_dia + 2) <> 1 then
+    raise exception 'R31c: la baja por reloj no se contó en bajas_dia del día (%).', (select bajas_dia from snapshots_diarios where fecha = v_dia + 2);
+  end if;
+  -- Mover el vencimiento no es un cambio de plan.
+  select count(*) into v_n from tenant_eventos where lubricentro_id = v_lub2 and tipo = 'cambio_plan';
+  if v_n <> 0 then
+    raise exception 'R31g: mover el vencimiento dejó % eventos cambio_plan. Solo plan, período y descuento son cambio de plan; el ciclo lo cuenta el pago.', v_n;
+  end if;
+
+  -- Y un día que no terminó no se cierra.
+  v_ok := false;
+  begin
+    perform cerrar_dia(v_hoy, 1450, 1430, 'hoy');
+    v_ok := true;
+  exception when others then
+    if sqlerrm not like '%dia_no_terminado%' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R31c: cerrar_dia() cerró HOY. Un día se cierra cuando terminó; una foto de las 15:00 no es un cierre.';
+  end if;
+
+  -- El snapshot también es inmutable.
+  v_ok := false;
+  begin
+    update snapshots_diarios set mrr_ars = 0 where fecha = v_dia;
+    v_ok := true;
+  exception when others then
+    if sqlerrm not like '%snapshot_no_se_edita%' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R31c: un UPDATE sobre snapshots_diarios pasó. Los históricos se leen, no se corrigen.';
+  end if;
+
+  -- ---------- limpieza ----------
+  -- Los eventos y los snapshots de los tenants de prueba se van con el
+  -- cascade; lo demás, a mano, como en los otros bloques.
+  delete from pagos where lubricentro_id in (v_lub, v_lub2);
+  delete from cambios_override_plan where lubricentro_id = v_lub;
+  delete from sucursales where lubricentro_id = v_lub;
+  delete from mensaje_templates where lubricentro_id = v_lub;
+  delete from config_experiencia where lubricentro_id = v_lub;
+  delete from suscripciones where lubricentro_id in (v_lub, v_lub2);
+  delete from lubricentros where id in (v_lub, v_lub2);
+end $$;
+
+drop function r31_sabotaje();
+
+-- ---------- h · Después del seed, la memoria está completa ----------
+-- Fuera del `do` de arriba, con los tenants de prueba ya borrados: queda
+-- lo que dejó el seed. Un `alta` por lubricentro, y cada pago con
+-- exactamente un evento. Es la afirmación que el backfill (20260922205000)
+-- tiene que cumplir en producción: se comprueba contra prod después del
+-- push (docs/METRICAS.md § 5).
+do $$
+declare
+  v_altas   integer;
+  v_lubs    integer;
+  v_sin     integer;
+  v_dobles  integer;
+begin
+  select count(*) into v_altas from tenant_eventos where tipo = 'alta';
+  select count(*) into v_lubs  from lubricentros;
+  if v_altas <> v_lubs then
+    raise exception 'R31h HAY % EVENTOS alta PARA % LUBRICENTROS. Cada tenant tiene exactamente un alta: los del seed por el trigger diferido, los de producción por el backfill.', v_altas, v_lubs;
+  end if;
+
+  select count(*) into v_sin
+    from pagos p
+   where not exists (select 1 from tenant_eventos e where e.tipo = 'pago' and e.despues ->> 'pago_id' = p.id::text);
+  if v_sin <> 0 then
+    raise exception 'R31h HAY % PAGO(S) SIN EVENTO. El trigger de pagos o el backfill dejaron un cobro fuera de la memoria.', v_sin;
+  end if;
+
+  select count(*) into v_dobles
+    from (select e.despues ->> 'pago_id' from tenant_eventos e where e.tipo = 'pago'
+           group by 1 having count(*) > 1) d;
+  if v_dobles <> 0 then
+    raise exception 'R31h HAY % PAGO(S) CON MÁS DE UN EVENTO. El backfill no es idempotente o el trigger emitió dos veces.', v_dobles;
+  end if;
+end $$;
+-- <<< R31
