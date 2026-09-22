@@ -6,6 +6,7 @@ import {
   IconoWhatsapp,
 } from "@/components/iconos";
 import { telefonoWhatsapp } from "@/lib/contacto";
+import { URL_PRIVACIDAD } from "@/lib/legal";
 import type { Lubricentro, SucursalPublica } from "@/lib/cliente/landing";
 
 // El marco de confianza: quién es este lubricentro y dónde se lo
@@ -80,7 +81,8 @@ export function PieConfianza({ lubricentro }: { lubricentro: Lubricentro }) {
     facebook && { nombre: "Facebook", url: urlRed("https://facebook.com", facebook) },
   ].filter(Boolean) as { nombre: string; url: string }[];
 
-  if (sucursales.length === 0 && !premio && redes.length === 0 && !whatsapp) return null;
+  const conDatos =
+    sucursales.length > 0 || !!premio || redes.length > 0 || !!whatsapp;
 
   return (
     <footer className="border-t border-line px-5 py-8 sm:px-8 sm:py-10 lg:py-8">
@@ -140,6 +142,30 @@ export function PieConfianza({ lubricentro }: { lubricentro: Lubricentro }) {
             ))}
           </p>
         )}
+
+        {/* La única mención de Fidelli en toda la página del cliente: una
+            línea, tinta terciaria, 12px. De quién es la página y quién
+            provee la tecnología —lo que la sección 8 de los Términos
+            promete— con el enlace a la Política de Privacidad en NUESTRO
+            dominio. Sin el rojo de marca, ni un píxel: esta superficie es
+            del lubricentro, y hasta el subrayado va en la tinta de la
+            página. Se muestra siempre, también cuando el pie no tiene
+            sucursales, premio ni contacto que mostrar. */}
+        <p
+          className={`text-center text-label text-ink-40 ${conDatos ? "mt-8 sm:mt-10" : ""}`}
+        >
+          Esta página es de {lubricentro.nombre}. Fidelli Motors provee la
+          tecnología
+          <span aria-hidden> · </span>
+          <a
+            href={URL_PRIVACIDAD}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-11 items-center underline underline-offset-4 hover:text-ink-60"
+          >
+            Privacidad
+          </a>
+        </p>
       </div>
     </footer>
   );

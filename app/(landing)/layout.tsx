@@ -2,7 +2,7 @@ import { Navbar } from "@/components/landing/navbar";
 import { BarraCtaMovil } from "@/components/landing/barra-cta-movil";
 import { Pie } from "@/components/landing/pie";
 
-// La superficie comercial: `/`, y más adelante `/terminos` y `/privacidad`.
+// La superficie comercial: `/`, `/terminos` y `/privacidad`.
 //
 // Es la ÚNICA de las tres superficies donde el rojo Motors es la marca. En
 // `/[slug]` no aparece ni un píxel (ahí manda el color del lubricentro) y el

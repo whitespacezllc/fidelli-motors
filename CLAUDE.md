@@ -593,6 +593,24 @@ avisa cuando una orden vence. Lo vigilan R22e,
 sostiene que el doble conteste los bytes reales del rechazo (400 y el
 código, no el 409 que uno escribiría).
 
+Y la que deja el sprint de políticas (septiembre de 2026):
+
+**21 · Los textos legales viven en `content/legal/` con versión. Cambiar un
+texto de forma relevante = subir `VERSION_LEGAL` = todos vuelven a aceptar.
+Nunca se editan in place sin subir la versión.** La fuente única es
+`lib/legal.ts` (`VERSION_LEGAL`, `VIGENCIA_LEGAL`); el frontmatter de
+`content/legal/terminos.md` y `content/legal/privacidad.md` tiene que
+coincidir, y si no coincide el render de `/terminos` y `/privacidad` —y el
+build— fallan con el mensaje que dice cuál. Los textos se publican tal cual:
+son copy aprobado y vinculante, no se "mejoran". La aceptación es producto:
+`aceptaciones_terminos` guarda una fila por (tenant, versión) —historial,
+nunca una columna— con los tres candados de evidencia; el panel la exige
+en cada request por el campo calculado `aceptaciones_legales` del select de
+la sesión, y el modal bloqueante va ANTES que el gate del onboarding. La
+versión vigente NO vive en la base a propósito: guardarla ahí sería una
+segunda fuente que se desincroniza en silencio. Exentos: el superadmin y el
+tenant demo, por slug. Lo vigila R27.
+
 ---
 
 ## La red de regresión — qué protege cada cosa
@@ -632,6 +650,7 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R24** | La atención de `/fidelli` exime al 100%: un tenant bonificado no aparece con ninguno de los cuatro estados, en ninguna fecha —tampoco como `trial_vencido`, porque el precio ya es cero— y el listado y la ficha lo dicen igual porque comparten `estado_atencion()`. Con el contracaso en las dos posiciones del caso real: sin descuento, a 4 días y vencido hace 4, los dos estados vuelven | Se está llamando para cobrarle a alguien que no debe nada (el caso Brothers Oil del 20/09/2026), o —peor— la exención se comió la lista entera y la pantalla que trae la plata se vació sola |
 | **R25** | El alias fijo por tenant: el interruptor `alias_confirmado_por_cresium()` está APAGADO y la puerta rechaza incluso un alias con la forma correcta; no hay un solo alias asignado en la base; un alias escrito no se cambia ni por UPDATE directo; la unicidad (puerta e índice, que son dos defensas distintas); el formato y los dos largos con su contracaso; y el alta, que asigna por la MISMA puerta y aborta entera si el alias falla | Se asignó un alias antes de que Cresium confirmara el formato —y no hay vuelta atrás barata, porque el tope de cambios por CVU es un número que todavía no sabemos—, o un tenant terminó con un alias distinto del que ya dejó cargado en su home banking |
 | **R26** | El alta prende el reloj y el primer pago define el ciclo: el tenant nuevo nace PAGANDO con `cobranza_desde` escrito y el vencimiento al día siguiente, **y ningún otro tenant entra al reloj por eso**; el primer pago que llega TARDE corre `inicio` y `vencimiento` a la fecha del pago con el largo contratado, y el que llega en plazo —o una renovación— no; las dos puertas del cobro hacen lo mismo; y la marca de la cuarta pantalla del onboarding es definer y se escribe una sola vez | El rollout volvió a ser el UPDATE peligroso contra 17 filas, un tenant que tardó cinco días en terminar el onboarding perdió cinco días de su primer mes, o el cobro manual —el que se va a usar en las primeras altas— quedó fuera del cambio |
+| **R27** | Las páginas legales y la aceptación de los Términos: los cuatro slugs (`terminos`, `privacidad`, `legal`, `condiciones`) reservados por `slug_reservado()` Y por el CHECK; `aceptaciones_terminos` con sus tres candados en `ALWAYS` (delete, update y truncate rechazados); `aceptar_terminos()` escribe el tenant y el usuario DE LA SESIÓN, es idempotente por versión, guarda el historial (la fila de 1.0 sigue tras aceptar 1.1) y un superadmin no acepta; el predicado distingue versiones y exime al demo por slug; y el aislamiento —un owner lee cero filas ajenas y el campo calculado con un composite forjado (regla 18) devuelve vacío— | Un lubricentro puede pisar una página legal, un tenant "aceptó" un texto que nunca vio (o subir `VERSION_LEGAL` dejó de pedir nada), el contrato se puede borrar o editar, o un owner está leyendo las aceptaciones del de al lado |
 
 Además, fuera del reset, **las roturas a mano** (regla 13):
 
@@ -645,6 +664,7 @@ Además, fuera del reset, **las roturas a mano** (regla 13):
 ./scripts/regresion-cobranza-deudas.sh
 ./scripts/regresion-cobranza-alias.sh
 ./scripts/regresion-cobranza-alta.sh
+./scripts/regresion-legal.sh
 ```
 
 El primero rompe la vista de retención de dos formas —le saca el filtro de
@@ -715,6 +735,19 @@ prohíbe. También rompe el `>` del plazo por un `>=` (con lo que un alta a las
 23:50 tiene diez minutos), el alta que le prende el reloj a TODOS, y la
 condición «y tarde» del primer pago, sin la cual un cliente viejo del que
 nunca registramos un pago pierde días en su próxima renovación.
+
+El décimo rompe R27 (diez roturas): `legal` sacado de `slug_reservado()`;
+`aceptar_terminos()` como invoker (la puerta se cierra para todos) y
+`aceptar_terminos()` que registra la fila en OTRO tenant que el de la
+sesión —la forma en que una aceptación deja de ser una aceptación—; el
+predicado que ignora la versión (subir `VERSION_LEGAL` no vuelve a pedirle
+nada a nadie) y el predicado sin la exención del demo; los tres candados
+de la evidencia bajados a `notice` de a uno y los tres bajados de `ALWAYS`
+a `ORIGIN`; y el campo calculado de la sesión como definer, que con un
+composite forjado devuelve las versiones del vecino (regla 18, probado con
+`jsonb_populate_record`). Las escrituras de R27 corren en una
+subtransacción que se deshace a propósito: las aceptaciones de prueba no se
+pueden borrar —son evidencia— y no tienen por qué quedar.
 
 ⚠ Y DOS DE ESTOS SCRIPTS APUNTAN A MÁS DE UNA MIGRACIÓN, porque
 `estado_cobranza`, `reloj_cobranza` y `crear_lubricentro` se redefinieron en

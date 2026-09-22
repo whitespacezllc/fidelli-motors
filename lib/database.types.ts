@@ -34,6 +34,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      aceptaciones_terminos: {
+        Row: {
+          aceptado_at: string
+          id: string
+          lubricentro_id: string
+          usuario_id: string
+          version: string
+        }
+        Insert: {
+          aceptado_at?: string
+          id?: string
+          lubricentro_id: string
+          usuario_id: string
+          version: string
+        }
+        Update: {
+          aceptado_at?: string
+          id?: string
+          lubricentro_id?: string
+          usuario_id?: string
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aceptaciones_terminos_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "aceptaciones_terminos_usuario_id_fkey"
+            columns: ["usuario_id"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cambios_override_plan: {
         Row: {
           cambiado_por: string
@@ -2168,6 +2207,15 @@ export type Database = {
       }
     }
     Functions: {
+      aceptaciones_legales: {
+        Args: { l: Database["public"]["Tables"]["lubricentros"]["Row"] }
+        Returns: string[]
+      }
+      aceptar_terminos: { Args: { p_version: string }; Returns: undefined }
+      acepto_terminos_vigentes: {
+        Args: { p_lubricentro_id: string; p_version: string }
+        Returns: boolean
+      }
       acreditar_deposito_cresium: { Args: { p_payload: Json }; Returns: Json }
       activar_template: { Args: { p_template_id: string }; Returns: undefined }
       actualizar_lubricentro: {

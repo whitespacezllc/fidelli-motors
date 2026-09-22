@@ -20,13 +20,15 @@ import { ID_CTA_HERO } from "@/lib/landing";
 // rojo, ni la barra de mobile entrando y saliendo, antes de que el observer
 // conteste.
 //
-// SI EL CTA NO EXISTE, el valor se queda en `true` y no pasa nada más. Hoy
-// la única página de esta superficie es `/`, que siempre lo tiene. Cuando
-// existan /terminos y /privacidad —que no llevan hero— el navbar de esas
-// páginas va a mostrar su botón en outline para siempre: no está roto, pero
-// tampoco es lo que corresponde, así que ahí hay que darle a este hook una
-// forma de saberlo. No se resuelve hoy con un setState dentro del efecto:
-// eso es una cascada de renders y el lint de React lo rechaza con razón.
+// SI EL CTA NO EXISTE, el valor se queda en `true` y no pasa nada más. Es
+// el caso de /terminos y /privacidad, que no llevan hero: ahí el navbar
+// muestra su botón en outline y la barra fija de mobile no aparece nunca.
+// Y está bien que sea así: un documento legal no es una página que vende,
+// y un botón rojo o una barra de WhatsApp pegada abajo mientras alguien lee
+// el contrato serían ruido. Si algún día hace falta otro comportamiento,
+// hay que darle a este hook una forma de saberlo — no con un setState
+// dentro del efecto, que es una cascada de renders y el lint de React lo
+// rechaza con razón.
 //
 // El nombre arranca en inglés a propósito: la regla de hooks de ESLint
 // reconoce los hooks por el prefijo `use` y con `usarCtaHero` dejaría de
