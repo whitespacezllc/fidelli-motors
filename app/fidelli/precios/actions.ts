@@ -87,6 +87,7 @@ export async function guardarPlan(
 
   revalidatePath("/fidelli/precios");
   revalidatePath("/fidelli");
+  revalidatePath("/fidelli/lubricentros");
   return { ok: true };
 }
 
@@ -121,5 +122,6 @@ export async function guardarModulo(
 
   revalidatePath("/fidelli/precios");
   revalidatePath("/fidelli");
+  revalidatePath("/fidelli/lubricentros");
   return { ok: true };
 }

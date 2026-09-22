@@ -52,7 +52,14 @@ function alCentavo(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-// Lo que paga por mes, con los dos descuentos aplicados.
+// ⚠ PREVIEW, NO FUENTE. abonoMensual() y totalDelPeriodo() existen para
+// mostrar un número mientras se elige el plan (el wizard, el dialog Editar,
+// ResumenAbono) y para el mensaje de aviso cuando la base no mandó el
+// total. NO SUMAN EL MÓDULO PAGO y no son la cuenta oficial: la plata que
+// se cobra sale de `monto_de_renovacion_en()` y la que se mide sale de
+// `mrr_de_tenant()` / `mrr_plataforma()` (docs/METRICAS.md § 1). El
+// Resumen de /fidelli y la columna de abono del listado leen SQL, nunca
+// esto. Si un día los dos números difieren, el de la base tiene razón.
 export function abonoMensual(
   plan: Plan,
   periodo: Periodo,
@@ -87,6 +94,24 @@ export function pesos(n: number): string {
 export function porcentaje(n: number): string {
   return `${NUMERO.format(n)}%`;
 }
+
+// ============================================================
+// El founding
+//
+// El trato con los primeros lubricentros: 50% de descuento propio a cambio
+// de case study, testimonio y referidos. Es UNA regla y vive acá; antes
+// estaba escrita como `=== 50` en cuatro archivos, y el día que el número
+// cambie tienen que cambiar los cuatro a la vez o la ficha dice una cosa y
+// el badge otra.
+// ============================================================
+export const DESCUENTO_FOUNDING = 50;
+
+export function esFounding(descuentoPct: number | null | undefined): boolean {
+  return Number(descuentoPct ?? 0) === DESCUENTO_FOUNDING;
+}
+
+/** Lo que el founding se comprometió a dar a cambio del descuento. */
+export const CONDICION_FOUNDING = "case study + testimonio + referidos";
 
 export const ETIQUETA_PERIODO: Record<Periodo, string> = {
   mensual: "Mensual",

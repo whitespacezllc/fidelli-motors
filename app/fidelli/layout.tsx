@@ -32,9 +32,18 @@ export default async function LayoutFidelli({
         </div>
 
         <nav className="flex items-center gap-1" aria-label="Secciones">
+          {/* El Resumen es la raíz: los cinco números, el MRR y las
+              alertas del día. El listado vive en su propia ruta desde el
+              bloque MÉTRICAS 2. */}
           <NavLink
             href="/fidelli"
             exacto
+            className="flex h-10 items-center rounded-md px-3 text-ui transition-colors"
+          >
+            Resumen
+          </NavLink>
+          <NavLink
+            href="/fidelli/lubricentros"
             className="flex h-10 items-center rounded-md px-3 text-ui transition-colors"
           >
             Lubricentros
@@ -78,7 +87,7 @@ export default async function LayoutFidelli({
         </div>
       </header>
 
-      {/* Más ancho que el panel del lubri: la tabla de tenants tiene ocho
+      {/* Más ancho que el panel del lubri: la tabla de tenants tiene siete
           columnas y la de atención necesita lugar para su acción. */}
       <main className="mx-auto max-w-[1400px] px-5 py-6">{children}</main>
     </div>

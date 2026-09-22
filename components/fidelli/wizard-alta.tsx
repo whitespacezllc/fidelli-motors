@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { slugificar } from "@/lib/texto";
+import { DOMINIO_SITIO } from "@/lib/seo";
 import {
   ALIAS_FORMATO,
   ALIAS_LARGO_MAXIMO,
@@ -54,7 +55,7 @@ const SUCURSAL_VACIA: Sucursal = {
 // Lo que dice el campo del slug según lo que contestó la base.
 const VEREDICTO: Record<EstadoSlug, { texto: (s: string) => string; clase: string }> = {
   disponible: {
-    texto: (s) => `Disponible — la landing será fidellimotors.app/${s}`,
+    texto: (s) => `Disponible — la landing será ${DOMINIO_SITIO}/${s}`,
     clase: "text-success",
   },
   ocupado: {
@@ -303,7 +304,7 @@ export function WizardAlta({
               </label>
               <div className="flex items-center gap-1.5">
                 <span className="shrink-0 text-body text-ink-40">
-                  fidellimotors.app/
+                  {DOMINIO_SITIO}/
                 </span>
                 <input
                   id="slug"
@@ -455,7 +456,7 @@ export function WizardAlta({
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-surface/60 px-5 py-4 sm:px-6">
         {paso === 1 ? (
           <Link
-            href="/fidelli"
+            href="/fidelli/lubricentros"
             className="inline-flex min-h-11 items-center px-1 text-ui font-semibold text-ink-60 hover:text-ink"
           >
             Cancelar
@@ -697,7 +698,7 @@ function Listo({
       <p className="mt-1.5 text-body text-ink-60">
         Su landing ya responde en{" "}
         <span className="font-semibold text-ink">
-          fidellimotors.app/{creado.slug}
+          {DOMINIO_SITIO}/{creado.slug}
         </span>
         .
       </p>
@@ -741,7 +742,7 @@ function Listo({
       )}
 
       <div className="mt-6">
-        <Link href="/fidelli" className={clasesBoton("primario", "lg")}>
+        <Link href="/fidelli/lubricentros" className={clasesBoton("primario", "lg")}>
           Ir al listado
         </Link>
       </div>

@@ -1,6 +1,7 @@
 import {
   ETIQUETA_PERIODO,
   diasHasta,
+  esFounding,
   porcentaje,
   type EstadoSuscripcion,
   type Periodo,
@@ -53,7 +54,7 @@ export function BadgeDescuento({ pct }: { pct: number }) {
 
   return (
     <span className={`${BASE} border-reward bg-reward-soft text-reward`}>
-      {pct === 50 ? "founding " : ""}−{porcentaje(pct)}
+      {esFounding(pct) ? "founding " : ""}−{porcentaje(pct)}
     </span>
   );
 }

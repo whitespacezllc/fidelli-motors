@@ -1,4 +1,5 @@
 import type { EstadoSuscripcion, Periodo } from "@/lib/fidelli/plan";
+import type { OrigenTenant } from "@/lib/fidelli/eventos";
 import type { PlanCompleto, EstadoOwner } from "@/components/fidelli/tipos";
 
 export type Tenant = {
@@ -8,6 +9,9 @@ export type Tenant = {
   activo: boolean;
   calcos_entregadas: number;
   created_at: string;
+  /** De dónde vino (docs/METRICAS.md § 1). Null = todavía no se cargó. */
+  origen: OrigenTenant | null;
+  origen_detalle: string | null;
 };
 
 export type SuscripcionVigente = {
@@ -29,6 +33,7 @@ export type Owner = {
 export const PESTANAS = [
   { clave: "resumen", nombre: "Resumen" },
   { clave: "suscripcion", nombre: "Suscripción" },
+  { clave: "historial", nombre: "Historial" },
   { clave: "datos", nombre: "Datos" },
   { clave: "configuracion", nombre: "Configuración" },
 ] as const;

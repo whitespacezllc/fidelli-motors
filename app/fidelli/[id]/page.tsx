@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { CabeceraTenant } from "@/components/fidelli/ficha/cabecera-tenant";
 import { TabResumen } from "@/components/fidelli/ficha/tab-resumen";
 import { TabSuscripcion } from "@/components/fidelli/ficha/tab-suscripcion";
+import { TabHistorial } from "@/components/fidelli/ficha/tab-historial";
 import { TabDatos } from "@/components/fidelli/ficha/tab-datos";
 import { TabConfiguracion } from "@/components/fidelli/ficha/tab-configuracion";
 import {
@@ -11,7 +12,7 @@ import {
   type SuscripcionVigente,
   type Tenant,
 } from "@/components/fidelli/ficha/tipos";
-import type { PlanCompleto } from "@/components/fidelli/tipos";
+import type { EstadoOwner, PlanCompleto } from "@/components/fidelli/tipos";
 
 export const metadata: Metadata = { title: "Ficha del lubricentro" };
 
@@ -45,13 +46,14 @@ export default async function PaginaFicha({
   const { id } = await params;
   const busqueda = await searchParams;
   const pestana = esPestana(busqueda.tab) ? busqueda.tab : "resumen";
+  const pagina = Math.max(1, Number(busqueda.pagina) || 1);
 
   const supabase = await createClient();
 
-  const [tenantRes, suscripcionRes] = await Promise.all([
+  const [tenantRes, suscripcionRes, ownersRes] = await Promise.all([
     supabase
       .from("lubricentros")
-      .select("id, nombre, slug, activo, calcos_entregadas, created_at")
+      .select("id, nombre, slug, activo, calcos_entregadas, created_at, origen, origen_detalle")
       .eq("id", id)
       .maybeSingle(),
     // La vigente es la última que arrancó, el mismo criterio que el listado.
@@ -66,6 +68,9 @@ export default async function PaginaFicha({
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // El estado del owner, para la cabecera y para el Resumen. Una sola
+    // llamada acá; estados_owner() no tiene versión por tenant.
+    supabase.rpc("estados_owner"),
   ]);
 
   if (!tenantRes.data) notFound();
@@ -84,20 +89,26 @@ export default async function PaginaFicha({
       }
     : null;
 
+  const estadoOwner: EstadoOwner =
+    ((ownersRes.data ?? []).find((o) => o.lubricentro_id === tenant.id)
+      ?.estado as EstadoOwner | undefined) ?? "sin_owner";
+
   return (
     <div>
       <CabeceraTenant
         tenant={tenant}
         suscripcion={suscripcion}
         pestana={pestana}
+        estadoOwner={estadoOwner}
       />
 
       {pestana === "resumen" && (
-        <TabResumen tenant={tenant} suscripcion={suscripcion} />
+        <TabResumen tenant={tenant} suscripcion={suscripcion} estadoOwner={estadoOwner} />
       )}
       {pestana === "suscripcion" && (
         <TabSuscripcion tenant={tenant} suscripcion={suscripcion} />
       )}
+      {pestana === "historial" && <TabHistorial tenant={tenant} pagina={pagina} />}
       {pestana === "datos" && <TabDatos tenant={tenant} params={busqueda} />}
       {pestana === "configuracion" && <TabConfiguracion tenant={tenant} />}
     </div>

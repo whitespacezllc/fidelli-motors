@@ -15,6 +15,18 @@
 #   R31g · el alta como trigger inmediato (el evento nace sin plan), y el
 #          evento de módulo sin el motivo del override.
 #
+# Y las del bloque MÉTRICAS 2 (R32, migración 20260923100000):
+#   R32a · salud_tenants() sin la guarda: un owner lee la salud de todos.
+#   R32b · la salud que decide «cobro vencido» por la FECHA en vez de por
+#          estado_atencion(): un bonificado vencido vuelve a salir en ámbar
+#          (la copia de la regla del 100% que este bloque vino a borrar).
+#   R32c · los dos cortes de actividad corridos (3 → 30 y 7 → 70).
+#   R32d · trabajos_semanales() contando solo `service`.
+#   R32e · indicadores_tenants() con el MRR en cero y con la ventana de 30
+#          días achicada a 7.
+#   R32f · metricas_plataforma() de vuelta con el filtro `tipo = 'service'`.
+#   R32g · resumen_admin() contando solo `service` en trabajos del mes.
+#
 # Todo corre en transacciones con rollback: no deja rastro. Requiere el
 # stack local levantado (supabase start) con el schema al día (supabase db
 # reset). DB_CONTAINER cambia el contenedor (default: el del proyecto).
@@ -27,6 +39,7 @@ V=supabase/verificaciones.sql
 M_EV=supabase/migrations/20260922201000_tenant_eventos.sql
 M_PL=supabase/migrations/20260922203000_metricas_plata.sql
 M_SN=supabase/migrations/20260922204000_snapshots.sql
+M_RS=supabase/migrations/20260923100000_resumen_admin.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
 
@@ -102,9 +115,41 @@ correr "el alta como trigger inmediato (nace sin plan)" \
 correr_marcada "el evento de módulo sin el motivo del override" tenant_evento_tras_override "$M_EV" \
   "s/new.motivo, origen_evento_de_sesion(), new.created_at, new.cambiado_por/null, origen_evento_de_sesion(), new.created_at, new.cambiado_por/" R31 "R31g"
 
+echo "── R32a · la guarda de la salud ──"
+correr_marcada "salud_tenants() sin la guarda (un owner lee la salud de todos)" salud_tenants "$M_RS" \
+  "/@guarda_salud/s/if not soy_superadmin() then/if false then/" R32 "R32a"
+
+echo "── R32b · la exención vive en estado_atencion(), no en una copia ──"
+correr_marcada "la salud que decide «cobro vencido» por la fecha (el bonificado vencido vuelve al ámbar)" salud_tenants "$M_RS" \
+  "/@cobro_por_atencion/s/when b.atencion in ('trial_vencido', 'cobranza_vencida') then/when b.vencimiento < current_date then/" R32 "R32b"
+
+echo "── R32c · los cortes de actividad ──"
+correr_marcada "el corte de «al día» corrido a 30 días" salud_tenants "$M_RS" \
+  "/@corte_al_dia/s/<= 3 then/<= 30 then/" R32 "R32c"
+correr_marcada "el corte de «actividad baja» corrido a 70 días" salud_tenants "$M_RS" \
+  "/@corte_baja/s/<= 7 then/<= 70 then/" R32 "R32c"
+
+echo "── R32d · el sparkline cuenta todos los tipos ──"
+correr_marcada "trabajos_semanales() contando solo service" trabajos_semanales "$M_RS" \
+  "/@semana_todos/s/where not sv.anulado/where not sv.anulado and sv.tipo = 'service'/" R32 "R32d"
+
+echo "── R32e · los indicadores de la fila ──"
+correr_marcada "indicadores_tenants() con el MRR en cero" indicadores_tenants "$M_RS" \
+  "/@mrr_indicador/s/mrr_de_tenant(l.id),/0::numeric,/" R32 "R32e"
+correr_marcada "indicadores_tenants() con la ventana de 30 días achicada a 7" indicadores_tenants "$M_RS" \
+  "/@trabajos_30/s/current_date - 29/current_date - 6/" R32 "R32e"
+
+echo "── R32f · el pulso cuenta todos los tipos ──"
+correr_marcada "metricas_plataforma() de vuelta con el filtro tipo = 'service'" metricas_plataforma "$M_RS" \
+  "/@trabajos_mes/s/where not anulado/where not anulado and tipo = 'service'/" R32 "R32f"
+
+echo "── R32g · el resumen cuenta todos los tipos ──"
+correr_marcada "resumen_admin() contando solo service en trabajos del mes" resumen_admin "$M_RS" \
+  "/@resumen_trabajos/s/where not anulado/where not anulado and tipo = 'service'/" R32 "R32g"
+
 echo
 if [ "$fallas" = 0 ]; then
-  echo "La red atrapó todas las roturas de R31."
+  echo "La red atrapó todas las roturas de R31 y R32."
 else
   echo "ALGUNA ROTURA SE ESCAPÓ: el bloque que la cubre no la ve."
 fi

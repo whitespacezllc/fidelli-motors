@@ -1,6 +1,13 @@
 import { createClient } from "@/lib/supabase/server";
 import { formatearFecha, formatearFechaHora } from "@/lib/fechas";
-import { abonoMensual, descuentoDeLista, pesos, porcentaje } from "@/lib/fidelli/plan";
+import {
+  CONDICION_FOUNDING,
+  abonoMensual,
+  descuentoDeLista,
+  esFounding,
+  pesos,
+  porcentaje,
+} from "@/lib/fidelli/plan";
 import { PanelFicha, Dato, SinDato, Metrica } from "./panel-dato";
 import type { SuscripcionVigente, Tenant } from "./tipos";
 import type { EstadoOwner } from "@/components/fidelli/tipos";
@@ -30,15 +37,19 @@ const COLOR_OWNER: Record<EstadoOwner, string> = {
 export async function TabResumen({
   tenant,
   suscripcion,
+  estadoOwner,
 }: {
   tenant: Tenant;
   suscripcion: SuscripcionVigente | null;
+  /** Lo resuelve la página (una sola llamada a estados_owner() para la
+   *  cabecera y esta pestaña). */
+  estadoOwner: EstadoOwner;
 }) {
   const supabase = await createClient();
 
   // Las cuatro consultas de la pestaña, en paralelo. Las tres primeras
   // llevan su .eq("lubricentro_id") explícito: acá el RLS no recorta.
-  const [ownerRes, sucursalesRes, configRes, metricasRes, ownersRes] =
+  const [ownerRes, sucursalesRes, configRes, metricasRes] =
     await Promise.all([
       supabase
         .from("usuarios")
@@ -58,7 +69,6 @@ export async function TabResumen({
         .eq("lubricentro_id", tenant.id)
         .maybeSingle(),
       supabase.rpc("metricas_tenant", { p_lubricentro_id: tenant.id }),
-      supabase.rpc("estados_owner"),
     ]);
 
   const m = (metricasRes.data ?? {}) as Partial<Metricas>;
@@ -67,10 +77,6 @@ export async function TabResumen({
   const contacto = (configRes.data?.datos_contacto ?? {}) as {
     telefono?: string;
   };
-
-  const estadoOwner: EstadoOwner =
-    ((ownersRes.data ?? []).find((o) => o.lubricentro_id === tenant.id)
-      ?.estado as EstadoOwner) ?? "sin_owner";
 
   // El teléfono de la marca es el de contacto; si no lo cargaron, el de la
   // primera sucursal que tenga uno sirve igual para llamarlo.
@@ -165,8 +171,8 @@ export async function TabResumen({
 
                 {suscripcion.descuento_pct > 0 && (
                   <Dato etiqueta="Condición del trato">
-                    {suscripcion.descuento_pct === 50 ? (
-                      "founding: case study + testimonio + referidos"
+                    {esFounding(suscripcion.descuento_pct) ? (
+                      `founding: ${CONDICION_FOUNDING}`
                     ) : (
                       <SinDato>acordada fuera del sistema</SinDato>
                     )}
@@ -189,7 +195,7 @@ export async function TabResumen({
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Metrica
             valor={String(m.services_mes ?? 0)}
-            etiqueta="Services del mes (sin mecánica)"
+            etiqueta="Trabajos del mes"
           />
           <Metrica
             valor={String(m.clientes ?? 0)}

@@ -5679,3 +5679,339 @@ begin
   end if;
 end $$;
 -- <<< R31
+
+
+-- ============================================================
+-- R32 · LO QUE LEEN EL RESUMEN Y EL LISTADO DE /fidelli (bloque MÉTRICAS 2)
+--
+-- La migración 20260923100000 agrega las lecturas de las pantallas nuevas
+-- al lado de las funciones de siempre. Lo que este bloque sostiene:
+--
+--   a · La guarda: un owner NO lee salud_tenants(), indicadores_tenants(),
+--       trabajos_semanales(), resumen_admin() ni metricas_plataforma()
+--       (42501 antes de tocar nada). Son invoker y el RLS es la segunda
+--       capa, pero la primera es la que explica.
+--   b · La exención del 100% vive en estado_atencion() y en ningún otro
+--       lado: un bonificado con el vencimiento pasado NO tiene la salud en
+--       «cobro vencido»; el mismo tenant sin descuento, sí, y el motivo
+--       dice hace cuánto. Es el caso Brothers Oil (R24), ahora en la salud.
+--   c · Los cortes de actividad: nunca cargó → sin actividad; último
+--       trabajo hace 9 días → sin actividad; hace 5 → actividad baja; hoy →
+--       al día con la cuenta de la semana. Suspendido a mano → sin salud.
+--       Cada uno con su oración.
+--   d · trabajos_semanales(): 12 filas por tenant, las semanas en cero
+--       incluidas; la suma es la cantidad de trabajos DE CUALQUIER TIPO en
+--       la ventana; con tenant filtra; sin tenant trae a todos; el tope de
+--       semanas se respeta.
+--   e · indicadores_tenants(): trabajos_30 cuenta los tres tipos, el MRR es
+--       el de mrr_de_tenant(), activo es es_activo() y el último trabajo es
+--       el último.
+--   f · metricas_plataforma() cuenta trabajos de cualquier tipo: una
+--       mecánica suma uno al mes y a la serie diaria.
+--   g · resumen_admin(): activos = es_activo(); trabajos del mes = la suma
+--       de los tres tipos = las filas no anuladas del mes; el alta de este
+--       tenant cuenta en las altas del mes; sin_origen cuenta; un activo
+--       que dejó de cargar hace 20 días aparece en sin_trabajos con sus
+--       días; cierre_ayer dice si hay snapshot de ayer; el MRR en USD es el
+--       de ARS sobre el tipo de cambio vigente.
+--
+-- Corre como el superadmin del seed bajo el rol `authenticated` (el rol
+-- con el que PostgREST ejecuta estas funciones); los fixtures se escriben
+-- como postgres. Se limpia al final. scripts/regresion-metricas.sh rompe
+-- cada regla y espera ver este bloque en rojo.
+-- ============================================================
+
+-- >>> R32
+do $$
+declare
+  v_hoy     date := current_date;
+  v_super   uuid;
+  v_owner   uuid;
+  v_plan    uuid;
+  v_lub     uuid;
+  v_sus     uuid;
+  v_suc     uuid;
+  v_cli     uuid;
+  v_veh     uuid;
+  v_n       integer;
+  v_m       integer;
+  v_antes   integer;
+  v_despues integer;
+  v_ok      boolean;
+  v_j       jsonb;
+  v_tc      tipo_cambio;
+  r         record;
+begin
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  select u.id into v_owner
+    from usuarios u join lubricentros l on l.id = u.lubricentro_id
+   where l.slug = 'demo' and u.rol = 'owner' limit 1;
+  select id into v_plan from planes where nombre = 'Pro' and not heredado;
+  if v_super is null or v_owner is null or v_plan is null then
+    raise exception 'R32 SIN PISO: falta el superadmin, el owner del demo o el plan Pro del seed.';
+  end if;
+
+  -- ---------- a · La guarda ----------
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  for r in select unnest(array[
+      'select count(*) from salud_tenants()',
+      'select count(*) from indicadores_tenants()',
+      'select count(*) from trabajos_semanales()',
+      'select resumen_admin()',
+      'select metricas_plataforma()']) as consulta
+  loop
+    v_ok := false;
+    begin
+      execute r.consulta;
+      v_ok := true;
+    exception when others then
+      if sqlstate <> '42501' then raise; end if;
+    end;
+    if v_ok then
+      raise exception 'R32a UN OWNER PUDO EJECUTAR «%». Las lecturas del admin son invoker con guarda soy_superadmin(): sin la guarda, el RLS de lubricentros le devuelve su propia fila y la función contesta la salud, el MRR y los trabajos del tenant como si fuera el admin — y la del resumen le cuenta la plataforma entera.', r.consulta;
+    end if;
+  end loop;
+
+  -- De acá en adelante, el superadmin.
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+
+  -- El fixture: un tenant recién nacido (activa, vence mañana, sin trabajos).
+  select crear_lubricentro('Salud R32', 'salud-r32',
+    '[{"nombre":"Centro"}]'::jsonb, v_plan, 'mensual', 0) into v_lub;
+  set constraints all immediate;
+  select s.id into v_sus from suscripciones s where s.lubricentro_id = v_lub
+    order by s.inicio desc, s.created_at desc limit 1;
+  select id into v_suc from sucursales where lubricentro_id = v_lub limit 1;
+
+  -- Un cliente y un auto para poder cargarle trabajos. Como postgres:
+  -- son fixtures, no el camino del producto.
+  execute 'reset role';
+  insert into clientes (lubricentro_id, nombre, telefono)
+  values (v_lub, 'Cliente R32', '3510000000') returning id into v_cli;
+  insert into vehiculos (lubricentro_id, cliente_id, patente, patente_normalizada, marca, modelo)
+  values (v_lub, v_cli, 'AB123CD', 'AB123CD', 'Fiat', 'Uno') returning id into v_veh;
+
+  -- ---------- b · La exención vive en estado_atencion() ----------
+  -- El alta la dejó con inicio = hoy y vencimiento = mañana; para vencerla
+  -- hace 10 días hay que correr el inicio también (CHECK vencimiento_posterior).
+  update suscripciones set descuento_pct = 100, inicio = v_hoy - 40, vencimiento = v_hoy - 10 where id = v_sus;
+  execute 'set local role authenticated';
+
+  select * into r from salud_tenants() where lubricentro_id = v_lub;
+  if r.lubricentro_id is null then
+    raise exception 'R32 SIN PISO: salud_tenants() no devolvió la fila del tenant de prueba.';
+  end if;
+  if r.salud = 'cobro_vencido' then
+    raise exception 'R32b UN BONIFICADO (100%%) CON EL VENCIMIENTO PASADO TIENE LA SALUD EN «cobro_vencido» (motivo: «%»). Quien no paga nada no puede deber nada: la exención vive en estado_atencion() y la salud tiene que preguntarle a ELLA, no mirar la fecha. Es el caso Brothers Oil de R24, otra vez.', r.motivo;
+  end if;
+
+  execute 'reset role';
+  update suscripciones set descuento_pct = 0 where id = v_sus;
+  execute 'set local role authenticated';
+
+  select * into r from salud_tenants() where lubricentro_id = v_lub;
+  if r.salud is distinct from 'cobro_vencido' then
+    raise exception 'R32b: el mismo tenant SIN descuento y vencido hace 10 días tiene la salud en «%» en vez de «cobro_vencido».', r.salud;
+  end if;
+  if r.motivo is distinct from 'venció hace 10 días' then
+    raise exception 'R32b: el motivo del cobro vencido dice «%» y tenía que decir «venció hace 10 días».', r.motivo;
+  end if;
+
+  -- Al día con la plata: de acá en adelante manda la actividad.
+  execute 'reset role';
+  update suscripciones set vencimiento = v_hoy + 20 where id = v_sus;
+  execute 'set local role authenticated';
+
+  -- ---------- c · Los cortes de actividad ----------
+  select * into r from salud_tenants() where lubricentro_id = v_lub;
+  if r.salud is distinct from 'sin_actividad' or r.motivo is distinct from 'nunca cargó un trabajo' or r.ultimo_trabajo is not null then
+    raise exception 'R32c: sin ningún trabajo la salud dio «%» con motivo «%» (tenía que ser sin_actividad · «nunca cargó un trabajo»).', r.salud, r.motivo;
+  end if;
+
+  execute 'reset role';
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha,
+                        kilometros, aceite_tipo, prox_service_km)
+  values (v_lub, v_suc, v_veh, v_super, 'service', v_hoy - 9, 50000, '10W40', 60000);
+  execute 'set local role authenticated';
+
+  select * into r from salud_tenants() where lubricentro_id = v_lub;
+  if r.salud is distinct from 'sin_actividad' or r.motivo is distinct from 'sin trabajos hace 9 días' then
+    raise exception 'R32c: con el último trabajo hace 9 días la salud dio «%» · «%» (tenía que ser sin_actividad · «sin trabajos hace 9 días»). El corte de actividad baja es 7.', r.salud, r.motivo;
+  end if;
+
+  -- Una MECÁNICA hace 5 días: cuenta como trabajo (docs/METRICAS.md § 1).
+  execute 'reset role';
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha,
+                        kilometros, trabajo_descripcion)
+  values (v_lub, v_suc, v_veh, v_super, 'mecanica', v_hoy - 5, 51000, 'Cambio de pastillas de freno');
+  execute 'set local role authenticated';
+
+  select * into r from salud_tenants() where lubricentro_id = v_lub;
+  if r.salud is distinct from 'actividad_baja' or r.motivo is distinct from 'último trabajo hace 5 días' then
+    raise exception 'R32c: con una mecánica hace 5 días la salud dio «%» · «%» (tenía que ser actividad_baja · «último trabajo hace 5 días»). O la mecánica no cuenta como trabajo, o el corte de «al día» no es 3.', r.salud, r.motivo;
+  end if;
+
+  execute 'reset role';
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha,
+                        kilometros, aceite_tipo, prox_service_km)
+  values (v_lub, v_suc, v_veh, v_super, 'service', v_hoy, 52000, '10W40', 62000);
+  execute 'set local role authenticated';
+
+  select * into r from salud_tenants() where lubricentro_id = v_lub;
+  if r.salud is distinct from 'al_dia' or r.motivo is distinct from '2 trabajos en 7 días' or r.ultimo_trabajo is distinct from v_hoy then
+    raise exception 'R32c: con un trabajo hoy la salud dio «%» · «%» · último % (tenía que ser al_dia · «2 trabajos en 7 días» · hoy: el de hace 9 días queda afuera de la semana).', r.salud, r.motivo, r.ultimo_trabajo;
+  end if;
+
+  -- Suspendido a mano no tiene salud: no es trabajo de hoy.
+  perform cambiar_estado_lubricentro(v_lub, false, 'pedido_del_cliente', null);
+  select * into r from salud_tenants() where lubricentro_id = v_lub;
+  if r.salud is not null or r.motivo is not null then
+    raise exception 'R32c: un tenant suspendido a mano tiene salud «%». La columna de estado ya dice «Suspendido»; la salud es para los que están operando.', r.salud;
+  end if;
+  perform cambiar_estado_lubricentro(v_lub, true, null, null);
+
+  -- ---------- d · trabajos_semanales ----------
+  select count(*), coalesce(sum(cantidad), 0) into v_n, v_m from trabajos_semanales(v_lub, 12);
+  if v_n <> 12 then
+    raise exception 'R32d trabajos_semanales(tenant, 12) DEVOLVIÓ % FILAS (tenía que devolver 12, las semanas en cero incluidas). El sparkline no rellena huecos: los espera de la base.', v_n;
+  end if;
+  if v_m <> 3 then
+    raise exception 'R32d: la suma de las 12 semanas es % y los trabajos de la ventana son 3 (un service hace 9 días, una mecánica hace 5 y un service hoy). O falta un tipo, o se cae una semana.', v_m;
+  end if;
+  select count(*) into v_n from trabajos_semanales(v_lub, 12) where cantidad > 0;
+  if v_n < 1 or v_n > 3 then
+    raise exception 'R32d: los 3 trabajos cayeron en % semanas con cantidad > 0 (esperaba entre 1 y 3).', v_n;
+  end if;
+  select count(*) into v_n from trabajos_semanales(null, 12);
+  if v_n <> 12 * (select count(*) from lubricentros) then
+    raise exception 'R32d: sin tenant, trabajos_semanales() devolvió % filas para % lubricentros (tenía que ser 12 por tenant).', v_n, (select count(*) from lubricentros);
+  end if;
+  v_ok := false;
+  begin
+    perform count(*) from trabajos_semanales(null, 200);
+    v_ok := true;
+  exception when others then
+    if sqlerrm not like '%semanas_fuera_de_rango%' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R32d: trabajos_semanales() aceptó 200 semanas. El tope es 104.';
+  end if;
+
+  -- ---------- e · indicadores_tenants ----------
+  select * into r from indicadores_tenants() where lubricentro_id = v_lub;
+  if r.lubricentro_id is null then
+    raise exception 'R32 SIN PISO: indicadores_tenants() no devolvió la fila del tenant de prueba.';
+  end if;
+  if r.trabajos_30 <> 3 then
+    raise exception 'R32e trabajos_30 = % PARA 3 TRABAJOS EN 30 DÍAS (service hace 9, mecánica hace 5, service hoy). O la ventana no es de 30 días, o un tipo no cuenta.', r.trabajos_30;
+  end if;
+  if r.mrr_ars is distinct from mrr_de_tenant(v_lub) or r.mrr_ars <= 0 then
+    raise exception 'R32e: el MRR de la fila es % y mrr_de_tenant() dice %. La tabla tiene que mostrar EL MISMO número que el snapshot y el resumen: sale de mrr_de_tenant(), no de otra cuenta.', r.mrr_ars, mrr_de_tenant(v_lub);
+  end if;
+  if not r.es_activo or r.exento then
+    raise exception 'R32e: un tenant activo, con reloj al día y sin descuento salió con es_activo = % y exento = %.', r.es_activo, r.exento;
+  end if;
+  if r.ultimo_trabajo is distinct from v_hoy then
+    raise exception 'R32e: ultimo_trabajo = % con un trabajo cargado hoy.', r.ultimo_trabajo;
+  end if;
+  if r.estado_reloj is distinct from (select reloj_cobranza(l) ->> 'estado' from lubricentros l where l.id = v_lub) then
+    raise exception 'R32e: estado_reloj «%» no coincide con reloj_cobranza().', r.estado_reloj;
+  end if;
+
+  -- ---------- f · metricas_plataforma cuenta todos los tipos ----------
+  v_j := metricas_plataforma();
+  v_antes := (v_j ->> 'trabajos_mes')::integer;
+  v_m := ((v_j -> 'series' -> 'dia') -> (jsonb_array_length(v_j -> 'series' -> 'dia') - 1) ->> 'cantidad')::integer;
+  if v_j -> 'series' -> 'dia' -> (jsonb_array_length(v_j -> 'series' -> 'dia') - 1) ->> 'inicio' is distinct from v_hoy::text then
+    raise exception 'R32 SIN PISO: el último punto de la serie diaria no es hoy (%).', v_j -> 'series' -> 'dia';
+  end if;
+
+  execute 'reset role';
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha,
+                        kilometros, trabajo_descripcion)
+  values (v_lub, v_suc, v_veh, v_super, 'mecanica', v_hoy, 52100, 'Cambio de correa de distribución');
+  execute 'set local role authenticated';
+
+  v_j := metricas_plataforma();
+  v_despues := (v_j ->> 'trabajos_mes')::integer;
+  if v_despues <> v_antes + 1 then
+    raise exception 'R32f UNA MECÁNICA NO SUMÓ EN trabajos_mes (% → %). metricas_plataforma() tiene que contar trabajos DE CUALQUIER TIPO (docs/METRICAS.md § 1): con el filtro tipo = ''service'' de vuelta, el Pulso vuelve a mentir.', v_antes, v_despues;
+  end if;
+  v_n := ((v_j -> 'series' -> 'dia') -> (jsonb_array_length(v_j -> 'series' -> 'dia') - 1) ->> 'cantidad')::integer;
+  if v_n <> v_m + 1 then
+    raise exception 'R32f: la mecánica de hoy no sumó en el último punto de la serie diaria (% → %).', v_m, v_n;
+  end if;
+  if v_j ? 'services_mes' then
+    raise exception 'R32f: metricas_plataforma() sigue devolviendo la clave vieja `services_mes`. El contrato nuevo es `trabajos_mes`.';
+  end if;
+
+  -- ---------- g · resumen_admin ----------
+  v_j := resumen_admin();
+
+  if (v_j ->> 'activos')::integer <> (select count(*) from lubricentros l where es_activo(l)) then
+    raise exception 'R32g: activos = % y es_activo() cuenta %. Es LA definición de docs/METRICAS.md § 1; el resumen no tiene otra.', v_j ->> 'activos', (select count(*) from lubricentros l where es_activo(l));
+  end if;
+  if (v_j ->> 'trabajos_mes')::integer
+     <> (v_j ->> 'trabajos_service')::integer + (v_j ->> 'trabajos_mecanica')::integer + (v_j ->> 'trabajos_neumaticos')::integer then
+    raise exception 'R32g TRABAJOS DEL MES (%) NO ES LA SUMA DE LOS TRES TIPOS (% + % + %). El número grande cuenta cualquier tipo y el desglose lo explica: si no cierran, uno de los dos miente.',
+      v_j ->> 'trabajos_mes', v_j ->> 'trabajos_service', v_j ->> 'trabajos_mecanica', v_j ->> 'trabajos_neumaticos';
+  end if;
+  if (v_j ->> 'trabajos_mes')::integer
+     <> (select count(*) from services where not anulado and fecha >= date_trunc('month', current_date)) then
+    raise exception 'R32g: trabajos_mes = % y las filas no anuladas del mes son %.', v_j ->> 'trabajos_mes', (select count(*) from services where not anulado and fecha >= date_trunc('month', current_date));
+  end if;
+  if (v_j ->> 'altas_mes')::integer < 1 then
+    raise exception 'R32g: el alta de hoy no cuenta en altas_mes (%).', v_j ->> 'altas_mes';
+  end if;
+  if (v_j ->> 'sin_origen')::integer <> (select count(*) from lubricentros where origen is null) then
+    raise exception 'R32g: sin_origen = % y los lubricentros sin origen son %.', v_j ->> 'sin_origen', (select count(*) from lubricentros where origen is null);
+  end if;
+  if (v_j ->> 'cierre_ayer')::boolean is distinct from exists (select 1 from snapshots_diarios where fecha = v_hoy - 1) then
+    raise exception 'R32g: cierre_ayer = % y el snapshot de ayer %.', v_j ->> 'cierre_ayer',
+      case when exists (select 1 from snapshots_diarios where fecha = v_hoy - 1) then 'existe' else 'no existe' end;
+  end if;
+  v_tc := tc_vigente(v_hoy);
+  if v_tc.venta is not null and (v_j ->> 'mrr_usd')::numeric is distinct from round((v_j ->> 'mrr_ars')::numeric / v_tc.venta, 2) then
+    raise exception 'R32g: mrr_usd = % con mrr_ars = % y venta = %.', v_j ->> 'mrr_usd', v_j ->> 'mrr_ars', v_tc.venta;
+  end if;
+  if v_tc.venta is null and v_j ->> 'mrr_usd' is not null then
+    raise exception 'R32g: sin tipo de cambio vigente el MRR en USD tiene que ser null, no %. Nunca se inventa un valor.', v_j ->> 'mrr_usd';
+  end if;
+  -- Con un trabajo hoy, el tenant no está en sin_trabajos.
+  if exists (select 1 from jsonb_array_elements(v_j -> 'sin_trabajos') e where e ->> 'id' = v_lub::text) then
+    raise exception 'R32g: un tenant que cargó un trabajo HOY aparece en sin_trabajos.';
+  end if;
+
+  -- Todo lo que cargó pasa a hace 20 días: entra en sin_trabajos con sus días.
+  execute 'reset role';
+  update services set fecha = v_hoy - 20 where lubricentro_id = v_lub;
+  execute 'set local role authenticated';
+  v_j := resumen_admin();
+  select (e ->> 'dias')::integer into v_n
+    from jsonb_array_elements(v_j -> 'sin_trabajos') e where e ->> 'id' = v_lub::text;
+  if v_n is distinct from 20 then
+    raise exception 'R32g UN ACTIVO SIN TRABAJOS HACE 20 DÍAS NO APARECE EN sin_trabajos (o aparece con % días). Es la alerta «<nombre> no carga trabajos hace N días» del Resumen.', v_n;
+  end if;
+  select * into r from salud_tenants() where lubricentro_id = v_lub;
+  if r.salud is distinct from 'sin_actividad' or r.motivo is distinct from 'sin trabajos hace 20 días' then
+    raise exception 'R32c: con todo hace 20 días la salud dio «%» · «%».', r.salud, r.motivo;
+  end if;
+
+  -- ---------- limpieza ----------
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+  delete from services where lubricentro_id = v_lub;
+  delete from vehiculos where lubricentro_id = v_lub;
+  delete from clientes where lubricentro_id = v_lub;
+  delete from cambios_override_plan where lubricentro_id = v_lub;
+  delete from sucursales where lubricentro_id = v_lub;
+  delete from mensaje_templates where lubricentro_id = v_lub;
+  delete from config_experiencia where lubricentro_id = v_lub;
+  delete from suscripciones where lubricentro_id = v_lub;
+  delete from lubricentros where id = v_lub;
+end $$;
+-- <<< R32

@@ -11,7 +11,8 @@ import { Segmentado } from "@/components/ui/segmentado";
 import { GraficoSerie } from "@/components/graficos/grafico-serie";
 
 // ============================================================
-// El pulso de la plataforma: cuántos services entran, en el tiempo.
+// El pulso de la plataforma: cuántos trabajos entran, en el tiempo —de
+// cualquier tipo (docs/METRICAS.md § 1), desde el bloque MÉTRICAS 2.
 //
 // El dibujo vive en components/graficos/grafico-serie.tsx, compartido
 // con el panel del lubricentro. Acá queda lo propio de esta superficie:
@@ -61,7 +62,7 @@ export function Pulso({
             {acumulado.toLocaleString("es-AR")}
           </p>
           <p className="text-label font-semibold tracking-[0.04em] text-ink-60 uppercase">
-            Services desde el día uno
+            Trabajos desde el día uno
           </p>
         </div>
 
@@ -80,9 +81,10 @@ export function Pulso({
         <GraficoSerie
           serie={series[granularidad]}
           unidad={granularidad}
+          nombre={{ singular: "trabajo", plural: "trabajos" }}
           vacio={{
             sinDatos:
-              "Todavía no se cargó ningún service en la plataforma. Acá va a aparecer el pulso en cuanto entre el primero.",
+              "Todavía no se cargó ningún trabajo en la plataforma. Acá va a aparecer el pulso en cuanto entre el primero.",
             unSoloPunto:
               "el primer período de la plataforma. Con dos ya hay curva.",
           }}

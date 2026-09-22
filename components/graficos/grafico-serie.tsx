@@ -53,12 +53,18 @@ export function GraficoSerie({
   ultimoEnCurso = false,
   /** Qué se cuenta, para el tooltip y el texto de los estados vacíos. */
   vacio,
+  /** El sustantivo de lo que se cuenta: «service» en el panel del
+   *  lubricentro, «trabajo» en el Pulso de /fidelli (que desde el bloque
+   *  MÉTRICAS 2 cuenta los tres tipos). */
+  nombre = { singular: "service", plural: "services" },
 }: {
   serie: PuntoSerie[];
   unidad: Granularidad | VistaPanel;
   ultimoEnCurso?: boolean;
   vacio: { sinDatos: string; unSoloPunto: string };
+  nombre?: { singular: string; plural: string };
 }) {
+  const Nombre = `${nombre.plural.charAt(0).toUpperCase()}${nombre.plural.slice(1)}`;
   const [indice, setIndice] = useState<number | null>(null);
   // El id del gradiente tiene que ser único: dos gráficos en la misma
   // página compartirían el <defs> y el segundo pisaría al primero.
@@ -117,13 +123,13 @@ export function GraficoSerie({
         n={n}
         indice={indice}
         alCambiar={setIndice}
-        etiqueta={`Services por ${unidad}`}
+        etiqueta={`${Nombre} por ${unidad}`}
         tooltip={(i) => (
           <p className="font-ui text-ui text-ink">
             <span className="font-semibold tabular-nums">
               {serie[i].cantidad}
             </span>{" "}
-            {serie[i].cantidad === 1 ? "service" : "services"}
+            {serie[i].cantidad === 1 ? nombre.singular : nombre.plural}
             <span className="text-ink-60">
               {" "}
               · {etiquetaDePunto(serie[i].inicio, unidad)}
@@ -143,7 +149,7 @@ export function GraficoSerie({
           preserveAspectRatio="none"
           className="block h-32 w-full sm:h-40 lg:h-[200px]"
           role="img"
-          aria-label={`Services por ${unidad}: ${serie
+          aria-label={`${Nombre} por ${unidad}: ${serie
             .map((p) => `${etiquetaDePunto(p.inicio, unidad)} ${p.cantidad}`)
             .join(", ")}`}
         >

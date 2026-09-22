@@ -12,6 +12,16 @@ pantallas ni cambia navegación (bloque 2). Es aditivo: nada de lo que hoy
 funciona cambia de comportamiento, salvo que suspender un tenant ahora exige
 un motivo.
 
+**Bloque MÉTRICAS 2 · 23 de septiembre de 2026 · rama `feat/metricas-2`.**
+Las pantallas: `/fidelli` pasa a ser el **Resumen** (cinco números con
+comparación, el MRR contra el objetivo, el pulso de trabajos, las alertas) y
+el listado se muda a `/fidelli/lubricentros` (siete columnas, salud en SQL,
+filtros y buscador en la URL). La ficha suma el origen y el owner en la
+cabecera y la pestaña **Historial**. Lo que agrega a la base está en § 2
+(migración `20260923100000`) y las decisiones en § 6; nada del bloque 1 se
+modifica salvo `metricas_plataforma()`, que ahora cuenta trabajos de cualquier
+tipo.
+
 ---
 
 ## 1 · Definiciones
@@ -54,6 +64,11 @@ un motivo.
 | `scripts/backfill-tc.mjs` | (código) | Carga el histórico del tipo de cambio oficial. Se corre a mano. |
 | `lib/fidelli/eventos.ts` | (código) | Los catálogos de origen y de motivo de suspensión, con sus etiquetas. |
 | R31 en `supabase/verificaciones.sql` · `scripts/regresion-metricas.sh` | (red) | Las pruebas y su rotura a mano. |
+| `metricas_plataforma()` (redefinida: trabajos de cualquier tipo, claves `trabajos_mes`, `acumulado`, `primer_trabajo`, `series`), `salud_tenants()`, `trabajos_semanales(p_lubricentro_id, p_semanas)`, `indicadores_tenants()`, `resumen_admin()` | `20260923100000_resumen_admin.sql` | **Bloque 2.** Lo que leen el Resumen y el listado. Todas invoker con guarda `soy_superadmin()` (42501). |
+| `lib/fidelli/objetivo.ts` | (código, bloque 2) | El objetivo de MRR en USD mes a mes hasta 2028-03 y la referencia de US$ 10.000. Es la meta; se cambia a mano. |
+| `lib/fidelli/resumen.ts`, `lib/fidelli/listado.ts`, `lib/fidelli/historial.ts` | (código, bloque 2) | Los contratos de `resumen_admin()`, el cruce de las lecturas del listado y los filtros de la URL, y la traducción de `tenant_eventos` a oraciones. |
+| `app/fidelli/page.tsx` (Resumen), `app/fidelli/lubricentros/page.tsx` (listado), `components/fidelli/{franja-resumen,grafico-mrr,alertas,tabla-lubricentros,filtros-listado,chip,sparkline}.tsx`, `components/fidelli/ficha/tab-historial.tsx` | (código, bloque 2) | Las pantallas. |
+| R32 en `supabase/verificaciones.sql` · las nueve roturas de `scripts/regresion-metricas.sh` | (red, bloque 2) | La guarda, la exención de la salud vía `estado_atencion()`, los cortes, los tres tipos en las cuatro lecturas. |
 
 ---
 
@@ -241,6 +256,62 @@ select reconstruir_snapshots('2026-08-16', current_date - 1);
 
 ---
 
+### Decisiones del bloque 2 (23/09/2026)
+
+- **`indicadores_tenants()` no estaba en el brief** y se agregó al lado de
+  `salud_tenants()` y `trabajos_semanales()`: la fila del listado necesita el
+  MRR de `mrr_de_tenant()`, `es_activo()`, el estado del reloj, si el módulo
+  se cobra y los trabajos de 30 días, y la única alternativa era llamar
+  `mrr_de_tenant()` y `modulo_es_pago()` por fila desde la pantalla. Una
+  función, una llamada, todas las filas.
+- **`trabajos_semanales(p_lubricentro_id default null, p_semanas default 12)`**:
+  con null devuelve todos los tenants en una consulta (es lo que usa el
+  listado); con un id, uno. Semanas ISO (lunes) por `services.fecha`.
+- **La salud no repite la exención del 100%**: pregunta a `estado_atencion()`.
+  R32b lo prueba con la rotura que decide «cobro vencido» por la fecha.
+- **La alerta de Cresium mira la ÚLTIMA orden de cada tenant** (`EXPIRED` o
+  `PARTIAL`), no cualquier orden histórica: una orden vencida de hace tres
+  meses de un tenant que después pagó no es trabajo de hoy.
+- **El punto de «hoy» del gráfico de MRR es en vivo** (`mrr_plataforma()` y el
+  TC vigente): el snapshot de hoy recién existe mañana a las 00:10 y el
+  gráfico tiene que terminar en hoy. Se marca como `vivo` en el tooltip.
+- **La comparación del MRR de la franja es en pesos** (contra `mrr_ars` del
+  snapshot del último día del mes anterior); el dólar va al lado con su TC.
+- **La fila «Trial» de la pestaña Suscripción** se muestra solo si el estado
+  fue trial alguna vez. Lo exacto sería leerlo del evento `alta`, pero **el
+  evento `alta` del bloque 1 no guarda `estado`** (ver § 8): se usa que desde
+  `20260917140000` los tenants nacen activos, así que un tenant creado desde
+  esa fecha solo tuvo trial si está en trial hoy; para los anteriores vale la
+  inferencia de siempre.
+- **«Registró: Cresium»** cuando `pagos.origen = 'cresium'`; el select de
+  pagos solo suma `origen`.
+- **El chip «Sin origen» de la ficha lleva al listado filtrado por el slug**
+  (`/fidelli/lubricentros?q=slug`), porque el dialog Editar vive en la fila
+  del listado y no se duplicó en la ficha.
+- **`revalidatePath`**: donde decía `/fidelli` ahora se revalidan las dos
+  rutas (`/fidelli` y `/fidelli/lubricentros`): el Resumen también cambia
+  con un alta, un pago o una suspensión.
+- **GA4 y el Píxel de Meta no se montan en `/fidelli`**
+  (`components/tracking/etiquetas-fuera-del-admin.tsx`, por `pathname`). El
+  resolvedor de origen (`Tracking`) sigue montado: no manda nada.
+- **Con más de cinco tenants** en la misma alerta («no carga trabajos»,
+  «owner sin activar») va una sola línea con la cantidad y el link al listado
+  (filtrado por `?actividad=sin` en el primer caso; el segundo no tiene
+  filtro propio y lleva al listado entero).
+- **La tabla del listado tiene un ancho mínimo SOLO debajo de 768px**
+  (`min-w-[720px] md:min-w-0`): desde 768 es `table-layout: fixed` sin
+  mínimo, como pide el brief; en el celular las cinco columnas que quedan no
+  entran en 390px sin pisarse, así que la tabla scrollea dentro de su
+  tarjeta (el brief lo permite) con la columna del nombre pegada a la
+  izquierda. El body nunca scrollea en horizontal.
+- **`lib/fidelli/totales.ts` y `lib/fidelli/salud.ts` se borraron**: el MRR
+  de la pantalla sale de `mrr_plataforma()` / `mrr_de_tenant()` y la salud de
+  `salud_tenants()`. `abonoMensual()` / `totalDelPeriodo()` quedan en
+  `lib/fidelli/plan.ts` solo como preview del wizard y de Editar, con el
+  aviso escrito de que SQL es la fuente y de que no suman el módulo.
+
+---
+
 ## 7 · Lo que este bloque no toca
 
 Las cobranzas: `registrar_pago()`, `acreditar_deposito_cresium()`,
@@ -249,6 +320,21 @@ Las cobranzas: `registrar_pago()`, `acreditar_deposito_cresium()`,
 `crear_lubricentro()`, `fijar_alias_de_tenant()`,
 `alias_confirmado_por_cresium()`, las tablas `cresium_*`,
 `app/fidelli/cobranzas/**`, `app/api/cresium/**`, `lib/cresium/**`,
-`app/panel/(tras-onboarding)/suscripcion/**`, `lib/auth/cobranza.ts`,
-`lib/fidelli/plan.ts` y `lib/fidelli/totales.ts`. Solo se leen. La franja de
-`/fidelli` sigue mostrando el MRR viejo (sin módulos) hasta el bloque 2.
+`app/panel/(tras-onboarding)/suscripcion/**` y `lib/auth/cobranza.ts`. Solo
+se leen. (Hasta el bloque 2 la franja de `/fidelli` mostraba el MRR viejo, sin
+módulos, calculado en el navegador por `lib/fidelli/totales.ts`; ese archivo
+ya no existe y la franja lee `mrr_plataforma()`.)
+
+---
+
+## 8 · Lo que le falta al bloque 1 (avisos, no cambios)
+
+Encontrado al construir el bloque 2. Las funciones y tablas del bloque 1 no se
+modifican en el bloque 2; esto queda anotado para una migración propia.
+
+- **El evento `alta` no guarda el `estado` de la suscripción** (`trial` o
+  `activa`). Sin eso no se puede saber con exactitud si un tenant tuvo trial
+  alguna vez, y la fila «Trial» de la pestaña Suscripción usa una inferencia
+  (§ 6). Arreglo: sumar `'estado', v_sub.estado` al `despues` de
+  `tenant_evento_alta()` y un evento nuevo (o `cambio_plan` ampliado) cuando
+  `suscripciones.estado` cambie.

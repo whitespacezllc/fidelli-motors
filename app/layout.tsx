@@ -7,11 +7,7 @@ import {
   TITULO_PORTADA,
 } from "@/lib/seo";
 import { analiticaActiva } from "@/lib/analitica";
-import {
-  EtiquetaGoogle,
-  PixelMeta,
-  PixelMetaSinJs,
-} from "@/components/tracking/etiquetas";
+import { EtiquetasFueraDelAdmin } from "@/components/tracking/etiquetas-fuera-del-admin";
 import { Tracking } from "@/components/tracking/tracking";
 import "./globals.css";
 
@@ -88,17 +84,14 @@ export default function RootLayout({
             con la estrategia diferida de Next"). Cargan después de la
             hidratación, así que no tocan el LCP.
 
-            Van en el layout raíz, así que miden TODAS las superficies: la
-            landing, el blog, la vidriera del lubricentro, el cartón del
-            cliente y el panel. Para dejar alguna afuera, este bloque baja
-            al layout de las que sí se miden. */}
-        {analiticaActiva && (
-          <>
-            <EtiquetaGoogle />
-            <PixelMeta />
-            <PixelMetaSinJs />
-          </>
-        )}
+            Van en el layout raíz, así que miden la landing, el blog, la
+            vidriera del lubricentro, el cartón del cliente y el panel del
+            lubricentro. La única superficie que queda afuera es /fidelli:
+            somos nosotros mirando el admin, no una visita que medir, y
+            cada pantalla del admin contaría como tráfico. Lo resuelve el
+            componente por la ruta (pathname), sin duplicar este bloque en
+            otro layout. */}
+        {analiticaActiva && <EtiquetasFueraDelAdmin />}
       </body>
     </html>
   );
