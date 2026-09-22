@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Logo } from "@/components/marca/logo";
 import { EnlaceWhatsapp } from "@/components/tracking/enlace-whatsapp";
 import { LINKS_NAVBAR } from "@/lib/landing";
+import { DOCUMENTOS_LEGALES } from "@/lib/legal";
 
 // El pie, sobre blanco — el cierre queda arriba, sobre grafito.
 //
@@ -67,9 +68,15 @@ export function Pie() {
                 Ingresar al panel
               </Link>
             </li>
-            {/* Términos y Privacidad son rutas de la entrega 2. Se agregan
-                acá el día que existan — no antes, para no publicar un
-                enlace muerto en el pie. */}
+            {/* Los dos documentos legales, y nada más: ni una página más,
+                ni un banner. Todo lo demás vive adentro de esas dos. */}
+            {DOCUMENTOS_LEGALES.map((d) => (
+              <li key={d.slug}>
+                <Link href={d.ruta} className={CLASE_LINK}>
+                  {d.nombreCorto}
+                </Link>
+              </li>
+            ))}
           </ul>
         </nav>
       </div>
