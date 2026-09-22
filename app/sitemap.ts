@@ -4,6 +4,7 @@ import type { Database } from "@/lib/database.types";
 import { SITIO_URL, SLUGS_SIN_INDEXAR } from "@/lib/seo";
 import { obtenerArticulos } from "@/lib/blog/articulos";
 import { URL_BLOG, urlArticulo } from "@/lib/blog/seo";
+import { obtenerDocumentosLegales } from "@/lib/legal/documentos";
 
 // Se rearma como mucho una vez por hora: los lubricentros no se dan de
 // alta a un ritmo que justifique más.
@@ -24,6 +25,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // frontmatter, que es la fecha que también se muestra en la página.
   const articulos = await obtenerArticulos();
   const ultimaDelBlog = articulos.map((a) => a.actualizado).sort().at(-1);
+  // Los dos documentos legales, con su fecha de vigencia. Indexables y con
+  // la prioridad más baja: nadie llega a Fidelli buscando sus términos.
+  const legales = await obtenerDocumentosLegales();
 
   const portada: MetadataRoute.Sitemap = [
     {
@@ -43,6 +47,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       lastModified: new Date(a.actualizado),
       changeFrequency: "monthly" as const,
       priority: 0.7,
+    })),
+    ...legales.map((d) => ({
+      url: `${SITIO_URL}/${d.slug}`,
+      lastModified: new Date(d.vigencia),
+      changeFrequency: "yearly" as const,
+      priority: 0.3,
     })),
   ];
 

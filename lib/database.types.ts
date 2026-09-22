@@ -34,6 +34,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      aceptaciones_terminos: {
+        Row: {
+          aceptado_at: string
+          id: string
+          lubricentro_id: string
+          usuario_id: string
+          version: string
+        }
+        Insert: {
+          aceptado_at?: string
+          id?: string
+          lubricentro_id: string
+          usuario_id: string
+          version: string
+        }
+        Update: {
+          aceptado_at?: string
+          id?: string
+          lubricentro_id?: string
+          usuario_id?: string
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aceptaciones_terminos_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "aceptaciones_terminos_usuario_id_fkey"
+            columns: ["usuario_id"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cambios_override_plan: {
         Row: {
           cambiado_por: string
@@ -639,21 +678,21 @@ export type Database = {
           encontrada: boolean
           id: string
           lubricentro_id: string
-          patente: string
+          patente: string | null
         }
         Insert: {
           created_at?: string
           encontrada: boolean
           id?: string
           lubricentro_id: string
-          patente: string
+          patente?: string | null
         }
         Update: {
           created_at?: string
           encontrada?: boolean
           id?: string
           lubricentro_id?: string
-          patente?: string
+          patente?: string | null
         }
         Relationships: [
           {
@@ -681,6 +720,7 @@ export type Database = {
           pago_presentado_at: string | null
           plan_overrides: Json
           premio_omitido_at: string | null
+          purgado_at: string | null
           slug: string
           suspension_automatica: boolean
         }
@@ -699,6 +739,7 @@ export type Database = {
           pago_presentado_at?: string | null
           plan_overrides?: Json
           premio_omitido_at?: string | null
+          purgado_at?: string | null
           slug: string
           suspension_automatica?: boolean
         }
@@ -717,6 +758,7 @@ export type Database = {
           pago_presentado_at?: string | null
           plan_overrides?: Json
           premio_omitido_at?: string | null
+          purgado_at?: string | null
           slug?: string
           suspension_automatica?: boolean
         }
@@ -1240,6 +1282,57 @@ export type Database = {
           },
         ]
       }
+      purgas: {
+        Row: {
+          a_pedido: boolean
+          cancelada_at: string
+          conteos: Json
+          created_at: string
+          ejecutada_por: string | null
+          id: string
+          lubricentro_id: string
+          motivo: string | null
+          simulacion: boolean
+        }
+        Insert: {
+          a_pedido?: boolean
+          cancelada_at: string
+          conteos: Json
+          created_at?: string
+          ejecutada_por?: string | null
+          id?: string
+          lubricentro_id: string
+          motivo?: string | null
+          simulacion: boolean
+        }
+        Update: {
+          a_pedido?: boolean
+          cancelada_at?: string
+          conteos?: Json
+          created_at?: string
+          ejecutada_por?: string | null
+          id?: string
+          lubricentro_id?: string
+          motivo?: string | null
+          simulacion?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "purgas_ejecutada_por_fkey"
+            columns: ["ejecutada_por"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purgas_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       service_items: {
         Row: {
           cambiado: boolean
@@ -1583,8 +1676,79 @@ export type Database = {
           },
         ]
       }
+      supresiones_cliente: {
+        Row: {
+          cliente_id: string
+          created_at: string
+          id: string
+          lubricentro_id: string
+          motivo: string
+          suprimido_por: string
+        }
+        Insert: {
+          cliente_id: string
+          created_at?: string
+          id?: string
+          lubricentro_id: string
+          motivo: string
+          suprimido_por: string
+        }
+        Update: {
+          cliente_id?: string
+          created_at?: string
+          id?: string
+          lubricentro_id?: string
+          motivo?: string
+          suprimido_por?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supresiones_cliente_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supresiones_cliente_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supresiones_cliente_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_neumaticos"
+            referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "supresiones_cliente_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_service"
+            referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "supresiones_cliente_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supresiones_cliente_suprimido_por_fkey"
+            columns: ["suprimido_por"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       suscripciones: {
         Row: {
+          cancelada_at: string | null
           created_at: string
           descuento_pct: number
           estado: Database["public"]["Enums"]["estado_suscripcion"]
@@ -1596,6 +1760,7 @@ export type Database = {
           vencimiento: string
         }
         Insert: {
+          cancelada_at?: string | null
           created_at?: string
           descuento_pct?: number
           estado?: Database["public"]["Enums"]["estado_suscripcion"]
@@ -1607,6 +1772,7 @@ export type Database = {
           vencimiento: string
         }
         Update: {
+          cancelada_at?: string | null
           created_at?: string
           descuento_pct?: number
           estado?: Database["public"]["Enums"]["estado_suscripcion"]
@@ -2168,6 +2334,15 @@ export type Database = {
       }
     }
     Functions: {
+      aceptaciones_legales: {
+        Args: { l: Database["public"]["Tables"]["lubricentros"]["Row"] }
+        Returns: string[]
+      }
+      aceptar_terminos: { Args: { p_version: string }; Returns: undefined }
+      acepto_terminos_vigentes: {
+        Args: { p_lubricentro_id: string; p_version: string }
+        Returns: boolean
+      }
       acreditar_deposito_cresium: { Args: { p_payload: Json }; Returns: Json }
       activar_template: { Args: { p_template_id: string }; Returns: undefined }
       actualizar_lubricentro: {
@@ -2228,6 +2403,10 @@ export type Database = {
       alias_formato_valido: { Args: { p_alias: string }; Returns: boolean }
       alias_largo_maximo: { Args: never; Returns: number }
       alias_largo_minimo: { Args: never; Returns: number }
+      anonimizar_cliente: {
+        Args: { p_cliente_id: string; p_motivo: string }
+        Returns: undefined
+      }
       atencion_tenant: { Args: { p_lubricentro_id: string }; Returns: Json }
       bloqueo_de_alta_activo: { Args: never; Returns: boolean }
       buscar_vehiculo_por_patente: {
@@ -2569,6 +2748,30 @@ export type Database = {
           premio_id: string
           services_ciclo: number
         }[]
+      }
+      purgar_tenants_vencidos: {
+        Args: {
+          p_lubricentro_id?: string
+          p_motivo?: string
+          p_simular?: boolean
+        }
+        Returns: {
+          a_pedido: boolean
+          cancelada_at: string
+          conteos: Json
+          created_at: string
+          ejecutada_por: string | null
+          id: string
+          lubricentro_id: string
+          motivo: string | null
+          simulacion: boolean
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "purgas"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       recuperados_del_mes: {
         Args: {

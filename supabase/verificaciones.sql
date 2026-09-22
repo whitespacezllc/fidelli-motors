@@ -4349,3 +4349,840 @@ begin
   delete from lubricentros where id in (v_lub, v_otro, v_pago);
 end $$;
 -- <<< R26
+
+-- ============================================================
+-- R27 · Las páginas legales y la aceptación de los Términos
+--       (20260922100000 · 20260922110000)
+--
+--   a · Los cuatro slugs de las páginas legales —terminos, privacidad,
+--       legal, condiciones— están reservados: lo dice slug_reservado() Y
+--       lo hace cumplir el CHECK de lubricentros.
+--   b · aceptaciones_terminos es evidencia: los tres candados existen,
+--       están en ALWAYS, y un delete, un update y un truncate se rechazan.
+--   c · La única puerta: aceptar_terminos() escribe el tenant y el usuario
+--       DE LA SESIÓN, es idempotente por versión, guarda el historial (la
+--       fila de 1.0 sigue después de aceptar 1.1) y un superadmin no acepta.
+--   d · El predicado: false sin aceptación, true tras aceptar ESA versión,
+--       false para otra versión (subir VERSION_LEGAL vuelve a pedirla), y
+--       el demo exento por slug. El campo calculado devuelve las versiones.
+--   e · El aislamiento: un owner lee CERO filas de otro tenant, y el campo
+--       calculado con un composite forjado (regla 18, con
+--       jsonb_populate_record y no con un join) devuelve vacío.
+--
+-- ⚠ Las escrituras corren en una subtransacción que se deshace a
+-- propósito al final: las aceptaciones de prueba no se pueden borrar
+-- —son evidencia, el candado lo impide— y no tienen por qué quedar.
+-- ============================================================
+
+-- >>> R27
+do $$
+declare
+  v_slug     text;
+  v_lub      uuid;
+  v_uid      uuid := gen_random_uuid();
+  v_demo     uuid;
+  v_demo_own uuid;
+  v_super    uuid;
+  v_n        integer;
+  v_vers     text[];
+begin
+  select id into v_demo from lubricentros where slug = 'demo';
+  select u.id into v_demo_own from usuarios u
+   where u.lubricentro_id = v_demo and u.rol = 'owner' limit 1;
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  if v_demo is null or v_demo_own is null or v_super is null then
+    raise exception 'R27 SIN PISO: falta el demo, su owner o el superadmin del seed (ver supabase/seed.sql).';
+  end if;
+
+  -- ---------- a · Los slugs ----------
+  foreach v_slug in array array['terminos', 'privacidad', 'legal', 'condiciones'] loop
+    if not slug_reservado(v_slug) then
+      raise exception 'R27a EL SLUG «%» NO ESTÁ RESERVADO: un lubricentro podría registrarlo y pisar una página legal de la superficie comercial. Toda ruta nueva de nivel superior se agrega a slug_reservado() en el mismo PR que la crea (migración 20260922100000).', v_slug;
+    end if;
+
+    begin
+      insert into lubricentros (nombre, slug) values ('Slug R27', v_slug);
+      raise exception 'R27a: la constraint slug_no_reservado dejó entrar el slug «%». slug_reservado() lo reserva pero el CHECK de lubricentros no lo está usando.', v_slug;
+    exception
+      when check_violation then null; -- exactamente lo esperado
+    end;
+  end loop;
+
+  -- ---------- El piso: un tenant nuevo con su owner ----------
+  -- No es el demo (está exento) y no es el de otro bloque: se crea acá y
+  -- se borra al final. El owner entra por auth.users como en el seed, así
+  -- el trigger handle_new_user() le crea la fila de usuarios.
+  insert into lubricentros (nombre, slug) values ('Legal R27', 'legal-r27')
+    returning id into v_lub;
+
+  insert into auth.users (
+    id, instance_id, email, encrypted_password, email_confirmed_at,
+    created_at, updated_at, aud, role, raw_app_meta_data, raw_user_meta_data,
+    confirmation_token, recovery_token, email_change_token_new, email_change
+  ) values (
+    v_uid, '00000000-0000-0000-0000-000000000000',
+    'r27@fidellimotors.app', extensions.crypt('r27', extensions.gen_salt('bf')), now(),
+    now(), now(), 'authenticated', 'authenticated',
+    '{"provider":"email","providers":["email"]}'::jsonb,
+    jsonb_build_object('rol', 'owner', 'nombre', 'Owner R27', 'lubricentro_id', v_lub),
+    '', '', '', ''
+  );
+
+  if not exists (
+    select 1 from usuarios where id = v_uid and lubricentro_id = v_lub and rol = 'owner'
+  ) then
+    raise exception 'R27 SIN PISO: el trigger de auth no creó el owner de prueba.';
+  end if;
+
+  -- ---------- b · Los candados, en el catálogo ----------
+  select count(*) into v_n from pg_trigger
+   where tgrelid = 'aceptaciones_terminos'::regclass and not tgisinternal;
+  if v_n <> 3 then
+    raise exception 'R27b FALTAN CANDADOS: aceptaciones_terminos tiene % trigger(s) y necesita 3 (borrado, edición, truncate). Sin los tres no es evidencia: es un log.', v_n;
+  end if;
+
+  if not exists (
+    select 1 from pg_trigger
+     where tgrelid = 'aceptaciones_terminos'::regclass
+       and not tgisinternal
+       and (tgtype & 32) = 32          -- 32 = TRUNCATE en pg_trigger.tgtype
+  ) then
+    raise exception 'R27b NO HAY CANDADO DE TRUNCATE: el de borrado por fila no se despierta con un truncate, y la tabla entera se vacía en una línea.';
+  end if;
+
+  select count(*) into v_n from pg_trigger
+   where tgrelid = 'aceptaciones_terminos'::regclass
+     and not tgisinternal
+     and tgenabled = 'A';             -- 'A' = ALWAYS · 'O' = ORIGIN (el default)
+  if v_n <> 3 then
+    raise exception 'R27b LOS CANDADOS TIENEN UNA PERILLA DE APAGADO AL LADO: % de 3 triggers de aceptaciones_terminos están en ALWAYS. Los que quedaron en ORIGIN se apagan enteros con `set session_replication_role = replica`. Es una línea `alter table aceptaciones_terminos enable always trigger <nombre>` por candado.', v_n;
+  end if;
+
+  -- ---------- c · d · e · Las escrituras, que se deshacen al final ----------
+  begin
+    -- Sin aceptar nada: pendiente.
+    if acepto_terminos_vigentes(v_lub, '1.0') then
+      raise exception 'R27d: un tenant nuevo, sin ninguna aceptación, da por aceptada la versión 1.0. El gate no le pediría nada a nadie.';
+    end if;
+
+    -- Como el owner del tenant nuevo.
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_uid, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+
+    select aceptaciones_legales(l) into v_vers from lubricentros l where l.id = v_lub;
+    if v_vers is distinct from '{}'::text[] then
+      raise exception 'R27d: el campo calculado de un tenant sin aceptaciones devolvió % (esperaba vacío).', v_vers;
+    end if;
+
+    perform aceptar_terminos('1.0');
+    perform aceptar_terminos('1.0'); -- el doble toque: idempotente
+
+    if not acepto_terminos_vigentes(v_lub, '1.0') then
+      raise exception 'R27c EL OWNER ACEPTÓ Y NO QUEDÓ REGISTRADO: acepto_terminos_vigentes(1.0) sigue en false después de aceptar_terminos(''1.0''). El modal volvería en cada request.';
+    end if;
+
+    -- La versión cuenta: 1.1 no está aceptada aunque 1.0 sí.
+    if acepto_terminos_vigentes(v_lub, '1.1') then
+      raise exception 'R27d LA VERSIÓN NO CUENTA: con la 1.0 aceptada, la 1.1 da por aceptada. Subir VERSION_LEGAL no volvería a pedirle la aceptación a nadie, y un texto nuevo quedaría "aceptado" por gente que nunca lo leyó.';
+    end if;
+
+    perform aceptar_terminos('1.1');
+
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+
+    -- Historial, no una columna: dos filas, y la de 1.0 sigue ahí.
+    select count(*) into v_n from aceptaciones_terminos where lubricentro_id = v_lub;
+    if v_n <> 2 then
+      raise exception 'R27c: después de aceptar 1.0 (dos veces) y 1.1 hay % fila(s) y tenían que ser 2. O la función no es idempotente por versión, o no guarda una fila por versión.', v_n;
+    end if;
+    if not exists (
+      select 1 from aceptaciones_terminos where lubricentro_id = v_lub and version = '1.0'
+    ) then
+      raise exception 'R27c EL HISTORIAL SE PERDIÓ: aceptar la 1.1 se llevó la fila de la 1.0. Es historial, no una columna.';
+    end if;
+    if exists (
+      select 1 from aceptaciones_terminos
+       where lubricentro_id = v_lub and usuario_id is distinct from v_uid
+    ) then
+      raise exception 'R27c: la aceptación quedó registrada con OTRO usuario que el de la sesión.';
+    end if;
+    if exists (
+      select 1 from aceptaciones_terminos
+       where usuario_id = v_uid and lubricentro_id is distinct from v_lub
+    ) then
+      raise exception 'R27c: la aceptación quedó registrada en OTRO tenant que el de la sesión.';
+    end if;
+
+    select aceptaciones_legales(l) into v_vers from lubricentros l where l.id = v_lub;
+    if v_vers is distinct from array['1.0', '1.1'] then
+      raise exception 'R27d: el campo calculado devolvió % y esperaba {1.0,1.1}. Es lo que viaja en la sesión: si miente, el gate miente.', v_vers;
+    end if;
+
+    -- Un superadmin no tiene tenant y no acepta nada.
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+      perform aceptar_terminos('1.0');
+      raise exception 'R27c: un superadmin aceptó los Términos. No tiene tenant: ¿en nombre de quién quedó la fila?';
+    exception
+      when insufficient_privilege then null;
+    end;
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+
+    -- El demo, exento por slug, con una versión que nadie aceptó nunca.
+    if not acepto_terminos_vigentes(v_demo, '9.9') then
+      raise exception 'R27d EL DEMO NO ESTÁ EXENTO: un prospecto mirando la demo se comería el modal de los Términos. La exención es por slug (''demo''), no por descuento ni por plan.';
+    end if;
+
+    -- ---------- e · El aislamiento, como el owner del demo ----------
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_demo_own, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+
+    select count(*) into v_n from aceptaciones_terminos where lubricentro_id = v_lub;
+    if v_n <> 0 then
+      raise exception 'R27e: el owner del demo lee % aceptación(es) de otro tenant. El RLS de aceptaciones_terminos no recorta.', v_n;
+    end if;
+
+    -- El composite forjado (regla 18): con jsonb_populate_record y no con
+    -- un join, porque leer la fila del vecino ya lo bloquea el RLS y la
+    -- versión con join pasaría en verde aunque la función fuera definer.
+    select aceptaciones_legales(
+      jsonb_populate_record(null::lubricentros, jsonb_build_object('id', v_lub))
+    ) into v_vers;
+    if v_vers is distinct from '{}'::text[] then
+      raise exception 'R27e EL CAMPO CALCULADO ES UNA PUERTA: con un composite forjado con el uuid de otro tenant devolvió %. Tiene que ser SECURITY INVOKER para que el RLS deje la subconsulta vacía (regla 18 de CLAUDE.md).', v_vers;
+    end if;
+
+    if acepto_terminos_vigentes(v_lub, '1.0') then
+      raise exception 'R27e: el predicado le contesta al owner del demo por las aceptaciones de otro tenant.';
+    end if;
+
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+
+    -- ---------- b · Los candados, en acción ----------
+    begin
+      delete from aceptaciones_terminos where lubricentro_id = v_lub;
+      raise exception 'R27b LA EVIDENCIA SE PUEDE BORRAR: un delete sobre aceptaciones_terminos pasó. Es la respuesta al día que un cliente diga «yo nunca acepté eso»: sin candado no es evidencia.';
+    exception
+      when sqlstate 'P0001' then
+        if sqlerrm not like '%aceptacion_no_se_borra%' then raise; end if;
+    end;
+
+    begin
+      update aceptaciones_terminos set version = '0.9' where lubricentro_id = v_lub;
+      raise exception 'R27b LA EVIDENCIA SE PUEDE EDITAR: un update sobre aceptaciones_terminos pasó. Una fila editada sigue pareciendo evidencia sin serlo.';
+    exception
+      when sqlstate 'P0001' then
+        if sqlerrm not like '%aceptacion_no_se_edita%' then raise; end if;
+    end;
+
+    begin
+      truncate aceptaciones_terminos;
+      raise exception 'R27b LA EVIDENCIA SE PUEDE VACIAR: un truncate sobre aceptaciones_terminos pasó. El contrato de todos los tenants, borrado en una línea.';
+    exception
+      when sqlstate 'P0001' then
+        if sqlerrm not like '%aceptacion_no_se_vacia%' then raise; end if;
+    end;
+
+    -- Todo lo escrito en este bloque se deshace acá. Cualquier otra
+    -- excepción de arriba NO se atrapa: sube y pone el reset en rojo.
+    raise exception 'rollback_r27' using errcode = 'P0027';
+  exception
+    when sqlstate 'P0027' then
+      execute 'reset role';
+      perform set_config('request.jwt.claims', '{}', true);
+  end;
+
+  if exists (select 1 from aceptaciones_terminos where lubricentro_id = v_lub) then
+    raise exception 'R27 SIN PISO: la subtransacción no deshizo las aceptaciones de prueba.';
+  end if;
+
+  -- ---------- La limpieza ----------
+  delete from auth.users where id = v_uid;   -- cascade → usuarios
+  delete from lubricentros where id = v_lub; -- config_neumaticos cae en cascada
+end $$;
+-- <<< R27
+
+-- ============================================================
+-- R28 · Las consultas sin resultado no guardan la patente
+--       (20260922120000 · 20260922121000)
+--
+--   a · Después del seed no queda UNA fila con `not encontrada` y patente:
+--       el backfill y el trigger cubren también las cuatro del seed.
+--   b · El índice de leads no existe; el CHECK y el trigger sí.
+--   c · get_carton() con una patente que no existe registra la consulta
+--       CON patente null; con una que existe, la guarda (es la métrica del
+--       % de vehículos escaneados).
+--   d · Un insert directo sin resultado y con patente: el trigger la anula.
+--   e · La métrica sigue viva: `leads` de resumen_inicio cuenta las
+--       consultas sin resultado igual que antes.
+--
+-- El mensaje de WhatsApp de "no encontramos tu patente" no se prueba acá
+-- porque no toca la base: la patente viaja en la URL (?nohay=) y
+-- components/cliente/patente-no-encontrada.tsx la lee de ahí.
+-- ============================================================
+
+-- >>> R28
+do $$
+declare
+  v_demo   uuid;
+  v_own    uuid;
+  -- now() y no clock_timestamp(): created_at nace con now(), que es el
+  -- inicio de la transacción del reset, anterior a cualquier reloj de pared
+  -- leído acá adentro.
+  v_desde  timestamptz := now();
+  v_n      integer;
+  v_antes  integer;
+  v_id     uuid;
+  v_pat    text;
+  v_leads  integer;
+begin
+  select id into v_demo from lubricentros where slug = 'demo';
+  select id into v_own from usuarios where lubricentro_id = v_demo and rol = 'owner' limit 1;
+  if v_demo is null or v_own is null then
+    raise exception 'R28 SIN PISO: falta el demo o su owner.';
+  end if;
+
+  -- ---------- a · el estado después del seed ----------
+  select count(*) into v_n from landing_busquedas where not encontrada and patente is not null;
+  if v_n <> 0 then
+    raise exception 'R28a HAY % CONSULTA(S) SIN RESULTADO CON LA PATENTE GUARDADA. La Política de Privacidad dice "si la patente no está cargada en ese lubricentro, no la guardamos": o el backfill de 20260922121000 no corrió, o el trigger landing_busquedas_sin_patente dejó pasar un insert (seed_demo inserta cuatro).', v_n;
+  end if;
+
+  -- ---------- b · el catálogo ----------
+  if exists (select 1 from pg_class where relname = 'landing_busquedas_leads_idx') then
+    raise exception 'R28b: el índice landing_busquedas_leads_idx sigue existiendo. Era el índice de los leads por patente; sin patentes no tiene qué indexar y su presencia dice que la captura sigue.';
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'busqueda_sin_resultado_sin_patente' and conrelid = 'landing_busquedas'::regclass
+  ) then
+    raise exception 'R28b: falta el CHECK busqueda_sin_resultado_sin_patente. Es la segunda defensa: sin él, apagar el trigger vuelve a guardar patentes.';
+  end if;
+  if not exists (
+    select 1 from pg_trigger
+     where tgname = 'landing_busquedas_sin_patente' and tgrelid = 'landing_busquedas'::regclass
+  ) then
+    raise exception 'R28b: falta el trigger landing_busquedas_sin_patente. Sin él, cualquier insert con encontrada = false y patente (el CHECK lo rechaza) hace fallar get_carton entero: la vidriera deja de responder a las patentes que no existen.';
+  end if;
+
+  -- ---------- c · get_carton, las dos ramas ----------
+  if exists (select 1 from vehiculos where lubricentro_id = v_demo and patente_normalizada = 'ZZ999ZZ') then
+    raise exception 'R28c SIN PISO: ZZ999ZZ existe en el demo.';
+  end if;
+  select count(*) into v_antes from landing_busquedas where lubricentro_id = v_demo and not encontrada;
+  perform get_carton('demo', 'ZZ999ZZ');
+  select count(*) into v_n from landing_busquedas where lubricentro_id = v_demo and not encontrada;
+  if v_n <> v_antes + 1 then
+    raise exception 'R28c: get_carton no registró la consulta sin resultado. La métrica de escaneo se apagó.';
+  end if;
+  if exists (select 1 from landing_busquedas where not encontrada and patente is not null) then
+    raise exception 'R28c LA VIDRIERA SIGUE GUARDANDO LA PATENTE DE UNA CONSULTA SIN RESULTADO. Es la patente de alguien que no es cliente de nadie, y la política promete no guardarla.';
+  end if;
+
+  select patente_normalizada into v_pat from vehiculos where lubricentro_id = v_demo order by created_at limit 1;
+  perform get_carton('demo', v_pat);
+  if not exists (
+    select 1 from landing_busquedas
+     where lubricentro_id = v_demo and created_at >= v_desde and encontrada and patente = v_pat
+  ) then
+    raise exception 'R28c: una consulta CON resultado no quedó con su patente (%). El porcentaje de vehículos escaneados del Inicio se calcula cruzando esa patente contra la flota: sin ella, la métrica se va a cero.', v_pat;
+  end if;
+
+  -- ---------- d · el trigger, por la puerta directa ----------
+  insert into landing_busquedas (lubricentro_id, patente, encontrada)
+  values (v_demo, 'AB123CD', false) returning id into v_id;
+  if (select patente from landing_busquedas where id = v_id) is not null then
+    raise exception 'R28d: un insert directo con encontrada = false guardó la patente. El trigger no la anula.';
+  end if;
+
+  -- ---------- e · la métrica del Inicio ----------
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  select (resumen_inicio(p_sucursal_id => null)->'landing'->>'leads')::integer into v_leads;
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  select count(*) into v_n from landing_busquedas
+   where lubricentro_id = v_demo and not encontrada
+     and created_at >= now() - interval '12 months';
+  if v_leads is distinct from v_n then
+    raise exception 'R28e: resumen_inicio cuenta % consulta(s) sin resultado y en la tabla hay %. Sin la patente, la métrica tenía que seguir igual.', v_leads, v_n;
+  end if;
+
+  -- ---------- La limpieza ----------
+  delete from landing_busquedas where lubricentro_id = v_demo and created_at >= v_desde;
+end $$;
+-- <<< R28
+
+-- ============================================================
+-- R29 · La retención de 12 meses y la purga (20260922140000)
+--
+--   a · `cancelada_at` se escribe al pasar a cancelada y se limpia al
+--       volver; retro-datarla sin tocar el estado es posible.
+--   b · La SIMULACIÓN escribe en `purgas` (con conteos y el logo pendiente)
+--       y no borra nada ni toca `lubricentros`.
+--   c · La purga REAL borra las tablas listadas, no toca `pagos`,
+--       `suscripciones`, `sucursales` ni `usuarios`, deja `activo = false`
+--       y `purgado_at`, y respeta el plazo: el cancelado hace 11 meses y el
+--       demo no se tocan.
+--   d · Una segunda corrida no purga dos veces.
+--   e · A pedido: sin motivo no; el demo no; ya purgado no; con motivo sí,
+--       auditado con quién.
+--   f · Un owner no la ejecuta. El reloj está programado EN SIMULACIÓN.
+--       `purgas` tiene los tres candados en ALWAYS.
+--
+-- ⚠ Las purgas corren en una subtransacción que se deshace: sus filas en
+-- `purgas` son evidencia y no se pueden borrar.
+-- ============================================================
+
+-- >>> R29
+do $$
+declare
+  v_plan       uuid;
+  v_super      uuid;
+  v_demo       uuid;
+  v_lub        uuid;
+  v_uid        uuid := gen_random_uuid();
+  v_suc        uuid;
+  v_sus        uuid;
+  v_rec        uuid;
+  v_cli        uuid;
+  v_veh        uuid;
+  v_prod       uuid;
+  v_serv       uuid;
+  v_premio     uuid;
+  v_n          integer;
+  v_purga      purgas;
+  v_demo_antes bigint;
+  v_lub_fila   lubricentros;
+begin
+  select id into v_plan  from planes where nombre = 'Pro' and not heredado;
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  select id into v_demo  from lubricentros where slug = 'demo';
+  if v_plan is null or v_super is null or v_demo is null then
+    raise exception 'R29 SIN PISO: falta el plan Pro, el superadmin o el demo.';
+  end if;
+
+  -- ---------- f · el catálogo: candados y reloj ----------
+  select count(*) into v_n from pg_trigger
+   where tgrelid = 'purgas'::regclass and not tgisinternal and tgenabled = 'A';
+  if v_n <> 3 then
+    raise exception 'R29f: purgas tiene % de 3 candados en ALWAYS. El libro de purgas es evidencia: borrado, edición y truncate se rechazan siempre.', v_n;
+  end if;
+  if not exists (
+    select 1 from pg_trigger where tgrelid = 'purgas'::regclass and not tgisinternal and (tgtype & 32) = 32
+  ) then
+    raise exception 'R29f: purgas no tiene candado de truncate.';
+  end if;
+
+  select count(*) into v_n from cron.job
+   where jobname = 'purgar-tenants-vencidos' and active
+     and command like '%purgar_tenants_vencidos(true)%';
+  if v_n <> 1 then
+    raise exception 'R29f EL RELOJ NO ESTÁ PROGRAMADO EN SIMULACIÓN: cron.job no tiene el job purgar-tenants-vencidos con purgar_tenants_vencidos(true). El primer ciclo es solo contar: se pasa a real a mano, después de ver una simulación correcta.';
+  end if;
+
+  -- ---------- El piso: un tenant cancelado hace 13 meses, con de todo ----------
+  insert into lubricentros (nombre, slug, onboarding_completado_at, bienvenida_vista_at, pago_presentado_at)
+  values ('Purga R29', 'purga-r29', now(), now(), now()) returning id into v_lub;
+  insert into config_experiencia (lubricentro_id, logo_url)
+  values (v_lub, 'https://x.supabase.co/storage/v1/object/public/logos/' || v_lub || '/logo.png');
+  insert into sucursales (lubricentro_id, nombre) values (v_lub, 'Casa Central') returning id into v_suc;
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, inicio, vencimiento)
+  values (v_lub, v_plan, 'activa', 'mensual', current_date - 400, current_date - 370)
+  returning id into v_sus;
+
+  -- ---------- a · cancelada_at ----------
+  if (select cancelada_at from suscripciones where id = v_sus) is not null then
+    raise exception 'R29a: una suscripción activa nació con cancelada_at escrito.';
+  end if;
+  update suscripciones set estado = 'cancelada' where id = v_sus;
+  if (select cancelada_at from suscripciones where id = v_sus) is null then
+    raise exception 'R29a EL TRIGGER NO ESCRIBIÓ cancelada_at al pasar a cancelada. Sin fecha, los 12 meses no se cuentan nunca y la promesa de borrar queda en el papel.';
+  end if;
+  update suscripciones set estado = 'activa' where id = v_sus;
+  if (select cancelada_at from suscripciones where id = v_sus) is not null then
+    raise exception 'R29a: volvió a activa y cancelada_at quedó escrito. El reloj de los 12 meses seguiría corriendo para un tenant que volvió.';
+  end if;
+  update suscripciones set estado = 'cancelada' where id = v_sus;
+  -- Retro-datar SIN tocar el estado: el trigger no se despierta.
+  update suscripciones set cancelada_at = now() - interval '13 months' where id = v_sus;
+  if (select cancelada_at from suscripciones where id = v_sus) > now() - interval '12 months' then
+    raise exception 'R29a: retro-datar cancelada_at sin tocar el estado la pisó. Una cancelación real del pasado no se puede registrar.';
+  end if;
+
+  insert into auth.users (
+    id, instance_id, email, encrypted_password, email_confirmed_at,
+    created_at, updated_at, aud, role, raw_app_meta_data, raw_user_meta_data,
+    confirmation_token, recovery_token, email_change_token_new, email_change
+  ) values (
+    v_uid, '00000000-0000-0000-0000-000000000000',
+    'r29@fidellimotors.app', extensions.crypt('r29', extensions.gen_salt('bf')), now(),
+    now(), now(), 'authenticated', 'authenticated',
+    '{"provider":"email","providers":["email"]}'::jsonb,
+    jsonb_build_object('rol', 'owner', 'nombre', 'Owner R29', 'lubricentro_id', v_lub),
+    '', '', '', ''
+  );
+
+  insert into clientes (lubricentro_id, nombre, telefono, email)
+  values (v_lub, 'Persona R29', '351 555 0290', 'r29@ejemplo.com') returning id into v_cli;
+  insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+  values (v_lub, v_cli, 'AB290CD', 'Fiat', 'Cronos') returning id into v_veh;
+  insert into productos (lubricentro_id, categoria, nombre)
+  values (v_lub, 'aceite', 'Aceite R29') returning id into v_prod;
+  insert into premios (lubricentro_id, meta_services, descripcion)
+  values (v_lub, 3, 'Premio R29') returning id into v_premio;
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, fecha, kilometros, aceite_tipo, prox_service_km)
+  values (v_lub, v_suc, v_veh, v_uid, current_date - 380, 50000, '10W40', 60000) returning id into v_serv;
+  insert into service_items (service_id, lubricentro_id, item_tipo) values (v_serv, v_lub, 'filtro_aceite');
+  insert into canjes (lubricentro_id, vehiculo_id, premio_id, service_id) values (v_lub, v_veh, v_premio, v_serv);
+  insert into contactos (lubricentro_id, vehiculo_id, usuario_id, estado) values (v_lub, v_veh, v_uid, 'vencido');
+  insert into notas_vehiculo (lubricentro_id, vehiculo_id, usuario_id, contenido) values (v_lub, v_veh, v_uid, 'Nota R29');
+  insert into trabajos_pendientes (lubricentro_id, vehiculo_id, usuario_id, descripcion, objetivo_km) values (v_lub, v_veh, v_uid, 'Pendiente de prueba R29', 60000);
+  insert into landing_busquedas (lubricentro_id, patente, encontrada) values (v_lub, 'AB290CD', true);
+  perform sembrar_templates(v_lub, 'Purga R29');
+  insert into pagos (lubricentro_id, suscripcion_id, registrado_por, periodo_desde, periodo_hasta, monto, fecha_pago)
+  values (v_lub, v_sus, v_super, current_date - 400, current_date - 370, 49000, current_date - 400);
+
+  -- Y uno cancelado hace 11 meses, que NO tiene que tocarse.
+  insert into lubricentros (nombre, slug) values ('Reciente R29', 'reciente-r29') returning id into v_rec;
+  insert into config_experiencia (lubricentro_id) values (v_rec);
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, inicio, vencimiento)
+  values (v_rec, v_plan, 'cancelada', 'mensual', current_date - 340, current_date - 310);
+  update suscripciones set cancelada_at = now() - interval '11 months' where lubricentro_id = v_rec;
+  insert into clientes (lubricentro_id, nombre, telefono) values (v_rec, 'Persona reciente', '351 555 0291');
+
+  select count(*) into v_demo_antes from clientes where lubricentro_id = v_demo;
+
+  begin
+    -- EL DEMO, CANCELADO HACE 13 MESES A PROPÓSITO: es la única forma de
+    -- probar que la exención por slug existe. Con la suscripción del demo
+    -- activa, sacarle el `slug <> 'demo'` a la purga no cambia nada y la
+    -- prueba pasaría en verde con la exención borrada. Se deshace con el
+    -- rollback de este bloque.
+    update suscripciones set estado = 'cancelada' where lubricentro_id = v_demo;
+    update suscripciones set cancelada_at = now() - interval '13 months' where lubricentro_id = v_demo;
+
+    -- ---------- b · la simulación ----------
+    select count(*) into v_n from purgar_tenants_vencidos(true);
+    if v_n <> 1 then
+      raise exception 'R29b: la simulación devolvió % tenant(s) y tenía que ser 1 (solo el cancelado hace 13 meses: ni el de 11 meses ni el demo, que está cancelado hace 13 a propósito).', v_n;
+    end if;
+    if exists (select 1 from purgas where lubricentro_id = v_demo) then
+      raise exception 'R29b EL DEMO ENTRÓ A LA PURGA: cancelado hace 13 meses, la simulación lo contó. El demo no se purga nunca — es la vidriera de las demos comerciales.';
+    end if;
+    select * into v_purga from purgas where lubricentro_id = v_lub order by created_at desc limit 1;
+    if not found or not v_purga.simulacion then
+      raise exception 'R29b LA SIMULACIÓN NO ESCRIBIÓ EN purgas. Evidencia primero: sin la fila, Santiago no tiene qué revisar antes de pasar el reloj a real.';
+    end if;
+    if (v_purga.conteos->>'clientes')::integer <> 1
+       or (v_purga.conteos->>'services')::integer <> 1
+       or (v_purga.conteos->>'service_items')::integer <> 1
+       or (v_purga.conteos->>'canjes')::integer <> 1
+       or (v_purga.conteos->>'mensaje_templates')::integer < 1 then
+      raise exception 'R29b: los conteos de la simulación no son los de la base: %', v_purga.conteos;
+    end if;
+    if v_purga.conteos->>'logo_pendiente' is null then
+      raise exception 'R29b: el logo del tenant no quedó anotado en purgas.conteos. Desde SQL no se borra (storage.objects lo rechaza) y alguien tiene que borrarlo por la API.';
+    end if;
+    if (select count(*) from clientes where lubricentro_id = v_lub) <> 1
+       or (select count(*) from services where lubricentro_id = v_lub) <> 1 then
+      raise exception 'R29b LA SIMULACIÓN BORRÓ. p_simular = true solo cuenta.';
+    end if;
+    select * into v_lub_fila from lubricentros where id = v_lub;
+    if not v_lub_fila.activo or v_lub_fila.purgado_at is not null then
+      raise exception 'R29b: la simulación tocó la fila de lubricentros.';
+    end if;
+
+    -- ---------- c · la purga real ----------
+    select count(*) into v_n from purgar_tenants_vencidos(false);
+    if v_n <> 1 then
+      raise exception 'R29c: la purga real devolvió % tenant(s) y tenía que ser 1.', v_n;
+    end if;
+    if (select count(*) from clientes            where lubricentro_id = v_lub) <> 0
+       or (select count(*) from vehiculos        where lubricentro_id = v_lub) <> 0
+       or (select count(*) from services         where lubricentro_id = v_lub) <> 0
+       or (select count(*) from service_items    where lubricentro_id = v_lub) <> 0
+       or (select count(*) from canjes           where lubricentro_id = v_lub) <> 0
+       or (select count(*) from contactos        where lubricentro_id = v_lub) <> 0
+       or (select count(*) from notas_vehiculo   where lubricentro_id = v_lub) <> 0
+       or (select count(*) from trabajos_pendientes where lubricentro_id = v_lub) <> 0
+       or (select count(*) from productos        where lubricentro_id = v_lub) <> 0
+       or (select count(*) from premios          where lubricentro_id = v_lub) <> 0
+       or (select count(*) from mensaje_templates where lubricentro_id = v_lub) <> 0
+       or (select count(*) from config_experiencia where lubricentro_id = v_lub) <> 0
+       or (select count(*) from config_neumaticos  where lubricentro_id = v_lub) <> 0
+       or (select count(*) from landing_busquedas  where lubricentro_id = v_lub) <> 0 then
+      raise exception 'R29c LA PURGA DEJÓ DATOS: alguna de las tablas listadas sigue con filas del tenant purgado.';
+    end if;
+    if (select count(*) from pagos where lubricentro_id = v_lub) <> 1 then
+      raise exception 'R29c LA PURGA BORRÓ pagos. Es contabilidad y se guarda el plazo fiscal.';
+    end if;
+    if (select count(*) from suscripciones where lubricentro_id = v_lub) <> 1
+       or (select count(*) from sucursales where lubricentro_id = v_lub) <> 1
+       or (select count(*) from usuarios where lubricentro_id = v_lub) <> 1 then
+      raise exception 'R29c: la purga borró suscripciones, sucursales o usuarios. Esos quedan.';
+    end if;
+    select * into v_lub_fila from lubricentros where id = v_lub;
+    if v_lub_fila.activo or v_lub_fila.purgado_at is null then
+      raise exception 'R29c: la fila de lubricentros no quedó con activo = false y purgado_at.';
+    end if;
+    if (select count(*) from purgas where lubricentro_id = v_lub and not simulacion) <> 1 then
+      raise exception 'R29c: la purga real no dejó su fila en purgas.';
+    end if;
+    if (select count(*) from clientes where lubricentro_id = v_rec) <> 1 then
+      raise exception 'R29c EL PLAZO NO RIGE: purgó a un tenant cancelado hace 11 meses. La política dice 12.';
+    end if;
+    if (select count(*) from clientes where lubricentro_id = v_demo) <> v_demo_antes then
+      raise exception 'R29c LA PURGA TOCÓ AL DEMO.';
+    end if;
+
+    -- ---------- d · dos veces no ----------
+    select count(*) into v_n from purgar_tenants_vencidos(false);
+    if v_n <> 0 then
+      raise exception 'R29d: la segunda corrida purgó % tenant(s). Uno purgado no se vuelve a purgar.', v_n;
+    end if;
+
+    -- ---------- e · a pedido, como superadmin ----------
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+
+    begin
+      perform purgar_tenants_vencidos(false, v_rec, null);
+      raise exception 'R29e: una purga a pedido SIN motivo pasó.';
+    exception when others then
+      if sqlerrm not like '%motivo_insuficiente%' then raise; end if;
+    end;
+    begin
+      perform purgar_tenants_vencidos(false, v_demo, 'Prueba R29 sobre el demo, que no se purga');
+      raise exception 'R29e EL DEMO SE PURGÓ a pedido.';
+    exception when others then
+      if sqlerrm not like '%demo_no_se_purga%' then raise; end if;
+    end;
+    begin
+      perform purgar_tenants_vencidos(false, v_lub, 'Prueba R29: purgar dos veces al mismo');
+      raise exception 'R29e: un tenant ya purgado se volvió a purgar a pedido.';
+    exception when others then
+      if sqlerrm not like '%ya_purgado%' then raise; end if;
+    end;
+
+    select count(*) into v_n from purgar_tenants_vencidos(false, v_rec, 'Pedido del titular por email, prueba R29');
+    if v_n <> 1 then
+      raise exception 'R29e: la purga a pedido de un cancelado hace 11 meses no corrió (%).', v_n;
+    end if;
+    select * into v_purga from purgas where lubricentro_id = v_rec order by created_at desc limit 1;
+    if not v_purga.a_pedido or v_purga.motivo not like 'Pedido del titular%' or v_purga.ejecutada_por is distinct from v_super then
+      raise exception 'R29e: la purga a pedido no quedó auditada con a_pedido, motivo y quién (%).', row_to_json(v_purga);
+    end if;
+    if (select count(*) from clientes where lubricentro_id = v_rec) <> 0 then
+      raise exception 'R29e: la purga a pedido no borró.';
+    end if;
+
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+
+    -- ---------- f · un owner no ----------
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_uid, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+      perform purgar_tenants_vencidos(true);
+      raise exception 'R29f: un OWNER corrió la purga (aunque sea en simulación).';
+    exception
+      when insufficient_privilege then null;
+    end;
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+
+    raise exception 'rollback_r29' using errcode = 'P0029';
+  exception
+    when sqlstate 'P0029' then
+      execute 'reset role';
+      perform set_config('request.jwt.claims', '{}', true);
+  end;
+
+  -- ---------- La limpieza (todo volvió con el rollback) ----------
+  delete from pagos              where lubricentro_id in (v_lub, v_rec);
+  delete from canjes             where lubricentro_id in (v_lub, v_rec);
+  delete from contactos          where lubricentro_id in (v_lub, v_rec);
+  delete from notas_vehiculo     where lubricentro_id in (v_lub, v_rec);
+  delete from trabajos_pendientes where lubricentro_id in (v_lub, v_rec);
+  delete from service_items      where lubricentro_id in (v_lub, v_rec);
+  delete from services           where lubricentro_id in (v_lub, v_rec);
+  delete from vehiculos          where lubricentro_id in (v_lub, v_rec);
+  delete from clientes           where lubricentro_id in (v_lub, v_rec);
+  delete from productos          where lubricentro_id in (v_lub, v_rec);
+  delete from premios            where lubricentro_id in (v_lub, v_rec);
+  delete from mensaje_templates  where lubricentro_id in (v_lub, v_rec);
+  delete from config_experiencia where lubricentro_id in (v_lub, v_rec);
+  delete from landing_busquedas  where lubricentro_id in (v_lub, v_rec);
+  delete from suscripciones      where lubricentro_id in (v_lub, v_rec);
+  delete from sucursales         where lubricentro_id in (v_lub, v_rec);
+  delete from auth.users where id = v_uid;
+  delete from lubricentros where id in (v_lub, v_rec);
+end $$;
+-- <<< R29
+
+-- ============================================================
+-- R30 · Supresión de un cliente final: anonimizar, no borrar (20260922130000)
+--
+--   a · El owner de OTRO tenant no puede, ni con el uuid en la mano.
+--   b · Sin motivo, no.
+--   c · El owner del tenant: nombre, teléfono, email y CUIT quedan en los
+--       sentinelas; el vehículo y el service quedan; la auditoría dice
+--       quién y por qué.
+--   d · La ficha sigue abriendo (vista_clientes lo devuelve) y el teléfono
+--       sentinela no tiene dígitos: WhatsApp apagado solo.
+--   e · Dos veces no. f · El libro no se escribe por fuera de la función.
+--   g · El superadmin también puede.
+-- ============================================================
+
+-- >>> R30
+do $$
+declare
+  v_demo     uuid;
+  v_own      uuid;
+  v_super    uuid;
+  v_suc      uuid;
+  v_cli      uuid;
+  v_cli2     uuid;
+  v_veh      uuid;
+  v_otro_lub uuid;
+  v_otro_uid uuid := gen_random_uuid();
+  v_c        clientes;
+  v_n        integer;
+begin
+  select id into v_demo  from lubricentros where slug = 'demo';
+  select id into v_own   from usuarios where lubricentro_id = v_demo and rol = 'owner' limit 1;
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  select id into v_suc   from sucursales where lubricentro_id = v_demo and activa order by created_at limit 1;
+  if v_demo is null or v_own is null or v_super is null or v_suc is null then
+    raise exception 'R30 SIN PISO: falta el demo, su owner, su sucursal o el superadmin.';
+  end if;
+
+  insert into clientes (lubricentro_id, nombre, telefono, email, cuit)
+  values (v_demo, 'Persona R30', '351 555 0300', 'r30@ejemplo.com', '20123456786') returning id into v_cli;
+  insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+  values (v_demo, v_cli, 'AB130CD', 'Fiat', 'Cronos') returning id into v_veh;
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, fecha, kilometros, aceite_tipo, prox_service_km)
+  values (v_demo, v_suc, v_veh, v_own, current_date - 30, 50000, '10W40', 60000);
+  insert into clientes (lubricentro_id, nombre, telefono)
+  values (v_demo, 'Persona R30 bis', '351 555 0301') returning id into v_cli2;
+
+  -- Otro tenant con su owner: el que no puede.
+  insert into lubricentros (nombre, slug) values ('Otro R30', 'otro-r30') returning id into v_otro_lub;
+  insert into auth.users (
+    id, instance_id, email, encrypted_password, email_confirmed_at,
+    created_at, updated_at, aud, role, raw_app_meta_data, raw_user_meta_data,
+    confirmation_token, recovery_token, email_change_token_new, email_change
+  ) values (
+    v_otro_uid, '00000000-0000-0000-0000-000000000000',
+    'r30@fidellimotors.app', extensions.crypt('r30', extensions.gen_salt('bf')), now(),
+    now(), now(), 'authenticated', 'authenticated',
+    '{"provider":"email","providers":["email"]}'::jsonb,
+    jsonb_build_object('rol', 'owner', 'nombre', 'Owner R30', 'lubricentro_id', v_otro_lub),
+    '', '', '', ''
+  );
+
+  -- ---------- a · otro owner ----------
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_otro_uid, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  begin
+    perform anonimizar_cliente(v_cli, 'Pedido del titular, prueba R30 desde otro tenant');
+    raise exception 'R30a EL OWNER DE OTRO TENANT ANONIMIZÓ UN CLIENTE AJENO. El guard tiene que comparar el tenant del cliente con mi_lubricentro_id().';
+  exception
+    when insufficient_privilege then null;
+  end;
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- ---------- b · c · el owner del tenant ----------
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  begin
+    perform anonimizar_cliente(v_cli, 'corto');
+    raise exception 'R30b: una supresión sin motivo pasó. El motivo es lo que queda registrado.';
+  exception when others then
+    if sqlerrm not like '%motivo_insuficiente%' then raise; end if;
+  end;
+
+  perform anonimizar_cliente(v_cli, 'Pedido del titular por email, prueba R30');
+
+  -- d · la ficha sigue abriendo para el owner
+  select count(*) into v_n from vista_clientes where id = v_cli;
+  if v_n <> 1 then
+    raise exception 'R30d: vista_clientes ya no devuelve al cliente suprimido. La ficha tiene que seguir abriendo: los trabajos son del lubricentro.';
+  end if;
+
+  -- e · dos veces no
+  begin
+    perform anonimizar_cliente(v_cli, 'Otra vez, prueba R30');
+    raise exception 'R30e: un cliente ya suprimido se volvió a suprimir (y a auditar).';
+  exception when others then
+    if sqlerrm not like '%cliente_ya_suprimido%' then raise; end if;
+  end;
+
+  -- f · el libro no se escribe por fuera
+  begin
+    insert into supresiones_cliente (lubricentro_id, cliente_id, motivo, suprimido_por)
+    values (v_demo, v_cli, 'directo, prueba R30', v_own);
+    raise exception 'R30f: un owner escribió supresiones_cliente por fuera de la función.';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  select * into v_c from clientes where id = v_cli;
+  if v_c.nombre <> 'Cliente eliminado' or v_c.telefono <> '-' or v_c.email is not null or v_c.cuit is not null then
+    raise exception 'R30c LA PERSONA NO DESAPARECIÓ: quedó nombre=«%», telefono=«%», email=«%», cuit=«%». Los sentinelas son "Cliente eliminado", "-", null, null (lib/clientes.ts los repite).',
+      v_c.nombre, v_c.telefono, v_c.email, v_c.cuit;
+  end if;
+  if v_c.telefono ~ '\d' then
+    raise exception 'R30d: el teléfono sentinela tiene dígitos y "A quién llamar" lo tomaría por un número de WhatsApp.';
+  end if;
+  if (select count(*) from services where vehiculo_id = v_veh) <> 1
+     or not exists (select 1 from vehiculos where id = v_veh and patente_normalizada = 'AB130CD') then
+    raise exception 'R30c LOS TRABAJOS SE FUERON CON LA PERSONA: el vehículo o el service del cliente suprimido no están. Anonimizar no es borrar.';
+  end if;
+  select count(*) into v_n from supresiones_cliente
+   where cliente_id = v_cli and suprimido_por = v_own and motivo like 'Pedido del titular%';
+  if v_n <> 1 then
+    raise exception 'R30c: la supresión no quedó auditada con quién y por qué (% fila(s)).', v_n;
+  end if;
+
+  -- ---------- g · el superadmin ----------
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  perform anonimizar_cliente(v_cli2, 'Pedido por email a Fidelli, prueba R30');
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+  if (select nombre from clientes where id = v_cli2) <> 'Cliente eliminado' then
+    raise exception 'R30g: el superadmin no pudo suprimir. El reclamo llega por email a Fidelli: esta es la puerta que se va a usar.';
+  end if;
+  if (select suprimido_por from supresiones_cliente where cliente_id = v_cli2) is distinct from v_super then
+    raise exception 'R30g: la supresión del superadmin no quedó firmada por él.';
+  end if;
+
+  -- ---------- La limpieza ----------
+  delete from supresiones_cliente where cliente_id in (v_cli, v_cli2);
+  delete from services where vehiculo_id = v_veh;
+  delete from vehiculos where id = v_veh;
+  delete from clientes where id in (v_cli, v_cli2);
+  delete from auth.users where id = v_otro_uid;
+  delete from lubricentros where id = v_otro_lub;
+end $$;
+-- <<< R30

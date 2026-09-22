@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { obtenerSesion } from "@/lib/auth/session";
 import { MODULOS_PAGOS } from "@/lib/planes";
 import { errorMotivoModulo, motivoDeModuloValido } from "@/lib/modulos";
+import type { EstadoSupresion } from "@/lib/clientes";
 
 async function exigirSuperadmin() {
   const sesion = await obtenerSesion();
@@ -35,6 +36,8 @@ const MENSAJES: Record<string, string> = {
   vehiculo_no_existe:
     "Ese vehículo ya no existe. Recargá la pantalla y buscalo de nuevo.",
   periodo_valido: "El período termina antes de empezar. Revisá las fechas.",
+  cliente_ya_suprimido: "Los datos de este cliente ya fueron eliminados.",
+  cliente_no_existe: "Ese cliente ya no existe. Recargá la ficha y buscalo de nuevo.",
 };
 
 function traducir(mensaje: string): string {
@@ -244,5 +247,45 @@ export async function fijarOverridePlan(
   }
 
   revalidatePath(`/fidelli/${datos.lubricentroId}`);
+  return { ok: true };
+}
+
+
+// ============================================================
+// Eliminar los datos personales de un cliente final — la puerta de Fidelli
+//
+// El reclamo llega por email a fidelli.motors@gmail.com y se resuelve desde
+// la lista de clientes de la ficha del tenant. Misma función de la base que
+// usa el owner desde su panel (anonimizar_cliente): pisa nombre, teléfono,
+// email y CUIT con sentinelas, deja los trabajos, y registra motivo y autor
+// en supresiones_cliente ANTES de tocar el dato. Mismo patrón que
+// corregirPatente, de arriba.
+// ============================================================
+export async function anonimizarClienteFidelli(
+  _prev: EstadoSupresion,
+  formData: FormData,
+): Promise<EstadoSupresion> {
+  await exigirSuperadmin();
+
+  const clienteId = String(formData.get("cliente_id") ?? "");
+  const lubricentroId = String(formData.get("lubricentro_id") ?? "");
+  const motivo = String(formData.get("motivo") ?? "").trim();
+
+  if (!clienteId) return { error: MENSAJES.cliente_no_existe };
+  if (motivo.length < 10) return { error: MENSAJES.motivo_insuficiente };
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("anonimizar_cliente", {
+    p_cliente_id: clienteId,
+    p_motivo: motivo,
+  });
+
+  if (error) return { error: traducir(error.message) };
+
+  revalidatePath(`/fidelli/${lubricentroId}`);
+  // Y las pantallas del lubricentro donde ese nombre aparecía.
+  revalidatePath("/panel/clientes");
+  revalidatePath(`/panel/clientes/${clienteId}`);
+  revalidatePath("/panel/proximos");
   return { ok: true };
 }
