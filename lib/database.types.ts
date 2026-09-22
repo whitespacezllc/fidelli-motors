@@ -717,6 +717,8 @@ export type Database = {
           id: string
           nombre: string
           onboarding_completado_at: string | null
+          origen: Database["public"]["Enums"]["origen_tenant"] | null
+          origen_detalle: string | null
           pago_presentado_at: string | null
           plan_overrides: Json
           premio_omitido_at: string | null
@@ -736,6 +738,8 @@ export type Database = {
           id?: string
           nombre: string
           onboarding_completado_at?: string | null
+          origen?: Database["public"]["Enums"]["origen_tenant"] | null
+          origen_detalle?: string | null
           pago_presentado_at?: string | null
           plan_overrides?: Json
           premio_omitido_at?: string | null
@@ -755,6 +759,8 @@ export type Database = {
           id?: string
           nombre?: string
           onboarding_completado_at?: string | null
+          origen?: Database["public"]["Enums"]["origen_tenant"] | null
+          origen_detalle?: string | null
           pago_presentado_at?: string | null
           plan_overrides?: Json
           premio_omitido_at?: string | null
@@ -1635,6 +1641,120 @@ export type Database = {
           },
         ]
       }
+      snapshots_diarios: {
+        Row: {
+          altas_dia: number
+          bajas_dia: number
+          created_at: string
+          escaneos_dia: number
+          fecha: string
+          fuente: string
+          mrr_ars: number
+          mrr_usd: number | null
+          recordatorios_dia: number
+          tc_venta: number | null
+          tenants_activos: number
+          tenants_exentos: number
+          tenants_suspendidos: number
+          trabajos_dia: number
+          trabajos_mecanica: number
+          trabajos_neumaticos: number
+          trabajos_service: number
+        }
+        Insert: {
+          altas_dia: number
+          bajas_dia: number
+          created_at?: string
+          escaneos_dia: number
+          fecha: string
+          fuente: string
+          mrr_ars: number
+          mrr_usd?: number | null
+          recordatorios_dia: number
+          tc_venta?: number | null
+          tenants_activos: number
+          tenants_exentos: number
+          tenants_suspendidos: number
+          trabajos_dia: number
+          trabajos_mecanica: number
+          trabajos_neumaticos: number
+          trabajos_service: number
+        }
+        Update: {
+          altas_dia?: number
+          bajas_dia?: number
+          created_at?: string
+          escaneos_dia?: number
+          fecha?: string
+          fuente?: string
+          mrr_ars?: number
+          mrr_usd?: number | null
+          recordatorios_dia?: number
+          tc_venta?: number | null
+          tenants_activos?: number
+          tenants_exentos?: number
+          tenants_suspendidos?: number
+          trabajos_dia?: number
+          trabajos_mecanica?: number
+          trabajos_neumaticos?: number
+          trabajos_service?: number
+        }
+        Relationships: []
+      }
+      snapshots_tenant_diarios: {
+        Row: {
+          activo: boolean
+          created_at: string
+          exento: boolean
+          fecha: string
+          lubricentro_id: string
+          modulo_pago: boolean
+          mrr_ars: number
+          periodo: Database["public"]["Enums"]["periodo_suscripcion"] | null
+          plan_id: string | null
+          trabajos_dia: number
+        }
+        Insert: {
+          activo: boolean
+          created_at?: string
+          exento: boolean
+          fecha: string
+          lubricentro_id: string
+          modulo_pago?: boolean
+          mrr_ars: number
+          periodo?: Database["public"]["Enums"]["periodo_suscripcion"] | null
+          plan_id?: string | null
+          trabajos_dia?: number
+        }
+        Update: {
+          activo?: boolean
+          created_at?: string
+          exento?: boolean
+          fecha?: string
+          lubricentro_id?: string
+          modulo_pago?: boolean
+          mrr_ars?: number
+          periodo?: Database["public"]["Enums"]["periodo_suscripcion"] | null
+          plan_id?: string | null
+          trabajos_dia?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "snapshots_tenant_diarios_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "snapshots_tenant_diarios_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "planes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sucursales: {
         Row: {
           activa: boolean
@@ -1799,6 +1919,84 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      tenant_eventos: {
+        Row: {
+          actor: string | null
+          antes: Json | null
+          created_at: string
+          despues: Json | null
+          id: string
+          lubricentro_id: string
+          motivo: string | null
+          ocurrido_at: string
+          origen_evento: string
+          tipo: Database["public"]["Enums"]["tipo_evento_tenant"]
+        }
+        Insert: {
+          actor?: string | null
+          antes?: Json | null
+          created_at?: string
+          despues?: Json | null
+          id?: string
+          lubricentro_id: string
+          motivo?: string | null
+          ocurrido_at?: string
+          origen_evento: string
+          tipo: Database["public"]["Enums"]["tipo_evento_tenant"]
+        }
+        Update: {
+          actor?: string | null
+          antes?: Json | null
+          created_at?: string
+          despues?: Json | null
+          id?: string
+          lubricentro_id?: string
+          motivo?: string | null
+          ocurrido_at?: string
+          origen_evento?: string
+          tipo?: Database["public"]["Enums"]["tipo_evento_tenant"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_eventos_actor_fkey"
+            columns: ["actor"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenant_eventos_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tipo_cambio: {
+        Row: {
+          compra: number | null
+          created_at: string
+          fecha: string
+          fuente: string
+          venta: number
+        }
+        Insert: {
+          compra?: number | null
+          created_at?: string
+          fecha: string
+          fuente: string
+          venta: number
+        }
+        Update: {
+          compra?: number | null
+          created_at?: string
+          fecha?: string
+          fuente?: string
+          venta?: number
+        }
+        Relationships: []
       }
       trabajos_pendientes: {
         Row: {
@@ -2434,8 +2632,26 @@ export type Database = {
         Args: { p_service_id: string }
         Returns: undefined
       }
+      cambiar_estado_lubricentro: {
+        Args: {
+          p_activo: boolean
+          p_detalle?: string
+          p_id: string
+          p_motivo?: Database["public"]["Enums"]["motivo_suspension"]
+        }
+        Returns: undefined
+      }
       catalogo_features_plan: { Args: never; Returns: string[] }
       catalogo_limites_plan: { Args: never; Returns: string[] }
+      cerrar_dia: {
+        Args: {
+          p_fecha: string
+          p_fuente?: string
+          p_tc_compra?: number
+          p_tc_venta: number
+        }
+        Returns: string
+      }
       ciclo_tras_el_pago: {
         Args: {
           p_es_el_primero: boolean
@@ -2546,6 +2762,23 @@ export type Database = {
         Returns: number
       }
       dot_a_fecha: { Args: { p_dot: string }; Returns: string }
+      emitir_evento_tenant: {
+        Args: {
+          p_actor?: string
+          p_antes: Json
+          p_despues: Json
+          p_lubricentro: string
+          p_motivo: string
+          p_ocurrido_at?: string
+          p_origen_evento: string
+          p_tipo: Database["public"]["Enums"]["tipo_evento_tenant"]
+        }
+        Returns: string
+      }
+      es_activo: {
+        Args: { l: Database["public"]["Tables"]["lubricentros"]["Row"] }
+        Returns: boolean
+      }
       estado_atencion: {
         Args: {
           p_descuento_pct: number
@@ -2582,6 +2815,14 @@ export type Database = {
         Args: { p_alias: string; p_lubricentro: string }
         Returns: string
       }
+      fijar_origen_tenant: {
+        Args: {
+          p_detalle?: string
+          p_id: string
+          p_origen: Database["public"]["Enums"]["origen_tenant"]
+        }
+        Returns: undefined
+      }
       fijar_override_plan: {
         Args: { p_lubricentro: string; p_motivo: string; p_overrides: Json }
         Returns: undefined
@@ -2601,6 +2842,17 @@ export type Database = {
         Returns: undefined
       }
       fm_unaccent: { Args: { "": string }; Returns: string }
+      foto_plataforma_del_dia: {
+        Args: { p_fecha: string; p_fuente: string; p_tc_venta: number }
+        Returns: undefined
+      }
+      foto_tenant_del_dia: {
+        Args: {
+          p_fecha: string
+          p_lub: Database["public"]["Tables"]["lubricentros"]["Row"]
+        }
+        Returns: boolean
+      }
       get_carton: { Args: { p_patente: string; p_slug: string }; Returns: Json }
       get_landing: { Args: { p_slug: string }; Returns: Json }
       guardar_presupuesto: {
@@ -2717,6 +2969,8 @@ export type Database = {
         }
         Returns: Json
       }
+      mrr_de_tenant: { Args: { p_id: string }; Returns: number }
+      mrr_plataforma: { Args: never; Returns: number }
       normalizar_patente: { Args: { entrada: string }; Returns: string }
       normalizar_texto_vehiculo: { Args: { p: string }; Returns: string }
       omitir_premio: { Args: never; Returns: Json }
@@ -2730,6 +2984,7 @@ export type Database = {
         Returns: Json
       }
       orden_atencion: { Args: { p_atencion: string }; Returns: number }
+      origen_evento_de_sesion: { Args: never; Returns: string }
       overrides_plan_bien_formados: { Args: { p: Json }; Returns: boolean }
       patente_formato_valido: { Args: { p: string }; Returns: boolean }
       plan_capacidades: {
@@ -2772,6 +3027,10 @@ export type Database = {
           isOneToOne: false
           isSetofReturn: true
         }
+      }
+      reconstruir_snapshots: {
+        Args: { p_desde: string; p_hasta: string }
+        Returns: number
       }
       recuperados_del_mes: {
         Args: {
@@ -2827,6 +3086,22 @@ export type Database = {
         Args: { p_lubricentro: string; p_sucursal: string }
         Returns: boolean
       }
+      tc_vigente: {
+        Args: { p_fecha: string }
+        Returns: {
+          compra: number | null
+          created_at: string
+          fecha: string
+          fuente: string
+          venta: number
+        }
+        SetofOptions: {
+          from: "*"
+          to: "tipo_cambio"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       telefono_de_contacto: {
         Args: { p_lubricentro_id: string }
         Returns: string
@@ -2876,6 +3151,19 @@ export type Database = {
         | "engrase"
         | "bateria"
       motivo_contacto_fidelli: "trial" | "cobranza"
+      motivo_suspension:
+        | "falta_de_pago"
+        | "pedido_del_cliente"
+        | "cierre_del_negocio"
+        | "otro"
+      origen_tenant:
+        | "meta"
+        | "referido"
+        | "directo"
+        | "distribuidor"
+        | "calco"
+        | "organico"
+        | "otro"
       periodo_suscripcion: "mensual" | "semestral" | "anual"
       posicion_rueda:
         | "delantera_izquierda"
@@ -2884,6 +3172,21 @@ export type Database = {
         | "trasera_derecha"
         | "auxilio"
       rol_usuario: "owner" | "superadmin"
+      tipo_evento_tenant:
+        | "alta"
+        | "suspension"
+        | "reactivacion"
+        | "suspension_reloj"
+        | "reactivacion_reloj"
+        | "cambio_plan"
+        | "pago"
+        | "modulo_activado"
+        | "modulo_desactivado"
+        | "reloj_encendido"
+        | "reloj_apagado"
+        | "calcos"
+        | "edicion"
+        | "origen"
       tipo_trabajo: "service" | "mecanica" | "neumaticos"
     }
     CompositeTypes: {
@@ -3051,6 +3354,21 @@ export const Constants = {
         "bateria",
       ],
       motivo_contacto_fidelli: ["trial", "cobranza"],
+      motivo_suspension: [
+        "falta_de_pago",
+        "pedido_del_cliente",
+        "cierre_del_negocio",
+        "otro",
+      ],
+      origen_tenant: [
+        "meta",
+        "referido",
+        "directo",
+        "distribuidor",
+        "calco",
+        "organico",
+        "otro",
+      ],
       periodo_suscripcion: ["mensual", "semestral", "anual"],
       posicion_rueda: [
         "delantera_izquierda",
@@ -3060,6 +3378,22 @@ export const Constants = {
         "auxilio",
       ],
       rol_usuario: ["owner", "superadmin"],
+      tipo_evento_tenant: [
+        "alta",
+        "suspension",
+        "reactivacion",
+        "suspension_reloj",
+        "reactivacion_reloj",
+        "cambio_plan",
+        "pago",
+        "modulo_activado",
+        "modulo_desactivado",
+        "reloj_encendido",
+        "reloj_apagado",
+        "calcos",
+        "edicion",
+        "origen",
+      ],
       tipo_trabajo: ["service", "mecanica", "neumaticos"],
     },
   },
