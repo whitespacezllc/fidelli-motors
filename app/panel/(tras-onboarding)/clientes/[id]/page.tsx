@@ -4,6 +4,9 @@ import { createClient } from "@/lib/supabase/server";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { clasesBoton } from "@/components/ui/boton";
 import { DialogCliente } from "@/components/clientes/dialog-cliente";
+import { DialogSuprimirCliente } from "@/components/clientes/dialog-suprimir-cliente";
+import { anonimizarCliente } from "@/app/panel/(tras-onboarding)/clientes/actions";
+import { clienteSuprimido } from "@/lib/clientes";
 import { SeccionVehiculos } from "@/components/vehiculos/seccion-vehiculos";
 import { estadoService } from "@/lib/servicios";
 import { obtenerSesion, featureHabilitada } from "@/lib/auth/session";
@@ -209,8 +212,16 @@ export default async function FichaCliente({
     canjesPorVehiculo.set(c.vehiculo_id, lista);
   }
 
+  // Un cliente que pidió que borren sus datos: la base dejó los sentinelas y
+  // la ficha lo dice en vez de mostrar un teléfono que es un guion. Sin
+  // "Editar datos" ni "Eliminar": no hay persona que editar.
+  const suprimido = clienteSuprimido({
+    nombre: cliente.nombre,
+    telefono: cliente.telefono ?? "",
+  });
+
   const contacto = [
-    cliente.telefono,
+    suprimido ? "Datos personales eliminados a pedido del titular" : cliente.telefono,
     cliente.email,
     // Con guiones, como se lee en una factura.
     cliente.cuit ? `CUIT ${formatearCuit(cliente.cuit)}` : null,
@@ -245,16 +256,33 @@ export default async function FichaCliente({
           </p>
         </div>
 
-        <DialogCliente
-          variante="secundario"
-          cliente={{
-            id: cliente.id,
-            nombre: cliente.nombre,
-            telefono: cliente.telefono ?? "",
-            email: cliente.email,
-            cuit: cliente.cuit,
-          }}
-        />
+        {suprimido ? (
+          <span className="rounded-sm border border-line bg-surface px-2 py-1 text-label font-semibold tracking-[0.04em] text-ink-60 uppercase">
+            Datos personales eliminados
+          </span>
+        ) : (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {/* La supresión a pedido del titular. Escribe, así que con la
+                cuenta suspendida no se ofrece: la acción la rechazaría. */}
+            {!sesion?.suspendido && (
+              <DialogSuprimirCliente
+                clienteId={cliente.id}
+                nombre={cliente.nombre}
+                accion={anonimizarCliente}
+              />
+            )}
+            <DialogCliente
+              variante="secundario"
+              cliente={{
+                id: cliente.id,
+                nombre: cliente.nombre,
+                telefono: cliente.telefono ?? "",
+                email: cliente.email,
+                cuit: cliente.cuit,
+              }}
+            />
+          </div>
+        )}
       </header>
 
       <SeccionVehiculos

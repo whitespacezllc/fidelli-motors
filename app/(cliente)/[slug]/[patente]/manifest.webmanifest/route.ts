@@ -9,7 +9,7 @@ import { ICONOS_MARCA, respuestaManifest } from "@/lib/pwa";
 //
 // La marca sigue siendo la del lubricentro; lo que cambia es a dónde abre.
 // Se usa obtenerLanding y NO get_carton a propósito: get_carton registra la
-// búsqueda en landing_busquedas —es la captura de leads del lubri— y pedir
+// búsqueda en landing_busquedas —es la métrica de escaneo del lubri— y pedir
 // el manifest dejaría una fila basura por cada visita. Acá no hace falta
 // validar la patente: el manifest solo se pide desde una página que el
 // visitante ya está mirando.

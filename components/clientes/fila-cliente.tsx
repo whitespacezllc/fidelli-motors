@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { FilaListado } from "@/components/ui/fila-listado";
 import { formatearFecha } from "@/lib/fechas";
+import { clienteSuprimido } from "@/lib/clientes";
 
 type ClienteListado = {
   id: string;
@@ -30,7 +31,7 @@ export function FilaCliente({ cliente }: { cliente: ClienteListado }) {
             {cliente.nombre}
           </span>
           <span className="block truncate text-ui text-ink-60">
-            {cliente.telefono}
+            {clienteSuprimido(cliente) ? "Datos personales eliminados" : cliente.telefono}
           </span>
         </span>
 
