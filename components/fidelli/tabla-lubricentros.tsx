@@ -8,7 +8,7 @@ import {
 } from "@/components/fidelli/badges";
 import { CeldaOwner } from "@/components/fidelli/celda-owner";
 import { CeldaAtencion } from "@/components/fidelli/celda-atencion";
-import { AccionesTenant } from "@/components/fidelli/acciones-tenant";
+import { AccionesTenant, type OrigenDeFila } from "@/components/fidelli/acciones-tenant";
 import { CeldaSalud } from "@/components/fidelli/celda-salud";
 import type { FilaLubricentro, PlanCompleto, EstadoOwner } from "@/components/fidelli/tipos";
 
@@ -29,9 +29,14 @@ function colorDeVencimiento(iso: string, estado: string): string {
 export function TablaLubricentros({
   filas,
   planes,
+  origenes,
 }: {
   filas: FilaLubricentro[];
   planes: PlanCompleto[];
+  /** El origen cargado de cada tenant, por id; solo lo lee el dialog de
+   *  edición. Viene de una consulta aparte porque listado_lubricentros()
+   *  no cambia en este bloque. */
+  origenes: Record<string, OrigenDeFila>;
 }) {
   return (
     // Densidad alta = tabla ancha. En mobile scrollea en horizontal dentro de
@@ -205,7 +210,11 @@ export function TablaLubricentros({
                 </td>
 
                 <td className={`${TD} text-right`}>
-                  <AccionesTenant fila={l} planes={planes} />
+                  <AccionesTenant
+                    fila={l}
+                    planes={planes}
+                    origen={origenes[l.id] ?? { origen: null, detalle: null }}
+                  />
                 </td>
               </tr>
             );

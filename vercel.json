@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/fidelli/cierre-diario",
+      "schedule": "10 3 * * *"
+    }
+  ]
+}

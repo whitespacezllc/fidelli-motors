@@ -37,4 +37,12 @@ npm run dev           # http://localhost:3000
 | `npm run lint` | ESLint |
 | `npm run types` | Regenera `lib/database.types.ts` desde el schema local |
 
+## `vercel.json`
+
+Tiene un solo uso: el **cron del cierre diario** de las métricas
+(`/api/fidelli/cierre-diario`, todos los días a las 03:10 UTC = 00:10 hora
+argentina). Necesita `CRON_SECRET` en el entorno de Vercel. Qué cierra y qué
+guarda está en [`docs/METRICAS.md`](docs/METRICAS.md). Nada más va en ese
+archivo: el deploy sigue siendo el default de Vercel.
+
 Convenciones de ramas y commits: ver [`CONTRIBUTING.md`](CONTRIBUTING.md).

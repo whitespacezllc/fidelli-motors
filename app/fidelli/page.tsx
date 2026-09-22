@@ -15,6 +15,7 @@ import {
   type PuntoSerie,
 } from "@/lib/series";
 import type { PlanCompleto } from "@/components/fidelli/tipos";
+import type { OrigenDeFila } from "@/components/fidelli/acciones-tenant";
 
 export const metadata: Metadata = { title: "Lubricentros" };
 
@@ -36,7 +37,7 @@ export default async function PaginaLubricentros({
   // vencimiento— qué atención necesita cada tenant, si ya se le avisó en
   // este ciclo y a qué número escribirle. Viene ordenada con lo urgente
   // arriba: el ORDER BY no puede depender de algo que se calcule acá.
-  const [{ data: filas }, { data: planes }, { data: plataforma }] = await Promise.all([
+  const [{ data: filas }, { data: planes }, { data: plataforma }, { data: origenes }] = await Promise.all([
     supabase.rpc("listado_lubricentros"),
     supabase
       .from("planes")
@@ -48,10 +49,17 @@ export default async function PaginaLubricentros({
     // las TRES granularidades juntas: el toggle del pulso es instantáneo
     // y no vuelve a consultar.
     supabase.rpc("metricas_plataforma"),
+    // El origen de cada tenant (20260922200000), para prellenar Editar.
+    // Consulta aparte y no una columna más de listado_lubricentros(): esa
+    // función no se toca en este bloque.
+    supabase.from("lubricentros").select("id, origen, origen_detalle"),
   ]);
 
   const lubricentros = filas ?? [];
   const catalogo = (planes ?? []) as PlanCompleto[];
+  const origenPorTenant: Record<string, OrigenDeFila> = Object.fromEntries(
+    (origenes ?? []).map((o) => [o.id, { origen: o.origen, detalle: o.origen_detalle }]),
+  );
 
   const metricas = (plataforma ?? {}) as {
     services_mes?: number;
@@ -119,7 +127,11 @@ export default async function PaginaLubricentros({
               </p>
             </div>
           ) : (
-            <TablaLubricentros filas={visibles} planes={catalogo} />
+            <TablaLubricentros
+              filas={visibles}
+              planes={catalogo}
+              origenes={origenPorTenant}
+            />
           )}
         </>
       )}
