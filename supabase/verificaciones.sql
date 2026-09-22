@@ -4349,3 +4349,262 @@ begin
   delete from lubricentros where id in (v_lub, v_otro, v_pago);
 end $$;
 -- <<< R26
+
+-- ============================================================
+-- R27 · Las páginas legales y la aceptación de los Términos
+--       (20260922100000 · 20260922110000)
+--
+--   a · Los cuatro slugs de las páginas legales —terminos, privacidad,
+--       legal, condiciones— están reservados: lo dice slug_reservado() Y
+--       lo hace cumplir el CHECK de lubricentros.
+--   b · aceptaciones_terminos es evidencia: los tres candados existen,
+--       están en ALWAYS, y un delete, un update y un truncate se rechazan.
+--   c · La única puerta: aceptar_terminos() escribe el tenant y el usuario
+--       DE LA SESIÓN, es idempotente por versión, guarda el historial (la
+--       fila de 1.0 sigue después de aceptar 1.1) y un superadmin no acepta.
+--   d · El predicado: false sin aceptación, true tras aceptar ESA versión,
+--       false para otra versión (subir VERSION_LEGAL vuelve a pedirla), y
+--       el demo exento por slug. El campo calculado devuelve las versiones.
+--   e · El aislamiento: un owner lee CERO filas de otro tenant, y el campo
+--       calculado con un composite forjado (regla 18, con
+--       jsonb_populate_record y no con un join) devuelve vacío.
+--
+-- ⚠ Las escrituras corren en una subtransacción que se deshace a
+-- propósito al final: las aceptaciones de prueba no se pueden borrar
+-- —son evidencia, el candado lo impide— y no tienen por qué quedar.
+-- ============================================================
+
+-- >>> R27
+do $$
+declare
+  v_slug     text;
+  v_lub      uuid;
+  v_uid      uuid := gen_random_uuid();
+  v_demo     uuid;
+  v_demo_own uuid;
+  v_super    uuid;
+  v_n        integer;
+  v_vers     text[];
+begin
+  select id into v_demo from lubricentros where slug = 'demo';
+  select u.id into v_demo_own from usuarios u
+   where u.lubricentro_id = v_demo and u.rol = 'owner' limit 1;
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  if v_demo is null or v_demo_own is null or v_super is null then
+    raise exception 'R27 SIN PISO: falta el demo, su owner o el superadmin del seed (ver supabase/seed.sql).';
+  end if;
+
+  -- ---------- a · Los slugs ----------
+  foreach v_slug in array array['terminos', 'privacidad', 'legal', 'condiciones'] loop
+    if not slug_reservado(v_slug) then
+      raise exception 'R27a EL SLUG «%» NO ESTÁ RESERVADO: un lubricentro podría registrarlo y pisar una página legal de la superficie comercial. Toda ruta nueva de nivel superior se agrega a slug_reservado() en el mismo PR que la crea (migración 20260922100000).', v_slug;
+    end if;
+
+    begin
+      insert into lubricentros (nombre, slug) values ('Slug R27', v_slug);
+      raise exception 'R27a: la constraint slug_no_reservado dejó entrar el slug «%». slug_reservado() lo reserva pero el CHECK de lubricentros no lo está usando.', v_slug;
+    exception
+      when check_violation then null; -- exactamente lo esperado
+    end;
+  end loop;
+
+  -- ---------- El piso: un tenant nuevo con su owner ----------
+  -- No es el demo (está exento) y no es el de otro bloque: se crea acá y
+  -- se borra al final. El owner entra por auth.users como en el seed, así
+  -- el trigger handle_new_user() le crea la fila de usuarios.
+  insert into lubricentros (nombre, slug) values ('Legal R27', 'legal-r27')
+    returning id into v_lub;
+
+  insert into auth.users (
+    id, instance_id, email, encrypted_password, email_confirmed_at,
+    created_at, updated_at, aud, role, raw_app_meta_data, raw_user_meta_data,
+    confirmation_token, recovery_token, email_change_token_new, email_change
+  ) values (
+    v_uid, '00000000-0000-0000-0000-000000000000',
+    'r27@fidellimotors.app', extensions.crypt('r27', extensions.gen_salt('bf')), now(),
+    now(), now(), 'authenticated', 'authenticated',
+    '{"provider":"email","providers":["email"]}'::jsonb,
+    jsonb_build_object('rol', 'owner', 'nombre', 'Owner R27', 'lubricentro_id', v_lub),
+    '', '', '', ''
+  );
+
+  if not exists (
+    select 1 from usuarios where id = v_uid and lubricentro_id = v_lub and rol = 'owner'
+  ) then
+    raise exception 'R27 SIN PISO: el trigger de auth no creó el owner de prueba.';
+  end if;
+
+  -- ---------- b · Los candados, en el catálogo ----------
+  select count(*) into v_n from pg_trigger
+   where tgrelid = 'aceptaciones_terminos'::regclass and not tgisinternal;
+  if v_n <> 3 then
+    raise exception 'R27b FALTAN CANDADOS: aceptaciones_terminos tiene % trigger(s) y necesita 3 (borrado, edición, truncate). Sin los tres no es evidencia: es un log.', v_n;
+  end if;
+
+  if not exists (
+    select 1 from pg_trigger
+     where tgrelid = 'aceptaciones_terminos'::regclass
+       and not tgisinternal
+       and (tgtype & 32) = 32          -- 32 = TRUNCATE en pg_trigger.tgtype
+  ) then
+    raise exception 'R27b NO HAY CANDADO DE TRUNCATE: el de borrado por fila no se despierta con un truncate, y la tabla entera se vacía en una línea.';
+  end if;
+
+  select count(*) into v_n from pg_trigger
+   where tgrelid = 'aceptaciones_terminos'::regclass
+     and not tgisinternal
+     and tgenabled = 'A';             -- 'A' = ALWAYS · 'O' = ORIGIN (el default)
+  if v_n <> 3 then
+    raise exception 'R27b LOS CANDADOS TIENEN UNA PERILLA DE APAGADO AL LADO: % de 3 triggers de aceptaciones_terminos están en ALWAYS. Los que quedaron en ORIGIN se apagan enteros con `set session_replication_role = replica`. Es una línea `alter table aceptaciones_terminos enable always trigger <nombre>` por candado.', v_n;
+  end if;
+
+  -- ---------- c · d · e · Las escrituras, que se deshacen al final ----------
+  begin
+    -- Sin aceptar nada: pendiente.
+    if acepto_terminos_vigentes(v_lub, '1.0') then
+      raise exception 'R27d: un tenant nuevo, sin ninguna aceptación, da por aceptada la versión 1.0. El gate no le pediría nada a nadie.';
+    end if;
+
+    -- Como el owner del tenant nuevo.
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_uid, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+
+    select aceptaciones_legales(l) into v_vers from lubricentros l where l.id = v_lub;
+    if v_vers is distinct from '{}'::text[] then
+      raise exception 'R27d: el campo calculado de un tenant sin aceptaciones devolvió % (esperaba vacío).', v_vers;
+    end if;
+
+    perform aceptar_terminos('1.0');
+    perform aceptar_terminos('1.0'); -- el doble toque: idempotente
+
+    if not acepto_terminos_vigentes(v_lub, '1.0') then
+      raise exception 'R27c EL OWNER ACEPTÓ Y NO QUEDÓ REGISTRADO: acepto_terminos_vigentes(1.0) sigue en false después de aceptar_terminos(''1.0''). El modal volvería en cada request.';
+    end if;
+
+    -- La versión cuenta: 1.1 no está aceptada aunque 1.0 sí.
+    if acepto_terminos_vigentes(v_lub, '1.1') then
+      raise exception 'R27d LA VERSIÓN NO CUENTA: con la 1.0 aceptada, la 1.1 da por aceptada. Subir VERSION_LEGAL no volvería a pedirle la aceptación a nadie, y un texto nuevo quedaría "aceptado" por gente que nunca lo leyó.';
+    end if;
+
+    perform aceptar_terminos('1.1');
+
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+
+    -- Historial, no una columna: dos filas, y la de 1.0 sigue ahí.
+    select count(*) into v_n from aceptaciones_terminos where lubricentro_id = v_lub;
+    if v_n <> 2 then
+      raise exception 'R27c: después de aceptar 1.0 (dos veces) y 1.1 hay % fila(s) y tenían que ser 2. O la función no es idempotente por versión, o no guarda una fila por versión.', v_n;
+    end if;
+    if not exists (
+      select 1 from aceptaciones_terminos where lubricentro_id = v_lub and version = '1.0'
+    ) then
+      raise exception 'R27c EL HISTORIAL SE PERDIÓ: aceptar la 1.1 se llevó la fila de la 1.0. Es historial, no una columna.';
+    end if;
+    if exists (
+      select 1 from aceptaciones_terminos
+       where lubricentro_id = v_lub and usuario_id is distinct from v_uid
+    ) then
+      raise exception 'R27c: la aceptación quedó registrada con OTRO usuario que el de la sesión.';
+    end if;
+    if exists (
+      select 1 from aceptaciones_terminos
+       where usuario_id = v_uid and lubricentro_id is distinct from v_lub
+    ) then
+      raise exception 'R27c: la aceptación quedó registrada en OTRO tenant que el de la sesión.';
+    end if;
+
+    select aceptaciones_legales(l) into v_vers from lubricentros l where l.id = v_lub;
+    if v_vers is distinct from array['1.0', '1.1'] then
+      raise exception 'R27d: el campo calculado devolvió % y esperaba {1.0,1.1}. Es lo que viaja en la sesión: si miente, el gate miente.', v_vers;
+    end if;
+
+    -- Un superadmin no tiene tenant y no acepta nada.
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+      perform aceptar_terminos('1.0');
+      raise exception 'R27c: un superadmin aceptó los Términos. No tiene tenant: ¿en nombre de quién quedó la fila?';
+    exception
+      when insufficient_privilege then null;
+    end;
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+
+    -- El demo, exento por slug, con una versión que nadie aceptó nunca.
+    if not acepto_terminos_vigentes(v_demo, '9.9') then
+      raise exception 'R27d EL DEMO NO ESTÁ EXENTO: un prospecto mirando la demo se comería el modal de los Términos. La exención es por slug (''demo''), no por descuento ni por plan.';
+    end if;
+
+    -- ---------- e · El aislamiento, como el owner del demo ----------
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_demo_own, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+
+    select count(*) into v_n from aceptaciones_terminos where lubricentro_id = v_lub;
+    if v_n <> 0 then
+      raise exception 'R27e: el owner del demo lee % aceptación(es) de otro tenant. El RLS de aceptaciones_terminos no recorta.', v_n;
+    end if;
+
+    -- El composite forjado (regla 18): con jsonb_populate_record y no con
+    -- un join, porque leer la fila del vecino ya lo bloquea el RLS y la
+    -- versión con join pasaría en verde aunque la función fuera definer.
+    select aceptaciones_legales(
+      jsonb_populate_record(null::lubricentros, jsonb_build_object('id', v_lub))
+    ) into v_vers;
+    if v_vers is distinct from '{}'::text[] then
+      raise exception 'R27e EL CAMPO CALCULADO ES UNA PUERTA: con un composite forjado con el uuid de otro tenant devolvió %. Tiene que ser SECURITY INVOKER para que el RLS deje la subconsulta vacía (regla 18 de CLAUDE.md).', v_vers;
+    end if;
+
+    if acepto_terminos_vigentes(v_lub, '1.0') then
+      raise exception 'R27e: el predicado le contesta al owner del demo por las aceptaciones de otro tenant.';
+    end if;
+
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+
+    -- ---------- b · Los candados, en acción ----------
+    begin
+      delete from aceptaciones_terminos where lubricentro_id = v_lub;
+      raise exception 'R27b LA EVIDENCIA SE PUEDE BORRAR: un delete sobre aceptaciones_terminos pasó. Es la respuesta al día que un cliente diga «yo nunca acepté eso»: sin candado no es evidencia.';
+    exception
+      when sqlstate 'P0001' then
+        if sqlerrm not like '%aceptacion_no_se_borra%' then raise; end if;
+    end;
+
+    begin
+      update aceptaciones_terminos set version = '0.9' where lubricentro_id = v_lub;
+      raise exception 'R27b LA EVIDENCIA SE PUEDE EDITAR: un update sobre aceptaciones_terminos pasó. Una fila editada sigue pareciendo evidencia sin serlo.';
+    exception
+      when sqlstate 'P0001' then
+        if sqlerrm not like '%aceptacion_no_se_edita%' then raise; end if;
+    end;
+
+    begin
+      truncate aceptaciones_terminos;
+      raise exception 'R27b LA EVIDENCIA SE PUEDE VACIAR: un truncate sobre aceptaciones_terminos pasó. El contrato de todos los tenants, borrado en una línea.';
+    exception
+      when sqlstate 'P0001' then
+        if sqlerrm not like '%aceptacion_no_se_vacia%' then raise; end if;
+    end;
+
+    -- Todo lo escrito en este bloque se deshace acá. Cualquier otra
+    -- excepción de arriba NO se atrapa: sube y pone el reset en rojo.
+    raise exception 'rollback_r27' using errcode = 'P0027';
+  exception
+    when sqlstate 'P0027' then
+      execute 'reset role';
+      perform set_config('request.jwt.claims', '{}', true);
+  end;
+
+  if exists (select 1 from aceptaciones_terminos where lubricentro_id = v_lub) then
+    raise exception 'R27 SIN PISO: la subtransacción no deshizo las aceptaciones de prueba.';
+  end if;
+
+  -- ---------- La limpieza ----------
+  delete from auth.users where id = v_uid;   -- cascade → usuarios
+  delete from lubricentros where id = v_lub; -- config_neumaticos cae en cascada
+end $$;
+-- <<< R27
