@@ -107,8 +107,37 @@ la resuelve.
   argentinos: auto `ABC123` / `AB123CD` y moto `123ABC` / `A123BCD`. La fuente única
   es `patente_formato_valido()`; el front la repite en `lib/texto.ts` solo para avisar.
 
+- **`landing_busquedas` no guarda la patente de una consulta sin resultado**
+  (desde `20260922120000`): `patente` es anulable, un trigger la deja en null
+  cuando `encontrada = false` y un CHECK lo hace cumplir. La patente que el
+  visitante escribió viaja en el request (`?nohay=`) y el mensaje de WhatsApp
+  de "no la encontramos" se arma con esa, nunca con la tabla. La métrica de
+  escaneo (cuántas consultas, cuántas sin resultado) no cambió. Lo vigila R28.
+- **`anonimizar_cliente(cliente_id, motivo)`** es la supresión de un cliente
+  final a su pedido: pisa nombre, teléfono, email y CUIT con sentinelas
+  (`'Cliente eliminado'`, `'-'`, null, null; `lib/clientes.ts` los repite para
+  la pantalla) y deja intactos los vehículos y los trabajos. La pueden llamar
+  el superadmin y el owner del tenant del cliente; exige motivo y lo registra
+  en `supresiones_cliente` antes de tocar el dato. Lo vigila R30.
+- **`purgar_tenants_vencidos(p_simular, p_lubricentro_id, p_motivo)`** es el
+  borrado definitivo a los 12 meses de cancelar: `suscripciones.cancelada_at`
+  se escribe por trigger al pasar a `cancelada` (y se limpia al volver), y la
+  purga borra lo operativo del tenant —clientes, vehículos, trabajos, contactos,
+  productos, premios, config, plantillas, búsquedas y lo que cuelga por FK—,
+  nunca `pagos`, `suscripciones`, `cresium_*`, `contactos_fidelli`,
+  `aceptaciones_terminos`, `sucursales` ni `usuarios`, y deja `lubricentros`
+  con `activo = false` y `purgado_at`. **Simula por defecto** (`p_simular =
+  true` solo cuenta y escribe en `purgas`); borra solo con `false`. pg_cron la
+  corre el 1 de cada mes **en simulación** (`cron.job` →
+  `purgar-tenants-vencidos`): se pasa a real a mano, con `cron.schedule` y el
+  mismo nombre, después de revisar una simulación. A pedido del tenant va con
+  `p_lubricentro_id` y motivo, auditado; exige la suscripción cancelada; el
+  demo nunca. Lo vigila R29.
+
 **Los datos históricos no se borran.** Todo es `on delete restrict`. Para dar de
-baja se usa `activo` o `anulado`, nunca `DELETE`.
+baja se usa `activo` o `anulado`, nunca `DELETE`. Las dos excepciones escritas
+son la purga a los 12 meses de cancelar y la anonimización a pedido del titular
+(ver arriba): las dos dejan evidencia antes de tocar nada.
 
 **Un renglón marcado es la existencia de la fila** en `service_items`. No hay
 booleano `realizado`.
@@ -593,6 +622,24 @@ avisa cuando una orden vence. Lo vigilan R22e,
 sostiene que el doble conteste los bytes reales del rechazo (400 y el
 código, no el 409 que uno escribiría).
 
+Y la que deja el sprint de políticas (septiembre de 2026):
+
+**21 · Los textos legales viven en `content/legal/` con versión. Cambiar un
+texto de forma relevante = subir `VERSION_LEGAL` = todos vuelven a aceptar.
+Nunca se editan in place sin subir la versión.** La fuente única es
+`lib/legal.ts` (`VERSION_LEGAL`, `VIGENCIA_LEGAL`); el frontmatter de
+`content/legal/terminos.md` y `content/legal/privacidad.md` tiene que
+coincidir, y si no coincide el render de `/terminos` y `/privacidad` —y el
+build— fallan con el mensaje que dice cuál. Los textos se publican tal cual:
+son copy aprobado y vinculante, no se "mejoran". La aceptación es producto:
+`aceptaciones_terminos` guarda una fila por (tenant, versión) —historial,
+nunca una columna— con los tres candados de evidencia; el panel la exige
+en cada request por el campo calculado `aceptaciones_legales` del select de
+la sesión, y el modal bloqueante va ANTES que el gate del onboarding. La
+versión vigente NO vive en la base a propósito: guardarla ahí sería una
+segunda fuente que se desincroniza en silencio. Exentos: el superadmin y el
+tenant demo, por slug. Lo vigila R27.
+
 ---
 
 ## La red de regresión — qué protege cada cosa
@@ -632,6 +679,10 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R24** | La atención de `/fidelli` exime al 100%: un tenant bonificado no aparece con ninguno de los cuatro estados, en ninguna fecha —tampoco como `trial_vencido`, porque el precio ya es cero— y el listado y la ficha lo dicen igual porque comparten `estado_atencion()`. Con el contracaso en las dos posiciones del caso real: sin descuento, a 4 días y vencido hace 4, los dos estados vuelven | Se está llamando para cobrarle a alguien que no debe nada (el caso Brothers Oil del 20/09/2026), o —peor— la exención se comió la lista entera y la pantalla que trae la plata se vació sola |
 | **R25** | El alias fijo por tenant: el interruptor `alias_confirmado_por_cresium()` está APAGADO y la puerta rechaza incluso un alias con la forma correcta; no hay un solo alias asignado en la base; un alias escrito no se cambia ni por UPDATE directo; la unicidad (puerta e índice, que son dos defensas distintas); el formato y los dos largos con su contracaso; y el alta, que asigna por la MISMA puerta y aborta entera si el alias falla | Se asignó un alias antes de que Cresium confirmara el formato —y no hay vuelta atrás barata, porque el tope de cambios por CVU es un número que todavía no sabemos—, o un tenant terminó con un alias distinto del que ya dejó cargado en su home banking |
 | **R26** | El alta prende el reloj y el primer pago define el ciclo: el tenant nuevo nace PAGANDO con `cobranza_desde` escrito y el vencimiento al día siguiente, **y ningún otro tenant entra al reloj por eso**; el primer pago que llega TARDE corre `inicio` y `vencimiento` a la fecha del pago con el largo contratado, y el que llega en plazo —o una renovación— no; las dos puertas del cobro hacen lo mismo; y la marca de la cuarta pantalla del onboarding es definer y se escribe una sola vez | El rollout volvió a ser el UPDATE peligroso contra 17 filas, un tenant que tardó cinco días en terminar el onboarding perdió cinco días de su primer mes, o el cobro manual —el que se va a usar en las primeras altas— quedó fuera del cambio |
+| **R27** | Las páginas legales y la aceptación de los Términos: los cuatro slugs (`terminos`, `privacidad`, `legal`, `condiciones`) reservados por `slug_reservado()` Y por el CHECK; `aceptaciones_terminos` con sus tres candados en `ALWAYS` (delete, update y truncate rechazados); `aceptar_terminos()` escribe el tenant y el usuario DE LA SESIÓN, es idempotente por versión, guarda el historial (la fila de 1.0 sigue tras aceptar 1.1) y un superadmin no acepta; el predicado distingue versiones y exime al demo por slug; y el aislamiento —un owner lee cero filas ajenas y el campo calculado con un composite forjado (regla 18) devuelve vacío— | Un lubricentro puede pisar una página legal, un tenant "aceptó" un texto que nunca vio (o subir `VERSION_LEGAL` dejó de pedir nada), el contrato se puede borrar o editar, o un owner está leyendo las aceptaciones del de al lado |
+| **R28** | Las consultas sin resultado no guardan la patente: cero filas con `not encontrada and patente is not null` tras el seed; el índice de leads no existe; el CHECK y el trigger existen; `get_carton` registra la consulta sin resultado con patente null y la de un auto encontrado con su patente; un insert directo la anula; `resumen_inicio` sigue contando los leads | La vidriera volvió a guardar patentes de gente que no es cliente de nadie —la política promete lo contrario—, o la métrica de escaneo del Inicio se apagó |
+| **R29** | La retención y la purga: `cancelada_at` se escribe al cancelar y se limpia al volver; la simulación escribe en `purgas` (conteos y logo pendiente) sin borrar ni tocar `lubricentros`; la purga real borra las tablas listadas, no toca `pagos`, `suscripciones`, `sucursales` ni `usuarios`, deja `activo = false` y `purgado_at`, y respeta el plazo (el de 11 meses y el demo cancelado hace 13 no se tocan); dos veces no; a pedido exige motivo, rechaza al demo y al ya purgado, y queda auditada con quién; un owner no la ejecuta; el reloj está en `cron.job` EN SIMULACIÓN; `purgas` tiene los tres candados en `ALWAYS` | "Solo cuenta" y borró, se llevó la contabilidad, purgó a alguien antes de los 12 meses (o al demo), el reloj se prendió en real antes de ver una simulación, o la purga no dejó evidencia |
+| **R30** | La supresión de un cliente final: el owner de otro tenant no puede; sin motivo no; los cuatro sentinelas quedan escritos y el vehículo y el service siguen; la auditoría dice quién y por qué; `vista_clientes` sigue devolviendo al cliente (la ficha abre); el teléfono sentinela no tiene dígitos; dos veces no; el libro no se escribe por fuera de la función; el superadmin también puede | Cualquier owner anonimiza a cualquiera, anonimizar se llevó los trabajos, o la supresión no quedó auditada |
 | **R31** | Los cimientos de las métricas (docs/METRICAS.md): `tenant_eventos` es inmutable (UPDATE, DELETE y TRUNCATE fallan); un pago deja exactamente UN evento y el pago sobrevive a un trigger roto; `cerrar_dia()` es idempotente y no cierra hoy; `mrr_plataforma()` = Σ `mrr_de_tenant()`, con el módulo pago adentro y el anual dividido 12; `es_activo()` es false con `activo = false` y con el reloj en `suspendido`; suspender exige motivo y deja `suspension` con motivo y actor; el alta, el origen, el override y el cambio de plan dejan su evento; y tras el seed hay un `alta` por tenant y un evento por pago | La memoria de las bajas y del churn se puede editar o vaciar, un cobro se pierde por un trigger, el cron duplica fotos, o el MRR volvió a calcularse sin el módulo o sin mensualizar |
 
 Además, fuera del reset, **las roturas a mano** (regla 13):
@@ -646,6 +697,8 @@ Además, fuera del reset, **las roturas a mano** (regla 13):
 ./scripts/regresion-cobranza-deudas.sh
 ./scripts/regresion-cobranza-alias.sh
 ./scripts/regresion-cobranza-alta.sh
+./scripts/regresion-legal.sh
+./scripts/regresion-legal-datos.sh
 ./scripts/regresion-metricas.sh
 ```
 
@@ -717,6 +770,36 @@ prohíbe. También rompe el `>` del plazo por un `>=` (con lo que un alta a las
 23:50 tiene diez minutos), el alta que le prende el reloj a TODOS, y la
 condición «y tarde» del primer pago, sin la cual un cliente viejo del que
 nunca registramos un pago pierde días en su próxima renovación.
+
+El décimo rompe R27 (diez roturas): `legal` sacado de `slug_reservado()`;
+`aceptar_terminos()` como invoker (la puerta se cierra para todos) y
+`aceptar_terminos()` que registra la fila en OTRO tenant que el de la
+sesión —la forma en que una aceptación deja de ser una aceptación—; el
+predicado que ignora la versión (subir `VERSION_LEGAL` no vuelve a pedirle
+nada a nadie) y el predicado sin la exención del demo; los tres candados
+de la evidencia bajados a `notice` de a uno y los tres bajados de `ALWAYS`
+a `ORIGIN`; y el campo calculado de la sesión como definer, que con un
+composite forjado devuelve las versiones del vecino (regla 18, probado con
+`jsonb_populate_record`). Las escrituras de R27 corren en una
+subtransacción que se deshace a propósito: las aceptaciones de prueba no se
+pueden borrar —son evidencia— y no tienen por qué quedar.
+
+El undécimo rompe R28, R29 y R30 (dieciséis roturas). Tres son de una
+clase que vale nombrar: **el trigger de `landing_busquedas` que deja de
+anular la patente lo frena la segunda defensa, el CHECK** —el bloque se
+pone en rojo por esa vía y el script espera ese patrón, no "R28"—; **el
+CHECK borrado no rompe nada visible** mientras el trigger esté, por eso
+R28b lo mira en el catálogo; y **la purga que no exime al demo no cambia
+nada** con la suscripción del demo activa, así que R29 cancela el demo
+hace 13 meses adentro de su subtransacción, y recién ahí sacarle el `slug
+<> 'demo'` a la purga se ve. Las demás: `cancelada_at` que no se escribe y
+que no se limpia al reactivar; la purga que borra en simulación (la forma
+más cara del bug); la que no deja evidencia; la que se lleva `pagos`; el
+plazo corrido; el guard que deja pasar a un owner; el reloj programado en
+real; y en la supresión, el guard abierto, la auditoría que no se escribe,
+el sentinela del teléfono con dígitos y la función como invoker.
+
+El undécimo rompe R31 (catorce roturas): los tres candados de `tenant_eventos` bajados a `notice` de a uno; el trigger de pagos sin el envoltorio defensivo, con lo que el sabotaje del evento bloquea el cobro; `cerrar_dia()` que dice «cerrado» la segunda vez, la que pierde el chequeo de «ya cerrado» (el segundo cierre revienta por la PK) y la que cierra hoy; el MRR sin mensualizar y la exención corrida al 101; `es_activo()` mirando solo la columna sin el reloj; suspender sin motivo; el alta como trigger inmediato (nace sin plan) y el evento de módulo sin el motivo del override. Una de ellas encontró un `not like` con motivo null que pasaba en verde: por eso R31g compara con `is null or`.
 
 ⚠ Y DOS DE ESTOS SCRIPTS APUNTAN A MÁS DE UNA MIGRACIÓN, porque
 `estado_cobranza`, `reloj_cobranza` y `crear_lubricentro` se redefinieron en

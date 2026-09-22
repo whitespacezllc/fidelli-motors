@@ -25,6 +25,7 @@ import { urlWhatsappSoporte } from "@/lib/config";
 import { MOTIVO_SUSPENSION } from "@/components/panel/aviso-suspension";
 import { motivoBloqueo } from "@/components/panel/bloqueo-onboarding";
 import type { FeaturePlan } from "@/lib/planes";
+import { LineaLegal } from "@/components/panel/linea-legal";
 
 // Los grupos y el orden vienen del hi-fi (pantalla 2 · Inicio — panel del lubri).
 // `feature` = qué tiene que habilitar el plan para que el item exista. La
@@ -233,6 +234,7 @@ export function Sidebar({
             Cerrar sesión
           </button>
         </form>
+        <LineaLegal className="px-3 pt-1.5 pb-1" />
       </div>
     </aside>
   );

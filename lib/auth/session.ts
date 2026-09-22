@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/database.types";
 import { RUTA_FEATURE, type CapacidadesPlan, type FeaturePlan } from "@/lib/planes";
 import { aCobranza, type Cobranza } from "@/lib/auth/cobranza";
+import { SLUG_DEMO, VERSION_LEGAL } from "@/lib/legal";
 
 export type Rol = Database["public"]["Enums"]["rol_usuario"];
 
@@ -14,6 +15,9 @@ export type Sesion = {
   email: string;
   lubricentroId: string | null;
   lubricentroNombre: string | null;
+  // El slug del tenant. Lo mira el gate de términos (el demo está exento
+  // por slug) y sale del mismo select: una columna más, cero consultas.
+  lubricentroSlug: string | null;
   // false = suspendido por falta de pago. El owner entra igual y ve todo:
   // lo que cambia es que el panel pasa a SOLO LECTURA. La vidriera pública
   // sigue respondiendo —`get_landing` y `get_carton` no filtran por
@@ -40,6 +44,18 @@ export type Sesion = {
   // Paso 3 del onboarding: dejó el premio para después. Lo mira el
   // checklist de Inicio para no seguir pidiéndoselo.
   premioOmitido: boolean;
+  // EL GATE DE TÉRMINOS (migración 20260922110000). True = el tenant no
+  // aceptó la versión vigente (VERSION_LEGAL, lib/legal.ts) y el panel le
+  // pone el modal bloqueante encima de todo, también del onboarding:
+  // términos primero, onboarding después. Viaja con la sesión porque se
+  // pregunta en CADA request del panel: el campo calculado
+  // `aceptaciones_legales` trae las versiones aceptadas en el mismo select.
+  //
+  // Exentos: el superadmin (no tiene tenant) y el tenant demo (por slug).
+  // Y si el campo no vino —la base todavía no tiene la migración—, se
+  // degrada a "no pendiente": un modal que no se puede aceptar porque la
+  // función no existe sería peor que no mostrarlo.
+  terminosPendientes: boolean;
   // El reloj de cobranza, YA RESUELTO por la base (migración 20260916140000).
   // Null para un superadmin, para un tenant afuera del reloj, y ante
   // cualquier problema leyéndolo: el panel degrada a lo de siempre, nunca
@@ -74,21 +90,22 @@ export const obtenerSesion = cache(async (): Promise<Sesion | null> => {
   // features del plan viajan en esta misma consulta, resueltas por la
   // base. El parser de tipos de supabase-js no conoce los campos
   // calculados, de ahí el cast.
-  // El campo calculado `reloj_cobranza` viaja en este MISMO select: la
-  // carga de un service no hace ni una consulta HTTP nueva.
+  // Los campos calculados `reloj_cobranza` y `aceptaciones_legales` viajan
+  // en este MISMO select: la carga de un service no hace ni una consulta
+  // HTTP nueva.
   //
   // ⚠ Y POR ESO HAY UN PISO. Si el deploy de Vercel llega antes que el
   // `db push`, PostgREST responde 400 por una clave desconocida, `data`
   // vuelve null y TODOS los owners caen en /login sin un solo error a la
   // vista — la sesión entera se cae por una columna nueva. El segundo
-  // intento, sin la clave, devuelve la sesión de siempre con `cobranza` en
-  // null: el panel degrada a lo de antes en vez de desloguear a los 17.
-  // Es la misma ventana que el repo ya defiende en Inicio con el `?? []`
-  // de `series`, pero acá no hay valor por defecto posible: es una clave
-  // del select, no del JSON.
-  const CAMPOS = (conReloj: boolean) =>
+  // intento, sin los campos calculados, devuelve la sesión de siempre con
+  // `cobranza` en null y los términos como no pendientes: el panel degrada
+  // a lo de antes en vez de desloguear a los 17. Es la misma ventana que el
+  // repo ya defiende en Inicio con el `?? []` de `series`, pero acá no hay
+  // valor por defecto posible: es una clave del select, no del JSON.
+  const CAMPOS = (completo: boolean) =>
     "id, rol, nombre, email, lubricentro_id, plan_capacidades, " +
-    `lubricentros(nombre, activo, onboarding_completado_at, bienvenida_vista_at, pago_presentado_at, premio_omitido_at${conReloj ? ", reloj_cobranza" : ""})`;
+    `lubricentros(nombre, slug, activo, onboarding_completado_at, bienvenida_vista_at, pago_presentado_at, premio_omitido_at${completo ? ", reloj_cobranza, aceptaciones_legales" : ""})`;
 
   const primero = await supabase
     .from("usuarios")
@@ -119,12 +136,14 @@ export const obtenerSesion = cache(async (): Promise<Sesion | null> => {
     plan_capacidades: CapacidadesPlan | null;
     lubricentros: {
       nombre: string;
+      slug: string;
       activo: boolean;
       onboarding_completado_at: string | null;
       bienvenida_vista_at: string | null;
       pago_presentado_at: string | null;
       premio_omitido_at: string | null;
       reloj_cobranza?: unknown;
+      aceptaciones_legales?: unknown;
     } | null;
   } | null;
 
@@ -132,6 +151,13 @@ export const obtenerSesion = cache(async (): Promise<Sesion | null> => {
 
   const activo = usuario.lubricentros?.activo ?? true;
   const cobranza = aCobranza(usuario.lubricentros?.reloj_cobranza);
+  // Las versiones de los documentos legales que el tenant aceptó. Null si
+  // el campo no vino (ver el piso de arriba): sin dato, sin gate.
+  const versionesAceptadas = Array.isArray(usuario.lubricentros?.aceptaciones_legales)
+    ? (usuario.lubricentros.aceptaciones_legales as unknown[]).filter(
+        (v): v is string => typeof v === "string",
+      )
+    : null;
 
   return {
     usuarioId: usuario.id,
@@ -140,6 +166,7 @@ export const obtenerSesion = cache(async (): Promise<Sesion | null> => {
     email: usuario.email,
     lubricentroId: usuario.lubricentro_id,
     lubricentroNombre: usuario.lubricentros?.nombre ?? null,
+    lubricentroSlug: usuario.lubricentros?.slug ?? null,
     // Un superadmin no tiene tenant: nunca está suspendido.
     lubricentroActivo: activo,
     cobranza,
@@ -158,6 +185,14 @@ export const obtenerSesion = cache(async (): Promise<Sesion | null> => {
       usuario.lubricentros?.onboarding_completado_at != null &&
       usuario.lubricentros.pago_presentado_at === null,
     premioOmitido: usuario.lubricentros?.premio_omitido_at != null,
+    // Un owner de un tenant que no es el demo, con el dato en mano y sin la
+    // versión vigente entre lo aceptado. Todo lo demás: no pendiente.
+    terminosPendientes:
+      usuario.rol === "owner" &&
+      usuario.lubricentros != null &&
+      usuario.lubricentros.slug !== SLUG_DEMO &&
+      versionesAceptadas !== null &&
+      !versionesAceptadas.includes(VERSION_LEGAL),
   };
 });
 

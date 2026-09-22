@@ -9,8 +9,13 @@ import { aTema, aTamanoLogo, type TemaCliente, type TamanoLogo } from "@/lib/cli
 //
 //   get_landing(slug)           → el shell: marca y contacto. No escribe.
 //   get_carton(slug, patente)   → la búsqueda. Registra el intento en
-//                                 landing_busquedas, que es la captura de
-//                                 leads del lubri.
+//                                 landing_busquedas: la métrica de escaneo.
+//                                 Desde 20260922120000 una consulta sin
+//                                 resultado se cuenta pero NO guarda la
+//                                 patente (Política de Privacidad): la
+//                                 patente viaja en el request, y el mensaje
+//                                 de WhatsApp de "no la encontramos" se arma
+//                                 con la de la URL, no con la de la tabla.
 //
 // Por eso el shell no se pide con get_carton y una patente vacía: dejaría
 // una fila basura por cada visita.
@@ -101,15 +106,17 @@ export async function obtenerLanding(slug: string): Promise<Lubricentro | null> 
 /**
  * Busca la patente. Devuelve solo si existe: el cartón completo lo arma la
  * pantalla del vehículo. La llamada queda registrada en landing_busquedas
- * por la propia función — acá no hay que agregar nada.
+ * por la propia función —sin la patente si no la encontró— y acá no hay que
+ * agregar nada.
  *
  * BACKLOG · LÍMITE DE INTENTOS — decisión de producto pendiente.
  *
  * La patente es la única llave de esta puerta y hoy no hay tope: con un
  * script se puede recorrer el espacio de patentes de un lubricentro y
  * descubrir qué autos atiende. El dato para detectarlo ya existe —
- * landing_busquedas guarda cada intento con su lubricentro y si encontró—,
- * así que lo que falta no es instrumentación sino la definición: cuántos
+ * landing_busquedas guarda cada intento con su lubricentro y si encontró
+ * (la patente, solo cuando sí)—, así que lo que falta no es
+ * instrumentación sino la definición: cuántos
  * intentos por ventana, contra qué se cuenta (IP, sesión anónima, slug), y
  * qué ve el que se pasa.
  *

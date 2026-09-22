@@ -17,6 +17,7 @@ import { motivoBloqueo } from "@/components/panel/bloqueo-onboarding";
 import { ItemBloqueado } from "@/components/panel/item-bloqueado";
 import type { FeaturePlan } from "@/lib/planes";
 import { BadgePorLlamar } from "@/components/panel/badge-por-llamar";
+import { LineaLegal } from "@/components/panel/linea-legal";
 
 // Secciones que no entran en la barra: viven en la hoja "Más". `feature` =
 // qué tiene que habilitar el plan para que el item exista. "Ayuda" va al
@@ -285,6 +286,7 @@ export function BarraMobile({
                   Cerrar sesión
                 </button>
               </form>
+              <LineaLegal className="px-3 pt-2 pb-1" />
             </div>
           </div>
         </div>

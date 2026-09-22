@@ -6,6 +6,7 @@ import { Sidebar } from "@/components/panel/sidebar";
 import { BarraMobile } from "@/components/panel/barra-mobile";
 import { AvisoSuspension } from "@/components/panel/aviso-suspension";
 import { BarraCobranza } from "@/components/panel/barra-cobranza";
+import { ModalTerminos } from "@/components/panel/modal-terminos";
 import { metadataPwa } from "@/lib/pwa";
 
 // La autorización vive acá, no en el proxy: /panel es del rol owner.
@@ -104,6 +105,16 @@ export default async function LayoutPanel({
         pasosOnboarding={pasosOnboarding}
         desbloqueando={desbloqueando}
       />
+      {/* EL GATE DE TÉRMINOS, encima de todo el panel y antes que el del
+          onboarding: el tenant que no aceptó la versión vigente de los
+          documentos legales (VERSION_LEGAL) ve el modal bloqueante en
+          cualquier ruta —el onboarding y Ayuda incluidos— hasta que acepta.
+          El dato viajó con la sesión (campo calculado aceptaciones_legales);
+          el superadmin y el demo nunca lo ven. Al aceptar, la acción
+          revalida este layout y el modal deja de existir. */}
+      {sesion.terminosPendientes && (
+        <ModalTerminos taller={sesion.lubricentroNombre ?? "tu lubricentro"} />
+      )}
     </div>
   );
 }
