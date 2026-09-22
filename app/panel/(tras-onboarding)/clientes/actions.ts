@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { sesionParaEscribir } from "@/lib/auth/session";
 import { CUIT_FORMATO, normalizarCuit } from "@/lib/cuit";
+import type { EstadoSupresion } from "@/lib/clientes";
 
 export type EstadoCliente = { error?: string; ok?: boolean };
 
@@ -108,5 +109,58 @@ export async function editarCliente(
 
   revalidatePath("/panel/clientes");
   revalidatePath(`/panel/clientes/${id}`);
+  return { ok: true };
+}
+
+// ============================================================
+// Eliminar los datos personales de un cliente, a su pedido.
+//
+// La política de privacidad lo promete y el reclamo le llega al lubricentro
+// la mayoría de las veces: el owner lo resuelve desde la ficha. La base
+// (anonimizar_cliente, migración 20260922130000) hace todo lo que importa:
+// verifica que el cliente sea de ESTE tenant, exige el motivo, lo registra
+// antes de tocar el dato y deja los vehículos y los trabajos intactos. Acá
+// solo se leen los campos y se traduce lo que responde.
+// ============================================================
+const MENSAJES_SUPRESION: Record<string, string> = {
+  motivo_insuficiente:
+    "Contá con un poco más de detalle por qué se eliminan los datos: es lo que queda registrado.",
+  cliente_ya_suprimido: "Los datos de este cliente ya fueron eliminados.",
+  cliente_no_existe: "Ese cliente ya no existe. Recargá la pantalla y buscalo de nuevo.",
+  sin_permiso: "Ese cliente no es de tu lubricentro.",
+};
+
+export async function anonimizarCliente(
+  _prev: EstadoSupresion,
+  formData: FormData,
+): Promise<EstadoSupresion> {
+  await sesionParaEscribir();
+
+  const id = String(formData.get("cliente_id") ?? "");
+  const motivo = String(formData.get("motivo") ?? "").trim();
+  if (!id) return { error: MENSAJES_SUPRESION.cliente_no_existe };
+  if (motivo.length < 10) return { error: MENSAJES_SUPRESION.motivo_insuficiente };
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("anonimizar_cliente", {
+    p_cliente_id: id,
+    p_motivo: motivo,
+  });
+
+  if (error) {
+    if (esErrorDeRed(error)) return { error: SIN_CONEXION };
+    const clave = Object.keys(MENSAJES_SUPRESION).find((k) => error.message.includes(k));
+    return {
+      error: clave
+        ? MENSAJES_SUPRESION[clave]
+        : "No se pudieron eliminar los datos. Probá de nuevo en un momento.",
+    };
+  }
+
+  // La ficha, el listado y "A quién llamar", donde el nombre y el teléfono
+  // aparecen en cada fila.
+  revalidatePath("/panel/clientes");
+  revalidatePath(`/panel/clientes/${id}`);
+  revalidatePath("/panel/proximos");
   return { ok: true };
 }

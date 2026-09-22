@@ -8,6 +8,9 @@ import { estadoService } from "@/lib/servicios";
 import { FilaServiceFidelli } from "./fila-service-fidelli";
 import { FilaVehiculoFidelli } from "./fila-vehiculo-fidelli";
 import { HistorialCorrecciones } from "./historial-correcciones";
+import { DialogSuprimirCliente } from "@/components/clientes/dialog-suprimir-cliente";
+import { anonimizarClienteFidelli } from "@/app/fidelli/[id]/actions";
+import { clienteSuprimido } from "@/lib/clientes";
 import { VISTAS_DATOS, esVistaDatos, type Tenant, type VistaDatos } from "./tipos";
 import type { ParamsFicha } from "@/app/fidelli/[id]/page";
 
@@ -21,9 +24,12 @@ const TD = "px-3 py-2.5 align-middle";
 // ============================================================
 // El acceso operativo al tenant, para dar soporte por teléfono.
 //
-// SOLO LECTURA, salvo el desbloqueo. Fidelli no edita los datos de su
-// cliente: si hay algo mal, se abre la ventana y lo corrige el lubri. La
-// frontera es del producto — no tocamos la operación de nadie.
+// SOLO LECTURA, salvo el desbloqueo, la corrección de patente y la
+// supresión de un cliente final a pedido del titular (la política de
+// privacidad la promete y el reclamo llega por email a Fidelli). Fidelli
+// no edita los datos de su cliente: si hay algo mal, se abre la ventana y
+// lo corrige el lubri. La frontera es del producto — no tocamos la
+// operación de nadie.
 //
 // Y las tres consultas de acá son las más expuestas al error de
 // aislamiento: vista_clientes y vista_vehiculos tienen security_invoker,
@@ -183,6 +189,9 @@ async function ListaClientes({
                 <th scope="col" className={TH}>Teléfono</th>
                 <th scope="col" className={TH}>Vehículos</th>
                 <th scope="col" className={TH}>Último service</th>
+                <th scope="col" className={TH}>
+                  <span className="sr-only">Supresión de datos</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -206,6 +215,23 @@ async function ListaClientes({
                     ) : (
                       <span className="text-ink-40">nunca</span>
                     )}
+                  </td>
+                  <td className={`${TD} text-right whitespace-nowrap`}>
+                    {/* La supresión a pedido del titular (anonimizar_cliente):
+                        el reclamo llega por email a Fidelli y se resuelve acá,
+                        con motivo y registro. Ya suprimido, se dice. */}
+                    {c.id && c.nombre ? (
+                      clienteSuprimido({ nombre: c.nombre, telefono: c.telefono ?? "" }) ? (
+                        <span className="text-label text-ink-40">datos eliminados</span>
+                      ) : (
+                        <DialogSuprimirCliente
+                          clienteId={c.id}
+                          lubricentroId={tenant.id}
+                          nombre={c.nombre}
+                          accion={anonimizarClienteFidelli}
+                        />
+                      )
+                    ) : null}
                   </td>
                 </tr>
               ))}
