@@ -2897,6 +2897,19 @@ export type Database = {
         }
         Returns: string
       }
+      indicadores_tenants: {
+        Args: never
+        Returns: {
+          es_activo: boolean
+          estado_reloj: string
+          exento: boolean
+          lubricentro_id: string
+          modulo_pago: boolean
+          mrr_ars: number
+          trabajos_30: number
+          ultimo_trabajo: string
+        }[]
+      }
       limite_de_tenant: {
         Args: { p_limite: string; p_lubricentro: string }
         Returns: number
@@ -3054,7 +3067,17 @@ export type Database = {
         Args: { l: Database["public"]["Tables"]["lubricentros"]["Row"] }
         Returns: Json
       }
+      resumen_admin: { Args: never; Returns: Json }
       resumen_inicio: { Args: { p_sucursal_id?: string }; Returns: Json }
+      salud_tenants: {
+        Args: never
+        Returns: {
+          lubricentro_id: string
+          motivo: string
+          salud: string
+          ultimo_trabajo: string
+        }[]
+      }
       seed_demo: { Args: { p_password?: string }; Returns: string }
       sembrar_templates: {
         Args: { p_lubricentro_id: string; p_nombre: string }
@@ -3105,6 +3128,14 @@ export type Database = {
       telefono_de_contacto: {
         Args: { p_lubricentro_id: string }
         Returns: string
+      }
+      trabajos_semanales: {
+        Args: { p_lubricentro_id?: string; p_semanas?: number }
+        Returns: {
+          cantidad: number
+          lubricentro_id: string
+          semana: string
+        }[]
       }
       unaccent: { Args: { "": string }; Returns: string }
       verificar_seguridad_vistas: {

@@ -91,6 +91,7 @@ export async function registrarPago(
 
   revalidatePath(`/fidelli/${lubricentroId}`);
   revalidatePath("/fidelli");
+  revalidatePath("/fidelli/lubricentros");
   return { ok: "Pago registrado. El vencimiento quedó actualizado." };
 }
 

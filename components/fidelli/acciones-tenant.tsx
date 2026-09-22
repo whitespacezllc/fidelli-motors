@@ -17,6 +17,7 @@ import {
   type EstadoEdicion,
 } from "@/app/fidelli/actions";
 import type { Periodo } from "@/lib/fidelli/plan";
+import { DOMINIO_SITIO } from "@/lib/seo";
 import type { FilaLubricentro, PlanCompleto } from "@/components/fidelli/tipos";
 import {
   ETIQUETA_MOTIVO_SUSPENSION,
@@ -37,7 +38,7 @@ export type OrigenDeFila = {
 const INICIAL: EstadoEdicion = {};
 
 const CLASE_ACCION =
-  "inline-flex min-h-8 items-center rounded-sm px-2 py-1 text-label font-semibold text-ink underline underline-offset-2 hover:bg-surface disabled:opacity-60";
+  "inline-flex min-h-8 items-center rounded-sm px-2 py-1 text-label font-semibold whitespace-nowrap text-ink underline underline-offset-2 hover:bg-surface disabled:opacity-60";
 
 export function AccionesTenant({
   fila,
@@ -49,7 +50,9 @@ export function AccionesTenant({
   origen: OrigenDeFila;
 }) {
   return (
-    <span className="flex items-center justify-end gap-1 whitespace-nowrap">
+    // flex-wrap: en la columna angosta del listado las dos acciones se
+    // apilan en vez de desbordar hacia la celda de al lado.
+    <span className="flex flex-wrap items-center justify-end gap-x-1 gap-y-0.5">
       <DialogEditar fila={fila} planes={planes} origen={origen} />
       <DialogEstado fila={fila} />
     </span>
@@ -149,7 +152,7 @@ function DialogEditar({
               </p>
             ) : (
               <p className={CLASE_AYUDA}>
-                fidellimotors.app/{fila.slug} — todavía se puede cambiar porque
+                {DOMINIO_SITIO}/{fila.slug} — todavía se puede cambiar porque
                 no hay calcos entregadas.
               </p>
             )}
@@ -282,7 +285,7 @@ function DialogEstado({ fila }: { fila: FilaLubricentro }) {
             <div className="flex flex-col gap-3 text-ui text-ink-60">
               <p>
                 <span className="font-semibold text-ink">
-                  fidellimotors.app/{fila.slug} sigue respondiendo.
+                  {DOMINIO_SITIO}/{fila.slug} sigue respondiendo.
                 </span>{" "}
                 Los calcos ya pegados en los parasoles siguen funcionando: el
                 cliente que escanee el QR ve su historial igual. Lo que se
@@ -349,7 +352,7 @@ function DialogEstado({ fila }: { fila: FilaLubricentro }) {
               <p>
                 El owner recupera la carga de services al instante, y{" "}
                 <span className="font-semibold text-ink">
-                  fidellimotors.app/{fila.slug}
+                  {DOMINIO_SITIO}/{fila.slug}
                 </span>{" "}
                 vuelve a ofrecer el premio y el mensaje al escanear que tenga
                 configurados.

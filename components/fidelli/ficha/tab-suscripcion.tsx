@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatearFecha } from "@/lib/fechas";
 import {
   MESES_DEL_PERIODO,
+  esFounding,
   pesos,
   sumarDias,
   sumarMeses,
@@ -27,6 +28,10 @@ const TH =
   "px-3 py-2 text-left text-label font-semibold tracking-[0.06em] text-ink-60 uppercase whitespace-nowrap";
 const TD = "px-3 py-2.5 align-middle";
 
+// El día en que el alta pasó a nacer pagando (migración 20260917140000):
+// ningún tenant creado desde entonces tuvo un período de trial.
+const ALTA_NACE_PAGANDO = "2026-09-17";
+
 export async function TabSuscripcion({
   tenant,
   suscripcion,
@@ -42,7 +47,7 @@ export async function TabSuscripcion({
     supabase
       .from("pagos")
       .select(
-        "id, periodo_desde, periodo_hasta, monto, fecha_pago, created_at, usuarios!registrado_por(nombre)",
+        "id, periodo_desde, periodo_hasta, monto, fecha_pago, origen, created_at, usuarios!registrado_por(nombre)",
       )
       .eq("lubricentro_id", tenant.id)
       .order("periodo_hasta", { ascending: false }),
@@ -120,8 +125,20 @@ export async function TabSuscripcion({
     ? sumarDias(primerPago.periodo_desde, -1)
     : (suscripcion?.vencimiento ?? null);
 
+  // La fila de trial se muestra solo si el estado FUE trial alguna vez. Lo
+  // exacto sería leerlo del evento `alta` (tenant_eventos), pero ese evento
+  // no guarda el estado de la suscripción (bloque 1, pendiente). Lo que sí
+  // se sabe: desde 20260917140000 los tenants NACEN activos, sin trial, así
+  // que un tenant dado de alta desde esa fecha solo tuvo trial si su
+  // suscripción está en trial HOY. Para los anteriores vale la inferencia
+  // de siempre (el hueco entre el inicio y el primer período pago).
+  const pudoTenerTrial =
+    suscripcion?.estado === "trial" || tenant.created_at < ALTA_NACE_PAGANDO;
   const hayTrial =
-    suscripcion !== null && finDelTrial !== null && finDelTrial >= suscripcion.inicio;
+    pudoTenerTrial &&
+    suscripcion !== null &&
+    finDelTrial !== null &&
+    finDelTrial >= suscripcion.inicio;
 
   const meses = suscripcion ? MESES_DEL_PERIODO[suscripcion.periodo] : 1;
   const desdeSugerido = suscripcion ? sumarDias(suscripcion.vencimiento, 1) : "";
@@ -176,7 +193,9 @@ export async function TabSuscripcion({
                       {formatearFecha(p.fecha_pago)}
                     </td>
                     <td className={`${TD} whitespace-nowrap text-ink-60`}>
-                      {p.usuarios?.nombre ?? "—"}
+                      {/* Un pago acreditado por el webhook no tiene autor
+                          humano: lo registró Cresium. */}
+                      {p.origen === "cresium" ? "Cresium" : (p.usuarios?.nombre ?? "—")}
                     </td>
                   </tr>
                 ))}
@@ -188,7 +207,7 @@ export async function TabSuscripcion({
                       {formatearFecha(finDelTrial!)}
                     </td>
                     <td className={`${TD} whitespace-nowrap text-ink-60`}>
-                      {suscripcion.descuento_pct === 50
+                      {esFounding(suscripcion.descuento_pct)
                         ? "Trial founding"
                         : "Trial"}
                     </td>

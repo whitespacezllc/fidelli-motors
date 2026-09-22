@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { DOMINIO_SITIO } from "@/lib/seo";
 import { PanelFicha, Dato, SinDato } from "./panel-dato";
 import type { Tenant } from "./tipos";
 
@@ -83,7 +84,7 @@ export async function TabConfiguracion({ tenant }: { tenant: Tenant }) {
                 target="_blank"
                 className="font-semibold text-ink underline underline-offset-2"
               >
-                fidellimotors.app/{tenant.slug}
+                {DOMINIO_SITIO}/{tenant.slug}
               </Link>
               {/* ⚠ ACÁ DECÍA «suspendida: no responde», y era falso: la
                   vidriera de un suspendido SIGUE respondiendo —get_landing

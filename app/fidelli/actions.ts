@@ -272,6 +272,7 @@ export async function altaDeLubricentro(
   // El lubricentro ya existe. Pase lo que pase de acá en adelante, el
   // listado tiene que mostrarlo.
   revalidatePath("/fidelli");
+  revalidatePath("/fidelli/lubricentros");
 
   // ---------- Fase 1b: el origen, por su propia puerta ----------
   // Fuera de la transacción del alta a propósito: crear_lubricentro() no
@@ -324,6 +325,7 @@ export async function invitarOwner(
   if (motivo) return { error: motivo };
 
   revalidatePath("/fidelli");
+  revalidatePath("/fidelli/lubricentros");
   return { ok: `Invitación enviada a ${email}.` };
 }
 
@@ -355,6 +357,7 @@ export async function reenviarInvitacion(
   if (motivo) return { error: motivo };
 
   revalidatePath("/fidelli");
+  revalidatePath("/fidelli/lubricentros");
   return { ok: `Invitación reenviada a ${owner.email}.` };
 }
 
@@ -413,6 +416,7 @@ export async function editarLubricentro(
   }
 
   revalidatePath("/fidelli");
+  revalidatePath("/fidelli/lubricentros");
   return { ok: true };
 }
 
@@ -462,6 +466,7 @@ export async function cambiarEstadoLubricentro(
   if (error) return { error: traducir(error.message) };
 
   revalidatePath("/fidelli");
+  revalidatePath("/fidelli/lubricentros");
   revalidatePath("/panel", "layout");
   return { ok: true };
 }
@@ -502,6 +507,7 @@ export async function registrarAviso(
   }
 
   revalidatePath("/fidelli");
+  revalidatePath("/fidelli/lubricentros");
   revalidatePath(`/fidelli/${lubricentroId}`);
   return {};
 }
@@ -552,6 +558,7 @@ export async function alternarAviso(
   }
 
   revalidatePath("/fidelli");
+  revalidatePath("/fidelli/lubricentros");
   revalidatePath(`/fidelli/${lubricentroId}`);
   return {};
 }

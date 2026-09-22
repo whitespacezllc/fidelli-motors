@@ -2,6 +2,7 @@ import {
   MESES_DEL_PERIODO,
   abonoMensual,
   descuentoDeLista,
+  esFounding,
   pesos,
   porcentaje,
   totalDelPeriodo,
@@ -59,7 +60,7 @@ export function ResumenAbono({
 
       {descuentoPct > 0 && (
         <Renglon
-          etiqueta={descuentoPct === 50 ? "Descuento founding" : "Descuento del cliente"}
+          etiqueta={esFounding(descuentoPct) ? "Descuento founding" : "Descuento del cliente"}
           valor={`−${porcentaje(descuentoPct)}`}
         />
       )}

@@ -31,6 +31,17 @@ export const ETIQUETA_ORIGEN: Record<OrigenTenant, string> = {
   otro: "Otro",
 };
 
+/** La versión corta, para el chip de la ficha: «Meta», «Referido», «Calco». */
+export const ETIQUETA_ORIGEN_CORTA: Record<OrigenTenant, string> = {
+  meta: "Meta",
+  referido: "Referido",
+  directo: "Directo",
+  distribuidor: "Distribuidor",
+  calco: "Calco",
+  organico: "Orgánico",
+  otro: "Otro",
+};
+
 export function esOrigenTenant(v: unknown): v is OrigenTenant {
   return typeof v === "string" && (ORIGENES_TENANT as readonly string[]).includes(v);
 }
