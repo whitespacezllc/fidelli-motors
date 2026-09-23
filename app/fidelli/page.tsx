@@ -9,7 +9,7 @@ import { FranjaResumen, type ActivacionDelMes } from "@/components/fidelli/franj
 import { LineaPauta } from "@/components/fidelli/linea-pauta";
 import type { PuntoPulso } from "@/components/fidelli/grafico-pulso";
 import { GraficoMrr } from "@/components/fidelli/grafico-mrr";
-import { esMoneda, type Moneda, type PuntoMrr } from "@/lib/fidelli/mrr";
+import { esMoneda, esRangoMrr, type Moneda, type PuntoMrr, type RangoMrr } from "@/lib/fidelli/mrr";
 import { Pulso } from "@/components/fidelli/pulso";
 import { Alertas } from "@/components/fidelli/alertas";
 
@@ -29,13 +29,15 @@ export const metadata: Metadata = { title: "Resumen" };
 export default async function PaginaResumen({
   searchParams,
 }: {
-  searchParams: Promise<{ pulso?: string; moneda?: string }>;
+  searchParams: Promise<{ pulso?: string; moneda?: string; mrr?: string }>;
 }) {
-  const { pulso, moneda } = await searchParams;
+  const { pulso, moneda, mrr } = await searchParams;
   // Semanal por defecto: con pocos datos es el que mejor se lee.
   const granularidad: Granularidad = esGranularidad(pulso) ? pulso : "semana";
   // Dólares por defecto: es la moneda del objetivo.
   const monedaInicial: Moneda = esMoneda(moneda) ? moneda : "usd";
+  // El período del gráfico de MRR: el mes en curso por defecto; Q1–Q4 y el año, por la URL.
+  const rangoInicial: RangoMrr = esRangoMrr(mrr) ? mrr : "mes";
 
   const supabase = await createClient();
   const hoy = hoyISO();
@@ -131,6 +133,8 @@ export default async function PaginaResumen({
         serie={serie}
         objetivo={serieObjetivo()}
         monedaInicial={monedaInicial}
+        rangoInicial={rangoInicial}
+        hoy={hoy}
         primerTenant={primerTenant}
       />
 
