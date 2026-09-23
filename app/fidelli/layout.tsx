@@ -56,6 +56,16 @@ export default async function LayoutFidelli({
           >
             Pauta
           </NavLink>
+          {/* Lo que un comprador va a mirar: movimientos de MRR, altas y
+              bajas, cohortes, uso, embudo y el data room (bloque MÉTRICAS
+              4). Va después de la pauta y antes de la operación: se lee una
+              vez por mes, no todos los días. */}
+          <NavLink
+            href="/fidelli/crecimiento"
+            className="flex h-10 items-center rounded-md px-3 text-ui transition-colors"
+          >
+            Crecimiento
+          </NavLink>
           {/* OPERACIÓN: lo que se mira todos los días. Va segundo, justo
               después del listado, porque es la pantalla que se abre a la
               mañana — antes que el catálogo, que se toca una vez por

@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState, useTransition } from "react";
+import { useId, useLayoutEffect, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AreaClosed, LinePath } from "@visx/shape";
 import { LinearGradient } from "@visx/gradient";
@@ -32,6 +32,24 @@ import { MONEDAS, type Moneda, type PuntoMrr } from "@/lib/fidelli/mrr";
 // Como en grafico-serie.tsx, el SVG se estira (preserveAspectRatio="none")
 // y todo lo que no puede deformarse —etiquetas, tooltip, el punto de hoy—
 // vive en HTML posicionado por porcentaje.
+//
+// EL GRÁFICO ARRANCA CON EL PRIMER TENANT (bloque MÉTRICAS 4): una foto
+// anterior al alta del primer tenant es una plataforma vacía —una
+// reconstrucción que arrancó antes, una foto de prueba que quedó en una
+// base local— y estiraría el eje con meses de ceros. Esas fotos se ignoran
+// acá, no se borran (los snapshots son inmutables): el primer punto es el
+// mayor entre la primera foto y el día del alta. El punto de hoy y el
+// objetivo no cambian.
+//
+// EL EJE X SE MIDE, NO SE ADIVINA: la cantidad de rótulos que entran
+// depende del ancho real del contenedor (ResizeObserver) y del largo del
+// rango, no del breakpoint de Tailwind. El eje habla en meses: uno cada N,
+// con N el menor paso de calendario (1, 2, 3, 4, 6, 12) en el que dos
+// rótulos vecinos no se tocan, anclado al primer mes del rango (el
+// arranque siempre tiene fecha) y con el año en el primero y en cada
+// cambio de año. Si el rango no da para dos rótulos de mes (en pesos no
+// hay objetivo que lo estire: la serie sola puede ser de días o semanas),
+// habla en días, «dd/MM» cada 1, 2, 7 o 14.
 // ============================================================
 
 // Los tipos (Moneda, PuntoMrr) y el guard esMoneda viven en
@@ -49,19 +67,21 @@ function diaDe(iso: string): number {
 
 const MES_CORTO = new Intl.DateTimeFormat("es-AR", { month: "short", timeZone: "UTC" });
 
-// Los inicios de mes entre dos días, con su etiqueta: «sep», «oct», …,
-// y el año cada enero para no perderse en un rango de año y medio.
-function mesesEntre(t0: number, t1: number): { t: number; etiqueta: string }[] {
+type Mes = { t: number; nombre: string; anio: number };
+
+// Los inicios de mes entre dos días, con su nombre corto («sept», «oct», …)
+// y su año. La etiqueta se arma después, cuando se sabe cuáles se muestran:
+// el año va en el primero y en cada cambio de año.
+function mesesEntre(t0: number, tFin: number): Mes[] {
   const desde = new Date(t0 * 86_400_000);
   let anio = desde.getUTCFullYear();
   let mes = desde.getUTCMonth() + 1; // el mes en curso, aunque su día 1 sea anterior a t0
-  const salida: { t: number; etiqueta: string }[] = [];
+  const salida: Mes[] = [];
   for (;;) {
     const t = Date.UTC(anio, mes - 1, 1) / 86_400_000;
-    if (t > t1) break;
+    if (t > tFin) break;
     if (t >= t0) {
-      const nombre = MES_CORTO.format(new Date(t * 86_400_000)).replace(".", "");
-      salida.push({ t, etiqueta: mes === 1 ? `${nombre} ${anio}` : nombre });
+      salida.push({ t, nombre: MES_CORTO.format(new Date(t * 86_400_000)).replace(".", ""), anio });
     }
     mes += 1;
     if (mes > 12) { mes = 1; anio += 1; }
@@ -69,15 +89,167 @@ function mesesEntre(t0: number, t1: number): { t: number; etiqueta: string }[] {
   return salida;
 }
 
+// «22/09»: día y mes armados del número de día, sin pasar por Intl (es-AR
+// ignora el 2-digit del mes, como anota lib/series.ts).
+function etiquetaDia(t: number): string {
+  const f = new Date(t * 86_400_000);
+  return `${String(f.getUTCDate()).padStart(2, "0")}/${String(f.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+// ---------- El eje X según el ancho real ----------
+
+// Ancho estimado de un rótulo, sin medir texto (el ancho del contenedor no
+// depende de que la fuente haya cargado; el del texto sí): text-label mide
+// 12px y en Public Sans un dígito tabular ocupa ~8,4px y una letra ~6px.
+// Se redondea para arriba a propósito (mejor un rótulo de menos que dos
+// pisados). Entre rótulos vecinos quedan 8px de aire.
+const PX_POR_DIGITO = 8.5;
+const PX_POR_LETRA = 6.5;
+const SEPARACION = 8;
+
+function anchoDeTexto(texto: string): number {
+  let ancho = 0;
+  for (const c of texto) ancho += c >= "0" && c <= "9" ? PX_POR_DIGITO : PX_POR_LETRA;
+  return ancho;
+}
+// Antes de medir (el render del servidor y el primer paint) se asume el
+// eje de un celular de 320px de ancho: la tarjeta le descuenta unos 80px
+// de márgenes y padding y quedan ~240. Si el eje real es más ancho sobran
+// rótulos, que es el error barato; el ResizeObserver corrige antes de
+// pintar. El mismo número usa grafico-pulso.tsx.
+const ANCHO_SUPUESTO = 240;
+// Pasos de calendario, del más fino al más grueso. En meses: con 3 se ven
+// los trimestres, con 6 los semestres, con 12 uno por año; más allá,
+// múltiplos de 12. En días: uno, dos, la semana y la quincena; más allá,
+// múltiplos de la semana.
+const PASOS_MES = { lista: [1, 2, 3, 4, 6, 12], base: 12 };
+const PASOS_DIA = { lista: [1, 2, 7, 14], base: 7 };
+
+type Candidato = { t: number; etiqueta: string };
+type Rotulo = Candidato & { pct: number; anclaje: "izquierda" | "centro" | "derecha" };
+
+// Ubica candidatos sobre un eje de `anchoPx` píxeles que va de t0 a t1 y
+// descarta el que pise al anterior. Los de los bordes no se centran (para
+// no salirse del gráfico), así que sus cajas son distintas: el primero,
+// ancho porque lleva el año y anclado a la izquierda, ocupa el doble hacia
+// la derecha que uno centrado.
+function ubicar(candidatos: Candidato[], t0: number, t1: number, anchoPx: number): Rotulo[] {
+  const salida: Rotulo[] = [];
+  let derechaAnterior = -Infinity;
+  for (const c of candidatos) {
+    const pct = ((c.t - t0) / (t1 - t0)) * 100;
+    const x = (pct / 100) * anchoPx;
+    const w = anchoDeTexto(c.etiqueta);
+    const anclaje = pct < 3 ? "izquierda" : pct > 97 ? "derecha" : "centro";
+    const izquierda = anclaje === "izquierda" ? x : anclaje === "derecha" ? x - w : x - w / 2;
+    if (izquierda < derechaAnterior + SEPARACION) continue;
+    salida.push({ ...c, pct, anclaje });
+    derechaAnterior = izquierda + w;
+  }
+  return salida;
+}
+
+// Prueba los pasos del más fino al más grueso y se queda con el primero en
+// el que TODOS los candidatos caben (ubicar() no tuvo que descartar
+// ninguno): así el eje queda parejo. Elegir el paso con una cuenta de
+// «ancho del rótulo más ancho ÷ píxeles por mes» dejaba un hueco al
+// arranque, donde el primer rótulo pisaba al segundo y se perdía solo ese.
+// Termina siempre: con un paso más grande que el rango queda un solo
+// candidato, y uno solo cabe.
+function primerPasoQueCabe(
+  pasos: { lista: number[]; base: number },
+  candidatosCon: (paso: number) => Candidato[],
+  t0: number,
+  t1: number,
+  anchoPx: number,
+): Rotulo[] {
+  let paso = 0;
+  for (let i = 0; ; i++) {
+    paso = i < pasos.lista.length ? pasos.lista[i] : paso + pasos.base;
+    const candidatos = candidatosCon(paso);
+    const ubicados = ubicar(candidatos, t0, t1, anchoPx);
+    if (ubicados.length === candidatos.length || candidatos.length <= 1) return ubicados;
+  }
+}
+
+// Un rótulo cada N meses, anclado al primer mes del rango (así el arranque
+// siempre tiene fecha). El año va en el primero y en cada cambio de año
+// («oct 2026, dic, feb 2027, …»), que es lo que antes justificaba anclar
+// el paso a enero. En un eje angosto (un celular) el año del cambio cuesta
+// caro: «mar 2027» no cabe al lado de «sept 2026» y el paso salta a un
+// rótulo por año; con menos de tres, se reintenta con el año solo en el
+// primero («sept 2026, mar, sept, mar») y se acepta si entran más.
+function rotulosPorMes(meses: Mes[], t0: number, t1: number, anchoPx: number): Rotulo[] {
+  if (meses.length === 0) return [];
+  const candidatosCon = (anioEnCambios: boolean) => (paso: number) => {
+    const elegidos = meses.filter((_, i) => i % paso === 0);
+    return elegidos.map((m, i) => ({
+      t: m.t,
+      etiqueta:
+        i === 0 || (anioEnCambios && m.anio !== elegidos[i - 1].anio)
+          ? `${m.nombre} ${m.anio}`
+          : m.nombre,
+    }));
+  };
+  const conCambios = primerPasoQueCabe(PASOS_MES, candidatosCon(true), t0, t1, anchoPx);
+  if (conCambios.length >= 3) return conCambios;
+  const soloPrimero = primerPasoQueCabe(PASOS_MES, candidatosCon(false), t0, t1, anchoPx);
+  return soloPrimero.length > conCambios.length ? soloPrimero : conCambios;
+}
+
+// Un rótulo «dd/MM» cada N días desde el primer punto hasta el último día
+// con algo dibujado: el eje de un rango que no llega a dos inicios de mes.
+function rotulosPorDia(t0: number, tFin: number, t1: number, anchoPx: number): Rotulo[] {
+  const candidatosCon = (paso: number) => {
+    const candidatos: Candidato[] = [];
+    for (let t = t0; t <= tFin; t += paso) candidatos.push({ t, etiqueta: etiquetaDia(t) });
+    return candidatos;
+  };
+  return primerPasoQueCabe(PASOS_DIA, candidatosCon, t0, t1, anchoPx);
+}
+
+// Qué rotular en un eje de `anchoPx` píxeles que va de t0 a t1, con tFin el
+// último día con algo dibujado (con un solo punto real y sin objetivo, t1
+// es t0 + 1: un día de relleno para que el eje no mida cero, que no se
+// rotula). Primero en meses; si el rango no da para dos rótulos de mes, en
+// días: un eje de tiempo sin fechas no se lee.
+function elegirRotulos(t0: number, tFin: number, t1: number, anchoPx: number): Rotulo[] {
+  const porMes = rotulosPorMes(mesesEntre(t0, tFin), t0, t1, anchoPx);
+  return porMes.length >= 2 ? porMes : rotulosPorDia(t0, tFin, t1, anchoPx);
+}
+
+// El ancho real de un elemento, seguido con ResizeObserver. Devuelve el ref
+// (como callback, para volver a medir si el nodo se monta después: el
+// gráfico tiene un estado vacío sin eje) y el ancho, null hasta medir.
+function useAncho(): [(nodo: HTMLDivElement | null) => void, number | null] {
+  const [nodo, setNodo] = useState<HTMLDivElement | null>(null);
+  const [ancho, setAncho] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    if (!nodo) return;
+    const medir = () => setAncho(nodo.getBoundingClientRect().width);
+    medir();
+    const observador = new ResizeObserver(medir);
+    observador.observe(nodo);
+    return () => observador.disconnect();
+  }, [nodo]);
+  return [setNodo, ancho];
+}
+
 export function GraficoMrr({
   serie,
   objetivo,
   monedaInicial,
+  primerTenant,
 }: {
   /** De la fecha más vieja a la más nueva; la última puede ser la de hoy en vivo. */
   serie: PuntoMrr[];
   objetivo: PuntoObjetivo[];
   monedaInicial: Moneda;
+  /**
+   * El día argentino del alta del primer tenant ("2026-09-22"): las fotos
+   * anteriores se ignoran. Null si no hay tenants: no se filtra nada.
+   */
+  primerTenant: string | null;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -85,6 +257,7 @@ export function GraficoMrr({
   const [moneda, setMoneda] = useState<Moneda>(monedaInicial);
   const [indice, setIndice] = useState<number | null>(null);
   const superficie = useRef<HTMLDivElement | null>(null);
+  const [ejeX, anchoEje] = useAncho();
   const idRelleno = useId();
 
   // El cambio es instantáneo (estado) y la URL lo sigue atrás: se toca
@@ -105,7 +278,12 @@ export function GraficoMrr({
   const enUsd = moneda === "usd";
   const valorDe = (p: PuntoMrr): number | null => (enUsd ? p.mrrUsd : p.mrrArs);
   const formato = (n: number) => (enUsd ? dolares(n) : pesos(n));
-  const reales = serie.filter((p) => valorDe(p) != null);
+  // El piso de fecha: desde el alta del primer tenant, inclusive (la foto
+  // de ese día ya lo tiene). El punto de hoy siempre pasa.
+  const desdeElPrimerTenant = primerTenant
+    ? serie.filter((p) => p.fecha >= primerTenant)
+    : serie;
+  const reales = desdeElPrimerTenant.filter((p) => valorDe(p) != null);
   const ultimo = reales[reales.length - 1];
 
   const cabecera = (
@@ -151,7 +329,11 @@ export function GraficoMrr({
   const tObjetivo = objetivoVisible.length
     ? diaDe(objetivoVisible[objetivoVisible.length - 1].fecha)
     : tUltimo;
-  const t1 = Math.max(tUltimo, tObjetivo, t0 + 1);
+  // El último día con algo dibujado, y el fin del eje: con un solo punto
+  // real y sin objetivo, el eje se estira un día de relleno para no medir
+  // cero (ese día no se rotula).
+  const tFin = Math.max(tUltimo, tObjetivo);
+  const t1 = Math.max(tFin, t0 + 1);
   const xDe = (iso: string) => ((diaDe(iso) - t0) / (t1 - t0)) * ANCHO;
 
   const maxReal = Math.max(...reales.map((p) => valorDe(p) as number));
@@ -177,7 +359,7 @@ export function GraficoMrr({
 
   const activo = indice !== null ? reales[indice] : null;
   const ticks = y.ticks(4).filter((t) => t > 0 && t <= yMax);
-  const meses = mesesEntre(t0, t1);
+  const rotulos = elegirRotulos(t0, tFin, t1, anchoEje ?? ANCHO_SUPUESTO);
 
   const pctX = (iso: string) => (xDe(iso) / ANCHO) * 100;
   const pctY = (v: number) => (y(v) / ALTO) * 100;
@@ -349,11 +531,19 @@ export function GraficoMrr({
             </span>
           ))}
 
+          {/* Los dos textos que viven sobre el dibujo (este y el de hoy)
+              llevan el mismo fondo translúcido que las etiquetas del eje Y:
+              el objetivo punteado cruza la referencia cerca del borde
+              derecho, y la etiqueta de hoy cae sobre la propia serie cuando
+              es plana. */}
           {enUsd && REFERENCIA_MRR_USD <= yMax && (
             <span
               aria-hidden
-              className="pointer-events-none absolute right-0 -translate-y-full pb-0.5 text-label font-semibold text-ink-60 tabular-nums"
-              style={{ top: `${pctY(REFERENCIA_MRR_USD)}%` }}
+              className="pointer-events-none absolute right-0 rounded-sm bg-base/80 px-1 text-label font-semibold text-ink-60 tabular-nums"
+              style={{
+                top: `${pctY(REFERENCIA_MRR_USD)}%`,
+                transform: "translateY(calc(-100% - 2px))",
+              }}
             >
               Objetivo · {dolares(REFERENCIA_MRR_USD)}
             </span>
@@ -371,7 +561,7 @@ export function GraficoMrr({
           />
           <span
             aria-hidden
-            className="pointer-events-none absolute whitespace-nowrap text-label font-semibold text-ink tabular-nums"
+            className="pointer-events-none absolute rounded-sm bg-base/80 px-1 text-label font-semibold whitespace-nowrap text-ink tabular-nums"
             style={{
               left: `${pctX(ultimo.fecha)}%`,
               top: `${pctY(valorDe(ultimo) as number)}%`,
@@ -433,27 +623,31 @@ export function GraficoMrr({
           )}
         </div>
 
-        {/* El eje X: un rótulo por mes, posicionado por fecha. En pantallas
-            angostas se saltean de a dos y de a cuatro para que no se pisen. */}
-        <div className="relative mt-1.5 h-4 text-label text-ink-40 tabular-nums">
-          {meses.map((m, i) => {
-            const pct = ((m.t - t0) / (t1 - t0)) * 100;
-            const visibilidad =
-              i % 4 === 0 ? "" : i % 2 === 0 ? "hidden sm:inline" : "hidden lg:inline";
-            return (
-              <span
-                key={m.t}
-                className={`absolute whitespace-nowrap ${visibilidad}`}
-                style={{
-                  left: `${pct}%`,
-                  transform:
-                    pct < 3 ? "none" : pct > 97 ? "translateX(-100%)" : "translateX(-50%)",
-                }}
-              >
-                {m.etiqueta}
-              </span>
-            );
-          })}
+        {/* El eje X: un rótulo cada N meses (o días, en un rango corto) según
+            el ancho medido, posicionado por fecha. Los de los bordes se
+            anclan hacia adentro. */}
+        <div
+          ref={ejeX}
+          data-eje-x
+          className="relative mt-1.5 h-4 text-label text-ink-40 tabular-nums"
+        >
+          {rotulos.map((m) => (
+            <span
+              key={m.t}
+              className="absolute whitespace-nowrap"
+              style={{
+                left: `${m.pct}%`,
+                transform:
+                  m.anclaje === "izquierda"
+                    ? "none"
+                    : m.anclaje === "derecha"
+                      ? "translateX(-100%)"
+                      : "translateX(-50%)",
+              }}
+            >
+              {m.etiqueta}
+            </span>
+          ))}
         </div>
 
         {/* La leyenda, siempre visible. */}

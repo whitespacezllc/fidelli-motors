@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
-import { hoyISO } from "@/lib/fechas";
+import { fechaCalendarioAR, hoyISO } from "@/lib/fechas";
 import { leerResumen } from "@/lib/fidelli/resumen";
 import { serieObjetivo } from "@/lib/fidelli/objetivo";
 import { esGranularidad, type Granularidad } from "@/lib/series";
@@ -22,7 +22,9 @@ export const metadata: Metadata = { title: "Resumen" };
 // trabajos y las alertas del día. Tres lecturas y nada más: resumen_admin()
 // (los números y los conteos de las alertas), snapshots_diarios (la serie
 // del MRR, que se lee y no se recalcula) y metricas_plataforma() (el pulso).
-// El listado vive en /fidelli/lubricentros.
+// Más una consulta chica (bloque MÉTRICAS 4): el alta del primer tenant,
+// que es el piso de fecha del gráfico de MRR. El listado vive en
+// /fidelli/lubricentros.
 // ============================================================
 export default async function PaginaResumen({
   searchParams,
@@ -39,20 +41,31 @@ export default async function PaginaResumen({
   const hoy = hoyISO();
   const primeroDelMes = `${hoy.slice(0, 7)}-01`;
 
-  const [resumenRes, snapshotsRes, plataformaRes, pautaRes, activacionRes, volvieronRes] =
-    await Promise.all([
-      supabase.rpc("resumen_admin"),
-      supabase
-        .from("snapshots_diarios")
-        .select("fecha, mrr_ars, mrr_usd, tenants_activos, tc_venta, fuente")
-        .order("fecha"),
-      supabase.rpc("metricas_plataforma"),
-      // Bloque 3: la oración de pauta, la activación de las altas del mes
-      // y los autos que volvieron por un recordatorio este mes.
-      supabase.rpc("embudo_pauta_mes_actual"),
-      supabase.rpc("activacion_por_mes", { p_desde: primeroDelMes, p_hasta: hoy }),
-      supabase.rpc("autos_que_volvieron_plataforma", { p_desde: primeroDelMes, p_hasta: hoy }),
-    ]);
+  const [
+    resumenRes,
+    snapshotsRes,
+    plataformaRes,
+    pautaRes,
+    activacionRes,
+    volvieronRes,
+    primerTenantRes,
+  ] = await Promise.all([
+    supabase.rpc("resumen_admin"),
+    supabase
+      .from("snapshots_diarios")
+      .select("fecha, mrr_ars, mrr_usd, tenants_activos, tc_venta, fuente")
+      .order("fecha"),
+    supabase.rpc("metricas_plataforma"),
+    // Bloque 3: la oración de pauta, la activación de las altas del mes
+    // y los autos que volvieron por un recordatorio este mes.
+    supabase.rpc("embudo_pauta_mes_actual"),
+    supabase.rpc("activacion_por_mes", { p_desde: primeroDelMes, p_hasta: hoy }),
+    supabase.rpc("autos_que_volvieron_plataforma", { p_desde: primeroDelMes, p_hasta: hoy }),
+    // Bloque 4: el alta del primer tenant. Las fotos anteriores a ese día
+    // (una reconstrucción que arrancó antes, una foto de prueba que quedó)
+    // muestran una plataforma sin nadie, y el gráfico del MRR las ignora.
+    supabase.from("lubricentros").select("created_at").order("created_at").limit(1),
+  ]);
 
   const resumen = leerResumen(resumenRes.data);
   const pauta = leerResumenPauta(pautaRes.data);
@@ -89,6 +102,11 @@ export default async function PaginaResumen({
     tcVenta: resumen.tc_venta,
     fuente: "vivo",
   });
+  // El día argentino del alta del primer tenant (docs/METRICAS.md § 1: el
+  // día de un instante es su fecha calendario en Buenos Aires). Null si
+  // todavía no hay ningún tenant: el gráfico no filtra nada.
+  const primerAlta = primerTenantRes.data?.[0]?.created_at;
+  const primerTenant = primerAlta ? fechaCalendarioAR(new Date(primerAlta)) : null;
 
   const metricas = (plataformaRes.data ?? {}) as {
     trabajos_mes?: number;
@@ -109,7 +127,12 @@ export default async function PaginaResumen({
 
       <LineaPauta p={pauta} />
 
-      <GraficoMrr serie={serie} objetivo={serieObjetivo()} monedaInicial={monedaInicial} />
+      <GraficoMrr
+        serie={serie}
+        objetivo={serieObjetivo()}
+        monedaInicial={monedaInicial}
+        primerTenant={primerTenant}
+      />
 
       <Pulso
         series={series}

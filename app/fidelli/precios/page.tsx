@@ -11,21 +11,44 @@ import { MODULOS_PAGOS, type ModuloPago } from "@/lib/planes";
 
 export const metadata: Metadata = { title: "Plan y precios" };
 
+// Los tenants que tienen prendido algún módulo pago en `plan_overrides`,
+// como filtro de PostgREST: `plan_overrides.cs.{"neumaticos":true}` por
+// cada módulo del catálogo (`cs` es `@>`, la contención jsonb), unidos con
+// `or`.
+//
+// Por qué así y no `.neq("plan_overrides", "{}")`, que era el filtro de
+// antes: ese traía a TODO tenant con cualquier override —un tope de
+// sucursales, un módulo apagado a mano con `false`— y dejaba el filtro real
+// para JS. Con la contención la base devuelve solo a los que tienen la clave
+// en `true` (el booleano, no el texto "true"), que es la misma regla con la
+// que `feature_de_tenant()` y el listado deciden si el módulo está prendido.
+// Se arma sobre MODULOS_PAGOS y no como un `.contains()` suelto para que un
+// segundo módulo pago entre con solo sumarse al catálogo. PostgREST lee el
+// literal `{…}` dentro de `or=()` como un valor entero (probado contra el
+// stack local con uno y con dos módulos).
+const FILTRO_CON_MODULO_PAGO = MODULOS_PAGOS.map(
+  (codigo) => `plan_overrides.cs.${JSON.stringify({ [codigo]: true })}`,
+).join(",");
+
 export default async function PaginaPrecios() {
   const supabase = await createClient();
 
   // El precio de lista es uno y toca a todos: al lado de cada plan van los
   // lubricentros que lo tienen contratado, con el descuento que negoció cada
   // uno. Así el ajuste trimestral se hace mirando a quién le cambia.
+  // `suscriptos_por_plan()` (bloque MÉTRICAS 4) devuelve exactamente eso:
+  // una fila por tenant con suscripción, la vigente con el mismo criterio
+  // del listado. Antes se pedía `listado_lubricentros()` entero —28
+  // columnas, onboarding, atención, teléfono, último pago— para usar cuatro.
   //
-  // `lubricentros` y `cambios` alimentan la tarjeta de módulos: quién TIENE
-  // el módulo sale del override, y si lo PAGA o lo tiene bonificado sale del
-  // motivo. Son dos cosas distintas y la diferencia es plata.
+  // `cambios` alimenta la tarjeta de módulos: quién TIENE el módulo sale del
+  // override, y si lo PAGA o lo tiene bonificado sale del motivo. Son dos
+  // cosas distintas y la diferencia es plata.
   //
   // ⚠ Un superadmin ve todos los tenants: el RLS deja de recortar, así que
   // acá no hay filtro por lubricentro a propósito — es la pantalla de la
   // plataforma entera, no la de un tenant.
-  const [{ data: planes }, { data: filas }, { data: modulos }, { data: cambios }] =
+  const [{ data: planes }, { data: suscriptos }, { data: modulos }, { data: cambios }] =
     await Promise.all([
       supabase
         .from("planes")
@@ -35,7 +58,7 @@ export default async function PaginaPrecios() {
         .eq("activo", true)
         .order("heredado")
         .order("precio_mensual"),
-      supabase.rpc("listado_lubricentros"),
+      supabase.rpc("suscriptos_por_plan"),
       supabase
         .from("modulos")
         .select("id, codigo, nombre, precio_mensual, activo")
@@ -44,11 +67,11 @@ export default async function PaginaPrecios() {
       supabase
         .from("lubricentros")
         .select("id, nombre, plan_overrides, cambios_override_plan(motivo, created_at)")
-        .neq("plan_overrides", "{}"),
+        .or(FILTRO_CON_MODULO_PAGO),
     ]);
 
   const catalogo = (planes ?? []) as unknown as PlanCompleto[];
-  const lubricentros = filas ?? [];
+  const porPlan = suscriptos ?? [];
   const catalogoModulos = (modulos ?? []) as unknown as ModuloCatalogo[];
 
   // Quién tiene cada módulo, y si lo paga.
@@ -64,6 +87,9 @@ export default async function PaginaPrecios() {
   // BONIFICADO, o sea que NO se cobra. Cobrarle de más a alguien es peor que
   // no cobrarle: lo segundo se arregla con una conversación, lo primero con
   // una devolución y una disculpa.
+  //
+  // El filtro por código se repite acá porque la consulta trae a los que
+  // tienen ALGÚN módulo pago; cada tarjeta muestra solo a los del suyo.
   const tenedores = (codigo: ModuloPago) =>
     (cambios ?? [])
       .filter((l) => (l.plan_overrides as Record<string, unknown>)?.[codigo] === true)
@@ -103,14 +129,14 @@ export default async function PaginaPrecios() {
             <TarjetaPlan
               key={plan.id}
               plan={plan}
-              suscriptos={lubricentros
-                .filter((l) => l.plan_id === plan.id)
-                .map((l) => ({
-                  id: l.id,
-                  nombre: l.nombre,
-                  periodo: l.sub_periodo,
-                  descuento: Number(l.sub_descuento_pct ?? 0),
-                  estado: l.sub_estado,
+              suscriptos={porPlan
+                .filter((s) => s.plan_id === plan.id)
+                .map((s) => ({
+                  id: s.lubricentro_id,
+                  nombre: s.nombre,
+                  periodo: s.periodo,
+                  descuento: Number(s.descuento_pct ?? 0),
+                  estado: s.estado,
                 }))}
             />
           ))}

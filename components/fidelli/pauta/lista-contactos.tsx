@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { FilaContacto, type TenantOpcion } from "@/components/fidelli/pauta/fila-contacto";
+import { BotonExportar } from "@/components/fidelli/boton-exportar";
 import {
   pasaFiltro,
   type CanalFiltro,
@@ -87,6 +88,10 @@ export function ListaContactos({
         <div className="flex flex-wrap gap-1">
           {opcionesCanal.map((o) => link("canal", o.clave, o.clave === canal, o.nombre))}
         </div>
+        {/* El recurso `contactos-pauta` del data room con el estado y el
+            canal vigentes; «todos» no viaja. Va SIN el corte de 60 días de
+            la lista: la exportación es para mirar el histórico entero. */}
+        <BotonExportar recurso="contactos-pauta" params={{ estado: filtro, canal }} compacto />
       </div>
 
       {visibles.length === 0 ? (

@@ -31,6 +31,17 @@ definida y acá se implementa), los **autos que volvieron** a 60 días, el
 **Pulso apilado por tipo** y los **pedidos de calcos**. Migraciones
 `20260924100000` a `20260924104000`; decisiones en § 6.
 
+**Bloque MÉTRICAS 4 · 23 de septiembre de 2026 · rama `feat/metricas-4`.**
+El último del sprint: **Crecimiento** (`/fidelli/crecimiento`: de dónde
+viene el MRR, si entran más de los que se van, si se quedan, si pagan más
+con el tiempo, si usan el sistema, si rinde la pauta), el **data room** (la
+exportación CSV de todo, pensada para Excel en español, con
+`docs/DATA-ROOM.md` como diccionario) y la **limpieza de las consultas que
+hacían trabajo por fila** (`listado_lubricentros()`, `metricas_plataforma()`,
+la ficha, precios). Todo lo de Crecimiento **lee fotos y eventos; nada
+recalcula historia**. Migraciones `20260925100000` a `20260925102000`;
+decisiones en § 6.
+
 ---
 
 ## 1 · Definiciones
@@ -63,6 +74,14 @@ definida y acá se implementa), los **autos que volvieron** a 60 días, el
 | **Activación** | 20 o más trabajos en los 7 días desde el alta: `services` no anulados de cualquier tipo con `created_at` en `[lubricentros.created_at, created_at + 7 días)`. El trabajo 20 del día 7 activa; el del día 8 ya no. Mientras no pasaron los 7 días está «en curso, día N de 7». | `activacion_tenant()`, `activacion_por_mes()` · `20260924102000_activacion_uso.sql` |
 | **Autos que volvieron** | Vehículos distintos con un trabajo no anulado en el rango cuyo vehículo tuvo una fila en `contactos` (un recordatorio disparado) en los **60 días previos** al trabajo, contando el mismo día. Reemplaza en el admin a «recuperados del mes» (30 días); `recuperados_del_mes()` no se toca porque la usa el panel del tenant. | `autos_que_volvieron()`, `autos_que_volvieron_plataforma()` |
 | **Pedido de calcos** | Cada entrega de calcos a un tenant: cantidad, si estaban incluidas en el plan o se cobraron, monto en ARS (obligatorio si se cobraron) y fecha. Append-only con los tres candados. **`lubricentros.calcos_entregadas` pasa a ser la suma de los pedidos** y se recalcula en cada registro; el evento `calcos` lo emite el trigger de siempre. | `pedidos_calcos`, `registrar_pedido_calcos()` · `20260924103000_pedidos_calcos.sql` |
+| **Mes cerrado** (bloque 4) | Un mes cuyo **último día calendario** tiene foto en `snapshots_diarios` (fuente `cierre` o `reconstruido`). El mes en curso no está cerrado: se muestra con la etiqueta «en curso» y **el dato del último día con foto**. La vista `snapshots_mensuales` da, por mes, la foto del último día con foto y la bandera `en_curso` (`fecha` < último día del mes). Un mes pasado con la foto del último día faltante también queda `en_curso = true`: no se inventa el cierre. | vista `snapshots_mensuales` · `20260925100000_crecimiento.sql` |
+| **Movimientos de MRR de un mes** | Se comparan, **por tenant**, el MRR de la foto del mes anterior (`snapshots_tenant_diarios` en la fecha de `snapshots_mensuales` del mes anterior; 0 si el tenant no tiene fila) con el de la foto del mes. Con `antes` = a y `ahora` = b: **nuevo** (a = 0, b > 0, alta en el mes por `lubricentros.created_at` en hora argentina); **reactivación** (a = 0, b > 0, alta anterior al mes); **churn** (a > 0, b = 0); **ajuste de precio** (a > 0, b > 0, a ≠ b y **no cambió el cliente**: es la lista de precios en pesos moviéndose); **expansión** (a > 0, b > 0, cambió el cliente y b > a); **contracción** (ídem y b < a). «Cambió el cliente» = cambió `plan_id`, `periodo` o `modulo_pago` entre las dos fotos, **o hubo en el mes un evento `cambio_plan` del tenant con otro `descuento_pct`** (la foto no guarda el descuento negociado, y un descuento renegociado es el cliente, no la lista). Un cambio del cliente con el mismo MRR no es movimiento. `mrr_inicio` y `mrr_fin` son **la suma de los a y de los b** (por eso la identidad cierra por construcción): `mrr_inicio + nuevo + reactivacion + expansion − contraccion − churn + ajuste_precio = mrr_fin`, con tolerancia de 1 peso (o 1 dólar). `contraccion` y `churn` se devuelven **como magnitudes positivas** (la pantalla y el CSV las muestran con signo); `ajuste_precio` va con signo. **Neto comercial** = nuevo + reactivación + expansión − contracción − churn (el ajuste de precio queda aparte). `crecimiento_pct` = neto ÷ `mrr_inicio`, como fracción (0,12 = 12 %). `tenants_inicio` / `tenants_fin` = `tenants_activos` de las dos fotos. **El primer mes con historia no tiene foto anterior**: sale con `sin_foto_anterior = true`, `mrr_fin` y `tenants_fin` cargados y los movimientos en null; no se inventa un inicio en cero. En USD, cada MRR se convierte con el `tc_venta` **de su propia foto**; sin tipo de cambio en alguna de las dos fotos, los montos de ese mes en USD son null. | `movimientos_mrr(p_desde, p_hasta, p_moneda)` · `20260925100000` |
+| **Cohorte** | Los tenants con alta en un mismo mes (`lubricentros.created_at`, hora argentina). **Retención de logos al mes N**: tenants de la cohorte con `activo = true` en la foto del último día con foto del mes (alta + N) ÷ tamaño de la cohorte. Solo se calcula cuando ese mes está **cerrado**; si no, null («—» en pantalla). N ∈ {1, 2, 3, 6, 9, 12}. `activados` sale de `activacion_por_mes()`. | `cohortes_logos(p_desde, p_hasta)` · `20260925100000` |
+| **GRR y NRR de una cohorte a N meses** | En **USD** (para neutralizar los ajustes en pesos): el MRR inicial de la cohorte es la suma, por tenant, del MRR de la foto del último día del mes de alta convertido con el `tc_venta` de esa foto. **GRR_N** = Σ mín(MRR del tenant al mes alta + N, su MRR inicial) ÷ MRR inicial de la cohorte; **NRR_N** = Σ MRR al mes alta + N ÷ MRR inicial. Un tenant que se fue aporta 0 a las dos (su MRR en la foto es 0). NRR ≥ GRR siempre. N ∈ {3, 6, 12}; null si el mes alta + N no está cerrado, si el mes de alta no está cerrado, o si el MRR inicial es 0 («sin historia todavía»). | `cohortes_ingresos(p_desde, p_hasta)` · `20260925100000` |
+| **Churn del mes, por tipo y por origen** | Bajas = eventos `suspension` + `suspension_reloj` del mes (`ocurrido_at` en hora argentina). **Involuntarias** = `suspension_reloj` + `suspension` con motivo `falta_de_pago` (el `motivo` del evento empieza con el código); **voluntarias** = el resto (`pedido_del_cliente`, `cierre_del_negocio`, `otro`, o sin motivo). `por_motivo` cuenta por código (`reloj` para las del reloj); `por_origen` cuenta por `lubricentros.origen` del tenant dado de baja (`sin_origen` si no tiene). `churn_pct` = bajas ÷ `tenants_activos` de la foto del mes anterior (fracción; null sin foto anterior). Todos los meses del rango salen, con ceros. | `churn_por_mes(p_desde, p_hasta)` · `20260925100000` |
+| **Altas y bajas por mes** | `altas` = tenants con `created_at` en el mes; `bajas` = como arriba; `reactivaciones` = eventos `reactivacion` + `reactivacion_reloj`; `neto` = altas − bajas. Todos los meses del rango, con ceros. | `altas_bajas_por_mes(p_desde, p_hasta)` · `20260925100000` |
+| **Trabajos por mes** | Suma de `trabajos_dia` (y por tipo), `recordatorios_dia` y `escaneos_dia` de **todas las fotos diarias** del mes, más `autos_que_volvieron_plataforma()` entre el primer día del mes y el último día con foto. Solo los meses con alguna foto; el mes en curso lleva `en_curso`. | `trabajos_por_mes(p_desde, p_hasta)` · `20260925100000` |
+| **Data room** | La exportación CSV de cada tabla de la plataforma y de cada tabla de Crecimiento, para Excel en español: separador `;`, decimales con coma, fechas ISO, UTF-8 con BOM, encabezados en español, `Content-Disposition: attachment` con nombre `fidelli-motors_<recurso>_<fecha>.csv`. Solo superadmin: sin sesión o con otro rol, 403 sin tocar la base. El diccionario de datos es `docs/DATA-ROOM.md`. | `app/api/fidelli/exportar/[recurso]/route.ts`, `lib/fidelli/csv.ts` |
 
 **El día** de un instante (`created_at`, `ocurrido_at`) es su fecha calendario en
 `America/Argentina/Buenos_Aires`. Los trabajos se cuentan por `services.fecha`
@@ -97,6 +116,14 @@ definida y acá se implementa), los **autos que volvieron** a 60 días, el
 | `scripts/cargar-gasto-pauta.mjs` + `scripts/gasto-pauta.plantilla.json` | (código, bloque 3) | La carga del gasto histórico (agosto) a partir de un JSON con los lunes y los montos **vacíos**: se completa a mano, no se inventa. |
 | `lib/fidelli/pauta.ts`, `app/fidelli/pauta/**`, `components/fidelli/pauta/**`, `components/fidelli/grafico-pulso.tsx`, `components/fidelli/dialog-editar.tsx`, `components/fidelli/ficha/dialog-pedido-calcos.tsx` | (código, bloque 3) | La pantalla de pauta, el Pulso apilado, el dialog Editar compartido y el registro de calcos. |
 | R33 en `supabase/verificaciones.sql` · las roturas nuevas de `scripts/regresion-metricas.sh` | (red, bloque 3) | Excluyentes, el origen solo si vacío, la cohorte, el lunes, los candados de calcos, la suma, la ventana y el umbral de activación. |
+| vista `snapshots_mensuales` (security_invoker), `movimientos_mrr(p_desde, p_hasta, p_moneda default 'ars')`, `cohortes_logos(p_desde, p_hasta)`, `cohortes_ingresos(p_desde, p_hasta)`, `churn_por_mes(p_desde, p_hasta)`, `altas_bajas_por_mes(p_desde, p_hasta)`, `trabajos_por_mes(p_desde, p_hasta)` | `20260925100000_crecimiento.sql` | **Bloque 4.** Lo que leen `/fidelli/crecimiento` y el data room: todo sobre `snapshots_*` y `tenant_eventos` (los `cambio_plan` del mes con otro `descuento_pct` deciden «cambió el cliente»); nada recalcula historia. Invoker con guarda `soy_superadmin()` (42501 antes de leer nada); la vista le devuelve cero filas a un owner. Meses como `date` del día 1; «en el mes» es el mes calendario en hora argentina, igual para `created_at` (alta) y `ocurrido_at` (evento); `cohortes_logos` fija `TimeZone` para que `activacion_por_mes()` agrupe como la cohorte. |
+| `listado_lubricentros()` (reescrita: CTEs y una pasada por tabla, mismas 28 columnas), `metricas_plataforma()` (reescrita: `generate_series` + un solo `group by`, misma salida), `estado_owner(p_lubricentro_id)`, `suscriptos_por_plan()`, índice `services_fecha_idx (fecha) where not anulado` | `20260925101000_performance.sql` | **Bloque 4.** Sin trabajo por fila en lo que no es cobranzas. Las dos reescrituras devuelven exactamente lo mismo que antes (R34g/R34h lo comparan fila por fila contra copias textuales de las versiones viejas). `estado_owner()` es la versión por tenant de `estados_owner()` (misma regla); `suscriptos_por_plan()` es lo que necesita `/fidelli/precios` (plan, tenant, período, descuento y estado de la suscripción vigente). |
+| `forzar_calcos_desde_pedidos()` + trigger `candado_calcos_desde_pedidos` (before update of `calcos_entregadas`, `ALWAYS`), `registrar_pedido_calcos()` redefinida con la bandera `app.calcos_desde_pedido` | `20260925102000_calcos_candado.sql` | **Bloque 4.** El contador de calcos es la suma de `pedidos_calcos` también contra `actualizar_lubricentro()` y contra un update directo: cualquier update del contador que no venga de la puerta queda forzado a la suma (corrige, no rechaza; deja un `NOTICE`). Cierra lo que el bloque 3 dejó anotado. |
+| `lib/fidelli/csv.ts`, `lib/fidelli/exportar.ts`, `app/api/fidelli/exportar/[recurso]/route.ts`, `components/fidelli/boton-exportar.tsx`, `components/fidelli/crecimiento/data-room.tsx`, `docs/DATA-ROOM.md` | (código, bloque 4) | **El data room.** El CSV para Excel en español (`;`, coma decimal, BOM, RFC 4180, CRLF, fórmulas neutralizadas sin tocar teléfonos ni números), el registro de **15 recursos** en dos grupos: **plataforma** (`tenants`, `eventos`, `snapshots`, `snapshots-tenant`, `pagos`, `contactos-pauta`, `gasto-pauta`, `pedidos-calcos`; fila por fila, paginados) y **crecimiento** (las seis funciones de `20260925100000` más `embudo_pauta`, un mes por fila, con el rango y la moneda de la pantalla importados de `lib/fidelli/crecimiento.ts`; `contraccion` y `churn` con signo, `por_motivo` en cinco columnas, `por_origen` como texto, `moneda` en cada fila de movimientos). Encabezados en `snake_case`; la ruta contesta 403 sin sesión o con otro rol antes de consultar nada, 404 recurso desconocido y 400 parámetro inválido. El botón «Exportar CSV» (`<a download>`, con el filtro vigente) va en el listado, la ficha (historial y pagos), la lista de contactos y cada sección de Crecimiento; el diccionario es `docs/DATA-ROOM.md`. |
+| `app/fidelli/crecimiento/page.tsx`, `lib/fidelli/crecimiento.ts` (`leerRango`, `esMes`, `ANIO_MIN`/`ANIO_MAX`, `DESDE_DEFAULT`, `MONEDA_DEFAULT`, `mesEnCursoAR`, `cierreDelMes`, los formatos), `components/fidelli/crecimiento/*` (`seccion`, `barra-rango` + `campo-mes`, `chip-cierre`, `tabla-movimientos`, `grafico-altas-bajas`, `tabla-churn`, `tabla-cohortes-logos`, `tabla-cohortes-ingresos`, `tabla-trabajos`, `embudo-mensual`, `estilos`), la nav de `app/fidelli/layout.tsx` | (código, bloque 4) | **`/fidelli/crecimiento`**: las seis preguntas de un comprador sobre `movimientos_mrr`, `altas_bajas_por_mes` + `churn_por_mes`, `cohortes_logos`, `cohortes_ingresos`, `trabajos_por_mes` y `embudo_pauta(…, 'mes')`, en una `Promise.all`; el rango en la URL (`?desde=YYYY-MM&hasta=YYYY-MM`, default 2026-08 → mes en curso, años 2000–2100 y nunca después del mes en curso) y la moneda (`?moneda=ars|usd`, default `usd`) que afecta solo a las secciones monetarias; cada sección con su título-pregunta, su oración de vacío y su «Exportar CSV». |
+| `app/fidelli/[id]/page.tsx` → `estado_owner()` (prop `estadoOwner` a `cabecera-tenant.tsx` y `tab-resumen.tsx`); `app/fidelli/precios/page.tsx` → `suscriptos_por_plan()` y `plan_overrides.cs.{codigo:true}`; `components/fidelli/ficha/tab-datos.tsx` (`totalDeLaUrl`, `opcionesDeConteo`, `?total=`) | (código, bloque 4) | La ficha pide el estado del owner por tenant (una fila); Plan y precios ya no trae el listado entero ni todos los overrides; la pestaña Datos cuenta con `count: "exact"` solo en la primera página de cada lista y lleva el total en el link de paginación. |
+| `components/fidelli/grafico-mrr.tsx` (piso `primerTenant`; eje X medido, en meses o en días), `components/fidelli/grafico-pulso.tsx` (eje X medido), `app/fidelli/page.tsx` (`min(lubricentros.created_at)` → `primerTenant`) | (código, bloque 4) | El gráfico de MRR arranca en `greatest(primer snapshot, alta del primer tenant)` e ignora (no borra) las fotos anteriores; los rótulos del eje X de los dos gráficos se eligen por el ancho real del contenedor y nunca se pisan, verificado a 390 px. |
+| R34 en `supabase/verificaciones.sql` · las veintiuna roturas nuevas de `scripts/regresion-metricas.sh` | (red, bloque 4) | La identidad por construcción en ARS y USD sobre toda la historia; ajuste vs expansión, el descuento renegociado, la ventana «en el mes», nuevo vs reactivación; el mes cumplido en logos e ingresos y el mes de alta cerrado; el reloj involuntario; el listado y el pulso idénticos a las versiones viejas (diez tenants variados, trabajos en los bordes, sin ningún trabajo); `estado_owner()` y `suscriptos_por_plan()`; el candado de calcos (update directo, RPC del ABM, la bandera apagada en la misma transacción). Fixtures en 1986–1988 (fuera del día al azar de R31), borrados al final. |
 
 ---
 
@@ -403,6 +430,250 @@ select reconstruir_snapshots('2026-08-16', current_date - 1);
   que trae los lunes de agosto con los montos en null; se completa a mano.
 - **Las fotos de prueba de R31 ya no quedan en la base local.** `cerrar_dia()` se verifica sobre días de 1991 y los candados de `snapshots_diarios` no dejan borrar ni a postgres, así que cada `db reset` dejaba tres fotos de 1991 y el gráfico del MRR del Resumen arrancaba en 1991 (los rótulos de mes se pisaban; se veía en las capturas del bloque 2). `verificaciones.sql` termina bajando esos dos candados, borrando las fotos y el tipo de cambio de prueba, y volviéndolos a `ALWAYS`; un DO final lo comprueba. Producción no tiene esas filas: es un arreglo del entorno local, no del producto.
 
+
+### Decisiones del bloque 4 (23/09/2026)
+
+**Crecimiento (`20260925100000`).**
+
+- **«En el mes» es el mes calendario en hora argentina, para el alta y para
+  el evento `cambio_plan` por igual** (del día 1 a las 00:00 al día 1 del mes
+  siguiente, excluido). Con los dos meses cerrados es exactamente el
+  intervalo entre las dos fotos. Borde conocido: si a un mes le falta la foto
+  del último día y algo pasa después de esa foto, el MRR nuevo recién se ve
+  en la foto del mes siguiente, cuyo mes calendario no tiene ni el evento ni
+  el alta (un descuento quitado el 20 con la última foto el 15 sale al mes
+  siguiente como ajuste de precio; un tenant nacido el 20 sale como
+  reactivación). Con el cron cerrando todos los días no pasa; R34b lo fija
+  con dos tenants de 1986 y su rotura, y si algún día se prefiere la ventana
+  «entre fotos» se cambia primero § 1 y después dos líneas.
+- **«Cambió el cliente» incluye el descuento renegociado, leído del evento**:
+  la foto guarda plan, período y módulo pago pero no el descuento, así que
+  `movimientos_mrr()` busca por tenant un `cambio_plan` del mes con
+  `descuento_pct` distinto entre `antes` y `despues`. Agregado a la
+  definición al revisar el contrato: un descuento renegociado es el cliente,
+  no la lista.
+- **`mrr_fin` es Σ b por tenant y no `snapshots_diarios.mrr_ars`**: por eso la
+  identidad cierra por construcción. R34a lo prueba con un tenant fantasma
+  (en toda base local donde una prueba borró tenants, la foto de la
+  plataforma conserva el MRR del borrado y las filas por tenant no).
+- **En USD la clasificación se hace sobre los montos ya convertidos** (cada
+  foto con su `tc_venta`): un mes con el mismo abono en pesos y otro dólar
+  sale como ajuste de precio en USD, que es lo que fue. Sin cotización en
+  alguna de las dos fotos los montos del mes en USD son null, con
+  `sin_foto_anterior = false` (la pantalla distingue «sin historia» de «sin
+  dólar»).
+- **Anual → mensual con el mismo plan es expansión; mensual → anual,
+  contracción**: cambió el período, así que nunca es ajuste, aunque el plan
+  sea el mismo. Un cambio del cliente con el mismo MRR no es movimiento.
+- **`cohortes_logos()` fija `TimeZone` en su cláusula `SET`** y saca
+  `activados` de UNA llamada a `activacion_por_mes()` por todo el rango
+  (con el mismo día en los dos parámetros esa función solo contaría las
+  altas del día 1). `cohortes_ingresos()` distingue el mes no cumplido (GRR y
+  NRR null) del mes de alta no cerrado (MRR inicial null); cada regla tiene
+  su marcador y su rotura.
+- **El código del motivo de una suspensión se saca con `split_part(motivo,
+  ' ·', 1)`** y se valida contra el catálogo; motivo null o texto libre va a
+  `otro`; `suspension_reloj` va a `reloj` sin mirar su motivo.
+- **`snapshots_mensuales` lista sus columnas una por una** y hace `revoke`
+  a `anon` además del `grant` a `authenticated`: como `security_invoker`, un
+  owner ve cero filas.
+- **Los fixtures de R34 viven en 1986, 1987 y 1988**, no en 1992 como decía
+  el contrato: R31c cierra tres días a partir de un día al azar entre 1990
+  y 1999. Los tenants se insertan directo en `lubricentros` (como R33) y los
+  eventos se emiten con `emitir_evento_tenant()` con la fecha en `-03`.
+
+**Performance (`20260925101000`).**
+
+- **El costo del listado y del pulso no eran las funciones por fila: era el
+  RLS por fila.** La policy de `services` evalúa dos funciones definer por
+  cada fila que una consulta visita (~27 µs y 2 buffers por fila, medido en
+  el PR). Las dos reescrituras cuentan pasadas por `services`, no llamadas:
+  el pulso baja de ~4,3 pasadas a una más las filas del mes, y el listado
+  deja de recorrer `services` entera. Sobre el seed (1 tenant) la diferencia
+  del listado no es medible; con carga sintética (51 tenants, ~1.000
+  trabajos) sí (tiempos en el PR).
+- **`services_fecha_idx (fecha) where not anulado` es nuevo** (no estaba en
+  el brief): «trabajos del mes» se lee en tres lugares y era una pasada
+  completa por `services`; los índices existentes arrancan por vehículo,
+  sucursal o tenant.
+- **`listado_lubricentros()` pasa de `language sql` a `plpgsql`** para que
+  el 42501 sea el suyo (antes lo levantaba `estados_owner()` desde adentro,
+  con el plan ya arrancado): R34g exige el mensaje de cada función. Sigue
+  devolviendo una fila por owner, como antes; `estados_owner()` se llama UNA
+  vez (CTE), `estado_atencion()` y `orden_atencion()` se siguen llamando por
+  fila a propósito (son la regla única de cobranza y no se copian), y
+  `feature_de_tenant()` no se llama (regla 12): los tres escalones del módulo
+  van en línea. Son **28 columnas** (el inventario decía 29).
+- **Con dos owners, `owner_nombre` y `estado_owner()` eligen al más antiguo
+  por `usuarios.created_at` y, con empate, al de `id` menor**: la versión
+  vieja nombraba a cualquiera de los dos (orden del heap). En producción cada
+  tenant tiene un owner; la regla existe para que la ficha y el listado
+  nombren al mismo. Los empates de sucursales y de suscripciones quedan
+  arbitrarios como estaban.
+- **`suscriptos_por_plan()` devuelve solo tenants con suscripción**, la
+  vigente con la misma regla del listado.
+
+**Calcos (`20260925102000`).**
+
+- **El candado del contador corrige, no rechaza**: rechazar rompería
+  `actualizar_lubricentro()` entera por un campo que el dialog ya manda en
+  solo lectura. Corrige solo si el update de verdad quiso mover el contador
+  y deja un `NOTICE` con el valor pedido y la suma. Un update forzado al
+  mismo valor no deja evento `calcos` (no hubo cambio real).
+- **La puerta se identifica con una bandera transaccional**
+  (`app.calcos_desde_pedido`) que `registrar_pedido_calcos()` prende justo
+  antes de su update y apaga justo después: un update posterior en la misma
+  transacción no hereda el permiso. La función del trigger es `security
+  definer` porque `pedidos_calcos` solo la lee el superadmin por RLS.
+- **No hay trigger de alta**: `crear_lubricentro()` no escribe la columna y
+  el wizard no manda calcos; un tenant nuevo nace con 0 y sin pedidos. R34j
+  lo vigila: si algún día el alta trae calcos, se pone en rojo.
+- **La migración no resincroniza contadores**: cuenta y avisa (`NOTICE …
+  tenants con el contador distinto de la suma: N`; en local y en dev, 0). Un
+  contador mayor que la suma son calcos entregadas sin pedido y se arregla
+  registrando el pedido que falta, no pisando el número.
+
+**Data room (primera y segunda entrega).**
+
+- **La ruta decide el 403 antes que el 404** (un owner no se entera de qué
+  recursos hay) y **sin tocar la base**: `obtenerSesion()` corta sin
+  `.from()` cuando no hay cookie. Un parámetro mal escrito es 400, no un
+  archivo entero; un parámetro vacío es lo mismo que no mandarlo.
+- **`desde`/`hasta` aceptan `YYYY-MM` y `YYYY-MM-DD`**; instantes en ISO
+  8601 con `-03:00` y, donde el día importa, una columna más con el día
+  argentino; números pelados con coma decimal y sin miles; booleanos
+  `sí`/`no`; nulos vacíos; JSON como texto en una celda.
+- **Los encabezados son identificadores en español en `snake_case`** (desvío
+  del contrato de la fase 2, que los quería como rótulos): el data room lo
+  abren pandas, Power Query y SQL además de Excel.
+- **Neutralización de fórmulas con exención por columna**: un texto que
+  arranca con `=`, `+`, `-`, `@` o tabulación lleva apóstrofo (inyección en
+  CSV), salvo en las columnas que escribe únicamente el equipo (hoy solo
+  `telefono` de `contactos-pauta`, que puede llevar «+54 …» con anotaciones).
+- **El botón del listado lleva el filtro y el buscador vigentes** (`tenants`
+  acepta el mismo query string que `/fidelli/lubricentros`), y `tenants` es
+  el mismo cruce que la tabla (`listado_lubricentros()` +
+  `indicadores_tenants()` + `salud_tenants()`). Todo se lee paginado con
+  `paginar()`, con la sesión del superadmin y su RLS, nunca con la
+  `service_role`. `eventos` y `pagos` salen cronológicos.
+- **El botón es un `<a download>` Server Component**, no un fetch: el
+  navegador baja el archivo con el nombre del `Content-Disposition` sin
+  JavaScript.
+
+**Gráficos del Resumen.**
+
+- **El gráfico de MRR arranca con el primer tenant** (`primerTenant` desde
+  la page; las fotos anteriores se ignoran, no se borran) y **los ejes X se
+  miden, no se adivinan** (`ResizeObserver`; antes de hidratar asumen un eje
+  de 240 px, el de un viewport de 320). El MRR habla en meses y, si el rango
+  no da para dos rótulos de mes, en días; el paso es el primero en el que
+  todos los rótulos caben, anclado al primer mes, con el año en el primero y
+  en cada cambio de año. Las etiquetas que viven sobre el dibujo («… · hoy»,
+  «Objetivo · US$ 10.000») llevan el mismo fondo translúcido que las del eje
+  Y. Costo aceptado por debajo del brief: a 320 px con el piso de producción
+  el USD queda con dos rótulos (a 390, cuatro).
+
+
+**La pantalla `/fidelli/crecimiento`.**
+
+- **Las cifras van sin unidad en la celda** (la unidad está en el encabezado,
+  como en el resto del admin) y con hasta dos decimales; los dos «—» de la
+  tabla de movimientos llevan su chip («sin foto anterior», «sin tipo de
+  cambio») para distinguir «sin historia» de «sin dólar». Las tablas de b, e
+  y f también van con el mes reciente arriba.
+- **Las tarjetas no recortan (`Seccion` sin `overflow-hidden`) y el tooltip
+  del gráfico de altas y bajas va en renglones cortos**: con el desglose en un
+  renglón se cortaba contra el borde de la tarjeta a 390 px («2
+  reactivacione»). Las tablas anchas las recorta su propio contenedor de
+  scroll. Borde aceptado: el tooltip asoma hasta 2 px sobre el borde de la
+  tarjeta en algún mes a 390; flota, no se corta.
+- **En la tabla de movimientos las once columnas de cifras llevan 10 px de
+  padding lateral** (no 12 como las demás tablas) y la columna del mes mide
+  14,2 %: en doce columnas cada píxel de padding se paga doce veces, y esos
+  44 px son los que el chip «en curso» necesita para quedar al lado del mes
+  en todos los anchos. En trabajos y churn hay dos repartos de columnas (uno
+  hasta `lg`, otro desde `lg`): debajo de 1024 el chip baja de renglón, no
+  hay de dónde sacar 50 px sin partir «RECORDATORIOS» o «INVOLUNTARIAS».
+- **La URL acepta años entre 2000 y 2100 y nada después del mes en curso**:
+  `?desde=0000-01` pasaba una regex de cuatro dígitos y Postgres lo rechazaba
+  (siete errores en pantalla); un `hasta` futuro pedía cientos de meses de
+  ceros. Un año fuera de la ventana es formato inválido (→ default); un mes
+  futuro se recorta al mes en curso. Los `<input type="month">` llevan la
+  misma ventana en `min`/`max`.
+- **La tabla de churn tiene su propio encabezado («Bajas por mes · por tipo y
+  por origen») y su propio «Exportar CSV»**: la sección b responde una
+  pregunta con dos datos y el brief le daba un botón; sin el segundo, el CSV
+  de churn solo se bajaba desde el data room y la tabla arrancaba sin un
+  encabezado que dijera qué responde.
+- **«Primeros datos en <mes>» nombra el mes en que se VEN los datos y, en la
+  misma oración, el que tiene que cerrar**: «Primeros datos en diciembre de
+  2026, cuando cierre noviembre de 2026». Con la cohorte más vieja en agosto,
+  `grr_3` mira la foto del último día de noviembre, que el cierre diario
+  escribe a las 00:10 del 1 de diciembre; «noviembre» a secas prometería el
+  dato un mes antes de que exista. Ratificado.
+- **«Ir a pauta» lleva a `/fidelli/pauta?agrupar=mes`**: la persona viene de
+  mirar el embudo por mes y el default de la pauta es por semana; aterrizar
+  en otro corte desorienta. Ratificado.
+- **El rango de la pantalla se acota a 60 meses** (`MESES_MAX`): más atrás no
+  hay fotos (la historia arranca el 16/08/2026) y las seis tablas dibujan
+  una fila por mes; con `?desde=2000-01` eran 321 filas por tabla y el dev
+  server se reiniciaba por memoria al renderizarlas. Un `desde` más viejo se
+  corrige a `hasta − 59 meses`, como el mes futuro (la pantalla corrige, la
+  API del data room rechaza). Lo encontró la verificación final.
+- **Los rótulos del eje X del gráfico de altas y bajas se ubican por
+  porcentaje del eje, anclados hacia adentro en los bordes**, no en una
+  grilla de una celda por mes: la grilla sumaba un gap de 4 px por mes (con
+  76 meses a 390 px el documento scrolleaba en horizontal) y un rótulo
+  centrado en una celda de dos píxeles se salía de la tarjeta. Mismo
+  criterio que `grafico-mrr.tsx`: el paso es el primero en el que todos los
+  rótulos caben sin pisarse ni salirse. Lo encontró la verificación final.
+
+**Data room, segunda entrega.**
+
+- **Los defaults del data room son los de la pantalla, importados**
+  (`DESDE_DEFAULT`, `MONEDA_DEFAULT`, `mesEnCursoAR`, `primerDiaDelMes`,
+  `ultimoDiaDelMes` de `lib/fidelli/crecimiento.ts`), no copiados.
+- **Donde la pantalla corrige, la API rechaza (400)**: un formato inválido o
+  `desde > hasta` en la ruta contestan 400 (una URL a mano que baja un
+  archivo con OTRO rango del que se pidió es peor que un error que lo dice).
+  `YYYY-MM-DD` entra y se trunca a mes (las siete funciones lo hacen solas).
+- **`movimientos-mrr` lleva una columna `moneda`** que la función no
+  devuelve: un CSV de montos sin unidad es ambiguo apenas se cierra la
+  pestaña. `contraccion` y `churn` salen con signo negativo (la función
+  devuelve magnitudes) para que la identidad cierre sumando la fila de
+  izquierda a derecha en Excel.
+- **`churn` aplana `por_motivo` en cinco columnas con 0 donde la función omite
+  la clave** (involuntarias primero) y **`por_origen` es una celda de texto**
+  («sin_origen: 2; distribuidor: 1») ordenada por conteo y nombre: nueve
+  columnas casi siempre vacías dirían menos que esa celda.
+- **`embudo-pauta` acepta `canal`** y su columna `canal` dice `todos` cuando la
+  función sumó los tres (en el resto del data room la celda vacía significa
+  null).
+
+**Performance en TypeScript.**
+
+- **La ficha pide `estado_owner(id)`** (una fila; un error de la RPC se lee
+  como «sin owner», que es lo que hacía el `find` sobre la lista). Con dos
+  owners, la cabecera y el listado nombran al mismo (la regla de B2).
+- **Plan y precios usa `suscriptos_por_plan()`**, una fila por tenant con
+  suscripción; el listado era 28 columnas y una fila POR OWNER (un tenant con
+  dos owners salía dos veces en la tarjeta). **El orden dentro de cada
+  tarjeta pasa a ser alfabético**: antes heredaba el del listado (atención de
+  cobranza primero), un accidente que ninguna pantalla prometía.
+- **«Quiénes tienen el módulo» se filtra con contención jsonb**
+  (`.or("plan_overrides.cs.{\"neumaticos\":true}")` armado desde
+  `MODULOS_PAGOS`): `.neq("plan_overrides", "{}")` traía a todo tenant con
+  cualquier override (un tope de sucursales, un módulo apagado a mano) y el
+  filtro real quedaba en JavaScript. La contención es sensible al tipo: solo
+  la clave en `true` booleano.
+- **La pestaña Datos cuenta una sola vez por lista**: la primera página
+  siempre pide `count: "exact"` (es la que refresca el número después de un
+  alta o una supresión); las siguientes leen `?total=` de la URL y piden solo
+  su página; un deep link sin total cuenta una vez. Un `?total=` a mano se
+  muestra tal cual (validado como entero de hasta nueve cifras).
+  `tab-historial.tsx` sigue contando en todas sus páginas: no estaba en el
+  brief y queda anotado.
+
 ---
 
 ## 7 · Lo que este bloque no toca
@@ -414,7 +685,9 @@ Las cobranzas: `registrar_pago()`, `acreditar_deposito_cresium()`,
 `alias_confirmado_por_cresium()`, las tablas `cresium_*`,
 `app/fidelli/cobranzas/**`, `app/api/cresium/**`, `lib/cresium/**`,
 `app/panel/(tras-onboarding)/suscripcion/**` y `lib/auth/cobranza.ts`. Solo
-se leen. (Hasta el bloque 2 la franja de `/fidelli` mostraba el MRR viejo, sin
+se leen. `cobranzas_pendientes()` sigue afuera también en el bloque 4 aunque el
+inventario la marque como pesada: queda para el bloque de cobranzas.
+Exportar la tabla `pagos` es leerla, no modificarla. (Hasta el bloque 2 la franja de `/fidelli` mostraba el MRR viejo, sin
 módulos, calculado en el navegador por `lib/fidelli/totales.ts`; ese archivo
 ya no existe y la franja lee `mrr_plataforma()`.)
 
