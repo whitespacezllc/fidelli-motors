@@ -22,6 +22,15 @@ cabecera y la pestaña **Historial**. Lo que agrega a la base está en § 2
 modifica salvo `metricas_plataforma()`, que ahora cuenta trabajos de cualquier
 tipo.
 
+**Bloque MÉTRICAS 3 · 23 de septiembre de 2026 · rama `feat/metricas-3`.**
+El canal pago y el uso real: los **contactos de pauta** (un registro de cinco
+campos que se carga desde el celular en menos de diez segundos; NO es un CRM:
+sin etapas, responsables, seguimientos ni notas), el **gasto de pauta** por
+semana y canal, el **embudo** por cohorte, la **activación** (que ya estaba
+definida y acá se implementa), los **autos que volvieron** a 60 días, el
+**Pulso apilado por tipo** y los **pedidos de calcos**. Migraciones
+`20260924100000` a `20260924104000`; decisiones en § 6.
+
 ---
 
 ## 1 · Definiciones
@@ -42,7 +51,18 @@ tipo.
 | **Recordatorios disparados** | Filas de `contactos`. Se llaman "disparados" porque registran **el clic** en el botón de WhatsApp, no el envío. | `snapshots_diarios.recordatorios_dia` |
 | **Escaneos** | Filas de `landing_busquedas` (búsquedas de patente desde la página pública). | `snapshots_diarios.escaneos_dia` |
 | **Snapshot diario** | Foto inmutable del cierre de cada día en hora argentina (`America/Argentina/Buenos_Aires`, la misma zona de `lib/fechas.ts` y de la base). Los históricos **se leen del snapshot, nunca se recalculan**. | `snapshots_diarios`, `snapshots_tenant_diarios` · `20260922204000` |
-| **Origen del tenant** | De dónde vino: `meta`, `referido`, `directo`, `distribuidor`, `calco`, `organico`, `otro`, con un detalle libre. Se carga en el alta y se corrige en la edición. | `lubricentros.origen`, `lubricentros.origen_detalle` · `20260922200000_origen_tenant.sql` |
+| **Origen del tenant** | De dónde vino: `meta`, `google` (desde el bloque 3), `referido`, `directo`, `distribuidor`, `calco`, `organico`, `otro`, con un detalle libre. Se carga en el alta y se corrige en la edición. | `lubricentros.origen`, `lubricentros.origen_detalle` · `20260922200000_origen_tenant.sql`, `20260924100000_origen_google.sql` |
+| **Contacto** (bloque 3) | Una persona que escribió por un canal pago: `meta` (Instagram, Messenger o WhatsApp) o `google` (Google Ads ya corre y también puede traer), y `otro` por si hace falta. Se registra por la **fecha del primer mensaje** y el canal; el teléfono es opcional y sirve para no duplicar. | `contactos_pauta.fecha`, `.canal`, `.origen`, `.telefono` · `20260924101000_contactos_pauta.sql` |
+| **Demo** | Se le envió la demo (el video o su página armada). Una fecha. | `contactos_pauta.demo_at` |
+| **Cierre** | El contacto se convirtió en tenant: fecha y tenant. Al cerrar, **el origen del tenant se fija solo según el canal si estaba vacío** (`meta` → `meta`, `google` → `google`, `otro` → `otro`, con detalle «contacto de pauta del DD/MM/AAAA», la fecha del primer mensaje), y eso deja el evento `origen` de siempre. Si el tenant ya tenía origen, no se toca. | `contactos_pauta.cierre_at`, `.lubricentro_id` · `marcar_cierre()` |
+| **Pérdida** | El contacto no avanzó: fecha y un motivo de una palabra (`precio`, `no_responde`, `ya_tiene_sistema`, `no_factura`, `no_es_dueno`, `otro`), opcional pero se pide. Cierre y pérdida **no pueden coexistir**; «Reabrir» borra cualquiera de los dos. | `contactos_pauta.perdida_at`, `.motivo_perdida` |
+| **Tasa de cierre** | Cierres ÷ contactos, **por cohorte de fecha de primer contacto** (semana ISO o mes): un contacto que escribió en la semana 1 y cerró en la semana 3 cuenta como cierre de la semana 1. Nunca por fecha de cierre. Lo mismo la tasa de demo. | `embudo_pauta()` |
+| **Ciclo** | Mediana de días entre el primer contacto y el cierre, sobre los cierres de la cohorte. | `embudo_pauta().ciclo_mediana_dias` |
+| **Gasto de pauta** | Por semana (siempre un lunes) y canal, **en USD**: Meta y Google se pagan en dólares. El equivalente en pesos sale de `tc_vigente()` del día, nunca se guarda. | `gasto_pauta` · `20260924101000` |
+| **CAC del canal** | En un período: gasto del período ÷ **cierres del período por fecha de cierre** (no por cohorte: la plata se gastó ese mes y los cierres entraron ese mes). Se muestra siempre con el número de cierres al lado; con menos de 3 cierres va en gris con «pocos casos». Null si no hubo cierres. | `embudo_pauta().cac_usd`, `.cierres_periodo` |
+| **Activación** | 20 o más trabajos en los 7 días desde el alta: `services` no anulados de cualquier tipo con `created_at` en `[lubricentros.created_at, created_at + 7 días)`. El trabajo 20 del día 7 activa; el del día 8 ya no. Mientras no pasaron los 7 días está «en curso, día N de 7». | `activacion_tenant()`, `activacion_por_mes()` · `20260924102000_activacion_uso.sql` |
+| **Autos que volvieron** | Vehículos distintos con un trabajo no anulado en el rango cuyo vehículo tuvo una fila en `contactos` (un recordatorio disparado) en los **60 días previos** al trabajo, contando el mismo día. Reemplaza en el admin a «recuperados del mes» (30 días); `recuperados_del_mes()` no se toca porque la usa el panel del tenant. | `autos_que_volvieron()`, `autos_que_volvieron_plataforma()` |
+| **Pedido de calcos** | Cada entrega de calcos a un tenant: cantidad, si estaban incluidas en el plan o se cobraron, monto en ARS (obligatorio si se cobraron) y fecha. Append-only con los tres candados. **`lubricentros.calcos_entregadas` pasa a ser la suma de los pedidos** y se recalcula en cada registro; el evento `calcos` lo emite el trigger de siempre. | `pedidos_calcos`, `registrar_pedido_calcos()` · `20260924103000_pedidos_calcos.sql` |
 
 **El día** de un instante (`created_at`, `ocurrido_at`) es su fecha calendario en
 `America/Argentina/Buenos_Aires`. Los trabajos se cuentan por `services.fecha`
@@ -69,6 +89,14 @@ tipo.
 | `lib/fidelli/resumen.ts`, `lib/fidelli/listado.ts`, `lib/fidelli/historial.ts` | (código, bloque 2) | Los contratos de `resumen_admin()`, el cruce de las lecturas del listado y los filtros de la URL, y la traducción de `tenant_eventos` a oraciones. |
 | `app/fidelli/page.tsx` (Resumen), `app/fidelli/lubricentros/page.tsx` (listado), `components/fidelli/{franja-resumen,grafico-mrr,alertas,tabla-lubricentros,filtros-listado,chip,sparkline}.tsx`, `components/fidelli/ficha/tab-historial.tsx` | (código, bloque 2) | Las pantallas. |
 | R32 en `supabase/verificaciones.sql` · las nueve roturas de `scripts/regresion-metricas.sh` | (red, bloque 2) | La guarda, la exención de la salud vía `estado_atencion()`, los cortes, los tres tipos en las cuatro lecturas. |
+| `origen_tenant` + `'google'` | `20260924100000_origen_google.sql` | **Bloque 3.** El valor que necesita el cierre de un contacto de Google Ads. Migración sola: un valor nuevo de enum no se usa en la transacción que lo crea. |
+| enums `canal_pauta`, `origen_meta`, `motivo_perdida`; tablas `contactos_pauta`, `gasto_pauta`; `registrar_contacto_pauta()`, `marcar_demo()`, `marcar_cierre()`, `marcar_perdida()`, `reabrir_contacto_pauta()`, `embudo_pauta(p_desde, p_hasta, p_agrupar, p_canal)`, `embudo_pauta_mes_actual()` | `20260924101000_contactos_pauta.sql` | **Bloque 3.** El registro de cinco campos, el gasto semanal y el embudo por cohorte. Solo superadmin (RLS y guardas). |
+| `activacion_tenant(p_lubricentro_id)`, `activacion_por_mes(p_desde, p_hasta)`, `autos_que_volvieron(p_lubricentro_id, p_desde, p_hasta)`, `autos_que_volvieron_plataforma(p_desde, p_hasta)`, `uso_tenant(p_lubricentro_id, p_dias)`; `indicadores_tenants()` con `activado` y `dias_alta`; `metricas_plataforma()` con la serie por tipo | `20260924102000_activacion_uso.sql` | **Bloque 3.** La activación, los autos que volvieron y el uso de la ficha; las dos redefiniciones permitidas del bloque 2. |
+| tabla `pedidos_calcos` (tres candados en `ALWAYS`), `registrar_pedido_calcos()`, `backfill_pedidos_calcos()` | `20260924103000_pedidos_calcos.sql` | **Bloque 3.** Cada entrega de calcos; el contador pasa a ser la suma. El backfill corre en la migración y otra vez en `seed.sql` (el demo nace después de las migraciones). |
+| `tenant_evento_alta()` con `estado` en `despues` | `20260924104000_alta_con_estado.sql` | **Bloque 3.** Cierra el faltante de § 8. |
+| `scripts/cargar-gasto-pauta.mjs` + `scripts/gasto-pauta.plantilla.json` | (código, bloque 3) | La carga del gasto histórico (agosto) a partir de un JSON con los lunes y los montos **vacíos**: se completa a mano, no se inventa. |
+| `lib/fidelli/pauta.ts`, `app/fidelli/pauta/**`, `components/fidelli/pauta/**`, `components/fidelli/grafico-pulso.tsx`, `components/fidelli/dialog-editar.tsx`, `components/fidelli/ficha/dialog-pedido-calcos.tsx` | (código, bloque 3) | La pantalla de pauta, el Pulso apilado, el dialog Editar compartido y el registro de calcos. |
+| R33 en `supabase/verificaciones.sql` · las roturas nuevas de `scripts/regresion-metricas.sh` | (red, bloque 3) | Excluyentes, el origen solo si vacío, la cohorte, el lunes, los candados de calcos, la suma, la ventana y el umbral de activación. |
 
 ---
 
@@ -310,6 +338,71 @@ select reconstruir_snapshots('2026-08-16', current_date - 1);
   `lib/fidelli/plan.ts` solo como preview del wizard y de Editar, con el
   aviso escrito de que SQL es la fuente y de que no suman el módulo.
 
+### Decisiones del bloque 3 (23/09/2026)
+
+- **`google` entra a `origen_tenant`** (`20260924100000`): el cierre de un
+  contacto de Google Ads tiene que fijar un origen que diga Google; mandarlo
+  a `otro` lo escondía. Es una migración sola, sin nada más, porque el valor
+  nuevo de un enum no se puede usar en la transacción que lo crea.
+- **La cuarta puerta se llama `reabrir_contacto_pauta()`**, no `reabrir()`:
+  un nombre tan corto en el schema público se pisa con lo primero que
+  venga. Las otras tres (`marcar_demo`, `marcar_cierre`, `marcar_perdida`)
+  van con el nombre del brief.
+- **Reabrir no deshace el origen** que el cierre le fijó al tenant: sigue
+  siendo verdad de dónde vino; se corrige a mano desde Editar si hace
+  falta. Sí borra cierre y pérdida y conserva la demo.
+- **Perder un contacto cerrado se rechaza** (`contacto_cerrado`): hay que
+  reabrir primero. El CHECK `cierre_o_perdida` es la segunda defensa.
+- **`embudo_pauta()` devuelve también `cierres_periodo`** (los cierres cuya
+  fecha de cierre cae en el período), además de `cierres` (cohorte): el CAC
+  se calcula con el primero y la pantalla lo muestra al lado, como pide la
+  definición. Y toma `p_canal` opcional: con null suma los canales (`canal`
+  sale null); el `?canal=` de la pantalla se resuelve en la base.
+- **El gasto se borra con monto vacío**: «no se cargó» y «cero» son dos
+  cosas distintas y la pantalla las distingue («cargar el lunes» / «sin
+  cargar» vs «US$ 0»). `fijar_gasto_pauta()` con null borra la fila; `p_monto_usd` tiene `default null` para que el cliente pueda omitirlo (una RPC sin default obliga al parámetro en el tipo generado y, si se omite, PostgREST no encuentra la función).
+- **La activación cuenta por `services.created_at`**, no por `fecha`: es
+  cuándo el taller CARGÓ el trabajo en su primera semana, que es lo que
+  mide la adopción. Un trabajo cargado en el día 8 con fecha del día 6 no
+  cuenta.
+- **`activacion_por_mes()` devuelve también `en_curso`** (altas del mes
+  cuya primera semana no terminó): la franja dice «8 de 11 activados · 2
+  en curso» para no contar como no activado a quien todavía puede.
+- **`uso_tenant()` es una función** y no cuatro consultas desde la ficha:
+  los cuatro números tienen que salir de la misma ventana (30 días por
+  `services.fecha`; `contactos` y `landing_busquedas` por `created_at`).
+- **`indicadores_tenants()` cambió de tipo de retorno** (`activado`,
+  `dias_alta`), así que fue `drop` + `create` y no `create or replace`; los
+  scripts de regresión que la muerden (y a `metricas_plataforma()`) apuntan
+  ahora a `20260924102000`.
+- **El Pulso apilado** vive en `components/fidelli/grafico-pulso.tsx`, propio
+  del admin: el panel del tenant sigue con `grafico-serie.tsx` y una sola
+  serie. Colores: service con `--color-brand`, mecánica con `--color-ink`,
+  neumáticos con `--color-ink-40`; el orden fijo y la leyenda son la
+  segunda codificación. El admin no tiene modo oscuro (CLAUDE-landing.md),
+  así que la verificación en oscuro no aplica.
+- **`pedidos_calcos` lleva `on delete cascade` con candado condicional**,
+  como `tenant_eventos`: no se borra mientras el tenant exista, y se va con
+  él en las pruebas que borran tenants de prueba. **El backfill corre dos
+  veces**: en la migración y en `seed.sql`, porque el demo (50 calcos) nace
+  después de las migraciones; es idempotente.
+- **`actualizar_lubricentro()` sigue aceptando `p_calcos`**: el dialog manda
+  el valor actual en solo lectura y la función no ve cambio. Un llamado
+  directo a la RPC con otro número desincronizaría el contador de la suma;
+  no se cerró en este bloque (la función es del ABM original) y queda
+  anotado.
+- **El evento `alta` guarda `estado`** (`20260924104000`); la fila «Trial»
+  lo usa cuando existe y cae en la inferencia de § 6 (bloque 2) para los
+  eventos anteriores.
+- **El dialog Editar es uno solo** (`components/fidelli/dialog-editar.tsx`):
+  la fila del listado y la cabecera de la ficha le pasan `DatosEdicion`; el
+  chip «Sin origen» de la ficha lo abre en vez de mandar al listado.
+- **No hay datos históricos de contactos**: la tabla arranca vacía y no se
+  backfillea nada. El gasto de agosto se carga con
+  `scripts/cargar-gasto-pauta.mjs` a partir de `scripts/gasto-pauta.plantilla.json`,
+  que trae los lunes de agosto con los montos en null; se completa a mano.
+- **Las fotos de prueba de R31 ya no quedan en la base local.** `cerrar_dia()` se verifica sobre días de 1991 y los candados de `snapshots_diarios` no dejan borrar ni a postgres, así que cada `db reset` dejaba tres fotos de 1991 y el gráfico del MRR del Resumen arrancaba en 1991 (los rótulos de mes se pisaban; se veía en las capturas del bloque 2). `verificaciones.sql` termina bajando esos dos candados, borrando las fotos y el tipo de cambio de prueba, y volviéndolos a `ALWAYS`; un DO final lo comprueba. Producción no tiene esas filas: es un arreglo del entorno local, no del producto.
+
 ---
 
 ## 7 · Lo que este bloque no toca
@@ -332,9 +425,10 @@ ya no existe y la franja lee `mrr_plataforma()`.)
 Encontrado al construir el bloque 2. Las funciones y tablas del bloque 1 no se
 modifican en el bloque 2; esto queda anotado para una migración propia.
 
-- **El evento `alta` no guarda el `estado` de la suscripción** (`trial` o
-  `activa`). Sin eso no se puede saber con exactitud si un tenant tuvo trial
-  alguna vez, y la fila «Trial» de la pestaña Suscripción usa una inferencia
-  (§ 6). Arreglo: sumar `'estado', v_sub.estado` al `despues` de
-  `tenant_evento_alta()` y un evento nuevo (o `cambio_plan` ampliado) cuando
-  `suscripciones.estado` cambie.
+- ~~**El evento `alta` no guarda el `estado` de la suscripción**~~ **Cerrado en
+  el bloque 3** (`20260924104000_alta_con_estado.sql`): el `despues` del
+  `alta` trae `estado` además de `plan` y `periodo`, y la fila «Trial» de la
+  pestaña Suscripción usa el evento cuando lo tiene (los backfilleados no lo
+  tienen: para esos sigue la inferencia de § 6). Sigue pendiente un evento
+  cuando `suscripciones.estado` cambie (`trial` → `activa` por un pago):
+  hoy lo cubre el evento `pago`.

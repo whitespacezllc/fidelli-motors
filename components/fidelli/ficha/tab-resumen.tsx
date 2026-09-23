@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { formatearFecha, formatearFechaHora } from "@/lib/fechas";
+import { formatearFecha, formatearFechaHora, hoyISO } from "@/lib/fechas";
 import {
   CONDICION_FOUNDING,
   abonoMensual,
@@ -9,6 +9,7 @@ import {
   porcentaje,
 } from "@/lib/fidelli/plan";
 import { PanelFicha, Dato, SinDato, Metrica } from "./panel-dato";
+import { DialogPedidoCalcos } from "./dialog-pedido-calcos";
 import type { SuscripcionVigente, Tenant } from "./tipos";
 import type { EstadoOwner } from "@/components/fidelli/tipos";
 
@@ -20,6 +21,34 @@ type Metricas = {
   escaneados: number;
   recuperados: number;
   ultimo_service: { creado: string; fecha: string; sucursal: string } | null;
+};
+
+type Activacion = {
+  trabajos_7d: number;
+  activado: boolean;
+  fecha_alta: string;
+  dia: number;
+  en_curso: boolean;
+};
+
+type Uso = {
+  dias: number;
+  trabajos: number;
+  service: number;
+  mecanica: number;
+  neumaticos: number;
+  recordatorios: number;
+  escaneos: number;
+  autos_volvieron: number;
+};
+
+type Pedido = {
+  id: string;
+  fecha: string;
+  cantidad: number;
+  incluidas: boolean;
+  monto_ars: number | null;
+  nota: string | null;
 };
 
 const ETIQUETA_OWNER: Record<EstadoOwner, string> = {
@@ -34,6 +63,8 @@ const COLOR_OWNER: Record<EstadoOwner, string> = {
   sin_owner: "text-overdue",
 };
 
+const ENTERO = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 });
+
 export async function TabResumen({
   tenant,
   suscripcion,
@@ -47,9 +78,9 @@ export async function TabResumen({
 }) {
   const supabase = await createClient();
 
-  // Las cuatro consultas de la pestaña, en paralelo. Las tres primeras
-  // llevan su .eq("lubricentro_id") explícito: acá el RLS no recorta.
-  const [ownerRes, sucursalesRes, configRes, metricasRes] =
+  // Las consultas de la pestaña, en paralelo. Todas llevan su
+  // .eq("lubricentro_id") o el id como argumento: acá el RLS no recorta.
+  const [ownerRes, sucursalesRes, configRes, metricasRes, activacionRes, usoRes, pedidosRes] =
     await Promise.all([
       supabase
         .from("usuarios")
@@ -69,6 +100,16 @@ export async function TabResumen({
         .eq("lubricentro_id", tenant.id)
         .maybeSingle(),
       supabase.rpc("metricas_tenant", { p_lubricentro_id: tenant.id }),
+      // Bloque 3: la activación, el uso de los últimos 30 días y los
+      // pedidos de calcos.
+      supabase.rpc("activacion_tenant", { p_lubricentro_id: tenant.id }),
+      supabase.rpc("uso_tenant", { p_lubricentro_id: tenant.id, p_dias: 30 }),
+      supabase
+        .from("pedidos_calcos")
+        .select("id, fecha, cantidad, incluidas, monto_ars, nota")
+        .eq("lubricentro_id", tenant.id)
+        .order("fecha", { ascending: false })
+        .order("created_at", { ascending: false }),
     ]);
 
   const m = (metricasRes.data ?? {}) as Partial<Metricas>;
@@ -77,6 +118,13 @@ export async function TabResumen({
   const contacto = (configRes.data?.datos_contacto ?? {}) as {
     telefono?: string;
   };
+  const activacion = ((activacionRes.data ?? []) as unknown as Activacion[])[0] ?? null;
+  const uso = (usoRes.data ?? null) as Uso | null;
+  const pedidos = ((pedidosRes.data ?? []) as unknown as Pedido[]).map((p) => ({
+    ...p,
+    cantidad: Number(p.cantidad),
+    monto_ars: p.monto_ars == null ? null : Number(p.monto_ars),
+  }));
 
   // El teléfono de la marca es el de contacto; si no lo cargaron, el de la
   // primera sucursal que tenga uno sirve igual para llamarlo.
@@ -95,6 +143,10 @@ export async function TabResumen({
     (m.flota ?? 0) > 0
       ? Math.round(((m.escaneados ?? 0) / (m.flota ?? 1)) * 100)
       : null;
+
+  const calcosIncluidas = pedidos.filter((p) => p.incluidas).reduce((n, p) => n + p.cantidad, 0);
+  const calcosCobradas = pedidos.filter((p) => !p.incluidas).reduce((n, p) => n + p.cantidad, 0);
+  const cobradoArs = pedidos.reduce((n, p) => n + (p.monto_ars ?? 0), 0);
 
   return (
     <div className="flex flex-col gap-5">
@@ -126,19 +178,6 @@ export async function TabResumen({
                 sucursales.map((s) => s.nombre).join(" · ")
               ) : (
                 <SinDato>ninguna</SinDato>
-              )}
-            </Dato>
-
-            <Dato etiqueta="Calcos entregadas">
-              {tenant.calcos_entregadas > 0 ? (
-                <>
-                  {tenant.calcos_entregadas}
-                  <span className="block text-label text-ink-40">
-                    el slug queda cerrado
-                  </span>
-                </>
-              ) : (
-                <SinDato>ninguna todavía</SinDato>
               )}
             </Dato>
           </dl>
@@ -192,7 +231,7 @@ export async function TabResumen({
         <h2 className="mb-3 font-brand text-ui font-bold tracking-[0.04em] text-ink-60 uppercase">
           Métricas del tenant
         </h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-3">
           <Metrica
             valor={String(m.services_mes ?? 0)}
             etiqueta="Trabajos del mes"
@@ -211,27 +250,144 @@ export async function TabResumen({
                 : `${m.escaneados ?? 0} de ${m.flota ?? 0} autos`
             }
           />
+        </div>
+      </div>
+
+      {/* ============ Uso · últimos 30 días (bloque MÉTRICAS 3) ============
+          Lo que el taller hace con la base: cuánto carga y de qué tipo,
+          cuántos recordatorios dispara, cuántos escaneos recibe y cuántos
+          autos volvieron después de un recordatorio (60 días, la
+          definición nueva, que reemplaza en el admin a «recuperados del
+          mes»). */}
+      <div>
+        <h2 className="mb-3 font-brand text-ui font-bold tracking-[0.04em] text-ink-60 uppercase">
+          Uso · últimos {uso?.dias ?? 30} días
+        </h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Metrica
-            valor={String(m.recuperados ?? 0)}
-            etiqueta="Recuperados del mes"
-            pie="volvieron dentro de 30 días"
+            valor={String(uso?.trabajos ?? 0)}
+            etiqueta="Trabajos"
+            pie={`${uso?.service ?? 0} service · ${uso?.mecanica ?? 0} mecánica · ${uso?.neumaticos ?? 0} neumáticos`}
+          />
+          <Metrica
+            valor={String(uso?.recordatorios ?? 0)}
+            etiqueta="Recordatorios disparados"
+            pie="clics en WhatsApp desde el panel"
+          />
+          <Metrica
+            valor={String(uso?.escaneos ?? 0)}
+            etiqueta="Escaneos"
+            pie="búsquedas de patente en su página"
+          />
+          <Metrica
+            valor={String(uso?.autos_volvieron ?? 0)}
+            etiqueta="Autos que volvieron"
+            pie="con un recordatorio en los 60 días previos"
           />
         </div>
       </div>
 
-      <PanelFicha titulo="Actividad">
+      <div className="grid gap-5 lg:grid-cols-2">
+        {/* ============ Activación (docs/METRICAS.md § 1) ============ */}
+        <PanelFicha titulo="Activación">
+          <dl>
+            <Dato etiqueta="Primera semana">
+              {activacion ? (
+                <>
+                  <span className="font-semibold tabular-nums">
+                    {activacion.trabajos_7d}{" "}
+                    {activacion.trabajos_7d === 1 ? "trabajo" : "trabajos"} en la primera semana
+                  </span>
+                  <span
+                    className={`block text-label ${
+                      activacion.activado
+                        ? "text-success"
+                        : activacion.en_curso
+                          ? "text-ink-60"
+                          : "text-overdue"
+                    }`}
+                  >
+                    {activacion.activado
+                      ? "activado"
+                      : activacion.en_curso
+                        ? `en curso, día ${activacion.dia} de 7`
+                        : "no activado"}
+                  </span>
+                </>
+              ) : (
+                <SinDato>sin datos</SinDato>
+              )}
+            </Dato>
+            <Dato etiqueta="La regla">
+              <span className="text-ink-60">20 o más trabajos en los 7 días desde el alta</span>
+            </Dato>
+          </dl>
+        </PanelFicha>
+
+        <PanelFicha titulo="Actividad">
+          <dl>
+            <Dato etiqueta="Último service cargado">
+              {m.ultimo_service ? (
+                <>
+                  {formatearFechaHora(m.ultimo_service.creado)}
+                  <span className="text-ink-60"> · {m.ultimo_service.sucursal}</span>
+                </>
+              ) : (
+                <SinDato>todavía no cargaron ninguno</SinDato>
+              )}
+            </Dato>
+          </dl>
+        </PanelFicha>
+      </div>
+
+      {/* ============ Calcos (bloque MÉTRICAS 3) ============
+          El contador es la suma de los pedidos. Cada pedido queda para
+          siempre; el slug se cierra en cuanto el total pasa de cero. */}
+      <PanelFicha
+        titulo="Calcos"
+        acciones={<DialogPedidoCalcos lubricentroId={tenant.id} nombre={tenant.nombre} hoy={hoyISO()} />}
+      >
         <dl>
-          <Dato etiqueta="Último service cargado">
-            {m.ultimo_service ? (
+          <Dato etiqueta="Entregadas">
+            {tenant.calcos_entregadas > 0 ? (
               <>
-                {formatearFechaHora(m.ultimo_service.creado)}
-                <span className="text-ink-60"> · {m.ultimo_service.sucursal}</span>
+                <span className="font-semibold tabular-nums">{ENTERO.format(tenant.calcos_entregadas)}</span>
+                <span className="block text-label text-ink-60 tabular-nums">
+                  {ENTERO.format(calcosIncluidas)} incluidas · {ENTERO.format(calcosCobradas)} cobradas
+                  {cobradoArs > 0 ? ` · ${pesos(cobradoArs)} cobrados` : ""}
+                </span>
+                <span className="block text-label text-ink-40">el slug queda cerrado</span>
               </>
             ) : (
-              <SinDato>todavía no cargaron ninguno</SinDato>
+              <SinDato>ninguna todavía · el slug se puede cambiar</SinDato>
+            )}
+          </Dato>
+          <Dato etiqueta="Último pedido">
+            {pedidos[0] ? (
+              <span className="tabular-nums">
+                {formatearFecha(pedidos[0].fecha)} · {ENTERO.format(pedidos[0].cantidad)}{" "}
+                {pedidos[0].incluidas ? "incluidas" : `cobradas${pedidos[0].monto_ars != null ? ` · ${pesos(pedidos[0].monto_ars)}` : ""}`}
+              </span>
+            ) : (
+              <SinDato>—</SinDato>
             )}
           </Dato>
         </dl>
+
+        {pedidos.length > 0 && (
+          <ul className="mt-1 divide-y divide-line border-t border-line">
+            {pedidos.map((p) => (
+              <li key={p.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2 text-ui">
+                <span className="tabular-nums text-ink-60">{formatearFecha(p.fecha)}</span>
+                <span className="font-semibold tabular-nums text-ink">{ENTERO.format(p.cantidad)} calcos</span>
+                <span className="text-ink-60">
+                  {p.incluidas ? "incluidas" : `cobradas${p.monto_ars != null ? ` · ${pesos(p.monto_ars)}` : ""}`}
+                </span>
+                {p.nota && <span className="text-label text-ink-40">{p.nota}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
       </PanelFicha>
     </div>
   );

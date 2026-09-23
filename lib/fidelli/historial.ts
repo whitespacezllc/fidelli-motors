@@ -108,8 +108,12 @@ export function describirEvento(e: EventoHistorial): LineaHistorial {
     case "alta": {
       const plan = texto(despues.plan);
       const desc = numero(despues.descuento_pct) ?? 0;
+      // `estado` llega desde 20260924104000 (bloque 3); los eventos
+      // anteriores y los del backfill no lo tienen.
+      const estado = texto(despues.estado);
+      const nacio = estado === "trial" ? " · nació en trial" : estado ? ` · nació ${estado}` : "";
       const detalle = plan
-        ? `Plan ${plan} · ${periodoLegible(despues.periodo)}${desc > 0 ? ` · −${porcentaje(desc)}` : ""}`
+        ? `Plan ${plan} · ${periodoLegible(despues.periodo)}${desc > 0 ? ` · −${porcentaje(desc)}` : ""}${nacio}`
         : "Sin suscripción al momento del alta";
       return { titulo: "Alta del lubricentro", detalle, actor };
     }
