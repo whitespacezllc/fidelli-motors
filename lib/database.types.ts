@@ -2381,6 +2381,30 @@ export type Database = {
       }
     }
     Views: {
+      snapshots_mensuales: {
+        Row: {
+          altas_dia: number | null
+          bajas_dia: number | null
+          created_at: string | null
+          en_curso: boolean | null
+          escaneos_dia: number | null
+          fecha: string | null
+          fuente: string | null
+          mes: string | null
+          mrr_ars: number | null
+          mrr_usd: number | null
+          recordatorios_dia: number | null
+          tc_venta: number | null
+          tenants_activos: number | null
+          tenants_exentos: number | null
+          tenants_suspendidos: number | null
+          trabajos_dia: number | null
+          trabajos_mecanica: number | null
+          trabajos_neumaticos: number | null
+          trabajos_service: number | null
+        }
+        Relationships: []
+      }
       vista_clientes: {
         Row: {
           cantidad_vehiculos: number | null
@@ -2773,6 +2797,16 @@ export type Database = {
       alias_formato_valido: { Args: { p_alias: string }; Returns: boolean }
       alias_largo_maximo: { Args: never; Returns: number }
       alias_largo_minimo: { Args: never; Returns: number }
+      altas_bajas_por_mes: {
+        Args: { p_desde: string; p_hasta: string }
+        Returns: {
+          altas: number
+          bajas: number
+          mes: string
+          neto: number
+          reactivaciones: number
+        }[]
+      }
       anonimizar_cliente: {
         Args: { p_cliente_id: string; p_motivo: string }
         Returns: undefined
@@ -2833,6 +2867,19 @@ export type Database = {
         }
         Returns: string
       }
+      churn_por_mes: {
+        Args: { p_desde: string; p_hasta: string }
+        Returns: {
+          bajas: number
+          churn_pct: number
+          involuntarias: number
+          mes: string
+          por_motivo: Json
+          por_origen: Json
+          tenants_inicio: number
+          voluntarias: number
+        }[]
+      }
       ciclo_tras_el_pago: {
         Args: {
           p_es_el_primero: boolean
@@ -2878,6 +2925,34 @@ export type Database = {
           sub_estado: Database["public"]["Enums"]["estado_suscripcion"]
           telefono: string
           vencimiento: string
+        }[]
+      }
+      cohortes_ingresos: {
+        Args: { p_desde: string; p_hasta: string }
+        Returns: {
+          cohorte: string
+          grr_12: number
+          grr_3: number
+          grr_6: number
+          mrr_inicial_usd: number
+          nrr_12: number
+          nrr_3: number
+          nrr_6: number
+          tamano: number
+        }[]
+      }
+      cohortes_logos: {
+        Args: { p_desde: string; p_hasta: string }
+        Returns: {
+          activados: number
+          cohorte: string
+          m1: number
+          m12: number
+          m2: number
+          m3: number
+          m6: number
+          m9: number
+          tamano: number
         }[]
       }
       completar_onboarding: { Args: never; Returns: Json }
@@ -3003,6 +3078,7 @@ export type Database = {
         }
         Returns: string
       }
+      estado_owner: { Args: { p_lubricentro_id: string }; Returns: string }
       estados_owner: {
         Args: never
         Returns: {
@@ -3214,6 +3290,26 @@ export type Database = {
         }
         Returns: Json
       }
+      movimientos_mrr: {
+        Args: { p_desde: string; p_hasta: string; p_moneda?: string }
+        Returns: {
+          ajuste_precio: number
+          churn: number
+          contraccion: number
+          crecimiento_pct: number
+          en_curso: boolean
+          expansion: number
+          mes: string
+          mrr_fin: number
+          mrr_inicio: number
+          neto: number
+          nuevo: number
+          reactivacion: number
+          sin_foto_anterior: boolean
+          tenants_fin: number
+          tenants_inicio: number
+        }[]
+      }
       mrr_de_tenant: { Args: { p_id: string }; Returns: number }
       mrr_plataforma: { Args: never; Returns: number }
       normalizar_patente: { Args: { entrada: string }; Returns: string }
@@ -3366,6 +3462,17 @@ export type Database = {
         Args: { p_lubricentro: string; p_sucursal: string }
         Returns: boolean
       }
+      suscriptos_por_plan: {
+        Args: never
+        Returns: {
+          descuento_pct: number
+          estado: Database["public"]["Enums"]["estado_suscripcion"]
+          lubricentro_id: string
+          nombre: string
+          periodo: Database["public"]["Enums"]["periodo_suscripcion"]
+          plan_id: string
+        }[]
+      }
       tc_vigente: {
         Args: { p_fecha: string }
         Returns: {
@@ -3385,6 +3492,20 @@ export type Database = {
       telefono_de_contacto: {
         Args: { p_lubricentro_id: string }
         Returns: string
+      }
+      trabajos_por_mes: {
+        Args: { p_desde: string; p_hasta: string }
+        Returns: {
+          autos_que_volvieron: number
+          en_curso: boolean
+          escaneos: number
+          mecanica: number
+          mes: string
+          neumaticos: number
+          recordatorios: number
+          service: number
+          total: number
+        }[]
       }
       trabajos_semanales: {
         Args: { p_lubricentro_id?: string; p_semanas?: number }

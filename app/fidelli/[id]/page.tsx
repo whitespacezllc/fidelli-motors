@@ -21,6 +21,9 @@ export type ParamsFicha = {
   ver?: string;
   q?: string;
   pagina?: string;
+  /** El total de la lista de la pestaña Datos: viaja en los links de
+   *  paginación para contar una sola vez (ver tab-datos.tsx). */
+  total?: string;
   sucursal?: string;
   desde?: string;
   hasta?: string;
@@ -50,7 +53,7 @@ export default async function PaginaFicha({
 
   const supabase = await createClient();
 
-  const [tenantRes, suscripcionRes, ownersRes, planesRes] = await Promise.all([
+  const [tenantRes, suscripcionRes, ownerRes, planesRes] = await Promise.all([
     supabase
       .from("lubricentros")
       .select("id, nombre, slug, activo, calcos_entregadas, created_at, origen, origen_detalle")
@@ -69,8 +72,11 @@ export default async function PaginaFicha({
       .limit(1)
       .maybeSingle(),
     // El estado del owner, para la cabecera y para el Resumen. Una sola
-    // llamada acá; estados_owner() no tiene versión por tenant.
-    supabase.rpc("estados_owner"),
+    // llamada acá y por tenant: estado_owner(id) (bloque MÉTRICAS 4) mira
+    // solo al owner de esta ficha. Antes se pedía estados_owner() —la
+    // plataforma entera, un join con auth.users por cada tenant— para
+    // quedarse con una fila.
+    supabase.rpc("estado_owner", { p_lubricentro_id: id }),
     // El catálogo, para el dialog Editar de la cabecera (bloque 3).
     supabase
       .from("planes")
@@ -95,9 +101,14 @@ export default async function PaginaFicha({
       }
     : null;
 
+  // estado_owner() devuelve 'pendiente' / 'activo', o null si el tenant no
+  // tiene owner. Cualquier otra cosa —un error de la RPC incluido— se lee
+  // como «sin owner», igual que antes cuando la búsqueda en la lista no
+  // encontraba la fila.
   const estadoOwner: EstadoOwner =
-    ((ownersRes.data ?? []).find((o) => o.lubricentro_id === tenant.id)
-      ?.estado as EstadoOwner | undefined) ?? "sin_owner";
+    ownerRes.data === "activo" || ownerRes.data === "pendiente"
+      ? ownerRes.data
+      : "sin_owner";
 
   return (
     <div>

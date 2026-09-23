@@ -15,6 +15,7 @@ import { ETIQUETA_FEATURE, MODULOS_PAGOS, type FeaturePlan } from "@/lib/planes"
 import { PREFIJOS_MODULO, leerMotivoModulo } from "@/lib/modulos";
 import { haceCuanto, hoyISO } from "@/lib/fechas";
 import { BotonAviso } from "@/components/fidelli/boton-aviso";
+import { BotonExportar } from "@/components/fidelli/boton-exportar";
 import {
   ESTILO_ATENCION,
   esAtencion,
@@ -169,10 +170,13 @@ export async function TabSuscripcion({
     <>
     <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
       <section className="surface-card min-w-0 flex-1 overflow-hidden">
-        <div className="border-b border-line px-4.5 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4.5 py-3">
           <h2 className="font-brand text-ui font-bold tracking-[0.04em] text-ink-60 uppercase">
             Historial de pagos
           </h2>
+          {/* Los pagos de ESTE tenant (recurso `pagos` del data room,
+              docs/DATA-ROOM.md). La fila de trial no va: no es un pago. */}
+          <BotonExportar recurso="pagos" params={{ lubricentro_id: tenant.id }} compacto />
         </div>
 
         {pagos.length === 0 && !hayTrial ? (

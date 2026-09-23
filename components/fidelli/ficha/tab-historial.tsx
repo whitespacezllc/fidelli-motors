@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { formatearFecha, formatearHora } from "@/lib/fechas";
 import { describirEvento, type EventoHistorial, type TipoEvento } from "@/lib/fidelli/historial";
+import { BotonExportar } from "@/components/fidelli/boton-exportar";
 import type { Tenant } from "./tipos";
 
 const POR_PAGINA = 30;
@@ -93,13 +94,18 @@ export async function TabHistorial({
 
   return (
     <section className="surface-card overflow-hidden">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line px-4.5 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4.5 py-3">
         <h2 className="font-brand text-ui font-bold tracking-[0.04em] text-ink-60 uppercase">
           Historial
         </h2>
-        <p className="text-label text-ink-40 tabular-nums">
-          {total} {total === 1 ? "evento" : "eventos"} · no se edita ni se borra
-        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-label text-ink-40 tabular-nums">
+            {total} {total === 1 ? "evento" : "eventos"} · no se edita ni se borra
+          </p>
+          {/* Todos los eventos de ESTE tenant, no la página: el recurso
+              `eventos` del data room filtrado por lubricentro_id. */}
+          <BotonExportar recurso="eventos" params={{ lubricentro_id: tenant.id }} compacto />
+        </div>
       </div>
 
       {eventos.length === 0 ? (

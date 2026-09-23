@@ -1,15 +1,10 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useLayoutEffect, useState } from "react";
 import { AreaStack } from "@visx/shape";
 import { curveMonotoneX } from "@visx/curve";
 import { scaleLinear } from "@visx/scale";
-import {
-  etiquetaDePunto,
-  mostrarEtiqueta,
-  pasoDeEtiquetas,
-  type Granularidad,
-} from "@/lib/series";
+import { etiquetaDePunto, mostrarEtiqueta, type Granularidad } from "@/lib/series";
 import { OverlaySerie } from "@/components/graficos/overlay-serie";
 
 // ============================================================
@@ -27,6 +22,15 @@ import { OverlaySerie } from "@/components/graficos/overlay-serie";
 // La geometría es por índice, como grafico-serie.tsx: n celdas iguales,
 // el punto en el centro de cada una, y el overlay/tooltip en HTML por
 // porcentaje (el SVG se estira con preserveAspectRatio="none").
+//
+// EL EJE X SE MIDE, NO SE ADIVINA (bloque MÉTRICAS 4): cada cuántas celdas
+// va un rótulo sale del ancho real del eje (ResizeObserver) dividido por
+// n, contra el ancho del rótulo más largo de la serie. Hasta medir (el
+// render del servidor y el primer paint) se asume el eje de un celular
+// chico, el mismo número que grafico-mrr.tsx: más ralo es el error barato
+// (la heurística por cantidad de puntos de lib/series.ts sigue siendo la
+// del panel del tenant, pero en un celular de 320px pisaba los «dd/MM»).
+// Anclado al final, como siempre: la última fecha se ve.
 // ============================================================
 
 export type PuntoPulso = {
@@ -51,6 +55,60 @@ const ANCHO = 900;
 const ALTO = 200;
 const PISO = 8;
 
+// ---------- El eje X según el ancho real ----------
+
+// Ancho estimado de un rótulo, sin medir texto (el ancho del contenedor no
+// depende de que la fuente haya cargado; el del texto sí): text-label mide
+// 12px y en Public Sans un dígito tabular ocupa ~8,4px y una letra ~6px.
+// Se redondea para arriba a propósito (mejor un rótulo de menos que dos
+// pisados). Entre rótulos vecinos quedan 8px de aire.
+const PX_POR_DIGITO = 8.5;
+const PX_POR_LETRA = 6.5;
+const SEPARACION = 8;
+
+function anchoDeTexto(texto: string): number {
+  let ancho = 0;
+  for (const c of texto) ancho += c >= "0" && c <= "9" ? PX_POR_DIGITO : PX_POR_LETRA;
+  return ancho;
+}
+// Antes de medir se asume el eje de un celular de 320px de ancho: la
+// tarjeta le descuenta unos 80px de márgenes y padding y quedan ~240. Si
+// el eje real es más ancho sobran rótulos, que es el error barato; el
+// ResizeObserver corrige antes de pintar.
+const ANCHO_SUPUESTO = 240;
+
+// Cada cuántas celdas va un rótulo para que el más ancho de la serie no
+// toque al vecino: los rótulos van centrados en celdas iguales, así que
+// dos que se muestran están a `paso × celda` de distancia. Sin medida
+// todavía (null, o 0 si el eje está oculto), el ancho supuesto.
+function pasoSegunAncho(
+  serie: PuntoPulso[],
+  unidad: Granularidad,
+  anchoPx: number | null,
+): number {
+  const n = serie.length;
+  const ancho = anchoPx || ANCHO_SUPUESTO;
+  const masAncho = Math.max(...serie.map((p) => anchoDeTexto(etiquetaDePunto(p.inicio, unidad))));
+  return Math.max(1, Math.ceil((masAncho + SEPARACION) / (ancho / n)));
+}
+
+// El ancho real de un elemento, seguido con ResizeObserver. Devuelve el ref
+// (como callback, para volver a medir si el nodo se monta después) y el
+// ancho, null hasta medir.
+function useAncho(): [(nodo: HTMLDivElement | null) => void, number | null] {
+  const [nodo, setNodo] = useState<HTMLDivElement | null>(null);
+  const [ancho, setAncho] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    if (!nodo) return;
+    const medir = () => setAncho(nodo.getBoundingClientRect().width);
+    medir();
+    const observador = new ResizeObserver(medir);
+    observador.observe(nodo);
+    return () => observador.disconnect();
+  }, [nodo]);
+  return [setNodo, ancho];
+}
+
 export function GraficoPulso({
   serie,
   unidad,
@@ -61,6 +119,7 @@ export function GraficoPulso({
   vacio: { sinDatos: string; unSoloPunto: string };
 }) {
   const [indice, setIndice] = useState<number | null>(null);
+  const [ejeX, anchoEje] = useAncho();
   const idClip = useId();
 
   if (serie.length === 0) {
@@ -96,7 +155,7 @@ export function GraficoPulso({
   });
 
   const activo = indice !== null ? serie[indice] : null;
-  const paso = pasoDeEtiquetas(n, unidad);
+  const paso = pasoSegunAncho(serie, unidad, anchoEje);
   const colorDe = (clave: string) =>
     TIPOS_PULSO.find((t) => t.clave === clave)?.color ?? "var(--color-ink)";
 
@@ -186,13 +245,29 @@ export function GraficoPulso({
         )}
       </OverlaySerie>
 
+      {/* El rótulo va en un span absoluto centrado en su celda, no como
+          texto de la celda: con 30 días en un celular la celda mide 6px y
+          un «23/09» de 38px la desborda, y un texto que desborda su caja
+          se alinea al inicio (CSS Text), así que el último se salía de la
+          tarjeta y quedaba recortado. Centrado, cada rótulo asoma lo mismo
+          para los dos lados y el de la punta cabe en el padding. */}
       <div
-        className="mt-1.5 grid gap-1 text-center text-label text-ink-40 tabular-nums"
+        ref={ejeX}
+        data-eje-x
+        className="mt-1.5 grid h-4 gap-1 text-label text-ink-40 tabular-nums"
         style={{ gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` }}
       >
         {serie.map((p, i) => (
-          <span key={p.inicio} className={i === indice ? "font-semibold text-ink" : undefined}>
-            {mostrarEtiqueta(i, n, paso) ? etiquetaDePunto(p.inicio, unidad) : ""}
+          <span key={p.inicio} className="relative">
+            {mostrarEtiqueta(i, n, paso) && (
+              <span
+                className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap ${
+                  i === indice ? "font-semibold text-ink" : ""
+                }`}
+              >
+                {etiquetaDePunto(p.inicio, unidad)}
+              </span>
+            )}
           </span>
         ))}
       </div>

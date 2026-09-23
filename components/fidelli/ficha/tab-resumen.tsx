@@ -72,7 +72,7 @@ export async function TabResumen({
 }: {
   tenant: Tenant;
   suscripcion: SuscripcionVigente | null;
-  /** Lo resuelve la página (una sola llamada a estados_owner() para la
+  /** Lo resuelve la página (una sola llamada a estado_owner(id) para la
    *  cabecera y esta pestaña). */
   estadoOwner: EstadoOwner;
 }) {

@@ -38,6 +38,62 @@
 #          vez de la suma.
 #   R33i · la ventana de activación corrida a 8 días, y el umbral bajado a 19.
 #
+# Y las del bloque MÉTRICAS 4 (R34, migración 20260925100000):
+#   R34a · movimientos_mrr() con mrr_fin leído del total de la plataforma
+#          (snapshots_diarios.mrr_ars) en vez de Σ b por tenant: la identidad
+#          deja de cerrar por construcción. En la base de prueba un tenant
+#          borrado sigue en el total de la plataforma y no en las filas por
+#          tenant (el fantasma de R34), que es lo que queda en toda base
+#          local donde una prueba borró tenants.
+#   R34b · la comparación de plan/período/módulo siempre falsa (un cambio de
+#          lista cae en expansión); el evento cambio_plan sin mirar (un
+#          descuento renegociado cae en ajuste de precio); la ventana del
+#          evento corrida del mes calendario a (foto inicio, foto fin] (un
+#          descuento quitado después de la última foto de un mes en curso
+#          se le atribuye al mes siguiente: la lectura de «en el mes» cambia
+#          sin que lo decida la definición); y todo a = 0, b > 0 como nuevo
+#          (la reactivación desaparece).
+#   R34c · cohortes_logos() devolviendo retención en un mes no cerrado.
+#   R34d · cohortes_ingresos() devolviendo GRR/NRR en un mes no cumplido, y
+#          con MRR inicial en una cohorte cuyo mes de alta no cerró.
+#   R34e · suspension_reloj contada como voluntaria.
+#
+# Y las del bloque MÉTRICAS 4 · performance (R34g–R34i, migración 20260925101000):
+#   R34g · listado_lubricentros() con el estado del owner invertido
+#          (pendiente ↔ activo): la identidad fila por fila contra la copia
+#          textual de la versión vieja lo ve en la columna owner_estado. Y
+#          owner_nombre eligiendo al owner más NUEVO (@owner_mas_viejo):
+#          el tenant de prueba con dos owners (el más nuevo insertado
+#          primero) lo delata. Y el módulo de gomería sin el escalón del
+#          PLAN (@modulo_plan): el tenant suscripto al plan de prueba con
+#          `neumaticos` en sus features sale apagado en la nueva.
+#   R34h · metricas_plataforma() con la serie contando solo `service`
+#          (@serie_todos): el jsonb ya no es igual al de la versión vieja y
+#          el punto de hoy pierde la mecánica y la gomería de prueba. Y sin
+#          la rama «cero trabajos» (@sin_trabajos): con services vacía (en
+#          una subtransacción que se deshace) la nueva devuelve 30/12/12
+#          puntos en cero en vez de las tres series en [].
+#   R34i · suscriptos_por_plan() tomando la suscripción más VIEJA en vez de
+#          la vigente (el tenant con una Basic cancelada sale con Basic);
+#          estado_owner() con la regla invertida (el owner que entró sale
+#          «pendiente»); y estado_owner() eligiendo al owner más nuevo con
+#          dos owners (@owner_mas_viejo: la ficha y el listado tienen que
+#          nombrar al mismo).
+#
+#
+# Y la del candado de calcos (R34j, migración 20260925102000):
+#   R34j · el candado del contador de calcos con el `if` en false, el candado
+#          que avisa en vez de forzar, el trigger desactivado, y
+#          registrar_pedido_calcos() que deja la bandera prendida (un update
+#          posterior en la misma transacción hereda el permiso de la puerta).
+#
+#
+# ⚠ metricas_plataforma() se REDEFINIÓ OTRA VEZ en 20260925101000 y
+# registrar_pedido_calcos() en 20260925102000: la rotura de R32f muerde el
+# archivo de performance ($M_PF) y la de R33g el del candado ($M_CC), no
+# los originales (CLAUDE.md, «cuando redefinas una función que algún script
+# muerde, actualizá el M»).
+#
 # ⚠ indicadores_tenants() y metricas_plataforma() se REDEFINIERON en
 # 20260924102000: las roturas de R32 las muerden de ese archivo, no del
 # original (CLAUDE.md, «cuando redefinas una función que algún script
@@ -59,6 +115,9 @@ M_RS=supabase/migrations/20260923100000_resumen_admin.sql
 M_CP=supabase/migrations/20260924101000_contactos_pauta.sql
 M_AU=supabase/migrations/20260924102000_activacion_uso.sql
 M_PC=supabase/migrations/20260924103000_pedidos_calcos.sql
+M_CR=supabase/migrations/20260925100000_crecimiento.sql
+M_PF=supabase/migrations/20260925101000_performance.sql
+M_CC=supabase/migrations/20260925102000_calcos_candado.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
 
@@ -159,7 +218,7 @@ correr_marcada "indicadores_tenants() con la ventana de 30 días achicada a 7" i
   "/@trabajos_30/s/current_date - 29/current_date - 6/" R32 "R32e"
 
 echo "── R32f · el pulso cuenta todos los tipos ──"
-correr_marcada "metricas_plataforma() de vuelta con el filtro tipo = 'service'" metricas_plataforma "$M_AU" \
+correr_marcada "metricas_plataforma() de vuelta con el filtro tipo = 'service'" metricas_plataforma "$M_PF" \
   "/@trabajos_mes/s/where not anulado/where not anulado and tipo = 'service'/" R32 "R32f"
 
 echo "── R32g · el resumen cuenta todos los tipos ──"
@@ -193,7 +252,7 @@ correr_marcada "el candado de purga bajado a notice" bloquear_purga_de_pedidos_c
   "s/raise exception 'pedidos_calcos_no_se_vacian'/raise notice 'pedidos_calcos_no_se_vacian'/" R33 "R33f"
 
 echo "── R33g · el contador es la suma ──"
-correr_marcada "registrar_pedido_calcos() con el máximo en vez de la suma" registrar_pedido_calcos "$M_PC" \
+correr_marcada "registrar_pedido_calcos() con el máximo en vez de la suma" registrar_pedido_calcos "$M_CC" \
   "/@suma_calcos/s/coalesce(sum(pc.cantidad), 0)/coalesce(max(pc.cantidad), 0)/" R33 "R33g"
 
 echo "── R33i · la ventana y el umbral de activación ──"
@@ -202,9 +261,77 @@ correr_marcada "la ventana de activación corrida a 8 días" activacion_tenant "
 correr_marcada "el umbral de activación bajado a 19" activacion_tenant "$M_AU" \
   "/@umbral_activacion/s/v_n >= 20,/v_n >= 19,/" R33 "R33i"
 
+echo "── R34a · la identidad por construcción ──"
+correr_marcada "mrr_fin leído del total de la plataforma en vez de Σ b por tenant" movimientos_mrr "$M_CR" \
+  "/@identidad_fin/s/round(sum(x.b), 2) as fin,/(select d.mrr_ars from snapshots_diarios d where d.fecha = p.fecha_fin) as fin,/" R34 "R34a"
+
+echo "── R34b · ajuste vs expansión, el descuento, nuevo vs reactivación ──"
+correr_marcada "un cambio de lista clasificado como expansión (plan/período/módulo nunca «iguales»)" movimientos_mrr "$M_CR" \
+  "/@ajuste_vs_expansion/s/then true/then false/" R34 "R34b"
+correr_marcada "un descuento renegociado clasificado como ajuste de precio (el evento cambio_plan no se mira)" movimientos_mrr "$M_CR" \
+  "/@descuento_es_cliente/s/and not d.cambio_descuento/and true/" R34 "R34b"
+# Las dos líneas de la ventana llevan el marcador (ev_desde y ev_hasta) y el
+# sed las corre del mes calendario a (foto inicio, foto fin]: con los meses
+# cerrados es lo mismo, así que solo el tenant W de 1986 (febrero en curso,
+# descuento quitado después de su última foto) lo ve.
+correr_marcada "la ventana del evento cambio_plan corrida del mes calendario a (foto inicio, foto fin]" movimientos_mrr "$M_CR" \
+  "/@evento_en_el_mes/s/(f.mes::timestamp/((i.fecha + 1)::timestamp/; /@evento_en_el_mes/s/((f.mes + interval '1 month')::timestamp/((f.fecha + 1)::timestamp/" R34 "R34b"
+# Las dos líneas llevan el marcador: la de nuevo (alta en el mes → siempre)
+# y la de reactivación (alta anterior → nunca). Cada sustitución va
+# direccionada; si solo se mordiera la primera, la reactivación se contaría
+# dos veces y la atraparía R34a (la identidad), no R34b.
+correr_marcada "todo a = 0, b > 0 como nuevo (la reactivación desaparece)" movimientos_mrr "$M_CR" \
+  "/@nuevo_vs_react/s/and x.alta_en_mes)/and true)/; /@nuevo_vs_react/s/and not x.alta_en_mes)/and false)/" R34 "R34b"
+
+echo "── R34c · el mes cumplido en las cohortes de logos ──"
+correr_marcada "cohortes_logos() con retención en un mes no cerrado" cohortes_logos "$M_CR" \
+  "/@mes_cumplido/s/and m.en_curso = false/and true/" R34 "R34c"
+
+echo "── R34d · el mes cumplido y el mes de alta cerrado en las cohortes de ingresos ──"
+correr_marcada "cohortes_ingresos() con GRR/NRR en un mes no cumplido" cohortes_ingresos "$M_CR" \
+  "/@mes_cumplido/s/and m.en_curso = false/and true/" R34 "R34d"
+correr_marcada "cohortes_ingresos() con MRR inicial en una cohorte cuyo mes de alta no cerró" cohortes_ingresos "$M_CR" \
+  "/@mes_alta_cerrado/s/and m.en_curso = false/and true/" R34 "R34d"
+
+echo "── R34e · el reloj es involuntario ──"
+correr_marcada "suspension_reloj contada como voluntaria" churn_por_mes "$M_CR" \
+  "/@involuntario/s/then true/then false/" R34 "R34e"
+
+echo "── R34g · el estado y el nombre del owner en el listado ──"
+correr_marcada "listado_lubricentros() con el estado del owner invertido (pendiente ↔ activo)" listado_lubricentros "$M_PF" \
+  "/@owner_estado_listado/s/coalesce(o.estado, 'sin_owner')/case o.estado when 'pendiente' then 'activo' when 'activo' then 'pendiente' else 'sin_owner' end/" R34 "R34g"
+correr_marcada "listado_lubricentros() con owner_nombre del owner más nuevo (con dos owners)" listado_lubricentros "$M_PF" \
+  "/@owner_mas_viejo/s/u.created_at, u.id/u.created_at desc, u.id desc/" R34 "R34g CON DOS OWNERS EL LISTADO NO ELIGIÓ AL MÁS VIEJO"
+correr_marcada "listado_lubricentros() sin el escalón del plan para el módulo de gomería" listado_lubricentros "$M_PF" \
+  "/@modulo_plan/s/when jsonb_typeof(p.features -> 'neumaticos') = 'boolean'/when false/" R34 "R34g"
+
+echo "── R34h · la serie del pulso cuenta todos los tipos, y sin trabajos está vacía ──"
+correr_marcada "metricas_plataforma() con la serie contando solo service" metricas_plataforma "$M_PF" \
+  "/@serie_todos/s/where not s.anulado/where not s.anulado and s.tipo = 'service'/" R34 "R34h"
+correr_marcada "metricas_plataforma() sin la rama «cero trabajos» (30 puntos en cero en una base vacía)" metricas_plataforma "$M_PF" \
+  "/@sin_trabajos/s/where r.primero is not null/where true/" R34 "R34h SIN NINGÚN TRABAJO"
+
+echo "── R34i · la suscripción vigente y la regla del owner ──"
+correr_marcada "suscriptos_por_plan() tomando la suscripción más vieja en vez de la vigente" suscriptos_por_plan "$M_PF" \
+  "/@suscriptos_vigente/s/s.inicio desc, s.created_at desc/s.inicio asc, s.created_at asc/" R34 "R34i"
+correr_marcada "estado_owner() con la regla invertida (el que entró sale pendiente)" estado_owner "$M_PF" \
+  "/@regla_owner/s/is null then 'pendiente' else 'activo'/is null then 'activo' else 'pendiente'/" R34 "R34i"
+correr_marcada "estado_owner() eligiendo al owner más nuevo (con dos owners)" estado_owner "$M_PF" \
+  "/@owner_mas_viejo/s/u.created_at, u.id/u.created_at desc, u.id desc/" R34 "R34i estado_owner() CON DOS OWNERS NO ELIGIÓ AL MÁS VIEJO"
+
+echo "── R34j · el candado del contador de calcos ──"
+correr_marcada "el candado con el if en false" forzar_calcos_desde_pedidos "$M_CC" \
+  "/@candado_calcos/s/if current_setting/if false and current_setting/" R34 "R34j"
+correr_marcada "el candado que avisa en vez de forzar (bajado a notice)" forzar_calcos_desde_pedidos "$M_CC" \
+  "/@forzar_calcos/s/new.calcos_entregadas := v_suma;/raise notice 'calcos fuera de la suma: % (suma %)', new.calcos_entregadas, v_suma;/" R34 "R34j"
+correr "el trigger del candado desactivado" \
+  "alter table lubricentros disable trigger candado_calcos_desde_pedidos;" R34 "R34j"
+correr_marcada "registrar_pedido_calcos() que deja la bandera prendida" registrar_pedido_calcos "$M_CC" \
+  "/@apagar_bandera/s/perform set_config('app.calcos_desde_pedido', '', true);/perform true;/" R34 "R34j"
+
 echo
 if [ "$fallas" = 0 ]; then
-  echo "La red atrapó todas las roturas de R31, R32 y R33."
+  echo "La red atrapó todas las roturas de R31, R32, R33 y R34."
 else
   echo "ALGUNA ROTURA SE ESCAPÓ: el bloque que la cubre no la ve."
 fi

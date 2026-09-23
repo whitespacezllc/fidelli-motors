@@ -6,6 +6,8 @@ import { IconoLubricentro } from "@/components/iconos";
 import { TablaLubricentros } from "@/components/fidelli/tabla-lubricentros";
 import { FiltrosListado } from "@/components/fidelli/filtros-listado";
 import { BotonAlta } from "@/components/fidelli/boton-alta";
+import { BotonExportar } from "@/components/fidelli/boton-exportar";
+import { parametrosDelListado } from "@/lib/fidelli/exportar";
 import {
   aplicarFiltro,
   armarListado,
@@ -90,7 +92,16 @@ export default async function PaginaLubricentros({
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-brand text-h2 font-bold text-ink">Lubricentros</h1>
-        {listado.length > 0 && <BotonAlta />}
+        {listado.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            {/* El data room (docs/DATA-ROOM.md): los tenants que la tabla
+                muestra, con el filtro y el buscador vigentes en la URL (el
+                mismo query string de esta pantalla; el recurso aplica
+                aplicarFiltro() igual que acá). Sin filtro, todos. */}
+            <BotonExportar recurso="tenants" params={parametrosDelListado(filtro, q)} />
+            <BotonAlta />
+          </div>
+        )}
       </div>
 
       {listado.length === 0 ? (
