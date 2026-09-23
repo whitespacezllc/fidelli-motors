@@ -8,8 +8,14 @@ import {
 } from "@/components/fidelli/badges";
 import { Chip } from "@/components/fidelli/chip";
 import { CeldaOwner } from "@/components/fidelli/celda-owner";
-import type { EstadoOwner } from "@/components/fidelli/tipos";
+import { DialogEditar, type DatosEdicion } from "@/components/fidelli/dialog-editar";
+import type { EstadoOwner, PlanCompleto } from "@/components/fidelli/tipos";
 import { PESTANAS, type Pestana, type SuscripcionVigente, type Tenant } from "./tipos";
+
+const CLASE_EDITAR =
+  "inline-flex h-9 items-center rounded-md border border-line bg-base px-3 text-ui font-semibold text-ink hover:bg-surface";
+const CLASE_CHIP_ORIGEN =
+  "inline-flex items-center gap-1 rounded-sm border border-line bg-surface px-1.5 py-px text-label font-semibold text-ink-60 hover:text-ink";
 
 // Cabecera + pestañas. Las pestañas son enlaces con ?tab=, no estado local:
 // así se puede pasar por WhatsApp el link a la pestaña que importa —"mirá
@@ -17,18 +23,35 @@ import { PESTANAS, type Pestana, type SuscripcionVigente, type Tenant } from "./
 //
 // Desde el bloque MÉTRICAS 2 la cabecera dice también de dónde vino el
 // tenant (el origen) y cómo está su owner, con las acciones de invitar o
-// reenviar acá —antes vivían en la tabla del listado.
+// reenviar acá —antes vivían en la tabla del listado. Desde el bloque 3
+// tiene el botón «Editar», que abre EL MISMO dialog de la fila del listado
+// (components/fidelli/dialog-editar.tsx), y el chip «Sin origen» lo abre
+// también.
 export function CabeceraTenant({
   tenant,
   suscripcion,
   pestana,
   estadoOwner,
+  planes,
 }: {
   tenant: Tenant;
   suscripcion: SuscripcionVigente | null;
   pestana: Pestana;
   estadoOwner: EstadoOwner;
+  planes: PlanCompleto[];
 }) {
+  const datos: DatosEdicion = {
+    id: tenant.id,
+    nombre: tenant.nombre,
+    slug: tenant.slug,
+    calcos_entregadas: tenant.calcos_entregadas,
+    plan_id: suscripcion?.plan?.id ?? null,
+    sub_periodo: suscripcion?.periodo ?? null,
+    sub_descuento_pct: suscripcion?.descuento_pct ?? 0,
+    sub_vencimiento: suscripcion?.vencimiento ?? null,
+  };
+  const origen = { origen: tenant.origen, detalle: tenant.origen_detalle };
+
   return (
     <div className="mb-6">
       <Link
@@ -60,10 +83,8 @@ export function CabeceraTenant({
           </span>
         )}
 
-        {/* El origen (docs/METRICAS.md § 1). Sin origen, el chip es el
-            camino a cargarlo: el dialog Editar vive en la fila del
-            listado, así que el link deja el listado abierto en este
-            tenant. */}
+        {/* El origen (docs/METRICAS.md § 1). Sin origen, el chip abre el
+            dialog Editar, que es donde se carga. */}
         {tenant.origen ? (
           <Chip
             tono="neutro"
@@ -73,14 +94,23 @@ export function CabeceraTenant({
             {tenant.origen_detalle ? ` · ${tenant.origen_detalle}` : ""}
           </Chip>
         ) : (
-          <Link
-            href={`/fidelli/lubricentros?q=${encodeURIComponent(tenant.slug)}`}
-            className="inline-flex items-center gap-1 rounded-sm border border-line bg-surface px-1.5 py-px text-label font-semibold text-ink-60 hover:text-ink"
-          >
-            Sin origen
-            <span className="font-normal underline underline-offset-2">cargar en Editar</span>
-          </Link>
+          <DialogEditar
+            datos={datos}
+            planes={planes}
+            origen={origen}
+            triggerClassName={CLASE_CHIP_ORIGEN}
+            trigger={
+              <>
+                Sin origen
+                <span className="font-normal underline underline-offset-2">cargar</span>
+              </>
+            }
+          />
         )}
+
+        <span className="ml-auto">
+          <DialogEditar datos={datos} planes={planes} origen={origen} triggerClassName={CLASE_EDITAR} />
+        </span>
       </div>
 
       <p className="mt-1 text-ui text-ink-60">

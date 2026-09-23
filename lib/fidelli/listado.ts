@@ -33,6 +33,9 @@ export type FilaIndicadores = {
   modulo_pago: boolean;
   trabajos_30: number;
   ultimo_trabajo: string | null;
+  /** Bloque 3: 20 o más trabajos en la primera semana, y los días de alta. */
+  activado: boolean;
+  dias_alta: number;
 };
 
 export type FilaSemana = {
@@ -145,6 +148,17 @@ export function sinActividad(f: FilaListado): boolean {
 
 export function sinOrigen(f: FilaListado): boolean {
   return f.origen.origen === null;
+}
+
+// El chip «No activado»: pasó la primera semana y no llegó a los 20
+// trabajos (docs/METRICAS.md § 1 «Activación»). Mientras la semana corre,
+// nada: todavía puede activarse.
+export function noActivado(f: FilaListado): boolean {
+  return (
+    f.indicadores !== null &&
+    !f.indicadores.activado &&
+    Number(f.indicadores.dias_alta) > 7
+  );
 }
 
 function normalizar(s: string): string {

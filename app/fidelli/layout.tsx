@@ -48,6 +48,14 @@ export default async function LayoutFidelli({
           >
             Lubricentros
           </NavLink>
+          {/* El canal pago: contactos, gasto y embudo (bloque MÉTRICAS 3).
+              Se carga desde el celular cuando entra un mensaje. */}
+          <NavLink
+            href="/fidelli/pauta"
+            className="flex h-10 items-center rounded-md px-3 text-ui transition-colors"
+          >
+            Pauta
+          </NavLink>
           {/* OPERACIÓN: lo que se mira todos los días. Va segundo, justo
               después del listado, porque es la pantalla que se abre a la
               mañana — antes que el catálogo, que se toca una vez por

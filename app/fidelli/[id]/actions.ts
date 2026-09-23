@@ -38,6 +38,11 @@ const MENSAJES: Record<string, string> = {
   periodo_valido: "El período termina antes de empezar. Revisá las fechas.",
   cliente_ya_suprimido: "Los datos de este cliente ya fueron eliminados.",
   cliente_no_existe: "Ese cliente ya no existe. Recargá la ficha y buscalo de nuevo.",
+  // Los pedidos de calcos (20260924103000).
+  cantidad_invalida: "La cantidad de calcos tiene que ser mayor que cero.",
+  fecha_futura: "La fecha del pedido no puede ser posterior a hoy.",
+  monto_obligatorio: "Si las calcos se cobraron, poné cuánto.",
+  no_existe: "Ese lubricentro ya no existe.",
 };
 
 function traducir(mensaje: string): string {
@@ -288,5 +293,49 @@ export async function anonimizarClienteFidelli(
   revalidatePath("/panel/clientes");
   revalidatePath(`/panel/clientes/${clienteId}`);
   revalidatePath("/panel/proximos");
+  return { ok: true };
+}
+
+// ============================================================
+// Registrar un pedido de calcos (bloque MÉTRICAS 3)
+//
+// La fila y el contador viven en registrar_pedido_calcos(): inserta el
+// pedido y deja lubricentros.calcos_entregadas igual a la suma, con lo que
+// el trigger de siempre emite el evento `calcos`. Acá se leen los campos y
+// se traduce el error.
+// ============================================================
+export type EstadoPedidoCalcos = { ok?: boolean; error?: string };
+
+export async function registrarPedidoCalcos(
+  _prev: EstadoPedidoCalcos,
+  formData: FormData,
+): Promise<EstadoPedidoCalcos> {
+  await exigirSuperadmin();
+
+  const lubricentroId = String(formData.get("lubricentro_id") ?? "");
+  const fecha = String(formData.get("fecha") ?? "").trim();
+  const cantidad = Number(formData.get("cantidad") ?? 0);
+  const incluidas = String(formData.get("incluidas") ?? "si") === "si";
+  const montoCrudo = String(formData.get("monto") ?? "").trim().replace(",", ".");
+  const nota = String(formData.get("nota") ?? "").trim();
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return { error: "Poné la fecha del pedido." };
+  if (!Number.isInteger(cantidad) || cantidad <= 0) return { error: MENSAJES.cantidad_invalida };
+  if (!incluidas && montoCrudo === "") return { error: MENSAJES.monto_obligatorio };
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("registrar_pedido_calcos", {
+    p_lubricentro_id: lubricentroId,
+    p_fecha: fecha,
+    p_cantidad: cantidad,
+    p_incluidas: incluidas,
+    p_monto: incluidas ? undefined : Number(montoCrudo),
+    p_nota: nota || undefined,
+  });
+  if (error) return { error: traducir(error.message) };
+
+  revalidatePath(`/fidelli/${lubricentroId}`);
+  revalidatePath("/fidelli/lubricentros");
+  revalidatePath("/fidelli");
   return { ok: true };
 }

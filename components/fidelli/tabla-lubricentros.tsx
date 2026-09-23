@@ -19,6 +19,7 @@ import {
   ESTILO_ESTADO,
   ESTILO_SALUD,
   estadoDe,
+  noActivado,
   type FilaListado,
 } from "@/lib/fidelli/listado";
 import { Chip } from "@/components/fidelli/chip";
@@ -136,7 +137,7 @@ export function TablaLubricentros({
                     <span className="block text-label text-ink-40">/{l.slug}</span>
                   </Link>
                   {/* Los chips van solo cuando hay algo que decir. */}
-                  {(owner !== "activo" || l.onboarding_paso != null || f.origen.origen === null) && (
+                  {(owner !== "activo" || l.onboarding_paso != null || f.origen.origen === null || noActivado(f)) && (
                     <span className="mt-1.5 flex flex-wrap gap-1">
                       {owner !== "activo" && (
                         <Chip tono={owner === "sin_owner" ? "vencido" : "aviso"}>
@@ -149,6 +150,7 @@ export function TablaLubricentros({
                         </Chip>
                       )}
                       {f.origen.origen === null && <Chip tono="neutro">Sin origen</Chip>}
+                      {noActivado(f) && <Chip tono="aviso">No activado</Chip>}
                     </span>
                   )}
                 </td>

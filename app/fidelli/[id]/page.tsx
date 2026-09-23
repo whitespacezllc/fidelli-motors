@@ -50,7 +50,7 @@ export default async function PaginaFicha({
 
   const supabase = await createClient();
 
-  const [tenantRes, suscripcionRes, ownersRes] = await Promise.all([
+  const [tenantRes, suscripcionRes, ownersRes, planesRes] = await Promise.all([
     supabase
       .from("lubricentros")
       .select("id, nombre, slug, activo, calcos_entregadas, created_at, origen, origen_detalle")
@@ -71,6 +71,12 @@ export default async function PaginaFicha({
     // El estado del owner, para la cabecera y para el Resumen. Una sola
     // llamada acá; estados_owner() no tiene versión por tenant.
     supabase.rpc("estados_owner"),
+    // El catálogo, para el dialog Editar de la cabecera (bloque 3).
+    supabase
+      .from("planes")
+      .select("id, nombre, precio_mensual, descuento_semestral_pct, descuento_anual_pct")
+      .eq("activo", true)
+      .order("nombre"),
   ]);
 
   if (!tenantRes.data) notFound();
@@ -100,6 +106,7 @@ export default async function PaginaFicha({
         suscripcion={suscripcion}
         pestana={pestana}
         estadoOwner={estadoOwner}
+        planes={(planesRes.data ?? []) as PlanCompleto[]}
       />
 
       {pestana === "resumen" && (

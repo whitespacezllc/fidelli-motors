@@ -4,14 +4,16 @@ import type { Database } from "@/lib/database.types";
 // Los catálogos que alimentan tenant_eventos desde el admin
 // (docs/METRICAS.md § 1 y § 3). Son ESPEJOS de los enums de la base
 // —`origen_tenant` y `motivo_suspension`, migraciones 20260922200000 y
-// 20260922201000—: la fuente de verdad es SQL, y el tipo generado ata la
-// lista para que un valor inventado no compile.
+// 20260922201000; `google` llegó en 20260924100000—: la fuente de verdad es
+// SQL, y el tipo generado ata la lista para que un valor inventado no
+// compile.
 // ============================================================
 
 export type OrigenTenant = Database["public"]["Enums"]["origen_tenant"];
 
 export const ORIGENES_TENANT = [
   "meta",
+  "google",
   "referido",
   "directo",
   "distribuidor",
@@ -23,6 +25,7 @@ export const ORIGENES_TENANT = [
 /** Cómo se lee cada origen en el formulario. */
 export const ETIQUETA_ORIGEN: Record<OrigenTenant, string> = {
   meta: "Meta (Instagram / Facebook)",
+  google: "Google Ads",
   referido: "Referido por otro lubricentro",
   directo: "Directo (nos contactó él)",
   distribuidor: "Distribuidor",
@@ -34,6 +37,7 @@ export const ETIQUETA_ORIGEN: Record<OrigenTenant, string> = {
 /** La versión corta, para el chip de la ficha: «Meta», «Referido», «Calco». */
 export const ETIQUETA_ORIGEN_CORTA: Record<OrigenTenant, string> = {
   meta: "Meta",
+  google: "Google",
   referido: "Referido",
   directo: "Directo",
   distribuidor: "Distribuidor",

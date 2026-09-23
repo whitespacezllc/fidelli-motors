@@ -508,6 +508,69 @@ export type Database = {
           },
         ]
       }
+      contactos_pauta: {
+        Row: {
+          canal: Database["public"]["Enums"]["canal_pauta"]
+          cierre_at: string | null
+          created_at: string
+          demo_at: string | null
+          fecha: string
+          id: string
+          lubricentro_id: string | null
+          motivo_perdida: Database["public"]["Enums"]["motivo_perdida"] | null
+          origen: Database["public"]["Enums"]["origen_meta"] | null
+          perdida_at: string | null
+          registrado_por: string | null
+          telefono: string | null
+          updated_at: string
+        }
+        Insert: {
+          canal: Database["public"]["Enums"]["canal_pauta"]
+          cierre_at?: string | null
+          created_at?: string
+          demo_at?: string | null
+          fecha: string
+          id?: string
+          lubricentro_id?: string | null
+          motivo_perdida?: Database["public"]["Enums"]["motivo_perdida"] | null
+          origen?: Database["public"]["Enums"]["origen_meta"] | null
+          perdida_at?: string | null
+          registrado_por?: string | null
+          telefono?: string | null
+          updated_at?: string
+        }
+        Update: {
+          canal?: Database["public"]["Enums"]["canal_pauta"]
+          cierre_at?: string | null
+          created_at?: string
+          demo_at?: string | null
+          fecha?: string
+          id?: string
+          lubricentro_id?: string | null
+          motivo_perdida?: Database["public"]["Enums"]["motivo_perdida"] | null
+          origen?: Database["public"]["Enums"]["origen_meta"] | null
+          perdida_at?: string | null
+          registrado_por?: string | null
+          telefono?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contactos_pauta_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contactos_pauta_registrado_por_fkey"
+            columns: ["registrado_por"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       correcciones_patente: {
         Row: {
           corregido_por: string
@@ -668,6 +731,44 @@ export type Database = {
             columns: ["suscripcion_id"]
             isOneToOne: false
             referencedRelation: "suscripciones"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gasto_pauta: {
+        Row: {
+          canal: Database["public"]["Enums"]["canal_pauta"]
+          created_at: string
+          monto_usd: number
+          nota: string | null
+          registrado_por: string | null
+          semana: string
+          updated_at: string
+        }
+        Insert: {
+          canal: Database["public"]["Enums"]["canal_pauta"]
+          created_at?: string
+          monto_usd: number
+          nota?: string | null
+          registrado_por?: string | null
+          semana: string
+          updated_at?: string
+        }
+        Update: {
+          canal?: Database["public"]["Enums"]["canal_pauta"]
+          created_at?: string
+          monto_usd?: number
+          nota?: string | null
+          registrado_por?: string | null
+          semana?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gasto_pauta_registrado_por_fkey"
+            columns: ["registrado_por"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
             referencedColumns: ["id"]
           },
         ]
@@ -984,6 +1085,57 @@ export type Database = {
             columns: ["suscripcion_id"]
             isOneToOne: false
             referencedRelation: "suscripciones"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pedidos_calcos: {
+        Row: {
+          cantidad: number
+          created_at: string
+          fecha: string
+          id: string
+          incluidas: boolean
+          lubricentro_id: string
+          monto_ars: number | null
+          nota: string | null
+          registrado_por: string | null
+        }
+        Insert: {
+          cantidad: number
+          created_at?: string
+          fecha: string
+          id?: string
+          incluidas: boolean
+          lubricentro_id: string
+          monto_ars?: number | null
+          nota?: string | null
+          registrado_por?: string | null
+        }
+        Update: {
+          cantidad?: number
+          created_at?: string
+          fecha?: string
+          id?: string
+          incluidas?: boolean
+          lubricentro_id?: string
+          monto_ars?: number | null
+          nota?: string | null
+          registrado_por?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pedidos_calcos_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pedidos_calcos_registrado_por_fkey"
+            columns: ["registrado_por"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
             referencedColumns: ["id"]
           },
         ]
@@ -2542,6 +2694,26 @@ export type Database = {
         Returns: boolean
       }
       acreditar_deposito_cresium: { Args: { p_payload: Json }; Returns: Json }
+      activacion_por_mes: {
+        Args: { p_desde: string; p_hasta: string }
+        Returns: {
+          activados: number
+          altas: number
+          en_curso: number
+          mes: string
+          tasa: number
+        }[]
+      }
+      activacion_tenant: {
+        Args: { p_lubricentro_id: string }
+        Returns: {
+          activado: boolean
+          dia: number
+          en_curso: boolean
+          fecha_alta: string
+          trabajos_7d: number
+        }[]
+      }
       activar_template: { Args: { p_template_id: string }; Returns: undefined }
       actualizar_lubricentro: {
         Args: {
@@ -2606,6 +2778,15 @@ export type Database = {
         Returns: undefined
       }
       atencion_tenant: { Args: { p_lubricentro_id: string }; Returns: Json }
+      autos_que_volvieron: {
+        Args: { p_desde: string; p_hasta: string; p_lubricentro_id: string }
+        Returns: number
+      }
+      autos_que_volvieron_plataforma: {
+        Args: { p_desde: string; p_hasta: string }
+        Returns: number
+      }
+      backfill_pedidos_calcos: { Args: never; Returns: number }
       bloqueo_de_alta_activo: { Args: never; Returns: boolean }
       buscar_vehiculo_por_patente: {
         Args: { p_patente: string }
@@ -2762,6 +2943,30 @@ export type Database = {
         Returns: number
       }
       dot_a_fecha: { Args: { p_dot: string }; Returns: string }
+      embudo_pauta: {
+        Args: {
+          p_agrupar?: string
+          p_canal?: Database["public"]["Enums"]["canal_pauta"]
+          p_desde: string
+          p_hasta: string
+        }
+        Returns: {
+          abiertos: number
+          cac_usd: number
+          canal: Database["public"]["Enums"]["canal_pauta"]
+          ciclo_mediana_dias: number
+          cierres: number
+          cierres_periodo: number
+          contactos: number
+          demos: number
+          gasto_usd: number
+          perdidos: number
+          periodo: string
+          tasa_cierre: number
+          tasa_demo: number
+        }[]
+      }
+      embudo_pauta_mes_actual: { Args: never; Returns: Json }
       emitir_evento_tenant: {
         Args: {
           p_actor?: string
@@ -2814,6 +3019,15 @@ export type Database = {
       fijar_alias_de_tenant: {
         Args: { p_alias: string; p_lubricentro: string }
         Returns: string
+      }
+      fijar_gasto_pauta: {
+        Args: {
+          p_canal: Database["public"]["Enums"]["canal_pauta"]
+          p_monto_usd?: number
+          p_nota?: string
+          p_semana: string
+        }
+        Returns: undefined
       }
       fijar_origen_tenant: {
         Args: {
@@ -2900,6 +3114,8 @@ export type Database = {
       indicadores_tenants: {
         Args: never
         Returns: {
+          activado: boolean
+          dias_alta: number
           es_activo: boolean
           estado_reloj: string
           exento: boolean
@@ -2955,7 +3171,23 @@ export type Database = {
       }
       marca_canonica: { Args: { p_texto: string }; Returns: string }
       marcar_bienvenida_vista: { Args: never; Returns: undefined }
+      marcar_cierre: {
+        Args: { p_fecha?: string; p_id: string; p_lubricentro_id?: string }
+        Returns: undefined
+      }
+      marcar_demo: {
+        Args: { p_fecha?: string; p_id: string }
+        Returns: undefined
+      }
       marcar_pago_presentado: { Args: never; Returns: Json }
+      marcar_perdida: {
+        Args: {
+          p_fecha?: string
+          p_id: string
+          p_motivo?: Database["public"]["Enums"]["motivo_perdida"]
+        }
+        Returns: undefined
+      }
       meses_del_periodo: {
         Args: { p_periodo: Database["public"]["Enums"]["periodo_suscripcion"] }
         Returns: number
@@ -2997,6 +3229,10 @@ export type Database = {
         Returns: Json
       }
       orden_atencion: { Args: { p_atencion: string }; Returns: number }
+      origen_de_canal: {
+        Args: { p_canal: Database["public"]["Enums"]["canal_pauta"] }
+        Returns: Database["public"]["Enums"]["origen_tenant"]
+      }
       origen_evento_de_sesion: { Args: never; Returns: string }
       overrides_plan_bien_formados: { Args: { p: Json }; Returns: boolean }
       patente_formato_valido: { Args: { p: string }; Returns: boolean }
@@ -3041,6 +3277,7 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      reabrir_contacto_pauta: { Args: { p_id: string }; Returns: undefined }
       reconstruir_snapshots: {
         Args: { p_desde: string; p_hasta: string }
         Returns: number
@@ -3053,6 +3290,15 @@ export type Database = {
         }
         Returns: number
       }
+      registrar_contacto_pauta: {
+        Args: {
+          p_canal?: Database["public"]["Enums"]["canal_pauta"]
+          p_fecha?: string
+          p_origen?: Database["public"]["Enums"]["origen_meta"]
+          p_telefono?: string
+        }
+        Returns: string
+      }
       registrar_pago: {
         Args: {
           p_fecha_pago: string
@@ -3060,6 +3306,17 @@ export type Database = {
           p_monto: number
           p_periodo_desde: string
           p_periodo_hasta: string
+        }
+        Returns: string
+      }
+      registrar_pedido_calcos: {
+        Args: {
+          p_cantidad: number
+          p_fecha: string
+          p_incluidas: boolean
+          p_lubricentro_id: string
+          p_monto?: number
+          p_nota?: string
         }
         Returns: string
       }
@@ -3138,6 +3395,10 @@ export type Database = {
         }[]
       }
       unaccent: { Args: { "": string }; Returns: string }
+      uso_tenant: {
+        Args: { p_dias?: number; p_lubricentro_id: string }
+        Returns: Json
+      }
       verificar_seguridad_vistas: {
         Args: never
         Returns: {
@@ -3150,6 +3411,7 @@ export type Database = {
     Enums: {
       alcance_premio: "services" | "todos"
       canal_contacto: "whatsapp" | "manual"
+      canal_pauta: "meta" | "google" | "otro"
       clase_vehiculo: "liviano" | "pesado"
       estado_contacto:
         | "urgente"
@@ -3182,13 +3444,22 @@ export type Database = {
         | "engrase"
         | "bateria"
       motivo_contacto_fidelli: "trial" | "cobranza"
+      motivo_perdida:
+        | "precio"
+        | "no_responde"
+        | "ya_tiene_sistema"
+        | "no_factura"
+        | "no_es_dueno"
+        | "otro"
       motivo_suspension:
         | "falta_de_pago"
         | "pedido_del_cliente"
         | "cierre_del_negocio"
         | "otro"
+      origen_meta: "instagram" | "messenger" | "whatsapp"
       origen_tenant:
         | "meta"
+        | "google"
         | "referido"
         | "directo"
         | "distribuidor"
@@ -3351,6 +3622,7 @@ export const Constants = {
     Enums: {
       alcance_premio: ["services", "todos"],
       canal_contacto: ["whatsapp", "manual"],
+      canal_pauta: ["meta", "google", "otro"],
       clase_vehiculo: ["liviano", "pesado"],
       estado_contacto: [
         "urgente",
@@ -3385,14 +3657,24 @@ export const Constants = {
         "bateria",
       ],
       motivo_contacto_fidelli: ["trial", "cobranza"],
+      motivo_perdida: [
+        "precio",
+        "no_responde",
+        "ya_tiene_sistema",
+        "no_factura",
+        "no_es_dueno",
+        "otro",
+      ],
       motivo_suspension: [
         "falta_de_pago",
         "pedido_del_cliente",
         "cierre_del_negocio",
         "otro",
       ],
+      origen_meta: ["instagram", "messenger", "whatsapp"],
       origen_tenant: [
         "meta",
+        "google",
         "referido",
         "directo",
         "distribuidor",

@@ -43,7 +43,7 @@ export async function TabSuscripcion({
 
   // El filtro por tenant es lo único que aísla: pagos no tiene RLS que
   // recorte a un superadmin.
-  const [pagosRes, atencionRes, sesion, overridesRes, cambiosRes] = await Promise.all([
+  const [pagosRes, atencionRes, sesion, overridesRes, cambiosRes, altaRes] = await Promise.all([
     supabase
       .from("pagos")
       .select(
@@ -72,6 +72,16 @@ export async function TabSuscripcion({
       // overrides varias veces mostraba "activo" sin fecha.
       .order("created_at", { ascending: false })
       .limit(40),
+    // El evento alta: desde 20260924104000 trae el estado con el que nació
+    // la suscripción (trial o activa). Los anteriores no lo tienen.
+    supabase
+      .from("tenant_eventos")
+      .select("despues")
+      .eq("lubricentro_id", tenant.id)
+      .eq("tipo", "alta")
+      .order("ocurrido_at", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   const overrides =
@@ -125,15 +135,16 @@ export async function TabSuscripcion({
     ? sumarDias(primerPago.periodo_desde, -1)
     : (suscripcion?.vencimiento ?? null);
 
-  // La fila de trial se muestra solo si el estado FUE trial alguna vez. Lo
-  // exacto sería leerlo del evento `alta` (tenant_eventos), pero ese evento
-  // no guarda el estado de la suscripción (bloque 1, pendiente). Lo que sí
-  // se sabe: desde 20260917140000 los tenants NACEN activos, sin trial, así
-  // que un tenant dado de alta desde esa fecha solo tuvo trial si su
-  // suscripción está en trial HOY. Para los anteriores vale la inferencia
-  // de siempre (el hueco entre el inicio y el primer período pago).
+  // La fila de trial se muestra solo si el estado FUE trial alguna vez.
+  // Desde el bloque 3 el evento `alta` guarda el estado con el que nació
+  // la suscripción y esa es la fuente. Para los eventos anteriores (y los
+  // del backfill), que no lo tienen, queda la inferencia: desde
+  // 20260917140000 los tenants NACEN activos, así que uno dado de alta
+  // desde esa fecha solo tuvo trial si su suscripción está en trial HOY.
+  const estadoAlta = (altaRes.data?.despues as { estado?: string } | null)?.estado ?? null;
   const pudoTenerTrial =
-    suscripcion?.estado === "trial" || tenant.created_at < ALTA_NACE_PAGANDO;
+    suscripcion?.estado === "trial" ||
+    (estadoAlta ? estadoAlta === "trial" : tenant.created_at < ALTA_NACE_PAGANDO);
   const hayTrial =
     pudoTenerTrial &&
     suscripcion !== null &&
