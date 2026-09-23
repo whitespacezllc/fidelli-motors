@@ -1,0 +1,12 @@
+[
+  { "semana": "2026-08-03", "canal": "meta", "monto_usd": null, "nota": "agosto · semana 1" },
+  { "semana": "2026-08-10", "canal": "meta", "monto_usd": null, "nota": "agosto · semana 2" },
+  { "semana": "2026-08-17", "canal": "meta", "monto_usd": null, "nota": "agosto · semana 3" },
+  { "semana": "2026-08-24", "canal": "meta", "monto_usd": null, "nota": "agosto · semana 4" },
+  { "semana": "2026-08-31", "canal": "meta", "monto_usd": null, "nota": "agosto · semana 5" },
+  { "semana": "2026-08-03", "canal": "google", "monto_usd": null, "nota": "agosto · semana 1" },
+  { "semana": "2026-08-10", "canal": "google", "monto_usd": null, "nota": "agosto · semana 2" },
+  { "semana": "2026-08-17", "canal": "google", "monto_usd": null, "nota": "agosto · semana 3" },
+  { "semana": "2026-08-24", "canal": "google", "monto_usd": null, "nota": "agosto · semana 4" },
+  { "semana": "2026-08-31", "canal": "google", "monto_usd": null, "nota": "agosto · semana 5" }
+]

@@ -19,6 +19,11 @@ import { WHATSAPP_VENTAS } from "@/lib/landing";
 export const SITIO_URL =
   process.env.NEXT_PUBLIC_SITE_URL ?? "https://fidellimotors.app";
 
+/** El dominio pelado («fidellimotors.app»), para escribir «dominio/slug» en
+ *  el admin sin repetir el literal en cada pantalla. Sale de SITIO_URL, así
+ *  que en un preview dice el host del preview. */
+export const DOMINIO_SITIO = SITIO_URL.replace(/^https?:\/\//, "").replace(/\/$/, "");
+
 export const NOMBRE_SITIO = "Fidelli Motors";
 
 export const TITULO_PORTADA =

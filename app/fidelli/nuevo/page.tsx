@@ -31,7 +31,7 @@ export default async function PaginaAlta() {
   return (
     <div className="mx-auto max-w-2xl">
       <Link
-        href="/fidelli"
+        href="/fidelli/lubricentros"
         className="mb-4 inline-flex min-h-8 items-center text-label font-semibold text-ink-60 hover:text-ink"
       >
         ← Lubricentros

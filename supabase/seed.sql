@@ -62,6 +62,11 @@ where contenido_pendiente is null;
 -- lo que está en null, con el nombre del lubricentro adentro. R16g lo exige.
 select completar_templates_neumaticos();
 
+-- Y el backfill de los pedidos de calcos (20260924103000): la migración
+-- corre ANTES del seed, cuando el demo (que nace con 50 calcos) todavía no
+-- existe. Es idempotente y solo toca a quien no tiene ningún pedido.
+select backfill_pedidos_calcos();
+
 -- Horarios de las sucursales demo. La columna llegó después de que
 -- seed_demo() quedó mergeada (las migraciones no se editan), así que se
 -- completa acá — este archivo es solo del entorno local.

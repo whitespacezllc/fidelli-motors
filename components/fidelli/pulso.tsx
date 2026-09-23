@@ -2,21 +2,20 @@
 
 import { useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  GRANULARIDADES,
-  type Granularidad,
-  type PuntoSerie,
-} from "@/lib/series";
+import { GRANULARIDADES, type Granularidad } from "@/lib/series";
 import { Segmentado } from "@/components/ui/segmentado";
-import { GraficoSerie } from "@/components/graficos/grafico-serie";
+import { GraficoPulso, type PuntoPulso } from "@/components/fidelli/grafico-pulso";
 
 // ============================================================
-// El pulso de la plataforma: cuántos services entran, en el tiempo.
+// El pulso de la plataforma: cuántos trabajos entran, en el tiempo —de
+// cualquier tipo (docs/METRICAS.md § 1), desde el bloque MÉTRICAS 2.
 //
-// El dibujo vive en components/graficos/grafico-serie.tsx, compartido
-// con el panel del lubricentro. Acá queda lo propio de esta superficie:
-// el acumulado histórico, el selector de granularidad y el cableado con
-// la URL.
+// El dibujo vive en components/fidelli/grafico-pulso.tsx: desde el bloque
+// MÉTRICAS 3 es un área apilada por tipo (service, mecánica, neumáticos),
+// y ya no comparte el componente con el panel del lubricentro, que sigue
+// con grafico-serie.tsx y una sola serie. Acá queda lo propio de esta
+// superficie: el acumulado histórico, el selector de granularidad y el
+// cableado con la URL.
 //
 // LAS TRES SERIES LLEGAN JUNTAS y el toggle cambia de serie al instante
 // (useState); router.replace corre atrás en una transición para que la
@@ -33,7 +32,7 @@ export function Pulso({
   acumulado,
   granularidadInicial,
 }: {
-  series: Record<Granularidad, PuntoSerie[]>;
+  series: Record<Granularidad, PuntoPulso[]>;
   acumulado: number;
   granularidadInicial: Granularidad;
 }) {
@@ -61,7 +60,7 @@ export function Pulso({
             {acumulado.toLocaleString("es-AR")}
           </p>
           <p className="text-label font-semibold tracking-[0.04em] text-ink-60 uppercase">
-            Services desde el día uno
+            Trabajos desde el día uno
           </p>
         </div>
 
@@ -77,12 +76,12 @@ export function Pulso({
           suave de la casa — un crossfade barato sin animar `d`, que entre
           series de 30 y 12 puntos no es interpolable. */}
       <div key={granularidad} className="animar-aparicion">
-        <GraficoSerie
+        <GraficoPulso
           serie={series[granularidad]}
           unidad={granularidad}
           vacio={{
             sinDatos:
-              "Todavía no se cargó ningún service en la plataforma. Acá va a aparecer el pulso en cuanto entre el primero.",
+              "Todavía no se cargó ningún trabajo en la plataforma. Acá va a aparecer el pulso en cuanto entre el primero.",
             unSoloPunto:
               "el primer período de la plataforma. Con dos ya hay curva.",
           }}

@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatearFecha } from "@/lib/fechas";
 import {
   MESES_DEL_PERIODO,
+  esFounding,
   pesos,
   sumarDias,
   sumarMeses,
@@ -14,6 +15,7 @@ import { ETIQUETA_FEATURE, MODULOS_PAGOS, type FeaturePlan } from "@/lib/planes"
 import { PREFIJOS_MODULO, leerMotivoModulo } from "@/lib/modulos";
 import { haceCuanto, hoyISO } from "@/lib/fechas";
 import { BotonAviso } from "@/components/fidelli/boton-aviso";
+import { BotonExportar } from "@/components/fidelli/boton-exportar";
 import {
   ESTILO_ATENCION,
   esAtencion,
@@ -27,6 +29,10 @@ const TH =
   "px-3 py-2 text-left text-label font-semibold tracking-[0.06em] text-ink-60 uppercase whitespace-nowrap";
 const TD = "px-3 py-2.5 align-middle";
 
+// El día en que el alta pasó a nacer pagando (migración 20260917140000):
+// ningún tenant creado desde entonces tuvo un período de trial.
+const ALTA_NACE_PAGANDO = "2026-09-17";
+
 export async function TabSuscripcion({
   tenant,
   suscripcion,
@@ -38,11 +44,11 @@ export async function TabSuscripcion({
 
   // El filtro por tenant es lo único que aísla: pagos no tiene RLS que
   // recorte a un superadmin.
-  const [pagosRes, atencionRes, sesion, overridesRes, cambiosRes] = await Promise.all([
+  const [pagosRes, atencionRes, sesion, overridesRes, cambiosRes, altaRes] = await Promise.all([
     supabase
       .from("pagos")
       .select(
-        "id, periodo_desde, periodo_hasta, monto, fecha_pago, created_at, usuarios!registrado_por(nombre)",
+        "id, periodo_desde, periodo_hasta, monto, fecha_pago, origen, created_at, usuarios!registrado_por(nombre)",
       )
       .eq("lubricentro_id", tenant.id)
       .order("periodo_hasta", { ascending: false }),
@@ -67,6 +73,16 @@ export async function TabSuscripcion({
       // overrides varias veces mostraba "activo" sin fecha.
       .order("created_at", { ascending: false })
       .limit(40),
+    // El evento alta: desde 20260924104000 trae el estado con el que nació
+    // la suscripción (trial o activa). Los anteriores no lo tienen.
+    supabase
+      .from("tenant_eventos")
+      .select("despues")
+      .eq("lubricentro_id", tenant.id)
+      .eq("tipo", "alta")
+      .order("ocurrido_at", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   const overrides =
@@ -120,8 +136,21 @@ export async function TabSuscripcion({
     ? sumarDias(primerPago.periodo_desde, -1)
     : (suscripcion?.vencimiento ?? null);
 
+  // La fila de trial se muestra solo si el estado FUE trial alguna vez.
+  // Desde el bloque 3 el evento `alta` guarda el estado con el que nació
+  // la suscripción y esa es la fuente. Para los eventos anteriores (y los
+  // del backfill), que no lo tienen, queda la inferencia: desde
+  // 20260917140000 los tenants NACEN activos, así que uno dado de alta
+  // desde esa fecha solo tuvo trial si su suscripción está en trial HOY.
+  const estadoAlta = (altaRes.data?.despues as { estado?: string } | null)?.estado ?? null;
+  const pudoTenerTrial =
+    suscripcion?.estado === "trial" ||
+    (estadoAlta ? estadoAlta === "trial" : tenant.created_at < ALTA_NACE_PAGANDO);
   const hayTrial =
-    suscripcion !== null && finDelTrial !== null && finDelTrial >= suscripcion.inicio;
+    pudoTenerTrial &&
+    suscripcion !== null &&
+    finDelTrial !== null &&
+    finDelTrial >= suscripcion.inicio;
 
   const meses = suscripcion ? MESES_DEL_PERIODO[suscripcion.periodo] : 1;
   const desdeSugerido = suscripcion ? sumarDias(suscripcion.vencimiento, 1) : "";
@@ -141,10 +170,13 @@ export async function TabSuscripcion({
     <>
     <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
       <section className="surface-card min-w-0 flex-1 overflow-hidden">
-        <div className="border-b border-line px-4.5 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4.5 py-3">
           <h2 className="font-brand text-ui font-bold tracking-[0.04em] text-ink-60 uppercase">
             Historial de pagos
           </h2>
+          {/* Los pagos de ESTE tenant (recurso `pagos` del data room,
+              docs/DATA-ROOM.md). La fila de trial no va: no es un pago. */}
+          <BotonExportar recurso="pagos" params={{ lubricentro_id: tenant.id }} compacto />
         </div>
 
         {pagos.length === 0 && !hayTrial ? (
@@ -176,7 +208,9 @@ export async function TabSuscripcion({
                       {formatearFecha(p.fecha_pago)}
                     </td>
                     <td className={`${TD} whitespace-nowrap text-ink-60`}>
-                      {p.usuarios?.nombre ?? "—"}
+                      {/* Un pago acreditado por el webhook no tiene autor
+                          humano: lo registró Cresium. */}
+                      {p.origen === "cresium" ? "Cresium" : (p.usuarios?.nombre ?? "—")}
                     </td>
                   </tr>
                 ))}
@@ -188,7 +222,7 @@ export async function TabSuscripcion({
                       {formatearFecha(finDelTrial!)}
                     </td>
                     <td className={`${TD} whitespace-nowrap text-ink-60`}>
-                      {suscripcion.descuento_pct === 50
+                      {esFounding(suscripcion.descuento_pct)
                         ? "Trial founding"
                         : "Trial"}
                     </td>

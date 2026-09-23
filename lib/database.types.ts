@@ -508,6 +508,69 @@ export type Database = {
           },
         ]
       }
+      contactos_pauta: {
+        Row: {
+          canal: Database["public"]["Enums"]["canal_pauta"]
+          cierre_at: string | null
+          created_at: string
+          demo_at: string | null
+          fecha: string
+          id: string
+          lubricentro_id: string | null
+          motivo_perdida: Database["public"]["Enums"]["motivo_perdida"] | null
+          origen: Database["public"]["Enums"]["origen_meta"] | null
+          perdida_at: string | null
+          registrado_por: string | null
+          telefono: string | null
+          updated_at: string
+        }
+        Insert: {
+          canal: Database["public"]["Enums"]["canal_pauta"]
+          cierre_at?: string | null
+          created_at?: string
+          demo_at?: string | null
+          fecha: string
+          id?: string
+          lubricentro_id?: string | null
+          motivo_perdida?: Database["public"]["Enums"]["motivo_perdida"] | null
+          origen?: Database["public"]["Enums"]["origen_meta"] | null
+          perdida_at?: string | null
+          registrado_por?: string | null
+          telefono?: string | null
+          updated_at?: string
+        }
+        Update: {
+          canal?: Database["public"]["Enums"]["canal_pauta"]
+          cierre_at?: string | null
+          created_at?: string
+          demo_at?: string | null
+          fecha?: string
+          id?: string
+          lubricentro_id?: string | null
+          motivo_perdida?: Database["public"]["Enums"]["motivo_perdida"] | null
+          origen?: Database["public"]["Enums"]["origen_meta"] | null
+          perdida_at?: string | null
+          registrado_por?: string | null
+          telefono?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contactos_pauta_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contactos_pauta_registrado_por_fkey"
+            columns: ["registrado_por"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       correcciones_patente: {
         Row: {
           corregido_por: string
@@ -672,6 +735,44 @@ export type Database = {
           },
         ]
       }
+      gasto_pauta: {
+        Row: {
+          canal: Database["public"]["Enums"]["canal_pauta"]
+          created_at: string
+          monto_usd: number
+          nota: string | null
+          registrado_por: string | null
+          semana: string
+          updated_at: string
+        }
+        Insert: {
+          canal: Database["public"]["Enums"]["canal_pauta"]
+          created_at?: string
+          monto_usd: number
+          nota?: string | null
+          registrado_por?: string | null
+          semana: string
+          updated_at?: string
+        }
+        Update: {
+          canal?: Database["public"]["Enums"]["canal_pauta"]
+          created_at?: string
+          monto_usd?: number
+          nota?: string | null
+          registrado_por?: string | null
+          semana?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gasto_pauta_registrado_por_fkey"
+            columns: ["registrado_por"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       landing_busquedas: {
         Row: {
           created_at: string
@@ -717,6 +818,8 @@ export type Database = {
           id: string
           nombre: string
           onboarding_completado_at: string | null
+          origen: Database["public"]["Enums"]["origen_tenant"] | null
+          origen_detalle: string | null
           pago_presentado_at: string | null
           plan_overrides: Json
           premio_omitido_at: string | null
@@ -736,6 +839,8 @@ export type Database = {
           id?: string
           nombre: string
           onboarding_completado_at?: string | null
+          origen?: Database["public"]["Enums"]["origen_tenant"] | null
+          origen_detalle?: string | null
           pago_presentado_at?: string | null
           plan_overrides?: Json
           premio_omitido_at?: string | null
@@ -755,6 +860,8 @@ export type Database = {
           id?: string
           nombre?: string
           onboarding_completado_at?: string | null
+          origen?: Database["public"]["Enums"]["origen_tenant"] | null
+          origen_detalle?: string | null
           pago_presentado_at?: string | null
           plan_overrides?: Json
           premio_omitido_at?: string | null
@@ -978,6 +1085,57 @@ export type Database = {
             columns: ["suscripcion_id"]
             isOneToOne: false
             referencedRelation: "suscripciones"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pedidos_calcos: {
+        Row: {
+          cantidad: number
+          created_at: string
+          fecha: string
+          id: string
+          incluidas: boolean
+          lubricentro_id: string
+          monto_ars: number | null
+          nota: string | null
+          registrado_por: string | null
+        }
+        Insert: {
+          cantidad: number
+          created_at?: string
+          fecha: string
+          id?: string
+          incluidas: boolean
+          lubricentro_id: string
+          monto_ars?: number | null
+          nota?: string | null
+          registrado_por?: string | null
+        }
+        Update: {
+          cantidad?: number
+          created_at?: string
+          fecha?: string
+          id?: string
+          incluidas?: boolean
+          lubricentro_id?: string
+          monto_ars?: number | null
+          nota?: string | null
+          registrado_por?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pedidos_calcos_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pedidos_calcos_registrado_por_fkey"
+            columns: ["registrado_por"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
             referencedColumns: ["id"]
           },
         ]
@@ -1635,6 +1793,120 @@ export type Database = {
           },
         ]
       }
+      snapshots_diarios: {
+        Row: {
+          altas_dia: number
+          bajas_dia: number
+          created_at: string
+          escaneos_dia: number
+          fecha: string
+          fuente: string
+          mrr_ars: number
+          mrr_usd: number | null
+          recordatorios_dia: number
+          tc_venta: number | null
+          tenants_activos: number
+          tenants_exentos: number
+          tenants_suspendidos: number
+          trabajos_dia: number
+          trabajos_mecanica: number
+          trabajos_neumaticos: number
+          trabajos_service: number
+        }
+        Insert: {
+          altas_dia: number
+          bajas_dia: number
+          created_at?: string
+          escaneos_dia: number
+          fecha: string
+          fuente: string
+          mrr_ars: number
+          mrr_usd?: number | null
+          recordatorios_dia: number
+          tc_venta?: number | null
+          tenants_activos: number
+          tenants_exentos: number
+          tenants_suspendidos: number
+          trabajos_dia: number
+          trabajos_mecanica: number
+          trabajos_neumaticos: number
+          trabajos_service: number
+        }
+        Update: {
+          altas_dia?: number
+          bajas_dia?: number
+          created_at?: string
+          escaneos_dia?: number
+          fecha?: string
+          fuente?: string
+          mrr_ars?: number
+          mrr_usd?: number | null
+          recordatorios_dia?: number
+          tc_venta?: number | null
+          tenants_activos?: number
+          tenants_exentos?: number
+          tenants_suspendidos?: number
+          trabajos_dia?: number
+          trabajos_mecanica?: number
+          trabajos_neumaticos?: number
+          trabajos_service?: number
+        }
+        Relationships: []
+      }
+      snapshots_tenant_diarios: {
+        Row: {
+          activo: boolean
+          created_at: string
+          exento: boolean
+          fecha: string
+          lubricentro_id: string
+          modulo_pago: boolean
+          mrr_ars: number
+          periodo: Database["public"]["Enums"]["periodo_suscripcion"] | null
+          plan_id: string | null
+          trabajos_dia: number
+        }
+        Insert: {
+          activo: boolean
+          created_at?: string
+          exento: boolean
+          fecha: string
+          lubricentro_id: string
+          modulo_pago?: boolean
+          mrr_ars: number
+          periodo?: Database["public"]["Enums"]["periodo_suscripcion"] | null
+          plan_id?: string | null
+          trabajos_dia?: number
+        }
+        Update: {
+          activo?: boolean
+          created_at?: string
+          exento?: boolean
+          fecha?: string
+          lubricentro_id?: string
+          modulo_pago?: boolean
+          mrr_ars?: number
+          periodo?: Database["public"]["Enums"]["periodo_suscripcion"] | null
+          plan_id?: string | null
+          trabajos_dia?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "snapshots_tenant_diarios_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "snapshots_tenant_diarios_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "planes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sucursales: {
         Row: {
           activa: boolean
@@ -1799,6 +2071,84 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      tenant_eventos: {
+        Row: {
+          actor: string | null
+          antes: Json | null
+          created_at: string
+          despues: Json | null
+          id: string
+          lubricentro_id: string
+          motivo: string | null
+          ocurrido_at: string
+          origen_evento: string
+          tipo: Database["public"]["Enums"]["tipo_evento_tenant"]
+        }
+        Insert: {
+          actor?: string | null
+          antes?: Json | null
+          created_at?: string
+          despues?: Json | null
+          id?: string
+          lubricentro_id: string
+          motivo?: string | null
+          ocurrido_at?: string
+          origen_evento: string
+          tipo: Database["public"]["Enums"]["tipo_evento_tenant"]
+        }
+        Update: {
+          actor?: string | null
+          antes?: Json | null
+          created_at?: string
+          despues?: Json | null
+          id?: string
+          lubricentro_id?: string
+          motivo?: string | null
+          ocurrido_at?: string
+          origen_evento?: string
+          tipo?: Database["public"]["Enums"]["tipo_evento_tenant"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_eventos_actor_fkey"
+            columns: ["actor"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tenant_eventos_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tipo_cambio: {
+        Row: {
+          compra: number | null
+          created_at: string
+          fecha: string
+          fuente: string
+          venta: number
+        }
+        Insert: {
+          compra?: number | null
+          created_at?: string
+          fecha: string
+          fuente: string
+          venta: number
+        }
+        Update: {
+          compra?: number | null
+          created_at?: string
+          fecha?: string
+          fuente?: string
+          venta?: number
+        }
+        Relationships: []
       }
       trabajos_pendientes: {
         Row: {
@@ -2031,6 +2381,30 @@ export type Database = {
       }
     }
     Views: {
+      snapshots_mensuales: {
+        Row: {
+          altas_dia: number | null
+          bajas_dia: number | null
+          created_at: string | null
+          en_curso: boolean | null
+          escaneos_dia: number | null
+          fecha: string | null
+          fuente: string | null
+          mes: string | null
+          mrr_ars: number | null
+          mrr_usd: number | null
+          recordatorios_dia: number | null
+          tc_venta: number | null
+          tenants_activos: number | null
+          tenants_exentos: number | null
+          tenants_suspendidos: number | null
+          trabajos_dia: number | null
+          trabajos_mecanica: number | null
+          trabajos_neumaticos: number | null
+          trabajos_service: number | null
+        }
+        Relationships: []
+      }
       vista_clientes: {
         Row: {
           cantidad_vehiculos: number | null
@@ -2344,6 +2718,26 @@ export type Database = {
         Returns: boolean
       }
       acreditar_deposito_cresium: { Args: { p_payload: Json }; Returns: Json }
+      activacion_por_mes: {
+        Args: { p_desde: string; p_hasta: string }
+        Returns: {
+          activados: number
+          altas: number
+          en_curso: number
+          mes: string
+          tasa: number
+        }[]
+      }
+      activacion_tenant: {
+        Args: { p_lubricentro_id: string }
+        Returns: {
+          activado: boolean
+          dia: number
+          en_curso: boolean
+          fecha_alta: string
+          trabajos_7d: number
+        }[]
+      }
       activar_template: { Args: { p_template_id: string }; Returns: undefined }
       actualizar_lubricentro: {
         Args: {
@@ -2403,11 +2797,30 @@ export type Database = {
       alias_formato_valido: { Args: { p_alias: string }; Returns: boolean }
       alias_largo_maximo: { Args: never; Returns: number }
       alias_largo_minimo: { Args: never; Returns: number }
+      altas_bajas_por_mes: {
+        Args: { p_desde: string; p_hasta: string }
+        Returns: {
+          altas: number
+          bajas: number
+          mes: string
+          neto: number
+          reactivaciones: number
+        }[]
+      }
       anonimizar_cliente: {
         Args: { p_cliente_id: string; p_motivo: string }
         Returns: undefined
       }
       atencion_tenant: { Args: { p_lubricentro_id: string }; Returns: Json }
+      autos_que_volvieron: {
+        Args: { p_desde: string; p_hasta: string; p_lubricentro_id: string }
+        Returns: number
+      }
+      autos_que_volvieron_plataforma: {
+        Args: { p_desde: string; p_hasta: string }
+        Returns: number
+      }
+      backfill_pedidos_calcos: { Args: never; Returns: number }
       bloqueo_de_alta_activo: { Args: never; Returns: boolean }
       buscar_vehiculo_por_patente: {
         Args: { p_patente: string }
@@ -2434,8 +2847,39 @@ export type Database = {
         Args: { p_service_id: string }
         Returns: undefined
       }
+      cambiar_estado_lubricentro: {
+        Args: {
+          p_activo: boolean
+          p_detalle?: string
+          p_id: string
+          p_motivo?: Database["public"]["Enums"]["motivo_suspension"]
+        }
+        Returns: undefined
+      }
       catalogo_features_plan: { Args: never; Returns: string[] }
       catalogo_limites_plan: { Args: never; Returns: string[] }
+      cerrar_dia: {
+        Args: {
+          p_fecha: string
+          p_fuente?: string
+          p_tc_compra?: number
+          p_tc_venta: number
+        }
+        Returns: string
+      }
+      churn_por_mes: {
+        Args: { p_desde: string; p_hasta: string }
+        Returns: {
+          bajas: number
+          churn_pct: number
+          involuntarias: number
+          mes: string
+          por_motivo: Json
+          por_origen: Json
+          tenants_inicio: number
+          voluntarias: number
+        }[]
+      }
       ciclo_tras_el_pago: {
         Args: {
           p_es_el_primero: boolean
@@ -2481,6 +2925,34 @@ export type Database = {
           sub_estado: Database["public"]["Enums"]["estado_suscripcion"]
           telefono: string
           vencimiento: string
+        }[]
+      }
+      cohortes_ingresos: {
+        Args: { p_desde: string; p_hasta: string }
+        Returns: {
+          cohorte: string
+          grr_12: number
+          grr_3: number
+          grr_6: number
+          mrr_inicial_usd: number
+          nrr_12: number
+          nrr_3: number
+          nrr_6: number
+          tamano: number
+        }[]
+      }
+      cohortes_logos: {
+        Args: { p_desde: string; p_hasta: string }
+        Returns: {
+          activados: number
+          cohorte: string
+          m1: number
+          m12: number
+          m2: number
+          m3: number
+          m6: number
+          m9: number
+          tamano: number
         }[]
       }
       completar_onboarding: { Args: never; Returns: Json }
@@ -2546,6 +3018,47 @@ export type Database = {
         Returns: number
       }
       dot_a_fecha: { Args: { p_dot: string }; Returns: string }
+      embudo_pauta: {
+        Args: {
+          p_agrupar?: string
+          p_canal?: Database["public"]["Enums"]["canal_pauta"]
+          p_desde: string
+          p_hasta: string
+        }
+        Returns: {
+          abiertos: number
+          cac_usd: number
+          canal: Database["public"]["Enums"]["canal_pauta"]
+          ciclo_mediana_dias: number
+          cierres: number
+          cierres_periodo: number
+          contactos: number
+          demos: number
+          gasto_usd: number
+          perdidos: number
+          periodo: string
+          tasa_cierre: number
+          tasa_demo: number
+        }[]
+      }
+      embudo_pauta_mes_actual: { Args: never; Returns: Json }
+      emitir_evento_tenant: {
+        Args: {
+          p_actor?: string
+          p_antes: Json
+          p_despues: Json
+          p_lubricentro: string
+          p_motivo: string
+          p_ocurrido_at?: string
+          p_origen_evento: string
+          p_tipo: Database["public"]["Enums"]["tipo_evento_tenant"]
+        }
+        Returns: string
+      }
+      es_activo: {
+        Args: { l: Database["public"]["Tables"]["lubricentros"]["Row"] }
+        Returns: boolean
+      }
       estado_atencion: {
         Args: {
           p_descuento_pct: number
@@ -2565,6 +3078,7 @@ export type Database = {
         }
         Returns: string
       }
+      estado_owner: { Args: { p_lubricentro_id: string }; Returns: string }
       estados_owner: {
         Args: never
         Returns: {
@@ -2581,6 +3095,23 @@ export type Database = {
       fijar_alias_de_tenant: {
         Args: { p_alias: string; p_lubricentro: string }
         Returns: string
+      }
+      fijar_gasto_pauta: {
+        Args: {
+          p_canal: Database["public"]["Enums"]["canal_pauta"]
+          p_monto_usd?: number
+          p_nota?: string
+          p_semana: string
+        }
+        Returns: undefined
+      }
+      fijar_origen_tenant: {
+        Args: {
+          p_detalle?: string
+          p_id: string
+          p_origen: Database["public"]["Enums"]["origen_tenant"]
+        }
+        Returns: undefined
       }
       fijar_override_plan: {
         Args: { p_lubricentro: string; p_motivo: string; p_overrides: Json }
@@ -2601,6 +3132,17 @@ export type Database = {
         Returns: undefined
       }
       fm_unaccent: { Args: { "": string }; Returns: string }
+      foto_plataforma_del_dia: {
+        Args: { p_fecha: string; p_fuente: string; p_tc_venta: number }
+        Returns: undefined
+      }
+      foto_tenant_del_dia: {
+        Args: {
+          p_fecha: string
+          p_lub: Database["public"]["Tables"]["lubricentros"]["Row"]
+        }
+        Returns: boolean
+      }
       get_carton: { Args: { p_patente: string; p_slug: string }; Returns: Json }
       get_landing: { Args: { p_slug: string }; Returns: Json }
       guardar_presupuesto: {
@@ -2644,6 +3186,21 @@ export type Database = {
           p_vehiculo_id: string
         }
         Returns: string
+      }
+      indicadores_tenants: {
+        Args: never
+        Returns: {
+          activado: boolean
+          dias_alta: number
+          es_activo: boolean
+          estado_reloj: string
+          exento: boolean
+          lubricentro_id: string
+          modulo_pago: boolean
+          mrr_ars: number
+          trabajos_30: number
+          ultimo_trabajo: string
+        }[]
       }
       limite_de_tenant: {
         Args: { p_limite: string; p_lubricentro: string }
@@ -2690,7 +3247,23 @@ export type Database = {
       }
       marca_canonica: { Args: { p_texto: string }; Returns: string }
       marcar_bienvenida_vista: { Args: never; Returns: undefined }
+      marcar_cierre: {
+        Args: { p_fecha?: string; p_id: string; p_lubricentro_id?: string }
+        Returns: undefined
+      }
+      marcar_demo: {
+        Args: { p_fecha?: string; p_id: string }
+        Returns: undefined
+      }
       marcar_pago_presentado: { Args: never; Returns: Json }
+      marcar_perdida: {
+        Args: {
+          p_fecha?: string
+          p_id: string
+          p_motivo?: Database["public"]["Enums"]["motivo_perdida"]
+        }
+        Returns: undefined
+      }
       meses_del_periodo: {
         Args: { p_periodo: Database["public"]["Enums"]["periodo_suscripcion"] }
         Returns: number
@@ -2717,6 +3290,28 @@ export type Database = {
         }
         Returns: Json
       }
+      movimientos_mrr: {
+        Args: { p_desde: string; p_hasta: string; p_moneda?: string }
+        Returns: {
+          ajuste_precio: number
+          churn: number
+          contraccion: number
+          crecimiento_pct: number
+          en_curso: boolean
+          expansion: number
+          mes: string
+          mrr_fin: number
+          mrr_inicio: number
+          neto: number
+          nuevo: number
+          reactivacion: number
+          sin_foto_anterior: boolean
+          tenants_fin: number
+          tenants_inicio: number
+        }[]
+      }
+      mrr_de_tenant: { Args: { p_id: string }; Returns: number }
+      mrr_plataforma: { Args: never; Returns: number }
       normalizar_patente: { Args: { entrada: string }; Returns: string }
       normalizar_texto_vehiculo: { Args: { p: string }; Returns: string }
       omitir_premio: { Args: never; Returns: Json }
@@ -2730,6 +3325,11 @@ export type Database = {
         Returns: Json
       }
       orden_atencion: { Args: { p_atencion: string }; Returns: number }
+      origen_de_canal: {
+        Args: { p_canal: Database["public"]["Enums"]["canal_pauta"] }
+        Returns: Database["public"]["Enums"]["origen_tenant"]
+      }
+      origen_evento_de_sesion: { Args: never; Returns: string }
       overrides_plan_bien_formados: { Args: { p: Json }; Returns: boolean }
       patente_formato_valido: { Args: { p: string }; Returns: boolean }
       plan_capacidades: {
@@ -2773,6 +3373,11 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      reabrir_contacto_pauta: { Args: { p_id: string }; Returns: undefined }
+      reconstruir_snapshots: {
+        Args: { p_desde: string; p_hasta: string }
+        Returns: number
+      }
       recuperados_del_mes: {
         Args: {
           p_desde?: string
@@ -2780,6 +3385,15 @@ export type Database = {
           p_sucursal_id?: string
         }
         Returns: number
+      }
+      registrar_contacto_pauta: {
+        Args: {
+          p_canal?: Database["public"]["Enums"]["canal_pauta"]
+          p_fecha?: string
+          p_origen?: Database["public"]["Enums"]["origen_meta"]
+          p_telefono?: string
+        }
+        Returns: string
       }
       registrar_pago: {
         Args: {
@@ -2791,11 +3405,32 @@ export type Database = {
         }
         Returns: string
       }
+      registrar_pedido_calcos: {
+        Args: {
+          p_cantidad: number
+          p_fecha: string
+          p_incluidas: boolean
+          p_lubricentro_id: string
+          p_monto?: number
+          p_nota?: string
+        }
+        Returns: string
+      }
       reloj_cobranza: {
         Args: { l: Database["public"]["Tables"]["lubricentros"]["Row"] }
         Returns: Json
       }
+      resumen_admin: { Args: never; Returns: Json }
       resumen_inicio: { Args: { p_sucursal_id?: string }; Returns: Json }
+      salud_tenants: {
+        Args: never
+        Returns: {
+          lubricentro_id: string
+          motivo: string
+          salud: string
+          ultimo_trabajo: string
+        }[]
+      }
       seed_demo: { Args: { p_password?: string }; Returns: string }
       sembrar_templates: {
         Args: { p_lubricentro_id: string; p_nombre: string }
@@ -2827,11 +3462,64 @@ export type Database = {
         Args: { p_lubricentro: string; p_sucursal: string }
         Returns: boolean
       }
+      suscriptos_por_plan: {
+        Args: never
+        Returns: {
+          descuento_pct: number
+          estado: Database["public"]["Enums"]["estado_suscripcion"]
+          lubricentro_id: string
+          nombre: string
+          periodo: Database["public"]["Enums"]["periodo_suscripcion"]
+          plan_id: string
+        }[]
+      }
+      tc_vigente: {
+        Args: { p_fecha: string }
+        Returns: {
+          compra: number | null
+          created_at: string
+          fecha: string
+          fuente: string
+          venta: number
+        }
+        SetofOptions: {
+          from: "*"
+          to: "tipo_cambio"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       telefono_de_contacto: {
         Args: { p_lubricentro_id: string }
         Returns: string
       }
+      trabajos_por_mes: {
+        Args: { p_desde: string; p_hasta: string }
+        Returns: {
+          autos_que_volvieron: number
+          en_curso: boolean
+          escaneos: number
+          mecanica: number
+          mes: string
+          neumaticos: number
+          recordatorios: number
+          service: number
+          total: number
+        }[]
+      }
+      trabajos_semanales: {
+        Args: { p_lubricentro_id?: string; p_semanas?: number }
+        Returns: {
+          cantidad: number
+          lubricentro_id: string
+          semana: string
+        }[]
+      }
       unaccent: { Args: { "": string }; Returns: string }
+      uso_tenant: {
+        Args: { p_dias?: number; p_lubricentro_id: string }
+        Returns: Json
+      }
       verificar_seguridad_vistas: {
         Args: never
         Returns: {
@@ -2844,6 +3532,7 @@ export type Database = {
     Enums: {
       alcance_premio: "services" | "todos"
       canal_contacto: "whatsapp" | "manual"
+      canal_pauta: "meta" | "google" | "otro"
       clase_vehiculo: "liviano" | "pesado"
       estado_contacto:
         | "urgente"
@@ -2876,6 +3565,28 @@ export type Database = {
         | "engrase"
         | "bateria"
       motivo_contacto_fidelli: "trial" | "cobranza"
+      motivo_perdida:
+        | "precio"
+        | "no_responde"
+        | "ya_tiene_sistema"
+        | "no_factura"
+        | "no_es_dueno"
+        | "otro"
+      motivo_suspension:
+        | "falta_de_pago"
+        | "pedido_del_cliente"
+        | "cierre_del_negocio"
+        | "otro"
+      origen_meta: "instagram" | "messenger" | "whatsapp"
+      origen_tenant:
+        | "meta"
+        | "google"
+        | "referido"
+        | "directo"
+        | "distribuidor"
+        | "calco"
+        | "organico"
+        | "otro"
       periodo_suscripcion: "mensual" | "semestral" | "anual"
       posicion_rueda:
         | "delantera_izquierda"
@@ -2884,6 +3595,21 @@ export type Database = {
         | "trasera_derecha"
         | "auxilio"
       rol_usuario: "owner" | "superadmin"
+      tipo_evento_tenant:
+        | "alta"
+        | "suspension"
+        | "reactivacion"
+        | "suspension_reloj"
+        | "reactivacion_reloj"
+        | "cambio_plan"
+        | "pago"
+        | "modulo_activado"
+        | "modulo_desactivado"
+        | "reloj_encendido"
+        | "reloj_apagado"
+        | "calcos"
+        | "edicion"
+        | "origen"
       tipo_trabajo: "service" | "mecanica" | "neumaticos"
     }
     CompositeTypes: {
@@ -3017,6 +3743,7 @@ export const Constants = {
     Enums: {
       alcance_premio: ["services", "todos"],
       canal_contacto: ["whatsapp", "manual"],
+      canal_pauta: ["meta", "google", "otro"],
       clase_vehiculo: ["liviano", "pesado"],
       estado_contacto: [
         "urgente",
@@ -3051,6 +3778,31 @@ export const Constants = {
         "bateria",
       ],
       motivo_contacto_fidelli: ["trial", "cobranza"],
+      motivo_perdida: [
+        "precio",
+        "no_responde",
+        "ya_tiene_sistema",
+        "no_factura",
+        "no_es_dueno",
+        "otro",
+      ],
+      motivo_suspension: [
+        "falta_de_pago",
+        "pedido_del_cliente",
+        "cierre_del_negocio",
+        "otro",
+      ],
+      origen_meta: ["instagram", "messenger", "whatsapp"],
+      origen_tenant: [
+        "meta",
+        "google",
+        "referido",
+        "directo",
+        "distribuidor",
+        "calco",
+        "organico",
+        "otro",
+      ],
       periodo_suscripcion: ["mensual", "semestral", "anual"],
       posicion_rueda: [
         "delantera_izquierda",
@@ -3060,6 +3812,22 @@ export const Constants = {
         "auxilio",
       ],
       rol_usuario: ["owner", "superadmin"],
+      tipo_evento_tenant: [
+        "alta",
+        "suspension",
+        "reactivacion",
+        "suspension_reloj",
+        "reactivacion_reloj",
+        "cambio_plan",
+        "pago",
+        "modulo_activado",
+        "modulo_desactivado",
+        "reloj_encendido",
+        "reloj_apagado",
+        "calcos",
+        "edicion",
+        "origen",
+      ],
       tipo_trabajo: ["service", "mecanica", "neumaticos"],
     },
   },

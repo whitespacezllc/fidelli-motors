@@ -102,7 +102,7 @@ await demo.page.screenshot({ path: `${CAPS}/4-sucursal-rechazo.png` });
 // ═══ 4 · Override parcial desde /fidelli ═══
 console.log("\n═══ 4 · Override: una sola feature, tres estados ═══");
 const santi = await login("santi@fidellimotors.app");
-await santi.page.goto(`${BASE}/fidelli/${LUB}?pestana=suscripcion`);
+await santi.page.goto(`${BASE}/fidelli/${LUB}?tab=suscripcion`);
 await santi.page.waitForSelector("text=Plan y overrides");
 await santi.page.selectOption("#ov-premios", "si");
 await santi.page.fill("#ov-motivo", "Prueba E2E del bloque 1B: cortesía puntual de Fidelliza.");
@@ -118,7 +118,7 @@ check("…y experiencia sigue oculta (no arrastró nada)", (await sidebar.getByT
 await demo.page.screenshot({ path: `${CAPS}/6-sidebar-override.png` });
 
 // vuelta a "según el plan"
-await santi.page.goto(`${BASE}/fidelli/${LUB}?pestana=suscripcion`);
+await santi.page.goto(`${BASE}/fidelli/${LUB}?tab=suscripcion`);
 await santi.page.waitForSelector("#ov-premios");
 await santi.page.selectOption("#ov-premios", "plan");
 await santi.page.fill("#ov-motivo", "Prueba E2E: se vuelve a lo que diga el plan.");

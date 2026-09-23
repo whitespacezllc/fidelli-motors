@@ -47,6 +47,7 @@ export async function TabDatos({
   const ver: VistaDatos = esVistaDatos(params.ver) ? params.ver : "clientes";
   const pagina = Math.max(1, Number(params.pagina) || 1);
   const q = params.q?.trim() || undefined;
+  const totalPrevio = totalDeLaUrl(params.total, pagina);
 
   const url = (v: VistaDatos) => `/fidelli/${tenant.id}?tab=datos&ver=${v}`;
 
@@ -76,17 +77,38 @@ export async function TabDatos({
       </nav>
 
       {ver === "clientes" && (
-        <ListaClientes tenant={tenant} q={q} pagina={pagina} />
+        <ListaClientes tenant={tenant} q={q} pagina={pagina} totalPrevio={totalPrevio} />
       )}
       {ver === "vehiculos" && (
-        <ListaVehiculos tenant={tenant} q={q} pagina={pagina} />
+        <ListaVehiculos tenant={tenant} q={q} pagina={pagina} totalPrevio={totalPrevio} />
       )}
       {ver === "services" && (
-        <ListaServices tenant={tenant} params={params} pagina={pagina} />
+        <ListaServices tenant={tenant} params={params} pagina={pagina} totalPrevio={totalPrevio} />
       )}
     </div>
   );
 }
+
+// ---------- El total, contado una sola vez ----------
+// `count: "exact"` le pide a PostgREST que, además de la página, cuente TODO
+// lo que matchea el filtro; y con RLS por fila la policy se evalúa en cada
+// fila contada, no solo en las 30 que se traen. Antes se contaba en cada
+// página. Desde el bloque MÉTRICAS 4 se cuenta en la primera y el número
+// viaja en los links de paginación (`?total=`); las siguientes lo leen de
+// ahí y piden solo su página. Un deep link a la página 3 sin total —o con
+// un total que no es un número— cuenta una vez. Lo que se ve es lo mismo:
+// «N en total · página X de Y».
+function totalDeLaUrl(total: string | undefined, pagina: number): number | null {
+  // La primera página siempre cuenta: es la que refresca el número después
+  // de un alta o una supresión. Un `?total=` en ella se ignora.
+  if (pagina <= 1) return null;
+  if (total === undefined || !/^\d{1,9}$/.test(total)) return null;
+  return Number(total);
+}
+
+// Con el total ya conocido, la consulta trae solo la página.
+const opcionesDeConteo = (totalPrevio: number | null) =>
+  totalPrevio === null ? { count: "exact" as const } : {};
 
 // ---------- Paginación, compartida por las tres listas ----------
 function Paginacion({
@@ -101,6 +123,9 @@ function Paginacion({
   const paginas = Math.max(1, Math.ceil(total / POR_PAGINA));
   if (paginas <= 1) return null;
 
+  // El total viaja en el link: la página siguiente no lo vuelve a contar.
+  const link = (p: number) => `${base}&pagina=${p}&total=${total}`;
+
   return (
     <div className="flex items-center justify-between gap-3 border-t border-line px-3 py-2.5 text-ui">
       <span className="text-ink-60">
@@ -109,7 +134,7 @@ function Paginacion({
       <span className="flex gap-2">
         {pagina > 1 && (
           <Link
-            href={`${base}&pagina=${pagina - 1}`}
+            href={link(pagina - 1)}
             className="rounded-md border border-line px-3 py-1 font-semibold text-ink hover:bg-surface"
           >
             Anterior
@@ -117,7 +142,7 @@ function Paginacion({
         )}
         {pagina < paginas && (
           <Link
-            href={`${base}&pagina=${pagina + 1}`}
+            href={link(pagina + 1)}
             className="rounded-md border border-line px-3 py-1 font-semibold text-ink hover:bg-surface"
           >
             Siguiente
@@ -137,10 +162,12 @@ async function ListaClientes({
   tenant,
   q,
   pagina,
+  totalPrevio,
 }: {
   tenant: Tenant;
   q: string | undefined;
   pagina: number;
+  totalPrevio: number | null;
 }) {
   const supabase = await createClient();
   const { termino, filtros } = filtroClientes(q);
@@ -149,7 +176,7 @@ async function ListaClientes({
     .from("vista_clientes")
     .select(
       "id, nombre, telefono, cantidad_vehiculos, ultimo_service_fecha, patentes_lista",
-      { count: "exact" },
+      opcionesDeConteo(totalPrevio),
     )
     // vista_clientes es security_invoker: sin esto, un superadmin ve los
     // clientes de TODA la plataforma mezclados en esta tabla.
@@ -243,7 +270,7 @@ async function ListaClientes({
       <Paginacion
         base={`/fidelli/${tenant.id}?tab=datos&ver=clientes${q ? `&q=${encodeURIComponent(q)}` : ""}`}
         pagina={pagina}
-        total={count ?? 0}
+        total={totalPrevio ?? count ?? 0}
       />
     </div>
   );
@@ -254,10 +281,12 @@ async function ListaVehiculos({
   tenant,
   q,
   pagina,
+  totalPrevio,
 }: {
   tenant: Tenant;
   q: string | undefined;
   pagina: number;
+  totalPrevio: number | null;
 }) {
   const supabase = await createClient();
   const patente = q ? normalizarPatente(q) : null;
@@ -266,7 +295,7 @@ async function ListaVehiculos({
     .from("vista_vehiculos")
     .select(
       "id, patente, marca, modelo, anio, cantidad_services, ultimo_service_fecha, clientes(nombre)",
-      { count: "exact" },
+      opcionesDeConteo(totalPrevio),
     )
     // Misma historia que vista_clientes: security_invoker, filtro explícito.
     .eq("lubricentro_id", tenant.id)
@@ -358,7 +387,7 @@ async function ListaVehiculos({
       <Paginacion
         base={`/fidelli/${tenant.id}?tab=datos&ver=vehiculos${q ? `&q=${encodeURIComponent(q)}` : ""}`}
         pagina={pagina}
-        total={count ?? 0}
+        total={totalPrevio ?? count ?? 0}
       />
     </div>
 
@@ -372,10 +401,12 @@ async function ListaServices({
   tenant,
   params,
   pagina,
+  totalPrevio,
 }: {
   tenant: Tenant;
   params: ParamsFicha;
   pagina: number;
+  totalPrevio: number | null;
 }) {
   const supabase = await createClient();
 
@@ -392,7 +423,7 @@ async function ListaServices({
        vehiculos!inner(patente, patente_normalizada, marca, modelo, clientes(nombre)),
        sucursales(nombre),
        desbloqueador:usuarios!desbloqueado_por(nombre)`,
-      { count: "exact" },
+      opcionesDeConteo(totalPrevio),
     )
     // services SÍ tiene lubricentro_id propio, pero el RLS no lo usa para
     // un superadmin: el filtro va igual y explícito.
@@ -552,7 +583,7 @@ async function ListaServices({
       <Paginacion
         base={`/fidelli/${tenant.id}?${filtrosUrl.toString()}`}
         pagina={pagina}
-        total={serviciosRes.count ?? 0}
+        total={totalPrevio ?? serviciosRes.count ?? 0}
       />
     </div>
   );

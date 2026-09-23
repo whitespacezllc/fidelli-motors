@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { CabeceraTenant } from "@/components/fidelli/ficha/cabecera-tenant";
 import { TabResumen } from "@/components/fidelli/ficha/tab-resumen";
 import { TabSuscripcion } from "@/components/fidelli/ficha/tab-suscripcion";
+import { TabHistorial } from "@/components/fidelli/ficha/tab-historial";
 import { TabDatos } from "@/components/fidelli/ficha/tab-datos";
 import { TabConfiguracion } from "@/components/fidelli/ficha/tab-configuracion";
 import {
@@ -11,7 +12,7 @@ import {
   type SuscripcionVigente,
   type Tenant,
 } from "@/components/fidelli/ficha/tipos";
-import type { PlanCompleto } from "@/components/fidelli/tipos";
+import type { EstadoOwner, PlanCompleto } from "@/components/fidelli/tipos";
 
 export const metadata: Metadata = { title: "Ficha del lubricentro" };
 
@@ -20,6 +21,9 @@ export type ParamsFicha = {
   ver?: string;
   q?: string;
   pagina?: string;
+  /** El total de la lista de la pestaña Datos: viaja en los links de
+   *  paginación para contar una sola vez (ver tab-datos.tsx). */
+  total?: string;
   sucursal?: string;
   desde?: string;
   hasta?: string;
@@ -45,13 +49,14 @@ export default async function PaginaFicha({
   const { id } = await params;
   const busqueda = await searchParams;
   const pestana = esPestana(busqueda.tab) ? busqueda.tab : "resumen";
+  const pagina = Math.max(1, Number(busqueda.pagina) || 1);
 
   const supabase = await createClient();
 
-  const [tenantRes, suscripcionRes] = await Promise.all([
+  const [tenantRes, suscripcionRes, ownerRes, planesRes] = await Promise.all([
     supabase
       .from("lubricentros")
-      .select("id, nombre, slug, activo, calcos_entregadas, created_at")
+      .select("id, nombre, slug, activo, calcos_entregadas, created_at, origen, origen_detalle")
       .eq("id", id)
       .maybeSingle(),
     // La vigente es la última que arrancó, el mismo criterio que el listado.
@@ -66,6 +71,18 @@ export default async function PaginaFicha({
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // El estado del owner, para la cabecera y para el Resumen. Una sola
+    // llamada acá y por tenant: estado_owner(id) (bloque MÉTRICAS 4) mira
+    // solo al owner de esta ficha. Antes se pedía estados_owner() —la
+    // plataforma entera, un join con auth.users por cada tenant— para
+    // quedarse con una fila.
+    supabase.rpc("estado_owner", { p_lubricentro_id: id }),
+    // El catálogo, para el dialog Editar de la cabecera (bloque 3).
+    supabase
+      .from("planes")
+      .select("id, nombre, precio_mensual, descuento_semestral_pct, descuento_anual_pct")
+      .eq("activo", true)
+      .order("nombre"),
   ]);
 
   if (!tenantRes.data) notFound();
@@ -84,20 +101,32 @@ export default async function PaginaFicha({
       }
     : null;
 
+  // estado_owner() devuelve 'pendiente' / 'activo', o null si el tenant no
+  // tiene owner. Cualquier otra cosa —un error de la RPC incluido— se lee
+  // como «sin owner», igual que antes cuando la búsqueda en la lista no
+  // encontraba la fila.
+  const estadoOwner: EstadoOwner =
+    ownerRes.data === "activo" || ownerRes.data === "pendiente"
+      ? ownerRes.data
+      : "sin_owner";
+
   return (
     <div>
       <CabeceraTenant
         tenant={tenant}
         suscripcion={suscripcion}
         pestana={pestana}
+        estadoOwner={estadoOwner}
+        planes={(planesRes.data ?? []) as PlanCompleto[]}
       />
 
       {pestana === "resumen" && (
-        <TabResumen tenant={tenant} suscripcion={suscripcion} />
+        <TabResumen tenant={tenant} suscripcion={suscripcion} estadoOwner={estadoOwner} />
       )}
       {pestana === "suscripcion" && (
         <TabSuscripcion tenant={tenant} suscripcion={suscripcion} />
       )}
+      {pestana === "historial" && <TabHistorial tenant={tenant} pagina={pagina} />}
       {pestana === "datos" && <TabDatos tenant={tenant} params={busqueda} />}
       {pestana === "configuracion" && <TabConfiguracion tenant={tenant} />}
     </div>

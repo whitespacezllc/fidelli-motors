@@ -1,196 +1,146 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { EstadoVacio } from "@/components/ui/estado-vacio";
-import { IconoLubricentro } from "@/components/iconos";
-import { TablaLubricentros } from "@/components/fidelli/tabla-lubricentros";
-import { BotonAlta } from "@/components/fidelli/boton-alta";
-import { esAtencion } from "@/lib/fidelli/atencion";
-import { calcularTotales } from "@/lib/fidelli/totales";
-import { FranjaTotales } from "@/components/fidelli/franja-totales";
+import { fechaCalendarioAR, hoyISO } from "@/lib/fechas";
+import { leerResumen } from "@/lib/fidelli/resumen";
+import { serieObjetivo } from "@/lib/fidelli/objetivo";
+import { esGranularidad, type Granularidad } from "@/lib/series";
+import { leerResumenPauta } from "@/lib/fidelli/pauta";
+import { FranjaResumen, type ActivacionDelMes } from "@/components/fidelli/franja-resumen";
+import { LineaPauta } from "@/components/fidelli/linea-pauta";
+import type { PuntoPulso } from "@/components/fidelli/grafico-pulso";
+import { GraficoMrr } from "@/components/fidelli/grafico-mrr";
+import { esMoneda, type Moneda, type PuntoMrr } from "@/lib/fidelli/mrr";
 import { Pulso } from "@/components/fidelli/pulso";
-import {
-  esGranularidad,
-  type Granularidad,
-  type PuntoSerie,
-} from "@/lib/series";
-import type { PlanCompleto } from "@/components/fidelli/tipos";
+import { Alertas } from "@/components/fidelli/alertas";
 
-export const metadata: Metadata = { title: "Lubricentros" };
+export const metadata: Metadata = { title: "Resumen" };
 
-export default async function PaginaLubricentros({
+// ============================================================
+// El Resumen de /fidelli: lo que se mira a la mañana.
+//
+// Cinco números con su comparación, el MRR contra el objetivo, el pulso de
+// trabajos y las alertas del día. Tres lecturas y nada más: resumen_admin()
+// (los números y los conteos de las alertas), snapshots_diarios (la serie
+// del MRR, que se lee y no se recalcula) y metricas_plataforma() (el pulso).
+// Más una consulta chica (bloque MÉTRICAS 4): el alta del primer tenant,
+// que es el piso de fecha del gráfico de MRR. El listado vive en
+// /fidelli/lubricentros.
+// ============================================================
+export default async function PaginaResumen({
   searchParams,
 }: {
-  searchParams: Promise<{ atencion?: string; pulso?: string }>;
+  searchParams: Promise<{ pulso?: string; moneda?: string }>;
 }) {
-  const { atencion, pulso } = await searchParams;
-  const soloAtencion = atencion === "1";
-  // Semanal por defecto: con pocos datos es el que mejor se lee —bastantes
-  // puntos para ser una curva, sin el diente de sierra de los domingos.
+  const { pulso, moneda } = await searchParams;
+  // Semanal por defecto: con pocos datos es el que mejor se lee.
   const granularidad: Granularidad = esGranularidad(pulso) ? pulso : "semana";
+  // Dólares por defecto: es la moneda del objetivo.
+  const monedaInicial: Moneda = esMoneda(moneda) ? moneda : "usd";
 
   const supabase = await createClient();
+  const hoy = hoyISO();
+  const primeroDelMes = `${hoy.slice(0, 7)}-01`;
 
-  // Una consulta por pantalla: listado_lubricentros() ya trae la suscripción
-  // vigente, la actividad del mes, el estado del owner y —desde el aviso de
-  // vencimiento— qué atención necesita cada tenant, si ya se le avisó en
-  // este ciclo y a qué número escribirle. Viene ordenada con lo urgente
-  // arriba: el ORDER BY no puede depender de algo que se calcule acá.
-  const [{ data: filas }, { data: planes }, { data: plataforma }] = await Promise.all([
-    supabase.rpc("listado_lubricentros"),
+  const [
+    resumenRes,
+    snapshotsRes,
+    plataformaRes,
+    pautaRes,
+    activacionRes,
+    volvieronRes,
+    primerTenantRes,
+  ] = await Promise.all([
+    supabase.rpc("resumen_admin"),
     supabase
-      .from("planes")
-      .select("id, nombre, precio_mensual, descuento_semestral_pct, descuento_anual_pct")
-      .eq("activo", true)
-      .order("nombre"),
-    // Lo único de toda esta superficie que NO se filtra por tenant: son
-    // los números de la plataforma entera y sumarlos es el punto. Trae
-    // las TRES granularidades juntas: el toggle del pulso es instantáneo
-    // y no vuelve a consultar.
+      .from("snapshots_diarios")
+      .select("fecha, mrr_ars, mrr_usd, tenants_activos, tc_venta, fuente")
+      .order("fecha"),
     supabase.rpc("metricas_plataforma"),
+    // Bloque 3: la oración de pauta, la activación de las altas del mes
+    // y los autos que volvieron por un recordatorio este mes.
+    supabase.rpc("embudo_pauta_mes_actual"),
+    supabase.rpc("activacion_por_mes", { p_desde: primeroDelMes, p_hasta: hoy }),
+    supabase.rpc("autos_que_volvieron_plataforma", { p_desde: primeroDelMes, p_hasta: hoy }),
+    // Bloque 4: el alta del primer tenant. Las fotos anteriores a ese día
+    // (una reconstrucción que arrancó antes, una foto de prueba que quedó)
+    // muestran una plataforma sin nadie, y el gráfico del MRR las ignora.
+    supabase.from("lubricentros").select("created_at").order("created_at").limit(1),
   ]);
 
-  const lubricentros = filas ?? [];
-  const catalogo = (planes ?? []) as PlanCompleto[];
+  const resumen = leerResumen(resumenRes.data);
+  const pauta = leerResumenPauta(pautaRes.data);
+  const filaActivacion = ((activacionRes.data ?? []) as unknown as Array<{
+    altas: number; activados: number; en_curso: number;
+  }>)[0];
+  const activacion: ActivacionDelMes = filaActivacion
+    ? {
+        altas: Number(filaActivacion.altas),
+        activados: Number(filaActivacion.activados),
+        en_curso: Number(filaActivacion.en_curso),
+      }
+    : null;
+  const autosVolvieron = Number(volvieronRes.data ?? 0);
 
-  const metricas = (plataforma ?? {}) as {
-    services_mes?: number;
+  const snapshots = snapshotsRes.data ?? [];
+  const serie: PuntoMrr[] = snapshots
+    .filter((s) => s.fecha < hoy)
+    .map((s) => ({
+      fecha: s.fecha,
+      mrrArs: Number(s.mrr_ars),
+      mrrUsd: s.mrr_usd == null ? null : Number(s.mrr_usd),
+      tenantsActivos: Number(s.tenants_activos),
+      tcVenta: s.tc_venta == null ? null : Number(s.tc_venta),
+      fuente: s.fuente === "reconstruido" ? "reconstruido" : "cierre",
+    }));
+  // El punto de hoy, en vivo: el snapshot de hoy recién existe mañana a
+  // las 00:10, y el gráfico tiene que terminar en «hoy».
+  serie.push({
+    fecha: hoy,
+    mrrArs: resumen.mrr_ars,
+    mrrUsd: resumen.mrr_usd,
+    tenantsActivos: resumen.activos,
+    tcVenta: resumen.tc_venta,
+    fuente: "vivo",
+  });
+  // El día argentino del alta del primer tenant (docs/METRICAS.md § 1: el
+  // día de un instante es su fecha calendario en Buenos Aires). Null si
+  // todavía no hay ningún tenant: el gráfico no filtra nada.
+  const primerAlta = primerTenantRes.data?.[0]?.created_at;
+  const primerTenant = primerAlta ? fechaCalendarioAR(new Date(primerAlta)) : null;
+
+  const metricas = (plataformaRes.data ?? {}) as {
+    trabajos_mes?: number;
     acumulado?: number;
-    series?: Partial<Record<Granularidad, PuntoSerie[]>>;
+    series?: Partial<Record<Granularidad, PuntoPulso[]>>;
   };
-  const series: Record<Granularidad, PuntoSerie[]> = {
+  const series: Record<Granularidad, PuntoPulso[]> = {
     dia: metricas.series?.dia ?? [],
     semana: metricas.series?.semana ?? [],
     mes: metricas.series?.mes ?? [],
   };
-  // La franja sale de las filas que ya trajimos: el MRR necesita el precio
-  // del plan y los dos descuentos, y listado_lubricentros() los devuelve.
-  // Una consulta menos y una sola versión de la cadena de descuentos.
-  const totales = calcularTotales(lubricentros);
-
-  const necesitanAtencion = lubricentros.filter((l) => esAtencion(l.atencion));
-  const sinAvisar = necesitanAtencion.filter((l) => !l.contactado).length;
-  const visibles = soloAtencion ? necesitanAtencion : lubricentros;
 
   return (
     <div>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-brand text-h2 font-bold text-ink">Lubricentros</h1>
-        {lubricentros.length > 0 && <BotonAlta />}
-      </div>
+      <h1 className="mb-6 font-brand text-h2 font-bold text-ink">Resumen</h1>
 
-      {lubricentros.length === 0 ? (
-        <EstadoVacio
-          icono={<IconoLubricentro className="size-6" />}
-          titulo="Todavía no hay ningún lubricentro"
-          descripcion="Acá van a aparecer todos los clientes de la plataforma con su suscripción, su actividad del mes y el estado de su owner. Empezá dando de alta el primero."
-        >
-          <BotonAlta etiqueta="+ Dar de alta el primero" />
-        </EstadoVacio>
-      ) : (
-        <>
-          <FranjaTotales
-            totales={totales}
-            servicesMes={metricas.services_mes ?? 0}
-          />
+      <FranjaResumen r={resumen} activacion={activacion} autosVolvieron={autosVolvieron} />
 
-          <Pulso
-            series={series}
-            acumulado={metricas.acumulado ?? 0}
-            granularidadInicial={granularidad}
-          />
+      <LineaPauta p={pauta} />
 
-          <Filtro
-            soloAtencion={soloAtencion}
-            granularidad={granularidad}
-            cuantos={necesitanAtencion.length}
-            sinAvisar={sinAvisar}
-          />
+      <GraficoMrr
+        serie={serie}
+        objetivo={serieObjetivo()}
+        monedaInicial={monedaInicial}
+        primerTenant={primerTenant}
+      />
 
-          {visibles.length === 0 ? (
-            // Sin trabajo pendiente se celebra, no se informa un vacío.
-            <div className="surface-card border-success bg-success-soft px-6 py-9 text-center">
-              <p className="font-brand text-body font-bold text-success">
-                Estás al día
-              </p>
-              <p className="mx-auto mt-1.5 max-w-md text-ui text-ink-60">
-                Ningún trial ni ninguna suscripción vence en los próximos días,
-                y no hay nada vencido sin cobrar.
-              </p>
-            </div>
-          ) : (
-            <TablaLubricentros filas={visibles} planes={catalogo} />
-          )}
-        </>
-      )}
-    </div>
-  );
-}
+      <Pulso
+        series={series}
+        acumulado={metricas.acumulado ?? 0}
+        granularidadInicial={granularidad}
+      />
 
-// Dos enlaces y no un select: el estado queda en la URL, así el filtro se
-// puede compartir y sobrevive al refresh que hace cada aviso registrado.
-function Filtro({
-  soloAtencion,
-  granularidad,
-  cuantos,
-  sinAvisar,
-}: {
-  soloAtencion: boolean;
-  granularidad: Granularidad;
-  cuantos: number;
-  sinAvisar: number;
-}) {
-  const base =
-    "flex h-9 items-center gap-2 rounded-md px-3 text-ui transition-colors";
-
-  // Los dos filtros de la pantalla viven en la misma URL: cambiar uno no
-  // puede pisar el otro. Semanal es el default, así que no se escribe.
-  const sufijoPulso = granularidad === "semana" ? "" : `&pulso=${granularidad}`;
-
-  return (
-    <div className="mb-4 flex flex-wrap items-center gap-2">
-      <Link
-        href={`/fidelli${sufijoPulso ? `?${sufijoPulso.slice(1)}` : ""}`}
-        aria-current={!soloAtencion ? "page" : undefined}
-        className={
-          soloAtencion
-            ? `${base} border border-line bg-base text-ink-60 hover:bg-surface`
-            : `${base} bg-ink font-semibold text-base`
-        }
-      >
-        Todos
-      </Link>
-
-      <Link
-        href={`/fidelli?atencion=1${sufijoPulso}`}
-        aria-current={soloAtencion ? "page" : undefined}
-        className={
-          soloAtencion
-            ? `${base} bg-ink font-semibold text-base`
-            : `${base} border border-line bg-base text-ink-60 hover:bg-surface`
-        }
-      >
-        Necesitan atención
-        <span
-          className={`rounded-sm px-1.5 py-px text-label font-semibold ${
-            cuantos === 0
-              ? "bg-surface text-ink-40"
-              : soloAtencion
-                ? "bg-base text-ink"
-                : "bg-overdue-soft text-overdue"
-          }`}
-        >
-          {cuantos}
-        </span>
-      </Link>
-
-      {sinAvisar > 0 && (
-        <span className="text-ui text-ink-60">
-          {sinAvisar === 1
-            ? "1 sin avisar todavía"
-            : `${sinAvisar} sin avisar todavía`}
-        </span>
-      )}
+      <Alertas r={resumen} />
     </div>
   );
 }

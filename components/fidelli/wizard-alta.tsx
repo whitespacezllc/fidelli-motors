@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { slugificar } from "@/lib/texto";
+import { DOMINIO_SITIO } from "@/lib/seo";
 import {
   ALIAS_FORMATO,
   ALIAS_LARGO_MAXIMO,
@@ -27,6 +28,11 @@ import {
   type ResultadoAlta,
 } from "@/app/fidelli/actions";
 import type { PlanCompleto } from "@/components/fidelli/tipos";
+import {
+  ETIQUETA_ORIGEN,
+  ORIGENES_TENANT,
+  type OrigenTenant,
+} from "@/lib/fidelli/eventos";
 
 const PASOS = ["Marca y slug", "Sucursales y owner", "Plan"] as const;
 
@@ -49,7 +55,7 @@ const SUCURSAL_VACIA: Sucursal = {
 // Lo que dice el campo del slug según lo que contestó la base.
 const VEREDICTO: Record<EstadoSlug, { texto: (s: string) => string; clase: string }> = {
   disponible: {
-    texto: (s) => `Disponible — la landing será fidellimotors.app/${s}`,
+    texto: (s) => `Disponible — la landing será ${DOMINIO_SITIO}/${s}`,
     clase: "text-success",
   },
   ocupado: {
@@ -113,6 +119,11 @@ export function WizardAlta({
   // le pise lo que tipeó medio segundo después.
   const [slugEscrito, setSlugEscrito] = useState<string | null>(null);
   const slug = slugEscrito ?? slugificar(nombre);
+
+  // De dónde vino (docs/METRICAS.md § 1). Obligatorio: sin este dato la
+  // pregunta "cuántos vinieron de Meta" no tiene respuesta, y a un tenant
+  // nuevo se le pregunta una sola vez, acá.
+  const [origen, setOrigen] = useState<OrigenTenant | "">("");
 
   const formatoValido =
     slug.length >= 3 && slug.length <= 60 && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug);
@@ -227,6 +238,7 @@ export function WizardAlta({
     nombre.trim().length > 1 &&
     veredicto === "disponible" &&
     !consultando &&
+    origen !== "" &&
     // El alias solo frena cuando el campo se está mostrando. Y se lo deja
     // pasar vacío a propósito: asignarlo después es una decisión válida
     // —el tenant cobra igual por el camino de la orden— y obligar a
@@ -256,6 +268,7 @@ export function WizardAlta({
       // Con el campo apagado va vacío, y el tenant nace sin alias: sigue
       // cobrando por el alias que se deriva de cada orden, como los 17.
       alias: aliasHabilitado ? alias : "",
+      origen,
     }));
   }
 
@@ -291,7 +304,7 @@ export function WizardAlta({
               </label>
               <div className="flex items-center gap-1.5">
                 <span className="shrink-0 text-body text-ink-40">
-                  fidellimotors.app/
+                  {DOMINIO_SITIO}/
                 </span>
                 <input
                   id="slug"
@@ -316,6 +329,29 @@ export function WizardAlta({
                   : veredicto
                     ? `${veredicto === "disponible" ? "✓" : "×"} ${VEREDICTO[veredicto].texto(slug)}`
                     : "Es la dirección que va impresa en el QR de las calcos."}
+              </p>
+            </div>
+
+            <div>
+              <label htmlFor="origen" className={CLASE_LABEL}>
+                ¿Cómo llegó?
+              </label>
+              <select
+                id="origen"
+                value={origen}
+                onChange={(e) => setOrigen(e.target.value as OrigenTenant | "")}
+                className={CLASE_CAMPO}
+              >
+                <option value="">Elegí de dónde vino</option>
+                {ORIGENES_TENANT.map((o) => (
+                  <option key={o} value={o}>
+                    {ETIQUETA_ORIGEN[o]}
+                  </option>
+                ))}
+              </select>
+              <p className={CLASE_AYUDA}>
+                Es lo que después dice de dónde vienen los clientes. El detalle
+                (quién lo refirió, qué campaña) se carga desde Editar.
               </p>
             </div>
 
@@ -420,7 +456,7 @@ export function WizardAlta({
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-surface/60 px-5 py-4 sm:px-6">
         {paso === 1 ? (
           <Link
-            href="/fidelli"
+            href="/fidelli/lubricentros"
             className="inline-flex min-h-11 items-center px-1 text-ui font-semibold text-ink-60 hover:text-ink"
           >
             Cancelar
@@ -662,10 +698,21 @@ function Listo({
       <p className="mt-1.5 text-body text-ink-60">
         Su landing ya responde en{" "}
         <span className="font-semibold text-ink">
-          fidellimotors.app/{creado.slug}
+          {DOMINIO_SITIO}/{creado.slug}
         </span>
         .
       </p>
+
+      {creado.origen === "fallo" && (
+        <div className="mt-5 rounded-md border border-overdue bg-overdue-soft px-4 py-3.5">
+          <p className="font-semibold text-overdue">El origen no se guardó</p>
+          <p className="mt-1 text-ui text-ink-60">{creado.motivoOrigen}</p>
+          <p className="mt-2 text-ui text-ink-60">
+            El lubricentro está creado. Cargá de dónde vino desde{" "}
+            <span className="font-semibold text-ink">Editar</span>, en el listado.
+          </p>
+        </div>
+      )}
 
       {fallo ? (
         <div className="mt-5 rounded-md border border-overdue bg-overdue-soft px-4 py-3.5">
@@ -695,7 +742,7 @@ function Listo({
       )}
 
       <div className="mt-6">
-        <Link href="/fidelli" className={clasesBoton("primario", "lg")}>
+        <Link href="/fidelli/lubricentros" className={clasesBoton("primario", "lg")}>
           Ir al listado
         </Link>
       </div>

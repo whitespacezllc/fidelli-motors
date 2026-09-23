@@ -5186,3 +5186,3456 @@ begin
   delete from lubricentros where id = v_otro_lub;
 end $$;
 -- <<< R30
+
+
+-- ============================================================
+-- R31 · Los cimientos de las métricas (20260922200000 … 20260922205000)
+--
+-- El bloque MÉTRICAS 1 (docs/METRICAS.md) deja la memoria que el admin no
+-- tenía: tenant_eventos, el tipo de cambio, los snapshots diarios y una
+-- sola definición de "activo" y de la plata. Todo lo de abajo se rompe sin
+-- avisar —los triggers son defensivos a propósito, y un trigger que falla
+-- baja a WARNING y el reset sigue en verde—, así que este bloque CUENTA
+-- eventos y filas, nunca mira las warnings.
+--
+--   a · tenant_eventos es inmutable: UPDATE, DELETE y TRUNCATE fallan.
+--   b · Un pago genera exactamente UN evento `pago`, y el pago queda
+--       registrado aunque el trigger falle (se sabotea el insert del
+--       evento dentro de un savepoint y el pago tiene que sobrevivir).
+--   c · cerrar_dia() es idempotente: la segunda llamada devuelve
+--       'ya cerrado' y no cambia ninguna fila.
+--   d · mrr_plataforma() = Σ mrr_de_tenant(); con módulo pago,
+--       mrr_de_tenant = monto_de_renovacion_en()/meses (mensual y anual);
+--       un exento da 0.
+--   e · es_activo() es false con activo = false y con el reloj en
+--       'suspendido'; true al reactivar.
+--   f · Suspender con motivo deja `suspension` con el motivo y el actor;
+--       reactivar deja `reactivacion`; sin motivo, o con «Otro» sin
+--       detalle, la puerta rechaza.
+--   g · El alta deja `alta` con plan y período; fijar el origen deja
+--       `origen`; el override deja `modulo_activado` con el motivo; el
+--       cambio de plan deja `cambio_plan`.
+--   h · Después del seed: un `alta` por lubricentro, y cada pago tiene
+--       exactamente un evento.
+-- ============================================================
+
+-- >>> R31
+create or replace function r31_sabotaje()
+returns trigger
+language plpgsql
+as $$
+begin
+  raise exception 'sabotaje R31: el insert del evento falla a propósito';
+end;
+$$;
+
+do $$
+declare
+  v_hoy      date := current_date;
+  v_super    uuid;
+  v_plan     uuid;
+  v_lub      uuid;
+  v_lub2     uuid;
+  v_sus      uuid;
+  v_sus2     uuid;
+  v_pago     uuid;
+  v_ev       tenant_eventos;
+  v_l        lubricentros;
+  v_n        integer;
+  v_m        integer;
+  v_ok       boolean;
+  v_res      text;
+  v_esperado numeric;
+  v_suma     numeric;
+  v_venta    numeric;
+  -- Un día del pasado lejano, distinto en cada corrida: los snapshots son
+  -- inmutables y quedan, así que el bloque tiene que poder correr de nuevo
+  -- (scripts/regresion-metricas.sh lo corre en una transacción con
+  -- rollback, pero el reset ya dejó cerrado el día que usó).
+  v_dia      date := date '1990-01-01' + (extract(epoch from clock_timestamp())::bigint % 3650)::integer;
+begin
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  select id into v_plan  from planes where nombre = 'Pro' and not heredado;
+  if v_super is null or v_plan is null then
+    raise exception 'R31 SIN PISO: falta el superadmin o el plan Pro del seed.';
+  end if;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  -- Como `authenticated`, que es el rol con el que escribe el superadmin
+  -- desde PostgREST: los triggers tienen que poder emitir bajo ESE rol. Como
+  -- postgres pasaba todo aunque el trigger no tuviera permiso de escribir.
+  execute 'set local role authenticated';
+
+  -- ---------- g · El alta y el origen ----------
+  select crear_lubricentro('Metricas R31', 'metricas-r27',
+    '[{"nombre":"Casa Central"}]'::jsonb, v_plan, 'mensual', 0) into v_lub;
+
+  -- El alta es un trigger DIFERIDO: dispara al commit, o acá, a mano.
+  set constraints all immediate;
+
+  select count(*) into v_n from tenant_eventos where lubricentro_id = v_lub and tipo = 'alta';
+  if v_n <> 1 then
+    raise exception 'R31g EL ALTA NO DEJÓ EVENTO (% en vez de 1). Sin `alta` no hay altas por mes ni activación: crear_lubricentro() insertó el tenant y el trigger diferido no escribió nada — mirá las WARNING del reset, ahí está el error real.', v_n;
+  end if;
+  select * into v_ev from tenant_eventos where lubricentro_id = v_lub and tipo = 'alta';
+  if v_ev.despues ->> 'plan_id' is distinct from v_plan::text
+     or v_ev.despues ->> 'periodo' is distinct from 'mensual'
+     or v_ev.despues ->> 'slug' is distinct from 'metricas-r27' then
+    raise exception 'R31g: el evento alta no trae el plan y el período de la suscripción (despues = %). El trigger tiene que ser diferido para verla: crear_lubricentro() la inserta DESPUÉS del tenant.', v_ev.despues;
+  end if;
+  if v_ev.actor is distinct from v_super or v_ev.origen_evento <> 'admin' then
+    raise exception 'R31g: el alta quedó con actor % y origen_evento «%»; tenía que ser el superadmin de la sesión y «admin».', v_ev.actor, v_ev.origen_evento;
+  end if;
+
+  perform fijar_origen_tenant(v_lub, 'meta', 'campaña R31');
+  select count(*) into v_n from tenant_eventos where lubricentro_id = v_lub and tipo = 'origen';
+  if v_n <> 1 then
+    raise exception 'R31g: fijar_origen_tenant() no dejó el evento origen (% en vez de 1).', v_n;
+  end if;
+  select * into v_ev from tenant_eventos where lubricentro_id = v_lub and tipo = 'origen';
+  if v_ev.despues ->> 'origen' is distinct from 'meta' or v_ev.despues ->> 'origen_detalle' is distinct from 'campaña R31' then
+    raise exception 'R31g: el evento origen no trae el origen y el detalle (%).', v_ev.despues;
+  end if;
+  -- Volver a fijar el MISMO origen no es un cambio: cero eventos nuevos.
+  perform fijar_origen_tenant(v_lub, 'meta', 'campaña R31');
+  select count(*) into v_n from tenant_eventos where lubricentro_id = v_lub and tipo = 'origen';
+  if v_n <> 1 then
+    raise exception 'R31g: fijar el mismo origen dos veces dejó % eventos. El trigger compara con `is distinct from`: sin cambio no hay evento.', v_n;
+  end if;
+
+  -- ---------- a · Inmutable ----------
+  -- Como postgres, el dueño de la tabla: el candado es contra el script de
+  -- limpieza que corre con ese rol. (A `authenticated` el RLS ya le
+  -- contesta cero filas sin error.)
+  execute 'reset role';
+  v_ok := false;
+  begin
+    update tenant_eventos set motivo = 'x' where id = v_ev.id;
+    v_ok := true;
+  exception when others then
+    if sqlerrm not like '%evento_no_se_edita%' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R31a UN UPDATE SOBRE tenant_eventos PASÓ. La tabla es append-only: sin el candado de edición, un `update … set motivo` reescribe la historia y sigue pareciendo historia.';
+  end if;
+
+  v_ok := false;
+  begin
+    delete from tenant_eventos where id = v_ev.id;
+    v_ok := true;
+  exception when others then
+    if sqlerrm not like '%evento_no_se_borra%' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R31a UN DELETE SOBRE tenant_eventos PASÓ con el tenant vivo. Es la memoria de las bajas y el churn: no se borra mientras el lubricentro exista.';
+  end if;
+
+  v_ok := false;
+  begin
+    truncate tenant_eventos;
+    v_ok := true;
+  exception when others then
+    if sqlerrm not like '%eventos_no_se_vacian%' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R31a UN TRUNCATE SOBRE tenant_eventos PASÓ. Un trigger `before delete for each row` no se despierta con un truncate: hace falta el `for each statement`.';
+  end if;
+
+  execute 'set local role authenticated';
+
+  -- ---------- f · Suspender con motivo ----------
+  v_ok := false;
+  begin
+    perform cambiar_estado_lubricentro(v_lub, false, null, null);
+    v_ok := true;
+  exception when others then
+    if sqlerrm not like '%motivo_vacio%' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R31f: se suspendió un lubricentro SIN motivo. El motivo es lo que separa el churn voluntario del involuntario; sin él la métrica no existe.';
+  end if;
+
+  v_ok := false;
+  begin
+    perform cambiar_estado_lubricentro(v_lub, false, 'otro', '   ');
+    v_ok := true;
+  exception when others then
+    if sqlerrm not like '%detalle_vacio%' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R31f: «Otro» sin detalle pasó. Un «otro» pelado en el historial no le dice nada a nadie seis meses después.';
+  end if;
+
+  perform cambiar_estado_lubricentro(v_lub, false, 'falta_de_pago', null);
+
+  select * into v_l from lubricentros where id = v_lub;
+  if v_l.activo then
+    raise exception 'R31f: cambiar_estado_lubricentro(false) no apagó `activo`. El panel del owner sigue escribiendo.';
+  end if;
+
+  select count(*) into v_n from tenant_eventos where lubricentro_id = v_lub and tipo = 'suspension';
+  if v_n <> 1 then
+    raise exception 'R31f LA SUSPENSIÓN NO DEJÓ EVENTO (% en vez de 1). Sin `suspension` no hay bajas por mes.', v_n;
+  end if;
+  select * into v_ev from tenant_eventos where lubricentro_id = v_lub and tipo = 'suspension';
+  if v_ev.motivo is distinct from 'falta_de_pago' then
+    raise exception 'R31f: el evento suspension quedó con motivo «%» en vez de «falta_de_pago». El GUC app.motivo_evento no llegó del set_config() de la función al trigger.', v_ev.motivo;
+  end if;
+  if v_ev.actor is distinct from v_super then
+    raise exception 'R31f: el evento suspension quedó con actor % en vez del superadmin de la sesión.', v_ev.actor;
+  end if;
+
+  -- ---------- e · es_activo con el interruptor manual ----------
+  if es_activo(v_l) then
+    raise exception 'R31e: es_activo() dio true para un tenant con activo = false. Es LA definición de docs/METRICAS.md § 1 y acaba de fallar en su caso más simple.';
+  end if;
+  if mrr_de_tenant(v_lub) <> 0 then
+    raise exception 'R31d: un tenant suspendido a mano tiene MRR % en vez de 0.', mrr_de_tenant(v_lub);
+  end if;
+
+  perform cambiar_estado_lubricentro(v_lub, true, null, null);
+  select * into v_l from lubricentros where id = v_lub;
+  if not es_activo(v_l) then
+    raise exception 'R31e: reactivado, es_activo() sigue en false.';
+  end if;
+  select count(*) into v_n from tenant_eventos where lubricentro_id = v_lub and tipo = 'reactivacion';
+  if v_n <> 1 then
+    raise exception 'R31f: la reactivación no dejó el evento reactivacion (% en vez de 1).', v_n;
+  end if;
+
+  -- ---------- e · es_activo con el reloj en 'suspendido' ----------
+  -- Adentro del reloj, con el segundo interruptor prendido, con UN pago
+  -- (para no caer en la rama del que nunca pagó) y vencido hace 30 días:
+  -- pasada la gracia de 7, estado_cobranza() da 'suspendido' con activo
+  -- todavía en true. Es exactamente la baja que nadie apagó a mano.
+  -- Con created_at anterior a v_dia: es el tenant que va a aparecer en las
+  -- fotos de la sección c.
+  insert into lubricentros (nombre, slug, cobranza_desde, suspension_automatica, created_at)
+  values ('Reloj R31', 'reloj-r27', v_hoy - 60, true,
+          (v_dia - 10)::timestamp at time zone 'America/Argentina/Buenos_Aires')
+  returning id into v_lub2;
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, inicio, vencimiento)
+  values (v_lub2, v_plan, 'activa', 'mensual', 0, v_hoy - 60, v_hoy - 30) returning id into v_sus2;
+  insert into pagos (lubricentro_id, suscripcion_id, registrado_por, periodo_desde, periodo_hasta, monto, fecha_pago)
+  values (v_lub2, v_sus2, v_super, v_hoy - 60, v_hoy - 30, 49000, v_hoy - 60);
+
+  select * into v_l from lubricentros where id = v_lub2;
+  if reloj_cobranza(v_l) ->> 'estado' is distinct from 'suspendido' then
+    raise exception 'R31e SIN PISO: el tenant de prueba tenía que estar en «suspendido» por reloj y está en «%».', reloj_cobranza(v_l) ->> 'estado';
+  end if;
+  if v_l.activo is distinct from true then
+    raise exception 'R31e SIN PISO: lubricentros.activo tenía que seguir en true (nadie lo apagó a mano).';
+  end if;
+  if es_activo(v_l) then
+    raise exception 'R31e es_activo() DIO TRUE PARA UN TENANT QUE EL RELOJ TIENE EN «suspendido». "Activo" es lubricentros.activo Y el reloj (docs/METRICAS.md § 1): mirando solo la columna, los suspendidos por reloj cuentan como activos y el MRR y el churn mienten.';
+  end if;
+  if mrr_de_tenant(v_lub2) <> 0 then
+    raise exception 'R31d: un tenant suspendido por reloj tiene MRR % en vez de 0.', mrr_de_tenant(v_lub2);
+  end if;
+
+  -- ---------- b · Un pago, un evento; y el pago sobrevive al trigger roto ----------
+  select count(*) into v_n from tenant_eventos where lubricentro_id = v_lub2 and tipo = 'pago';
+  if v_n <> 1 then
+    raise exception 'R31b UN INSERT EN pagos DEJÓ % EVENTOS `pago` (tenía que dejar exactamente 1). El trigger de pagos es lo único que cubre las dos puertas del cobro sin tocarlas.', v_n;
+  end if;
+  select * into v_ev from tenant_eventos where lubricentro_id = v_lub2 and tipo = 'pago';
+  if (v_ev.despues ->> 'monto')::numeric <> 49000 or v_ev.despues ->> 'origen' is distinct from 'manual' then
+    raise exception 'R31b: el evento pago no trae el monto y el origen (%).', v_ev.despues;
+  end if;
+
+  -- El sabotaje: un BEFORE INSERT sobre tenant_eventos que revienta. El
+  -- pago tiene que entrar igual (savepoint) y NO dejar evento. Crear el
+  -- trigger es cosa del dueño de la tabla.
+  execute 'reset role';
+  execute 'create trigger r31_sabotaje before insert on tenant_eventos for each row execute function r31_sabotaje()';
+  begin
+    insert into pagos (lubricentro_id, suscripcion_id, registrado_por, periodo_desde, periodo_hasta, monto, fecha_pago)
+    values (v_lub2, v_sus2, v_super, v_hoy - 29, v_hoy + 1, 49000, v_hoy - 29)
+    returning id into v_pago;
+  exception when others then
+    execute 'drop trigger r31_sabotaje on tenant_eventos';
+    raise exception 'R31b EL TRIGGER ROTO BLOQUEÓ EL PAGO: «%». La instrumentación tiene que ser defensiva (begin … exception when others then raise warning): un fallo al registrar el evento NUNCA puede impedir que se registre un cobro.', sqlerrm;
+  end;
+  execute 'drop trigger r31_sabotaje on tenant_eventos';
+  execute 'set local role authenticated';
+
+  if not exists (select 1 from pagos where id = v_pago) then
+    raise exception 'R31b: el pago no quedó registrado con el trigger roto.';
+  end if;
+  select count(*) into v_n from tenant_eventos where lubricentro_id = v_lub2 and tipo = 'pago';
+  if v_n <> 1 then
+    raise exception 'R31b: con el insert del evento saboteado igual aparecieron % eventos pago (tenía que seguir en 1).', v_n;
+  end if;
+
+  -- ---------- g · El override deja el módulo con su motivo ----------
+  perform fijar_override_plan(v_lub, '{"neumaticos": true}'::jsonb,
+    'Módulo gomería · pago · ' || to_char(v_hoy, 'DD/MM/YYYY') || ' · prueba R31');
+  select count(*) into v_n from tenant_eventos where lubricentro_id = v_lub and tipo = 'modulo_activado';
+  if v_n <> 1 then
+    raise exception 'R31g: prender el módulo no dejó el evento modulo_activado (% en vez de 1).', v_n;
+  end if;
+  select * into v_ev from tenant_eventos where lubricentro_id = v_lub and tipo = 'modulo_activado';
+  -- `is null or`: un motivo null NO matchea el `not like` (da null, no true) y
+  -- el chequeo pasaba en verde sin motivo. Lo vio scripts/regresion-metricas.sh.
+  if v_ev.motivo is null or v_ev.motivo not like 'Módulo gomería · pago · %'
+     or v_ev.despues ->> 'modulo' is distinct from 'neumaticos' then
+    raise exception 'R31g: el evento modulo_activado no trae el motivo del override ni el módulo (motivo «%», despues %). El motivo es la única constancia de si el módulo se cobra.', v_ev.motivo, v_ev.despues;
+  end if;
+
+  -- ---------- d · La plata: una sola cuenta ----------
+  if (monto_de_renovacion_en(v_lub, 'mensual') ->> 'modulo')::numeric <= 0 then
+    raise exception 'R31d SIN PISO: el módulo pago no entra en monto_de_renovacion_en() (modulo_es_pago no lo cobra).';
+  end if;
+  v_esperado := round((monto_de_renovacion_en(v_lub, 'mensual') ->> 'total')::numeric / meses_del_periodo('mensual'), 2);
+  if mrr_de_tenant(v_lub) is distinct from v_esperado then
+    raise exception 'R31d DOS CUENTAS PARA LA MISMA PLATA: mrr_de_tenant() dice % y monto_de_renovacion_en()/meses dice %. El MRR sale de la MISMA función que la pantalla de pago del cliente, con el módulo adentro.', mrr_de_tenant(v_lub), v_esperado;
+  end if;
+  if v_esperado <= (monto_de_renovacion_en(v_lub, 'mensual') ->> 'plan')::numeric then
+    raise exception 'R31d: el MRR con módulo pago (%) no es mayor que el plan solo (%). El módulo se quedó afuera del MRR otra vez.', v_esperado, monto_de_renovacion_en(v_lub, 'mensual') ->> 'plan';
+  end if;
+
+  -- Anual: el total del año, dividido 12. Y el cambio de período deja su evento.
+  select id into v_sus from suscripciones where lubricentro_id = v_lub order by inicio desc, created_at desc limit 1;
+  update suscripciones set periodo = 'anual' where id = v_sus;
+  v_esperado := round((monto_de_renovacion_en(v_lub, 'anual') ->> 'total')::numeric / 12, 2);
+  if mrr_de_tenant(v_lub) is distinct from v_esperado then
+    raise exception 'R31d: con período anual mrr_de_tenant() dice % y el total del año dividido 12 es %. El MRR es el abono MENSUALIZADO: el anual entra dividido 12 y el semestral dividido 6.', mrr_de_tenant(v_lub), v_esperado;
+  end if;
+  select count(*) into v_n from tenant_eventos where lubricentro_id = v_lub and tipo = 'cambio_plan';
+  if v_n <> 1 then
+    raise exception 'R31g: cambiar el período no dejó el evento cambio_plan (% en vez de 1).', v_n;
+  end if;
+
+  -- Exento: activo con MRR 0.
+  update suscripciones set descuento_pct = 100 where id = v_sus;
+  select * into v_l from lubricentros where id = v_lub;
+  if not es_activo(v_l) then
+    raise exception 'R31e: un exento (descuento 100) dejó de ser activo. Los exentos son activos con MRR 0.';
+  end if;
+  if mrr_de_tenant(v_lub) <> 0 then
+    raise exception 'R31d: un exento tiene MRR % en vez de 0.', mrr_de_tenant(v_lub);
+  end if;
+  update suscripciones set descuento_pct = 0, periodo = 'mensual' where id = v_sus;
+
+  -- La suma.
+  select coalesce(sum(mrr_de_tenant(id)), 0) into v_suma from lubricentros;
+  if mrr_plataforma() is distinct from round(v_suma, 2) then
+    raise exception 'R31d: mrr_plataforma() dice % y la suma de mrr_de_tenant() da %.', mrr_plataforma(), v_suma;
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- ---------- c · cerrar_dia: idempotente, y las transiciones del reloj ----------
+  -- Se cierra un día del pasado lejano (v_dia), único por corrida. El
+  -- único tenant que existía ese día es el del reloj (v_lub2, nacido
+  -- diez días antes): la foto tiene que traerlo y a nadie más.
+  select cerrar_dia(v_dia, 1450, 1430, 'prueba R31') into v_res;
+  if v_res is distinct from 'cerrado' then
+    raise exception 'R31c: la primera llamada a cerrar_dia() devolvió «%» en vez de «cerrado».', v_res;
+  end if;
+  select count(*) into v_n from snapshots_diarios where fecha = v_dia;
+  select count(*) into v_m from snapshots_tenant_diarios where fecha = v_dia;
+  if v_n <> 1 then
+    raise exception 'R31c: cerrar_dia() dejó % filas en snapshots_diarios para la fecha (tenía que dejar 1).', v_n;
+  end if;
+  select count(*) into v_esperado from lubricentros
+   where created_at < ((v_dia + 1)::timestamp at time zone 'America/Argentina/Buenos_Aires');
+  if v_m <> v_esperado or v_m <> 1 then
+    raise exception 'R31c: snapshots_tenant_diarios tiene % filas para la fecha, había % tenants ese día y tenía que ser 1 (el del reloj). La foto entra por created_at.', v_m, v_esperado;
+  end if;
+  if (select activo from snapshots_tenant_diarios where fecha = v_dia and lubricentro_id = v_lub2) then
+    raise exception 'R31c: la foto del tenant suspendido por reloj dice activo = true. La foto usa es_activo(), la única definición.';
+  end if;
+  if (select tenants_suspendidos from snapshots_diarios where fecha = v_dia) <> 1
+     or (select mrr_ars from snapshots_diarios where fecha = v_dia) <> 0 then
+    raise exception 'R31c: el agregado del día no cuadra con la foto del tenant (suspendidos = %, mrr = %).',
+      (select tenants_suspendidos from snapshots_diarios where fecha = v_dia),
+      (select mrr_ars from snapshots_diarios where fecha = v_dia);
+  end if;
+  select venta into v_venta from tipo_cambio where fecha = v_dia;
+  if v_venta is distinct from 1450 then
+    raise exception 'R31c: cerrar_dia() no dejó el tipo de cambio del día (venta = %).', v_venta;
+  end if;
+
+  -- La segunda vez: nada.
+  select cerrar_dia(v_dia, 9999, 9999, 'segunda vez') into v_res;
+  if v_res is distinct from 'ya cerrado' then
+    raise exception 'R31c CERRAR DOS VECES EL MISMO DÍA NO DEVOLVIÓ «ya cerrado» (dio «%»). El cron reintenta; sin idempotencia, la segunda corrida pisa o duplica la foto.', v_res;
+  end if;
+  if (select count(*) from snapshots_diarios where fecha = v_dia) <> 1
+     or (select count(*) from snapshots_tenant_diarios where fecha = v_dia) <> 1
+     or (select venta from tipo_cambio where fecha = v_dia) is distinct from 1450 then
+    raise exception 'R31c: la segunda llamada a cerrar_dia() cambió filas (snapshots o tipo de cambio).';
+  end if;
+
+  -- LAS TRANSICIONES. El tenant vuelve a estar al día (vence en 30 días):
+  -- el cierre del día siguiente lo ve pasar de inactivo a activo sin un
+  -- evento manual, y tiene que escribir reactivacion_reloj.
+  update suscripciones set vencimiento = v_hoy + 30 where id = v_sus2;
+  select cerrar_dia(v_dia + 1, 1450, 1430, 'prueba R31') into v_res;
+  if v_res is distinct from 'cerrado' then
+    raise exception 'R31c: el cierre del segundo día devolvió «%».', v_res;
+  end if;
+  select count(*) into v_n from tenant_eventos
+   where lubricentro_id = v_lub2 and tipo = 'reactivacion_reloj';
+  if v_n <> 1 then
+    raise exception 'R31c EL CIERRE NO VIO LA REACTIVACIÓN POR RELOJ (% eventos reactivacion_reloj). Comparar la foto de hoy con la del último día cerrado es lo único que registra las vueltas que nadie hizo a mano.', v_n;
+  end if;
+
+  -- Y al revés: vence de nuevo hace 30 días, nadie lo apagó a mano, y el
+  -- cierre del tercer día escribe suspension_reloj — que es una BAJA del día.
+  update suscripciones set vencimiento = v_hoy - 30 where id = v_sus2;
+  select cerrar_dia(v_dia + 2, 1450, 1430, 'prueba R31') into v_res;
+  select count(*) into v_n from tenant_eventos
+   where lubricentro_id = v_lub2 and tipo = 'suspension_reloj';
+  if v_n <> 1 then
+    raise exception 'R31c EL CIERRE NO VIO LA SUSPENSIÓN POR RELOJ (% eventos suspension_reloj). Sin esto, las bajas involuntarias no existen: el reloj suspende sin dejar rastro.', v_n;
+  end if;
+  select * into v_ev from tenant_eventos where lubricentro_id = v_lub2 and tipo = 'suspension_reloj';
+  if v_ev.origen_evento <> 'sistema' or v_ev.actor is not null
+     or v_ev.despues ->> 'estado_reloj' is distinct from 'suspendido' then
+    raise exception 'R31c: el evento suspension_reloj no es del sistema o no trae el estado del reloj (origen «%», actor %, despues %).', v_ev.origen_evento, v_ev.actor, v_ev.despues;
+  end if;
+  if (select bajas_dia from snapshots_diarios where fecha = v_dia + 2) <> 1 then
+    raise exception 'R31c: la baja por reloj no se contó en bajas_dia del día (%).', (select bajas_dia from snapshots_diarios where fecha = v_dia + 2);
+  end if;
+  -- Mover el vencimiento no es un cambio de plan.
+  select count(*) into v_n from tenant_eventos where lubricentro_id = v_lub2 and tipo = 'cambio_plan';
+  if v_n <> 0 then
+    raise exception 'R31g: mover el vencimiento dejó % eventos cambio_plan. Solo plan, período y descuento son cambio de plan; el ciclo lo cuenta el pago.', v_n;
+  end if;
+
+  -- Y un día que no terminó no se cierra.
+  v_ok := false;
+  begin
+    perform cerrar_dia(v_hoy, 1450, 1430, 'hoy');
+    v_ok := true;
+  exception when others then
+    if sqlerrm not like '%dia_no_terminado%' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R31c: cerrar_dia() cerró HOY. Un día se cierra cuando terminó; una foto de las 15:00 no es un cierre.';
+  end if;
+
+  -- El snapshot también es inmutable.
+  v_ok := false;
+  begin
+    update snapshots_diarios set mrr_ars = 0 where fecha = v_dia;
+    v_ok := true;
+  exception when others then
+    if sqlerrm not like '%snapshot_no_se_edita%' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R31c: un UPDATE sobre snapshots_diarios pasó. Los históricos se leen, no se corrigen.';
+  end if;
+
+  -- ---------- limpieza ----------
+  -- Los eventos y los snapshots de los tenants de prueba se van con el
+  -- cascade; lo demás, a mano, como en los otros bloques.
+  delete from pagos where lubricentro_id in (v_lub, v_lub2);
+  delete from cambios_override_plan where lubricentro_id = v_lub;
+  delete from sucursales where lubricentro_id = v_lub;
+  delete from mensaje_templates where lubricentro_id = v_lub;
+  delete from config_experiencia where lubricentro_id = v_lub;
+  delete from suscripciones where lubricentro_id in (v_lub, v_lub2);
+  delete from lubricentros where id in (v_lub, v_lub2);
+end $$;
+
+drop function r31_sabotaje();
+
+-- ---------- h · Después del seed, la memoria está completa ----------
+-- Fuera del `do` de arriba, con los tenants de prueba ya borrados: queda
+-- lo que dejó el seed. Un `alta` por lubricentro, y cada pago con
+-- exactamente un evento. Es la afirmación que el backfill (20260922205000)
+-- tiene que cumplir en producción: se comprueba contra prod después del
+-- push (docs/METRICAS.md § 5).
+do $$
+declare
+  v_altas   integer;
+  v_lubs    integer;
+  v_sin     integer;
+  v_dobles  integer;
+begin
+  select count(*) into v_altas from tenant_eventos where tipo = 'alta';
+  select count(*) into v_lubs  from lubricentros;
+  if v_altas <> v_lubs then
+    raise exception 'R31h HAY % EVENTOS alta PARA % LUBRICENTROS. Cada tenant tiene exactamente un alta: los del seed por el trigger diferido, los de producción por el backfill.', v_altas, v_lubs;
+  end if;
+
+  select count(*) into v_sin
+    from pagos p
+   where not exists (select 1 from tenant_eventos e where e.tipo = 'pago' and e.despues ->> 'pago_id' = p.id::text);
+  if v_sin <> 0 then
+    raise exception 'R31h HAY % PAGO(S) SIN EVENTO. El trigger de pagos o el backfill dejaron un cobro fuera de la memoria.', v_sin;
+  end if;
+
+  select count(*) into v_dobles
+    from (select e.despues ->> 'pago_id' from tenant_eventos e where e.tipo = 'pago'
+           group by 1 having count(*) > 1) d;
+  if v_dobles <> 0 then
+    raise exception 'R31h HAY % PAGO(S) CON MÁS DE UN EVENTO. El backfill no es idempotente o el trigger emitió dos veces.', v_dobles;
+  end if;
+end $$;
+-- <<< R31
+
+
+-- ============================================================
+-- R32 · LO QUE LEEN EL RESUMEN Y EL LISTADO DE /fidelli (bloque MÉTRICAS 2)
+--
+-- La migración 20260923100000 agrega las lecturas de las pantallas nuevas
+-- al lado de las funciones de siempre. Lo que este bloque sostiene:
+--
+--   a · La guarda: un owner NO lee salud_tenants(), indicadores_tenants(),
+--       trabajos_semanales(), resumen_admin() ni metricas_plataforma()
+--       (42501 antes de tocar nada). Son invoker y el RLS es la segunda
+--       capa, pero la primera es la que explica.
+--   b · La exención del 100% vive en estado_atencion() y en ningún otro
+--       lado: un bonificado con el vencimiento pasado NO tiene la salud en
+--       «cobro vencido»; el mismo tenant sin descuento, sí, y el motivo
+--       dice hace cuánto. Es el caso Brothers Oil (R24), ahora en la salud.
+--   c · Los cortes de actividad: nunca cargó → sin actividad; último
+--       trabajo hace 9 días → sin actividad; hace 5 → actividad baja; hoy →
+--       al día con la cuenta de la semana. Suspendido a mano → sin salud.
+--       Cada uno con su oración.
+--   d · trabajos_semanales(): 12 filas por tenant, las semanas en cero
+--       incluidas; la suma es la cantidad de trabajos DE CUALQUIER TIPO en
+--       la ventana; con tenant filtra; sin tenant trae a todos; el tope de
+--       semanas se respeta.
+--   e · indicadores_tenants(): trabajos_30 cuenta los tres tipos, el MRR es
+--       el de mrr_de_tenant(), activo es es_activo() y el último trabajo es
+--       el último.
+--   f · metricas_plataforma() cuenta trabajos de cualquier tipo: una
+--       mecánica suma uno al mes y a la serie diaria.
+--   g · resumen_admin(): activos = es_activo(); trabajos del mes = la suma
+--       de los tres tipos = las filas no anuladas del mes; el alta de este
+--       tenant cuenta en las altas del mes; sin_origen cuenta; un activo
+--       que dejó de cargar hace 20 días aparece en sin_trabajos con sus
+--       días; cierre_ayer dice si hay snapshot de ayer; el MRR en USD es el
+--       de ARS sobre el tipo de cambio vigente.
+--
+-- Corre como el superadmin del seed bajo el rol `authenticated` (el rol
+-- con el que PostgREST ejecuta estas funciones); los fixtures se escriben
+-- como postgres. Se limpia al final. scripts/regresion-metricas.sh rompe
+-- cada regla y espera ver este bloque en rojo.
+-- ============================================================
+
+-- >>> R32
+do $$
+declare
+  v_hoy     date := current_date;
+  v_super   uuid;
+  v_owner   uuid;
+  v_plan    uuid;
+  v_lub     uuid;
+  v_sus     uuid;
+  v_suc     uuid;
+  v_cli     uuid;
+  v_veh     uuid;
+  v_n       integer;
+  v_m       integer;
+  v_antes   integer;
+  v_despues integer;
+  v_ok      boolean;
+  v_j       jsonb;
+  v_tc      tipo_cambio;
+  r         record;
+begin
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  select u.id into v_owner
+    from usuarios u join lubricentros l on l.id = u.lubricentro_id
+   where l.slug = 'demo' and u.rol = 'owner' limit 1;
+  select id into v_plan from planes where nombre = 'Pro' and not heredado;
+  if v_super is null or v_owner is null or v_plan is null then
+    raise exception 'R32 SIN PISO: falta el superadmin, el owner del demo o el plan Pro del seed.';
+  end if;
+
+  -- ---------- a · La guarda ----------
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  for r in select unnest(array[
+      'select count(*) from salud_tenants()',
+      'select count(*) from indicadores_tenants()',
+      'select count(*) from trabajos_semanales()',
+      'select resumen_admin()',
+      'select metricas_plataforma()']) as consulta
+  loop
+    v_ok := false;
+    begin
+      execute r.consulta;
+      v_ok := true;
+    exception when others then
+      if sqlstate <> '42501' then raise; end if;
+    end;
+    if v_ok then
+      raise exception 'R32a UN OWNER PUDO EJECUTAR «%». Las lecturas del admin son invoker con guarda soy_superadmin(): sin la guarda, el RLS de lubricentros le devuelve su propia fila y la función contesta la salud, el MRR y los trabajos del tenant como si fuera el admin — y la del resumen le cuenta la plataforma entera.', r.consulta;
+    end if;
+  end loop;
+
+  -- De acá en adelante, el superadmin.
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+
+  -- El fixture: un tenant recién nacido (activa, vence mañana, sin trabajos).
+  select crear_lubricentro('Salud R32', 'salud-r32',
+    '[{"nombre":"Centro"}]'::jsonb, v_plan, 'mensual', 0) into v_lub;
+  set constraints all immediate;
+  select s.id into v_sus from suscripciones s where s.lubricentro_id = v_lub
+    order by s.inicio desc, s.created_at desc limit 1;
+  select id into v_suc from sucursales where lubricentro_id = v_lub limit 1;
+
+  -- Un cliente y un auto para poder cargarle trabajos. Como postgres:
+  -- son fixtures, no el camino del producto.
+  execute 'reset role';
+  insert into clientes (lubricentro_id, nombre, telefono)
+  values (v_lub, 'Cliente R32', '3510000000') returning id into v_cli;
+  insert into vehiculos (lubricentro_id, cliente_id, patente, patente_normalizada, marca, modelo)
+  values (v_lub, v_cli, 'AB123CD', 'AB123CD', 'Fiat', 'Uno') returning id into v_veh;
+
+  -- ---------- b · La exención vive en estado_atencion() ----------
+  -- El alta la dejó con inicio = hoy y vencimiento = mañana; para vencerla
+  -- hace 10 días hay que correr el inicio también (CHECK vencimiento_posterior).
+  update suscripciones set descuento_pct = 100, inicio = v_hoy - 40, vencimiento = v_hoy - 10 where id = v_sus;
+  execute 'set local role authenticated';
+
+  select * into r from salud_tenants() where lubricentro_id = v_lub;
+  if r.lubricentro_id is null then
+    raise exception 'R32 SIN PISO: salud_tenants() no devolvió la fila del tenant de prueba.';
+  end if;
+  if r.salud = 'cobro_vencido' then
+    raise exception 'R32b UN BONIFICADO (100%%) CON EL VENCIMIENTO PASADO TIENE LA SALUD EN «cobro_vencido» (motivo: «%»). Quien no paga nada no puede deber nada: la exención vive en estado_atencion() y la salud tiene que preguntarle a ELLA, no mirar la fecha. Es el caso Brothers Oil de R24, otra vez.', r.motivo;
+  end if;
+
+  execute 'reset role';
+  update suscripciones set descuento_pct = 0 where id = v_sus;
+  execute 'set local role authenticated';
+
+  select * into r from salud_tenants() where lubricentro_id = v_lub;
+  if r.salud is distinct from 'cobro_vencido' then
+    raise exception 'R32b: el mismo tenant SIN descuento y vencido hace 10 días tiene la salud en «%» en vez de «cobro_vencido».', r.salud;
+  end if;
+  if r.motivo is distinct from 'venció hace 10 días' then
+    raise exception 'R32b: el motivo del cobro vencido dice «%» y tenía que decir «venció hace 10 días».', r.motivo;
+  end if;
+
+  -- Al día con la plata: de acá en adelante manda la actividad.
+  execute 'reset role';
+  update suscripciones set vencimiento = v_hoy + 20 where id = v_sus;
+  execute 'set local role authenticated';
+
+  -- ---------- c · Los cortes de actividad ----------
+  select * into r from salud_tenants() where lubricentro_id = v_lub;
+  if r.salud is distinct from 'sin_actividad' or r.motivo is distinct from 'nunca cargó un trabajo' or r.ultimo_trabajo is not null then
+    raise exception 'R32c: sin ningún trabajo la salud dio «%» con motivo «%» (tenía que ser sin_actividad · «nunca cargó un trabajo»).', r.salud, r.motivo;
+  end if;
+
+  execute 'reset role';
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha,
+                        kilometros, aceite_tipo, prox_service_km)
+  values (v_lub, v_suc, v_veh, v_super, 'service', v_hoy - 9, 50000, '10W40', 60000);
+  execute 'set local role authenticated';
+
+  select * into r from salud_tenants() where lubricentro_id = v_lub;
+  if r.salud is distinct from 'sin_actividad' or r.motivo is distinct from 'sin trabajos hace 9 días' then
+    raise exception 'R32c: con el último trabajo hace 9 días la salud dio «%» · «%» (tenía que ser sin_actividad · «sin trabajos hace 9 días»). El corte de actividad baja es 7.', r.salud, r.motivo;
+  end if;
+
+  -- Una MECÁNICA hace 5 días: cuenta como trabajo (docs/METRICAS.md § 1).
+  execute 'reset role';
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha,
+                        kilometros, trabajo_descripcion)
+  values (v_lub, v_suc, v_veh, v_super, 'mecanica', v_hoy - 5, 51000, 'Cambio de pastillas de freno');
+  execute 'set local role authenticated';
+
+  select * into r from salud_tenants() where lubricentro_id = v_lub;
+  if r.salud is distinct from 'actividad_baja' or r.motivo is distinct from 'último trabajo hace 5 días' then
+    raise exception 'R32c: con una mecánica hace 5 días la salud dio «%» · «%» (tenía que ser actividad_baja · «último trabajo hace 5 días»). O la mecánica no cuenta como trabajo, o el corte de «al día» no es 3.', r.salud, r.motivo;
+  end if;
+
+  execute 'reset role';
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha,
+                        kilometros, aceite_tipo, prox_service_km)
+  values (v_lub, v_suc, v_veh, v_super, 'service', v_hoy, 52000, '10W40', 62000);
+  execute 'set local role authenticated';
+
+  select * into r from salud_tenants() where lubricentro_id = v_lub;
+  if r.salud is distinct from 'al_dia' or r.motivo is distinct from '2 trabajos en 7 días' or r.ultimo_trabajo is distinct from v_hoy then
+    raise exception 'R32c: con un trabajo hoy la salud dio «%» · «%» · último % (tenía que ser al_dia · «2 trabajos en 7 días» · hoy: el de hace 9 días queda afuera de la semana).', r.salud, r.motivo, r.ultimo_trabajo;
+  end if;
+
+  -- Suspendido a mano no tiene salud: no es trabajo de hoy.
+  perform cambiar_estado_lubricentro(v_lub, false, 'pedido_del_cliente', null);
+  select * into r from salud_tenants() where lubricentro_id = v_lub;
+  if r.salud is not null or r.motivo is not null then
+    raise exception 'R32c: un tenant suspendido a mano tiene salud «%». La columna de estado ya dice «Suspendido»; la salud es para los que están operando.', r.salud;
+  end if;
+  perform cambiar_estado_lubricentro(v_lub, true, null, null);
+
+  -- ---------- d · trabajos_semanales ----------
+  select count(*), coalesce(sum(cantidad), 0) into v_n, v_m from trabajos_semanales(v_lub, 12);
+  if v_n <> 12 then
+    raise exception 'R32d trabajos_semanales(tenant, 12) DEVOLVIÓ % FILAS (tenía que devolver 12, las semanas en cero incluidas). El sparkline no rellena huecos: los espera de la base.', v_n;
+  end if;
+  if v_m <> 3 then
+    raise exception 'R32d: la suma de las 12 semanas es % y los trabajos de la ventana son 3 (un service hace 9 días, una mecánica hace 5 y un service hoy). O falta un tipo, o se cae una semana.', v_m;
+  end if;
+  select count(*) into v_n from trabajos_semanales(v_lub, 12) where cantidad > 0;
+  if v_n < 1 or v_n > 3 then
+    raise exception 'R32d: los 3 trabajos cayeron en % semanas con cantidad > 0 (esperaba entre 1 y 3).', v_n;
+  end if;
+  select count(*) into v_n from trabajos_semanales(null, 12);
+  if v_n <> 12 * (select count(*) from lubricentros) then
+    raise exception 'R32d: sin tenant, trabajos_semanales() devolvió % filas para % lubricentros (tenía que ser 12 por tenant).', v_n, (select count(*) from lubricentros);
+  end if;
+  v_ok := false;
+  begin
+    perform count(*) from trabajos_semanales(null, 200);
+    v_ok := true;
+  exception when others then
+    if sqlerrm not like '%semanas_fuera_de_rango%' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R32d: trabajos_semanales() aceptó 200 semanas. El tope es 104.';
+  end if;
+
+  -- ---------- e · indicadores_tenants ----------
+  select * into r from indicadores_tenants() where lubricentro_id = v_lub;
+  if r.lubricentro_id is null then
+    raise exception 'R32 SIN PISO: indicadores_tenants() no devolvió la fila del tenant de prueba.';
+  end if;
+  if r.trabajos_30 <> 3 then
+    raise exception 'R32e trabajos_30 = % PARA 3 TRABAJOS EN 30 DÍAS (service hace 9, mecánica hace 5, service hoy). O la ventana no es de 30 días, o un tipo no cuenta.', r.trabajos_30;
+  end if;
+  if r.mrr_ars is distinct from mrr_de_tenant(v_lub) or r.mrr_ars <= 0 then
+    raise exception 'R32e: el MRR de la fila es % y mrr_de_tenant() dice %. La tabla tiene que mostrar EL MISMO número que el snapshot y el resumen: sale de mrr_de_tenant(), no de otra cuenta.', r.mrr_ars, mrr_de_tenant(v_lub);
+  end if;
+  if not r.es_activo or r.exento then
+    raise exception 'R32e: un tenant activo, con reloj al día y sin descuento salió con es_activo = % y exento = %.', r.es_activo, r.exento;
+  end if;
+  if r.ultimo_trabajo is distinct from v_hoy then
+    raise exception 'R32e: ultimo_trabajo = % con un trabajo cargado hoy.', r.ultimo_trabajo;
+  end if;
+  if r.estado_reloj is distinct from (select reloj_cobranza(l) ->> 'estado' from lubricentros l where l.id = v_lub) then
+    raise exception 'R32e: estado_reloj «%» no coincide con reloj_cobranza().', r.estado_reloj;
+  end if;
+
+  -- ---------- f · metricas_plataforma cuenta todos los tipos ----------
+  v_j := metricas_plataforma();
+  v_antes := (v_j ->> 'trabajos_mes')::integer;
+  v_m := ((v_j -> 'series' -> 'dia') -> (jsonb_array_length(v_j -> 'series' -> 'dia') - 1) ->> 'cantidad')::integer;
+  if v_j -> 'series' -> 'dia' -> (jsonb_array_length(v_j -> 'series' -> 'dia') - 1) ->> 'inicio' is distinct from v_hoy::text then
+    raise exception 'R32 SIN PISO: el último punto de la serie diaria no es hoy (%).', v_j -> 'series' -> 'dia';
+  end if;
+
+  execute 'reset role';
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha,
+                        kilometros, trabajo_descripcion)
+  values (v_lub, v_suc, v_veh, v_super, 'mecanica', v_hoy, 52100, 'Cambio de correa de distribución');
+  execute 'set local role authenticated';
+
+  v_j := metricas_plataforma();
+  v_despues := (v_j ->> 'trabajos_mes')::integer;
+  if v_despues <> v_antes + 1 then
+    raise exception 'R32f UNA MECÁNICA NO SUMÓ EN trabajos_mes (% → %). metricas_plataforma() tiene que contar trabajos DE CUALQUIER TIPO (docs/METRICAS.md § 1): con el filtro tipo = ''service'' de vuelta, el Pulso vuelve a mentir.', v_antes, v_despues;
+  end if;
+  v_n := ((v_j -> 'series' -> 'dia') -> (jsonb_array_length(v_j -> 'series' -> 'dia') - 1) ->> 'cantidad')::integer;
+  if v_n <> v_m + 1 then
+    raise exception 'R32f: la mecánica de hoy no sumó en el último punto de la serie diaria (% → %).', v_m, v_n;
+  end if;
+  if v_j ? 'services_mes' then
+    raise exception 'R32f: metricas_plataforma() sigue devolviendo la clave vieja `services_mes`. El contrato nuevo es `trabajos_mes`.';
+  end if;
+
+  -- ---------- g · resumen_admin ----------
+  v_j := resumen_admin();
+
+  if (v_j ->> 'activos')::integer <> (select count(*) from lubricentros l where es_activo(l)) then
+    raise exception 'R32g: activos = % y es_activo() cuenta %. Es LA definición de docs/METRICAS.md § 1; el resumen no tiene otra.', v_j ->> 'activos', (select count(*) from lubricentros l where es_activo(l));
+  end if;
+  if (v_j ->> 'trabajos_mes')::integer
+     <> (v_j ->> 'trabajos_service')::integer + (v_j ->> 'trabajos_mecanica')::integer + (v_j ->> 'trabajos_neumaticos')::integer then
+    raise exception 'R32g TRABAJOS DEL MES (%) NO ES LA SUMA DE LOS TRES TIPOS (% + % + %). El número grande cuenta cualquier tipo y el desglose lo explica: si no cierran, uno de los dos miente.',
+      v_j ->> 'trabajos_mes', v_j ->> 'trabajos_service', v_j ->> 'trabajos_mecanica', v_j ->> 'trabajos_neumaticos';
+  end if;
+  if (v_j ->> 'trabajos_mes')::integer
+     <> (select count(*) from services where not anulado and fecha >= date_trunc('month', current_date)) then
+    raise exception 'R32g: trabajos_mes = % y las filas no anuladas del mes son %.', v_j ->> 'trabajos_mes', (select count(*) from services where not anulado and fecha >= date_trunc('month', current_date));
+  end if;
+  if (v_j ->> 'altas_mes')::integer < 1 then
+    raise exception 'R32g: el alta de hoy no cuenta en altas_mes (%).', v_j ->> 'altas_mes';
+  end if;
+  if (v_j ->> 'sin_origen')::integer <> (select count(*) from lubricentros where origen is null) then
+    raise exception 'R32g: sin_origen = % y los lubricentros sin origen son %.', v_j ->> 'sin_origen', (select count(*) from lubricentros where origen is null);
+  end if;
+  if (v_j ->> 'cierre_ayer')::boolean is distinct from exists (select 1 from snapshots_diarios where fecha = v_hoy - 1) then
+    raise exception 'R32g: cierre_ayer = % y el snapshot de ayer %.', v_j ->> 'cierre_ayer',
+      case when exists (select 1 from snapshots_diarios where fecha = v_hoy - 1) then 'existe' else 'no existe' end;
+  end if;
+  v_tc := tc_vigente(v_hoy);
+  if v_tc.venta is not null and (v_j ->> 'mrr_usd')::numeric is distinct from round((v_j ->> 'mrr_ars')::numeric / v_tc.venta, 2) then
+    raise exception 'R32g: mrr_usd = % con mrr_ars = % y venta = %.', v_j ->> 'mrr_usd', v_j ->> 'mrr_ars', v_tc.venta;
+  end if;
+  if v_tc.venta is null and v_j ->> 'mrr_usd' is not null then
+    raise exception 'R32g: sin tipo de cambio vigente el MRR en USD tiene que ser null, no %. Nunca se inventa un valor.', v_j ->> 'mrr_usd';
+  end if;
+  -- Con un trabajo hoy, el tenant no está en sin_trabajos.
+  if exists (select 1 from jsonb_array_elements(v_j -> 'sin_trabajos') e where e ->> 'id' = v_lub::text) then
+    raise exception 'R32g: un tenant que cargó un trabajo HOY aparece en sin_trabajos.';
+  end if;
+
+  -- Todo lo que cargó pasa a hace 20 días: entra en sin_trabajos con sus días.
+  execute 'reset role';
+  update services set fecha = v_hoy - 20 where lubricentro_id = v_lub;
+  execute 'set local role authenticated';
+  v_j := resumen_admin();
+  select (e ->> 'dias')::integer into v_n
+    from jsonb_array_elements(v_j -> 'sin_trabajos') e where e ->> 'id' = v_lub::text;
+  if v_n is distinct from 20 then
+    raise exception 'R32g UN ACTIVO SIN TRABAJOS HACE 20 DÍAS NO APARECE EN sin_trabajos (o aparece con % días). Es la alerta «<nombre> no carga trabajos hace N días» del Resumen.', v_n;
+  end if;
+  select * into r from salud_tenants() where lubricentro_id = v_lub;
+  if r.salud is distinct from 'sin_actividad' or r.motivo is distinct from 'sin trabajos hace 20 días' then
+    raise exception 'R32c: con todo hace 20 días la salud dio «%» · «%».', r.salud, r.motivo;
+  end if;
+
+  -- ---------- limpieza ----------
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+  delete from services where lubricentro_id = v_lub;
+  delete from vehiculos where lubricentro_id = v_lub;
+  delete from clientes where lubricentro_id = v_lub;
+  delete from cambios_override_plan where lubricentro_id = v_lub;
+  delete from sucursales where lubricentro_id = v_lub;
+  delete from mensaje_templates where lubricentro_id = v_lub;
+  delete from config_experiencia where lubricentro_id = v_lub;
+  delete from suscripciones where lubricentro_id = v_lub;
+  delete from lubricentros where id = v_lub;
+end $$;
+-- <<< R32
+
+
+-- ============================================================
+-- R33 · PAUTA, ACTIVACIÓN, USO Y CALCOS (bloque MÉTRICAS 3)
+--
+-- Las migraciones 20260924100000 a 20260924104000. Lo que este bloque
+-- sostiene:
+--
+--   a · La guarda: un owner no registra contactos, no ve el embudo, no
+--       registra calcos ni lee la activación (42501), y el RLS le devuelve
+--       cero contactos.
+--   b · Cierre y pérdida son excluyentes (el CHECK), y marcar perdido un
+--       contacto cerrado se rechaza. El origen de Meta nace en WhatsApp si
+--       no se dijo; un contacto de Google no lleva origen.
+--   c · marcar_cierre() fija el origen del tenant SOLO si estaba vacío, con
+--       el canal (meta → meta, google → google) y deja el evento `origen`;
+--       a un tenant que ya tenía origen no lo toca ni le deja evento.
+--   d · embudo_pauta() cuenta POR COHORTE: un contacto de la semana 1
+--       cerrado en la semana 3 es un cierre de la semana 1 (y de su tasa y
+--       su ciclo), mientras que cierres_periodo, el gasto y el CAC van por
+--       el período calendario: la semana 3 muestra CAC = 25 con 1 cierre.
+--   e · gasto_pauta rechaza una semana que no sea lunes, por la función y
+--       por el CHECK.
+--   f · pedidos_calcos rechaza UPDATE, DELETE y TRUNCATE.
+--   g · registrar_pedido_calcos() deja calcos_entregadas igual a la suma,
+--       emite el evento `calcos` y exige el monto si se cobraron.
+--   h · Tras el seed, sum(pedidos_calcos.cantidad) = calcos_entregadas para
+--       todos, y el backfill es idempotente.
+--   i · activacion_tenant() marca activado exactamente en el trabajo 20 del
+--       día 7 y no en el día 8; dice «día 3 de 7» en curso; indicadores_tenants()
+--       trae activado y dias_alta.
+--   j · metricas_plataforma(): en cada punto, service + mecanica +
+--       neumaticos = cantidad.
+--   k · uso_tenant() y autos_que_volvieron(): un vehículo con un
+--       recordatorio antes del trabajo cuenta como auto que volvió.
+--   l · El alta deja `estado` en el evento.
+--
+-- Corre como el superadmin del seed bajo `authenticated`; los fixtures se
+-- escriben como postgres. Limpia al final. scripts/regresion-metricas.sh
+-- rompe cada regla y espera ver este bloque en rojo.
+-- ============================================================
+
+-- >>> R33
+-- Un tenant de prueba con su sucursal, un cliente y un auto, con la fecha
+-- de alta que se le pida. Se borra al final del bloque.
+create or replace function r33_crear_tenant(p_nombre text, p_slug text, p_alta timestamptz)
+returns table (lub uuid, suc uuid, veh uuid)
+language plpgsql
+as $$
+declare
+  v_lub uuid; v_suc uuid; v_cli uuid; v_veh uuid; v_pat text;
+begin
+  insert into lubricentros (nombre, slug, created_at) values (p_nombre, p_slug, p_alta) returning id into v_lub;
+  insert into sucursales (lubricentro_id, nombre) values (v_lub, 'Centro') returning id into v_suc;
+  insert into clientes (lubricentro_id, nombre, telefono) values (v_lub, 'Cliente R33', '3510000000') returning id into v_cli;
+  v_pat := 'AC' || lpad((floor(random() * 900) + 100)::text, 3, '0') || 'DR';
+  insert into vehiculos (lubricentro_id, cliente_id, patente, patente_normalizada, marca, modelo)
+  values (v_lub, v_cli, v_pat, v_pat, 'Ford', 'Ranger') returning id into v_veh;
+  return query select v_lub, v_suc, v_veh;
+end;
+$$;
+
+do $$
+declare
+  v_hoy      date := current_date;
+  v_super    uuid;
+  v_owner    uuid;
+  v_plan     uuid;
+  v_lub_a    uuid;   -- sin origen, va a cerrar un contacto de Meta
+  v_lub_b    uuid;   -- con origen 'referido': el cierre no lo toca
+  v_lub_c    uuid;   -- sin origen, contacto de Google
+  v_t1       uuid;   -- activación: día 7 en curso, el trabajo 20 activa
+  v_t2       uuid;   -- activación: 19 adentro y el 20 en el día 8
+  v_t3       uuid;   -- activación: 3 días de alta, en curso
+  v_t4       uuid;   -- alta por crear_lubricentro: el evento con estado
+  v_suc      uuid;
+  v_veh      uuid;
+  v_c1       uuid;   -- contacto Meta, semana 1, cierra en la semana 3
+  v_c2       uuid;   -- contacto Meta, semana 1, demo, queda abierto
+  v_c3       uuid;   -- contacto Google, semana 3, perdido
+  v_c4       uuid;   -- contacto Google, cierra en el tenant C
+  v_w1       date := (date_trunc('week', current_date) - interval '3 weeks')::date;
+  v_w3       date;
+  v_n        integer;
+  v_m        integer;
+  v_ok       boolean;
+  v_j        jsonb;
+  v_ev       tenant_eventos;
+  r          record;
+  i          integer;
+begin
+  v_w3 := v_w1 + 14;
+
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  select u.id into v_owner
+    from usuarios u join lubricentros l on l.id = u.lubricentro_id
+   where l.slug = 'demo' and u.rol = 'owner' limit 1;
+  select id into v_plan from planes where nombre = 'Pro' and not heredado;
+  if v_super is null or v_owner is null or v_plan is null then
+    raise exception 'R33 SIN PISO: falta el superadmin, el owner del demo o el plan Pro del seed.';
+  end if;
+
+  -- ---------- Los fixtures, como postgres ----------
+  select lub into v_lub_a from r33_crear_tenant('Pauta A R33', 'pauta-a-r33', now() - interval '20 days');
+  select lub into v_lub_b from r33_crear_tenant('Pauta B R33', 'pauta-b-r33', now() - interval '20 days');
+  select lub into v_lub_c from r33_crear_tenant('Pauta C R33', 'pauta-c-r33', now() - interval '20 days');
+
+  -- T1: alta hace 6 días y 23 horas (día 7 en curso). 19 trabajos adentro.
+  select lub, suc, veh into v_t1, v_suc, v_veh from r33_crear_tenant('Activa T1 R33', 'activa-t1-r33', now() - interval '6 days 23 hours');
+  for i in 1..19 loop
+    insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, created_at,
+                          kilometros, aceite_tipo, prox_service_km)
+    values (v_t1, v_suc, v_veh, v_super, 'service', (now() - interval '6 days 23 hours' + (i || ' hours')::interval)::date,
+            now() - interval '6 days 23 hours' + (i || ' hours')::interval, 1000 + i, '10W40', 10000);
+  end loop;
+  -- Un recordatorio para el auto de T1, antes de los trabajos: es un auto
+  -- que volvió.
+  insert into contactos (lubricentro_id, vehiculo_id, usuario_id, estado, canal, created_at)
+  values (v_t1, v_veh, v_super, 'proximo', 'whatsapp', now() - interval '6 days 23 hours 30 minutes');
+
+  -- T2: alta hace 10 días. 19 trabajos adentro y el vigésimo en el DÍA 8.
+  select lub, suc, veh into v_t2, v_suc, v_veh from r33_crear_tenant('Activa T2 R33', 'activa-t2-r33', now() - interval '10 days');
+  for i in 1..19 loop
+    insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, created_at,
+                          kilometros, trabajo_descripcion)
+    values (v_t2, v_suc, v_veh, v_super, 'mecanica', (now() - interval '10 days' + (i || ' hours')::interval)::date,
+            now() - interval '10 days' + (i || ' hours')::interval, 2000 + i, 'Cambio de pastillas de freno');
+  end loop;
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, created_at,
+                        kilometros, aceite_tipo, prox_service_km)
+  values (v_t2, v_suc, v_veh, v_super, 'service', (now() - interval '10 days' + interval '7 days 1 hour')::date,
+          now() - interval '10 days' + interval '7 days 1 hour', 2100, '10W40', 12000);
+
+  -- T3: alta hace 2 días y 5 horas: día 3 de 7, en curso, sin trabajos.
+  select lub into v_t3 from r33_crear_tenant('Activa T3 R33', 'activa-t3-r33', now() - interval '2 days 5 hours');
+
+  -- B ya tiene origen: lo fija la puerta del bloque 1, como superadmin.
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  perform fijar_origen_tenant(v_lub_b, 'referido', 'lo trajo Fassetta');
+
+  -- ---------- a · La guarda ----------
+  -- Primero un contacto de verdad, para que el RLS tenga algo que esconder.
+  v_c1 := registrar_contacto_pauta(v_w1 + 1, 'meta', null, ' 351 555 0101 ');
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+
+  select count(*) into v_n from contactos_pauta;
+  if v_n <> 0 then
+    raise exception 'R33a UN OWNER LEE % CONTACTOS DE PAUTA. La tabla es solo superadmin: el RLS tiene que devolverle cero filas.', v_n;
+  end if;
+  for r in select unnest(array[
+      'select registrar_contacto_pauta(current_date, ''meta'', null, null)',
+      'select count(*) from embudo_pauta(current_date - 30, current_date, ''semana'')',
+      'select embudo_pauta_mes_actual()',
+      'select registrar_pedido_calcos(''' || v_lub_a || ''', current_date, 10, true, null, null)',
+      'select count(*) from activacion_tenant(''' || v_lub_a || ''')',
+      'select uso_tenant(''' || v_lub_a || ''')',
+      'select autos_que_volvieron_plataforma(current_date - 30, current_date)']) as consulta
+  loop
+    v_ok := false;
+    begin
+      execute r.consulta;
+      v_ok := true;
+    exception when others then
+      if sqlstate <> '42501' then raise; end if;
+    end;
+    if v_ok then
+      raise exception 'R33a UN OWNER PUDO EJECUTAR «%». Las puertas y las lecturas del bloque 3 son solo superadmin.', r.consulta;
+    end if;
+  end loop;
+
+  -- De acá en adelante, el superadmin.
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+
+  -- ---------- b · El contacto, sus defaults y los excluyentes ----------
+  select * into r from contactos_pauta where id = v_c1;
+  if r.origen is distinct from 'whatsapp' or r.telefono is distinct from '351 555 0101' or r.canal <> 'meta' then
+    raise exception 'R33b: el contacto de Meta sin origen quedó con origen «%» y teléfono «%» (tenía que ser whatsapp y el teléfono sin espacios alrededor).', r.origen, r.telefono;
+  end if;
+
+  v_c2 := registrar_contacto_pauta(v_w1 + 2, 'meta', 'instagram', null);
+  v_c3 := registrar_contacto_pauta(v_w3, 'google', 'instagram', null);
+  v_c4 := registrar_contacto_pauta(v_w3 + 1, 'google', null, null);
+  select * into r from contactos_pauta where id = v_c3;
+  if r.origen is not null then
+    raise exception 'R33b: un contacto de Google quedó con origen «%». El origen es de Meta solo.', r.origen;
+  end if;
+
+  v_ok := false;
+  begin
+    perform registrar_contacto_pauta(v_hoy + 1, 'meta', null, null);
+    v_ok := true;
+  exception when others then
+    if sqlerrm not like '%fecha_futura%' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R33b: se registró un contacto con fecha de mañana.';
+  end if;
+
+  -- Cerrado Y perdido a la vez: el CHECK lo rechaza aunque venga por UPDATE
+  -- directo (el superadmin tiene update por RLS).
+  v_ok := false;
+  begin
+    update contactos_pauta
+       set cierre_at = v_hoy, lubricentro_id = v_lub_a, perdida_at = v_hoy
+     where id = v_c1;
+    v_ok := true;
+  exception when others then
+    if sqlstate <> '23514' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R33b UN CONTACTO QUEDÓ CERRADO Y PERDIDO A LA VEZ. El CHECK cierre_o_perdida no rige: la tasa de cierre y la de pérdida se pisan.';
+  end if;
+
+  -- ---------- c · El cierre fija el origen solo si estaba vacío ----------
+  perform marcar_demo(v_c1, v_w1 + 3);
+  perform marcar_cierre(v_c1, v_w3 + 2, v_lub_a);
+
+  select * into r from lubricentros where id = v_lub_a;
+  if r.origen is distinct from 'meta' or r.origen_detalle is distinct from ('contacto de pauta del ' || to_char(v_w1 + 1, 'DD/MM/YYYY')) then
+    raise exception 'R33c EL CIERRE NO FIJÓ EL ORIGEN DEL TENANT (origen «%», detalle «%»). docs/METRICAS.md § 1 «Cierre»: con el origen vacío, el canal del contacto pasa a ser el origen.', r.origen, r.origen_detalle;
+  end if;
+  select count(*) into v_n from tenant_eventos where lubricentro_id = v_lub_a and tipo = 'origen';
+  if v_n <> 1 then
+    raise exception 'R33c: el cierre dejó % eventos origen (tenía que dejar 1, por el trigger de lubricentros).', v_n;
+  end if;
+
+  -- B ya tenía origen: ni se toca ni deja evento nuevo.
+  select count(*) into v_m from tenant_eventos where lubricentro_id = v_lub_b and tipo = 'origen';
+  perform marcar_cierre(v_c2, v_hoy, v_lub_b);
+  select * into r from lubricentros where id = v_lub_b;
+  if r.origen is distinct from 'referido' or r.origen_detalle is distinct from 'lo trajo Fassetta' then
+    raise exception 'R33c EL CIERRE PISÓ UN ORIGEN QUE YA ESTABA CARGADO (ahora «%» · «%»). Se fija SOLO si estaba vacío: lo que alguien cargó a mano vale más que la inferencia.', r.origen, r.origen_detalle;
+  end if;
+  select count(*) into v_n from tenant_eventos where lubricentro_id = v_lub_b and tipo = 'origen';
+  if v_n <> v_m then
+    raise exception 'R33c: el cierre sobre un tenant con origen dejó un evento origen de más (% → %).', v_m, v_n;
+  end if;
+  -- y se reabre, para que c2 quede abierto con demo para la cohorte.
+  perform reabrir_contacto_pauta(v_c2);
+  perform marcar_demo(v_c2, v_w1 + 3);
+  select * into r from contactos_pauta where id = v_c2;
+  if r.cierre_at is not null or r.lubricentro_id is not null or r.demo_at is distinct from (v_w1 + 3) then
+    raise exception 'R33c: reabrir no dejó el contacto abierto con su demo (cierre %, tenant %, demo %).', r.cierre_at, r.lubricentro_id, r.demo_at;
+  end if;
+
+  -- Google → google. Cierra el viernes de la semana 3: cuenta en el CAC de esa semana.
+  perform marcar_cierre(v_c4, v_w3 + 4, v_lub_c);
+  select origen into r from lubricentros where id = v_lub_c;
+  if r.origen is distinct from 'google' then
+    raise exception 'R33c: un cierre de Google dejó el origen en «%» (tenía que ser google, 20260924100000).', r.origen;
+  end if;
+
+  -- Perder un contacto cerrado se rechaza.
+  v_ok := false;
+  begin
+    perform marcar_perdida(v_c1, v_hoy, 'precio');
+    v_ok := true;
+  exception when others then
+    if sqlerrm not like '%contacto_cerrado%' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R33b: se marcó perdido un contacto que ya había cerrado.';
+  end if;
+  perform marcar_perdida(v_c3, v_w3 + 3, 'no_responde');
+
+  -- ---------- d · El embudo por cohorte ----------
+  perform fijar_gasto_pauta(v_w3, 'meta', 25, 'R33');
+
+  select * into r from embudo_pauta(v_w1, v_w3 + 6, 'semana') e where e.periodo = v_w1;
+  if r.periodo is null then
+    raise exception 'R33d SIN PISO: el embudo no devolvió la semana %.', v_w1;
+  end if;
+  if r.contactos <> 2 or r.cierres <> 1 or r.demos <> 2 or r.abiertos <> 1 then
+    raise exception 'R33d EL EMBUDO NO CUENTA POR COHORTE: la semana % tiene contactos=%, demos=%, cierres=%, abiertos=% (esperaba 2, 2, 1, 1). El contacto que escribió en la semana 1 y cerró en la 3 es un cierre DE LA SEMANA 1.', v_w1, r.contactos, r.demos, r.cierres, r.abiertos;
+  end if;
+  if r.tasa_cierre is distinct from 0.5 or r.ciclo_mediana_dias is distinct from 15.0 then
+    raise exception 'R33d: la semana 1 tiene tasa_cierre % y ciclo % (esperaba 0.5 y 15 días).', r.tasa_cierre, r.ciclo_mediana_dias;
+  end if;
+  if r.cierres_periodo <> 0 or r.cac_usd is not null then
+    raise exception 'R33d: la semana 1 tiene cierres_periodo=% y cac=% (nadie cerró ESA semana y no hubo gasto).', r.cierres_periodo, r.cac_usd;
+  end if;
+
+  select * into r from embudo_pauta(v_w1, v_w3 + 6, 'semana') e where e.periodo = v_w3;
+  if r.contactos <> 2 or r.cierres <> 1 or r.perdidos <> 1 then
+    raise exception 'R33d: la semana 3 tiene contactos=%, cierres=%, perdidos=% (esperaba 2, 1 (c4, cohorte), 1).', r.contactos, r.cierres, r.perdidos;
+  end if;
+  if r.cierres_periodo <> 2 or r.gasto_usd is distinct from 25.00 or r.cac_usd is distinct from 12.50 then
+    raise exception 'R33d EL CAC NO VA POR PERÍODO DE CIERRE: la semana 3 tiene cierres_periodo=%, gasto=%, cac=% (esperaba 2 cierres esa semana —c1 y c4—, US$ 25 y CAC 12,50).', r.cierres_periodo, r.gasto_usd, r.cac_usd;
+  end if;
+
+  -- Por canal: Meta sola tiene 1 cierre en la semana 3 (c1) y el gasto es de Meta → CAC 25.
+  select * into r from embudo_pauta(v_w1, v_w3 + 6, 'semana', 'meta') e where e.periodo = v_w3;
+  if r.cierres_periodo <> 1 or r.cac_usd is distinct from 25.00 then
+    raise exception 'R33d: con canal meta, la semana 3 tiene cierres_periodo=% y cac=% (esperaba 1 y US$ 25).', r.cierres_periodo, r.cac_usd;
+  end if;
+
+  -- Por mes: los cuatro contactos suman.
+  select sum(e.contactos) into v_n from embudo_pauta(v_w1, v_w3 + 6, 'mes') e;
+  if v_n <> 4 then
+    raise exception 'R33d: agrupado por mes, los contactos suman % (esperaba 4).', v_n;
+  end if;
+
+  v_j := embudo_pauta_mes_actual();
+  if v_j ->> 'contactos' is null or (v_j ->> 'contactos')::integer < 0 then
+    raise exception 'R33d: embudo_pauta_mes_actual() no contesta (%).', v_j;
+  end if;
+
+  -- ---------- e · El lunes ----------
+  v_ok := false;
+  begin
+    perform fijar_gasto_pauta(v_w3 + 1, 'meta', 10, null);
+    v_ok := true;
+  exception when others then
+    if sqlerrm not like '%semana_no_es_lunes%' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R33e: fijar_gasto_pauta() aceptó un martes.';
+  end if;
+  v_ok := false;
+  begin
+    insert into gasto_pauta (semana, canal, monto_usd) values (v_w3 + 1, 'google', 10);
+    v_ok := true;
+  exception when others then
+    if sqlstate <> '23514' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R33e UN INSERT DIRECTO EN gasto_pauta CON UN MARTES PASÓ. El CHECK del lunes no rige.';
+  end if;
+
+  -- ---------- g · Los pedidos de calcos ----------
+  select count(*) into v_m from tenant_eventos where lubricentro_id = v_lub_a and tipo = 'calcos';
+  perform registrar_pedido_calcos(v_lub_a, v_hoy, 100, false, 15000, 'primer pedido');
+  select calcos_entregadas into v_n from lubricentros where id = v_lub_a;
+  if v_n <> 100 then
+    raise exception 'R33g: tras un pedido de 100, calcos_entregadas = % (tenía que ser 100).', v_n;
+  end if;
+  select count(*) into v_n from tenant_eventos where lubricentro_id = v_lub_a and tipo = 'calcos';
+  if v_n <> v_m + 1 then
+    raise exception 'R33g: el pedido no dejó el evento calcos (% → %).', v_m, v_n;
+  end if;
+  perform registrar_pedido_calcos(v_lub_a, v_hoy, 20, true, null, null);
+  select calcos_entregadas into v_n from lubricentros where id = v_lub_a;
+  if v_n <> 120 then
+    raise exception 'R33g EL CONTADOR NO ES LA SUMA DE LOS PEDIDOS: calcos_entregadas = % con pedidos de 100 y 20.', v_n;
+  end if;
+  v_ok := false;
+  begin
+    perform registrar_pedido_calcos(v_lub_a, v_hoy, 10, false, null, null);
+    v_ok := true;
+  exception when others then
+    if sqlerrm not like '%monto_obligatorio%' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R33g: se registraron calcos cobradas sin monto.';
+  end if;
+
+  -- ---------- f · Los candados, como postgres ----------
+  execute 'reset role';
+  v_ok := false;
+  begin
+    update pedidos_calcos set cantidad = 1 where lubricentro_id = v_lub_a;
+    v_ok := true;
+  exception when others then
+    if sqlerrm not like '%pedido_calcos_no_se_edita%' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R33f UN UPDATE SOBRE pedidos_calcos PASÓ. Es la constancia de qué se entregó y qué se cobró: append-only.';
+  end if;
+  v_ok := false;
+  begin
+    delete from pedidos_calcos where lubricentro_id = v_lub_a;
+    v_ok := true;
+  exception when others then
+    if sqlerrm not like '%pedido_calcos_no_se_borra%' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R33f UN DELETE SOBRE pedidos_calcos PASÓ con el tenant vivo.';
+  end if;
+  v_ok := false;
+  begin
+    truncate pedidos_calcos;
+    v_ok := true;
+  exception when others then
+    if sqlerrm not like '%pedidos_calcos_no_se_vacian%' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R33f UN TRUNCATE SOBRE pedidos_calcos PASÓ.';
+  end if;
+
+  -- ---------- h · El backfill dejó la suma igual al contador ----------
+  select count(*) into v_n
+    from lubricentros l
+   where l.calcos_entregadas <> coalesce((select sum(pc.cantidad) from pedidos_calcos pc where pc.lubricentro_id = l.id), 0);
+  if v_n <> 0 then
+    raise exception 'R33h HAY % TENANT(S) CON calcos_entregadas DISTINTO DE LA SUMA DE SUS PEDIDOS. El backfill (migración + seed.sql) tenía que dejar una fila por contador.', v_n;
+  end if;
+  if backfill_pedidos_calcos() <> 0 then
+    raise exception 'R33h: el backfill volvió a insertar filas en una segunda corrida. No es idempotente.';
+  end if;
+  execute 'set local role authenticated';
+
+  -- ---------- i · La activación ----------
+  select * into r from activacion_tenant(v_t1);
+  if r.trabajos_7d <> 19 or r.activado or r.dia <> 7 or not r.en_curso then
+    raise exception 'R33i SIN PISO: T1 con 19 trabajos tenía que estar en curso, día 7, no activado (trabajos %, activado %, día %, en curso %).', r.trabajos_7d, r.activado, r.dia, r.en_curso;
+  end if;
+  -- El trabajo 20, todavía en el día 7.
+  execute 'reset role';
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, created_at,
+                        kilometros, aceite_tipo, prox_service_km)
+  select v_t1, s.id, v.id, v_super, 'service', current_date, l.created_at + interval '6 days 23 hours 30 minutes',
+         3000, '10W40', 13000
+    from lubricentros l
+    join sucursales s on s.lubricentro_id = l.id
+    join vehiculos  v on v.lubricentro_id = l.id
+   where l.id = v_t1 limit 1;
+  execute 'set local role authenticated';
+  select * into r from activacion_tenant(v_t1);
+  if r.trabajos_7d <> 20 or not r.activado then
+    raise exception 'R33i EL TRABAJO 20 DEL DÍA 7 NO ACTIVÓ (trabajos %, activado %). La definición es 20 o más en [alta, alta + 7 días).', r.trabajos_7d, r.activado;
+  end if;
+
+  select * into r from activacion_tenant(v_t2);
+  if r.trabajos_7d <> 19 or r.activado or r.en_curso then
+    raise exception 'R33i EL TRABAJO DEL DÍA 8 CONTÓ PARA LA ACTIVACIÓN (T2: trabajos %, activado %, en curso %). La ventana termina a los 7 días exactos del alta.', r.trabajos_7d, r.activado, r.en_curso;
+  end if;
+
+  select * into r from activacion_tenant(v_t3);
+  if r.trabajos_7d <> 0 or r.activado or r.dia <> 3 or not r.en_curso then
+    raise exception 'R33i: T3 con 2 días y 5 horas de alta tenía que decir «en curso, día 3 de 7» (día %, en curso %).', r.dia, r.en_curso;
+  end if;
+
+  select * into r from indicadores_tenants() ind where ind.lubricentro_id = v_t2;
+  if r.activado or r.dias_alta <> 10 then
+    raise exception 'R33i: indicadores_tenants() dice activado=% y dias_alta=% para T2 (esperaba false y 10). Es lo que pinta el chip «No activado».', r.activado, r.dias_alta;
+  end if;
+  select * into r from indicadores_tenants() ind where ind.lubricentro_id = v_t1;
+  if not r.activado then
+    raise exception 'R33i: indicadores_tenants() no marca activado a T1 con 20 trabajos en la primera semana.';
+  end if;
+
+  select count(*), coalesce(sum(a.activados), 0), coalesce(sum(a.altas), 0)
+    into v_n, v_m, i
+    from activacion_por_mes(v_hoy - 40, v_hoy) a;
+  if v_n < 1 or v_m < 1 or i < 3 then
+    raise exception 'R33i: activacion_por_mes() devolvió % meses, % activados, % altas (esperaba al menos 1, 1 y 3).', v_n, v_m, i;
+  end if;
+
+  -- ---------- j · La serie por tipo suma el total ----------
+  v_j := metricas_plataforma();
+  select count(*) into v_n
+    from jsonb_array_elements(v_j -> 'series' -> 'dia') p
+   where (p ->> 'cantidad')::integer
+      <> (p ->> 'service')::integer + (p ->> 'mecanica')::integer + (p ->> 'neumaticos')::integer;
+  if v_n <> 0 then
+    raise exception 'R33j EN % PUNTO(S) DE LA SERIE DIARIA service + mecanica + neumaticos ≠ cantidad. El Pulso apilado dibuja tres áreas cuya suma tiene que ser el total.', v_n;
+  end if;
+  select count(*) into v_n from jsonb_array_elements(v_j -> 'series' -> 'dia') p
+   where (p ->> 'mecanica')::integer > 0;
+  if v_n = 0 then
+    raise exception 'R33j: ninguna fila de la serie diaria tiene mecánicas, con las 19 de T2 cargadas en los últimos 10 días.';
+  end if;
+
+  -- ---------- k · Uso y autos que volvieron ----------
+  v_j := uso_tenant(v_t1, 30);
+  if (v_j ->> 'trabajos')::integer <> 20 or (v_j ->> 'service')::integer <> 20
+     or (v_j ->> 'recordatorios')::integer <> 1 or (v_j ->> 'escaneos')::integer <> 0 then
+    raise exception 'R33k: uso_tenant(T1) devolvió % (esperaba 20 trabajos, 20 service, 1 recordatorio, 0 escaneos).', v_j;
+  end if;
+  if (v_j ->> 'autos_volvieron')::integer <> 1 then
+    raise exception 'R33k EL AUTO CON RECORDATORIO ANTES DEL TRABAJO NO CUENTA COMO AUTO QUE VOLVIÓ (%). docs/METRICAS.md § 1: recordatorio en los 60 días previos al trabajo.', v_j ->> 'autos_volvieron';
+  end if;
+  if autos_que_volvieron(v_t2, v_hoy - 30, v_hoy) <> 0 then
+    raise exception 'R33k: T2 no tiene recordatorios y cuenta autos que volvieron.';
+  end if;
+  if autos_que_volvieron_plataforma(v_hoy - 30, v_hoy) < 1 then
+    raise exception 'R33k: la versión de plataforma no ve el auto de T1.';
+  end if;
+
+  -- ---------- l · El alta con estado ----------
+  -- verificaciones.sql corre en UNA transacción: el `set constraints all
+  -- immediate` de R31g sigue vigente acá, y con él el trigger diferido del
+  -- alta dispara ANTES de que crear_lubricentro() inserte la suscripción
+  -- (el evento salía sin plan). Se vuelve a diferir, como en producción.
+  set constraints all deferred;
+  select crear_lubricentro('Alta R33', 'alta-r33',
+    '[{"nombre":"Centro"}]'::jsonb, v_plan, 'mensual', 0) into v_t4;
+  set constraints all immediate;
+  select * into v_ev from tenant_eventos where lubricentro_id = v_t4 and tipo = 'alta';
+  if v_ev.despues ->> 'estado' is distinct from 'activa'
+     or v_ev.despues ->> 'periodo' is distinct from 'mensual'
+     or v_ev.despues ->> 'plan' is null then
+    raise exception 'R33l EL EVENTO alta NO TRAE estado/plan/periodo (despues = %). Es el faltante de docs/METRICAS.md § 8 que 20260924104000 cierra.', v_ev.despues;
+  end if;
+
+  -- ---------- limpieza ----------
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+  delete from contactos_pauta where id in (v_c1, v_c2, v_c3, v_c4);
+  delete from gasto_pauta where semana = v_w3 and canal = 'meta' and nota = 'R33';
+  delete from services  where lubricentro_id in (v_t1, v_t2, v_t3);
+  delete from contactos where lubricentro_id in (v_t1, v_t2, v_t3);
+  delete from vehiculos where lubricentro_id in (v_lub_a, v_lub_b, v_lub_c, v_t1, v_t2, v_t3);
+  delete from clientes  where lubricentro_id in (v_lub_a, v_lub_b, v_lub_c, v_t1, v_t2, v_t3);
+  delete from sucursales where lubricentro_id in (v_lub_a, v_lub_b, v_lub_c, v_t1, v_t2, v_t3, v_t4);
+  delete from mensaje_templates where lubricentro_id = v_t4;
+  delete from config_experiencia where lubricentro_id = v_t4;
+  delete from suscripciones where lubricentro_id = v_t4;
+  -- Los pedidos de calcos y los eventos se van con el cascade.
+  delete from lubricentros where id in (v_lub_a, v_lub_b, v_lub_c, v_t1, v_t2, v_t3, v_t4);
+end $$;
+
+drop function r33_crear_tenant(text, text, timestamptz);
+-- <<< R33
+
+
+-- ============================================================
+-- R34 · BLOQUE MÉTRICAS 4: crecimiento (a–f), performance (g–i) y el candado
+-- de calcos (j). Tres tramos escritos por separado y unidos acá; cada uno
+-- crea y borra lo suyo (helpers r34_*, tenants r34-*, fotos de 1986 a 1988
+-- que la limpieza final de este archivo termina de borrar). Va ANTES de esa
+-- limpieza a propósito. scripts/regresion-metricas.sh muerde las tres
+-- migraciones (20260925100000, 20260925101000, 20260925102000) y espera ver
+-- este bloque en rojo, con el patrón de cada tramo.
+-- ============================================================
+
+-- ============================================================
+-- R34 · CRECIMIENTO (bloque MÉTRICAS 4)
+--
+-- La migración 20260925100000. Lo que este bloque sostiene:
+--
+--   a · La identidad de movimientos_mrr() cierra por construcción sobre
+--       TODA la historia, en ARS y en USD (mrr_inicio + nuevo + reactivacion
+--       + expansion − contraccion − churn + ajuste_precio = mrr_fin, con un
+--       peso o un dólar de tolerancia). Y la guarda: un owner y anon reciben
+--       42501 en las seis funciones, y la vista no le devuelve filas al
+--       owner ni deja pasar a anon.
+--   b · La clasificación: un cambio de lista con el mismo plan, período y
+--       módulo es AJUSTE DE PRECIO y no expansión, aunque el tenant tenga
+--       en el mes eventos cambio_plan que no tocan el descuento; un
+--       descuento renegociado (evento cambio_plan con otro descuento_pct)
+--       con el mismo plan, período y módulo es EXPANSIÓN y no ajuste;
+--       Pro → Ultra, el módulo pago prendido y anual → mensual son
+--       expansión (y mensual → anual, contracción: cambió el período, nunca
+--       es ajuste); a > 0, b = 0 es churn; alta en el mes es nuevo y alta
+--       anterior es reactivación. El primer mes sale sin foto anterior y
+--       con los movimientos en null; sin tipo de cambio en alguna de las
+--       dos fotos no hay montos en USD. Y «en el mes» es el mes calendario
+--       (hora argentina) tanto para el alta como para el evento cambio_plan:
+--       dos tenants en 1986 fijan que, si al mes anterior le falta la foto
+--       del último día, un descuento quitado después de esa foto sale como
+--       ajuste al mes siguiente (W) y un alta posterior, como reactivación
+--       (V). Si esa lectura cambia, cambia primero la definición.
+--   c · cohortes_logos(): 3 de 4 activos al mes 1 = 0,75; el mes no cerrado
+--       da null y el cerrado da valor; m12 null; la cohorte y su activación
+--       no se separan aunque la sesión venga en UTC.
+--   d · cohortes_ingresos(): nrr ≥ grr; null en los meses no cumplidos y sin
+--       tc; un caso con expansión donde nrr > 1 ≥ grr.
+--   e · churn_por_mes(): el reloj y falta_de_pago son involuntarias, el
+--       pedido del cliente voluntaria; por_motivo y por_origen (con
+--       sin_origen); una baja a las 23:30 argentinas del 31 cae en ese mes.
+--   f · altas_bajas_por_mes() cuenta las altas por created_at (una a las
+--       22:00 del 31 cae en ese mes) y las reactivaciones por evento;
+--       trabajos_por_mes() suma TODAS las fotos del mes y respeta en_curso.
+--
+-- LAS FOTOS DE PRUEBA VIVEN EN 1988 (bisiesto, como 1992), más una en
+-- septiembre de 1987 (Q, para que una cohorte cumpla 6 meses justo en el
+-- mes en curso) y tres en 1986 (W y V, la ventana «en el mes»): fuera del rango
+-- de R31c, que cierra tres días seguidos de un día AL AZAR entre 1990 y
+-- 1999 y, si cayera en la ventana de esta prueba, movería estos números;
+-- y antes de 2000-01-01, que es lo que la limpieza final de este archivo
+-- borra. Se insertan directamente como postgres con fuente =
+-- 'reconstruido' y tc_venta = 1000 (así USD = ARS ÷ 1000). Los tenants se
+-- crean insertando en lubricentros (crear_lubricentro() es lento y acá no
+-- hace falta la suscripción: las funciones leen fotos, no suscripciones).
+--
+-- El escenario, mes a mes (fecha de la foto que representa al mes):
+--   1988-01-31 (cerrado) · A Basic 39000, B Pro 49000, C Pro 49000,
+--                          D Pro 49000, P Pro ANUAL 41650, E Basic con 20 %
+--                          de descuento 31200, R suspendido 0, X (fantasma)
+--                          10000. Primer mes: sin foto anterior.
+--   1988-02-29 (cerrado) · A 42000 mismo plan (AJUSTE +3000, aunque tiene
+--                          dos cambio_plan de ida y vuelta que no tocan el
+--                          descuento) · B Ultra 99000 (EXPANSIÓN +50000) ·
+--                          C Pro + módulo 59000 (EXPANSIÓN +10000) · D 0
+--                          (CHURN 49000) · P Pro MENSUAL 49000 (EXPANSIÓN
+--                          +7350: cambió el período) · E Basic 39000 con el
+--                          descuento quitado por un cambio_plan del 10/02
+--                          (EXPANSIÓN +7800: el descuento es el cliente) ·
+--                          R vuelve con 49000 (REACTIVACIÓN, alta de 1987) ·
+--                          N Basic 39000 (NUEVO, alta 10/02).
+--   1988-03-01 y 03-15 (EN CURSO: falta la del 31) · A 40000 (AJUSTE −2000)
+--                          · P vuelve a anual 41650 (CONTRACCIÓN 7350).
+--   1988-04-30 (cerrado) · A 0 (CHURN 40000) · C Ultra + módulo 109000
+--                          (EXPANSIÓN +50000) · D vuelve 49000 (REACTIVACIÓN)
+--                          · R 0 (CHURN 49000).
+--   1988-05-31 (cerrado, SIN tipo de cambio) · B 105000 (AJUSTE +6000).
+--   1988-06-30 (cerrado) · todo igual.
+--   (1987-09-30, cerrado · Q Basic 20000: la única foto anterior a 1988.)
+-- Y aparte, en 1986 (la ventana «en el mes» cuando al mes anterior le falta
+-- la foto del último día):
+--   1986-01-31 (cerrado)  · W Pro con 20 % de descuento 39200.
+--   1986-02-15 (EN CURSO) · W 39200 igual. El 20/02, DESPUÉS de esta foto,
+--                           un cambio_plan le quita el descuento y nace V.
+--   1986-03-31 (cerrado)  · W Pro 49000 (AJUSTE +9800: el evento es de
+--                           febrero, no de marzo) · V Basic 39000
+--                           (REACTIVACIÓN: el alta es de febrero).
+-- X es un tenant que se borra DESPUÉS de fotografiarlo: su MRR queda en la
+-- foto de la plataforma (mrr_ars) pero no en las filas por tenant, que se
+-- van en cascade. Es lo que pasa en toda base local donde una prueba borró
+-- un tenant, y es la razón por la que mrr_fin tiene que ser Σ b y no el
+-- total de la plataforma: la rotura @identidad_fin la muestra.
+--
+-- Corre como el superadmin del seed bajo `authenticated`; los fixtures se
+-- escriben como postgres. Limpia al final: los tenants se borran (las fotos
+-- por tenant y los eventos se van en cascade); las fotos de la plataforma
+-- de 1988 las borra la limpieza final de este archivo. scripts/
+-- regresion-metricas.sh rompe cada regla y espera ver este bloque en rojo.
+-- ============================================================
+
+-- >>> R34
+-- Un tenant de prueba con su sucursal, un cliente y un auto, con la fecha
+-- de alta y el origen que se le pidan. Se borra al final del bloque.
+create or replace function r34_crear_tenant(p_nombre text, p_slug text, p_alta timestamptz, p_origen origen_tenant)
+returns table (lub uuid, suc uuid, veh uuid)
+language plpgsql
+as $$
+declare
+  v_lub uuid; v_suc uuid; v_cli uuid; v_veh uuid; v_pat text;
+begin
+  insert into lubricentros (nombre, slug, created_at, origen) values (p_nombre, p_slug, p_alta, p_origen) returning id into v_lub;
+  insert into sucursales (lubricentro_id, nombre) values (v_lub, 'Centro') returning id into v_suc;
+  insert into clientes (lubricentro_id, nombre, telefono) values (v_lub, 'Cliente R34', '3510000000') returning id into v_cli;
+  v_pat := 'AD' || lpad((floor(random() * 900) + 100)::text, 3, '0') || 'CR';
+  insert into vehiculos (lubricentro_id, cliente_id, patente, patente_normalizada, marca, modelo)
+  values (v_lub, v_cli, v_pat, v_pat, 'Ford', 'Ranger') returning id into v_veh;
+  return query select v_lub, v_suc, v_veh;
+end;
+$$;
+
+-- La foto de un tenant en un día, con lo que movimientos_mrr() mira: activo,
+-- MRR, plan, período y módulo pago.
+create or replace function r34_foto_tenant(
+  p_fecha date, p_lub uuid, p_activo boolean, p_mrr numeric,
+  p_plan uuid, p_periodo periodo_suscripcion, p_modulo boolean, p_trabajos integer default 0)
+returns void
+language sql
+as $$
+  insert into snapshots_tenant_diarios
+    (fecha, lubricentro_id, activo, exento, mrr_ars, plan_id, periodo, modulo_pago, trabajos_dia)
+  values (p_fecha, p_lub, p_activo, false, p_mrr, p_plan, p_periodo, p_modulo, p_trabajos);
+$$;
+
+-- La foto de la plataforma de un día. tc null = sin tipo de cambio.
+create or replace function r34_foto_plataforma(
+  p_fecha date, p_activos integer, p_suspendidos integer, p_mrr numeric, p_tc numeric,
+  p_trabajos integer, p_service integer, p_mecanica integer, p_neumaticos integer,
+  p_recordatorios integer, p_escaneos integer)
+returns void
+language sql
+as $$
+  insert into snapshots_diarios
+    (fecha, tenants_activos, tenants_suspendidos, tenants_exentos, mrr_ars, tc_venta, mrr_usd,
+     altas_dia, bajas_dia, trabajos_dia, trabajos_service, trabajos_mecanica, trabajos_neumaticos,
+     recordatorios_dia, escaneos_dia, fuente)
+  values
+    (p_fecha, p_activos, p_suspendidos, 0, p_mrr, p_tc, case when p_tc > 0 then round(p_mrr / p_tc, 2) end,
+     0, 0, p_trabajos, p_service, p_mecanica, p_neumaticos, p_recordatorios, p_escaneos, 'reconstruido');
+$$;
+
+do $$
+declare
+  v_super  uuid;
+  v_owner  uuid;
+  v_basic  uuid;
+  v_pro    uuid;
+  v_ultra  uuid;
+  v_a      uuid;   -- alta 10/01/1988, meta · ajuste de precio, 20 trabajos en la primera semana, un auto que volvió
+  v_b      uuid;   -- alta 12/01/1988, sin origen · Pro → Ultra
+  v_c      uuid;   -- alta 15/01/1988, referido · módulo pago prendido, después Ultra
+  v_d      uuid;   -- alta 20/01/1988, sin origen · churn en febrero, vuelve en abril
+  v_p      uuid;   -- alta 05/11/1987, meta · anual → mensual → anual
+  v_r      uuid;   -- alta 01/06/1987, sin origen · reactivación en febrero, churn en abril
+  v_n      uuid;   -- alta 10/02/1988, google · nuevo en febrero
+  v_e      uuid;   -- alta 15/06/1987, sin origen · Basic con 20 % de descuento; en febrero se lo quitan (cambio_plan): expansión con el mismo plan. Comparte cohorte con R.
+  v_m      uuid;   -- alta 31/03/1988 22:00, calco · sin fotos; activa (20 trabajos) para el borde de zona de las cohortes; sus bajas de abril son «otro»
+  v_x      uuid;   -- el fantasma: fotografiado y borrado
+  v_q      uuid;   -- alta 10/09/1987, sin origen · foto solo en 09/1987; su cohorte cumple 6 meses en marzo de 1988, que está en curso
+  v_w      uuid;   -- alta 01/06/1985, sin origen · Pro con 20 % de descuento en 1986; se lo quitan el 20/02, DESPUÉS de la última foto de febrero (en curso): en marzo es ajuste, no expansión
+  v_v      uuid;   -- alta 20/02/1986, sin origen · nace después de la última foto de febrero; en marzo es reactivación, no nuevo (el alta es del mes calendario anterior)
+  v_suc    uuid;
+  v_veh    uuid;
+  v_suc_m  uuid;
+  v_veh_m  uuid;
+  v_alta_a timestamptz := '1988-01-10 09:00-03';
+  v_alta_m timestamptz := '1988-03-31 22:00-03';
+  v_tz     text;
+  v_n_int  integer;
+  v_ok     boolean;
+  v_num    numeric;
+  r        record;
+  i        integer;
+begin
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  select u.id into v_owner
+    from usuarios u join lubricentros l on l.id = u.lubricentro_id
+   where l.slug = 'demo' and u.rol = 'owner' limit 1;
+  select id into v_basic from planes where nombre = 'Basic' and not heredado;
+  select id into v_pro   from planes where nombre = 'Pro'   and not heredado;
+  select id into v_ultra from planes where nombre = 'Ultra' and not heredado;
+  if v_super is null or v_owner is null or v_basic is null or v_pro is null or v_ultra is null then
+    raise exception 'R34 SIN PISO: falta el superadmin, el owner del demo o los planes Basic/Pro/Ultra del seed.';
+  end if;
+  if exists (select 1 from snapshots_diarios where fecha between '1986-01-01' and '1988-12-31')
+     or exists (select 1 from lubricentros where created_at >= '1985-01-01' and created_at < '1989-01-01') then
+    raise exception 'R34 SIN PISO: ya hay fotos de 1986 a 1988 o tenants con alta entre 1985 y 1988 en la base (otra prueba los dejó). Estos números suponen que no hay ninguno.';
+  end if;
+
+  -- ---------- Los fixtures, como postgres ----------
+  select lub, suc, veh into v_a, v_suc, v_veh from r34_crear_tenant('Ajuste A R34',      'r34-a', v_alta_a,                    'meta');
+  select lub into v_b from r34_crear_tenant('Plan B R34',        'r34-b', '1988-01-12 09:00-03', null);
+  select lub into v_c from r34_crear_tenant('Modulo C R34',      'r34-c', '1988-01-15 09:00-03', 'referido');
+  select lub into v_d from r34_crear_tenant('Churn D R34',       'r34-d', '1988-01-20 09:00-03', null);
+  select lub into v_p from r34_crear_tenant('Periodo P R34',     'r34-p', '1987-11-05 09:00-03', 'meta');
+  select lub into v_r from r34_crear_tenant('Reactivacion R R34','r34-r', '1987-06-01 09:00-03', null);
+  select lub into v_n from r34_crear_tenant('Nuevo N R34',       'r34-n', '1988-02-10 10:00-03', 'google');
+  select lub into v_e from r34_crear_tenant('Descuento E R34',   'r34-e', '1987-06-15 09:00-03', null);
+  -- A las 22:00 argentinas del 31 de marzo ya es 1 de abril en UTC.
+  select lub, suc, veh into v_m, v_suc_m, v_veh_m from r34_crear_tenant('Marzo M R34', 'r34-m', v_alta_m, 'calco');
+  select lub into v_x from r34_crear_tenant('Fantasma X R34',    'r34-x', '1987-12-01 09:00-03', null);
+  select lub into v_q from r34_crear_tenant('Seis meses Q R34',  'r34-q', '1987-09-10 09:00-03', null);
+  select lub into v_w from r34_crear_tenant('Ventana W R34',     'r34-w', '1985-06-01 09:00-03', null);
+  select lub into v_v from r34_crear_tenant('Ventana V R34',     'r34-v', '1986-02-20 10:00-03', null);
+
+  -- A activa: 20 trabajos en las 20 horas siguientes al alta. Y un auto que
+  -- volvió: un recordatorio el 1/02 y un trabajo sobre ese auto el 10/02.
+  for i in 1..20 loop
+    insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, created_at,
+                          kilometros, aceite_tipo, prox_service_km)
+    values (v_a, v_suc, v_veh, v_super, 'service', (v_alta_a + (i || ' hours')::interval)::date,
+            v_alta_a + (i || ' hours')::interval, 1000 + i, '10W40', 10000);
+  end loop;
+  insert into contactos (lubricentro_id, vehiculo_id, usuario_id, estado, canal, created_at)
+  values (v_a, v_veh, v_super, 'proximo', 'whatsapp', '1988-02-01 10:00-03');
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, created_at,
+                        kilometros, aceite_tipo, prox_service_km)
+  values (v_a, v_suc, v_veh, v_super, 'service', '1988-02-10', '1988-02-10 11:00-03', 1100, '10W40', 11000);
+  -- M también activa: 20 trabajos en las 20 horas que siguen a su alta de
+  -- las 22:00 del 31/03 (que en UTC ya es abril). Sin contacto previo, así
+  -- que no cuenta como auto que volvió ni toca trabajos_por_mes (que lee
+  -- fotos).
+  for i in 1..20 loop
+    insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, created_at,
+                          kilometros, aceite_tipo, prox_service_km)
+    values (v_m, v_suc_m, v_veh_m, v_super, 'service', (v_alta_m + (i || ' hours')::interval)::date,
+            v_alta_m + (i || ' hours')::interval, 1000 + i, '10W40', 10000);
+  end loop;
+
+  -- 1986, aparte de todo lo demás: la ventana «en el mes» cuando al mes
+  -- anterior le falta la foto del último día. Febrero queda EN CURSO (la
+  -- última foto es del 15); el 20/02, después de esa foto, a W le quitan el
+  -- descuento (cambio_plan 20 → 0) y nace V. Marzo compara la foto del
+  -- 15/02 con la del 31/03: ve los dos cambios de MRR, pero ni el evento ni
+  -- el alta son de marzo.
+  perform r34_foto_tenant('1986-01-31', v_w, true, 39200, v_pro, 'mensual', false);
+  perform r34_foto_plataforma('1986-01-31', 1, 0, 39200, 1000, 0, 0, 0, 0, 0, 0);
+  perform r34_foto_tenant('1986-02-15', v_w, true, 39200, v_pro, 'mensual', false);
+  perform r34_foto_plataforma('1986-02-15', 1, 0, 39200, 1000, 0, 0, 0, 0, 0, 0);
+  perform r34_foto_tenant('1986-03-31', v_w, true, 49000, v_pro,   'mensual', false);
+  perform r34_foto_tenant('1986-03-31', v_v, true, 39000, v_basic, 'mensual', false);
+  perform r34_foto_plataforma('1986-03-31', 2, 0, 88000, 1000, 0, 0, 0, 0, 0, 0);
+  perform emitir_evento_tenant(v_w, 'cambio_plan',
+    jsonb_build_object('plan_id', v_pro, 'plan', 'Pro', 'periodo', 'mensual', 'descuento_pct', 20.00),
+    jsonb_build_object('plan_id', v_pro, 'plan', 'Pro', 'periodo', 'mensual', 'descuento_pct', 0.00),
+    null, 'admin', '1986-02-20 10:00-03', null);
+
+  -- Septiembre de 1987, cerrado: la única foto anterior a 1988. Diciembre
+  -- no tiene foto, así que enero de 1988 sigue siendo el primer mes con
+  -- foto anterior faltante. Q existe para que una cohorte con MRR inicial
+  -- cumpla 6 meses justo en marzo de 1988, el mes en curso.
+  perform r34_foto_tenant('1987-09-30', v_q, true, 20000, v_basic, 'mensual', false);
+  perform r34_foto_plataforma('1987-09-30', 1, 0, 20000, 1000, 0, 0, 0, 0, 0, 0);
+
+  -- Enero, cerrado (Σ tenants = 268850 con X; 258850 sin X).
+  perform r34_foto_tenant('1988-01-31', v_a, true,  39000, v_basic, 'mensual', false, 3);
+  perform r34_foto_tenant('1988-01-31', v_b, true,  49000, v_pro,   'mensual', false, 2);
+  perform r34_foto_tenant('1988-01-31', v_c, true,  49000, v_pro,   'mensual', false, 1);
+  perform r34_foto_tenant('1988-01-31', v_d, true,  49000, v_pro,   'mensual', false);
+  perform r34_foto_tenant('1988-01-31', v_p, true,  41650, v_pro,   'anual',   false);
+  perform r34_foto_tenant('1988-01-31', v_e, true,  31200, v_basic, 'mensual', false);
+  perform r34_foto_tenant('1988-01-31', v_r, false,     0, v_pro,   'mensual', false);
+  perform r34_foto_tenant('1988-01-31', v_x, true,  10000, v_basic, 'mensual', false);
+  perform r34_foto_plataforma('1988-01-31', 7, 1, 268850, 1000, 6, 4, 1, 1, 1, 2);
+
+  -- Febrero, cerrado (Σ = 386000 con X; 376000 sin X).
+  perform r34_foto_tenant('1988-02-29', v_a, true,  42000, v_basic, 'mensual', false, 2);
+  perform r34_foto_tenant('1988-02-29', v_b, true,  99000, v_ultra, 'mensual', false, 2);
+  perform r34_foto_tenant('1988-02-29', v_c, true,  59000, v_pro,   'mensual', true,  1);
+  perform r34_foto_tenant('1988-02-29', v_d, false,     0, v_pro,   'mensual', false);
+  perform r34_foto_tenant('1988-02-29', v_p, true,  49000, v_pro,   'mensual', false);
+  perform r34_foto_tenant('1988-02-29', v_e, true,  39000, v_basic, 'mensual', false);
+  perform r34_foto_tenant('1988-02-29', v_r, true,  49000, v_pro,   'mensual', false);
+  perform r34_foto_tenant('1988-02-29', v_n, true,  39000, v_basic, 'mensual', false);
+  perform r34_foto_tenant('1988-02-29', v_x, true,  10000, v_basic, 'mensual', false);
+  perform r34_foto_plataforma('1988-02-29', 8, 1, 386000, 1000, 8, 5, 2, 1, 3, 1);
+
+  -- Marzo, EN CURSO: dos fotos (1 y 15), ninguna del 31. La del 15 manda.
+  perform r34_foto_plataforma('1988-03-01', 8, 1, 376000, 1000, 5, 3, 2, 0, 2, 3);
+  perform r34_foto_tenant('1988-03-15', v_a, true,  40000, v_basic, 'mensual', false);
+  perform r34_foto_tenant('1988-03-15', v_b, true,  99000, v_ultra, 'mensual', false);
+  perform r34_foto_tenant('1988-03-15', v_c, true,  59000, v_pro,   'mensual', true);
+  perform r34_foto_tenant('1988-03-15', v_d, false,     0, v_pro,   'mensual', false);
+  perform r34_foto_tenant('1988-03-15', v_p, true,  41650, v_pro,   'anual',   false);
+  perform r34_foto_tenant('1988-03-15', v_e, true,  39000, v_basic, 'mensual', false);
+  perform r34_foto_tenant('1988-03-15', v_r, true,  49000, v_pro,   'mensual', false);
+  perform r34_foto_tenant('1988-03-15', v_n, true,  39000, v_basic, 'mensual', false);
+  perform r34_foto_plataforma('1988-03-15', 7, 2, 366650, 1000, 4, 2, 1, 1, 0, 1);
+
+  -- Abril, cerrado (Σ = 376650).
+  perform r34_foto_tenant('1988-04-30', v_a, false,     0, v_basic, 'mensual', false);
+  perform r34_foto_tenant('1988-04-30', v_b, true,  99000, v_ultra, 'mensual', false);
+  perform r34_foto_tenant('1988-04-30', v_c, true, 109000, v_ultra, 'mensual', true);
+  perform r34_foto_tenant('1988-04-30', v_d, true,  49000, v_pro,   'mensual', false);
+  perform r34_foto_tenant('1988-04-30', v_p, true,  41650, v_pro,   'anual',   false);
+  perform r34_foto_tenant('1988-04-30', v_e, true,  39000, v_basic, 'mensual', false);
+  perform r34_foto_tenant('1988-04-30', v_r, false,     0, v_pro,   'mensual', false);
+  perform r34_foto_tenant('1988-04-30', v_n, true,  39000, v_basic, 'mensual', false);
+  perform r34_foto_plataforma('1988-04-30', 6, 3, 376650, 1000, 7, 3, 2, 2, 1, 0);
+
+  -- Mayo, cerrado, SIN tipo de cambio (Σ = 382650).
+  perform r34_foto_tenant('1988-05-31', v_a, false,     0, v_basic, 'mensual', false);
+  perform r34_foto_tenant('1988-05-31', v_b, true, 105000, v_ultra, 'mensual', false);
+  perform r34_foto_tenant('1988-05-31', v_c, true, 109000, v_ultra, 'mensual', true);
+  perform r34_foto_tenant('1988-05-31', v_d, true,  49000, v_pro,   'mensual', false);
+  perform r34_foto_tenant('1988-05-31', v_p, true,  41650, v_pro,   'anual',   false);
+  perform r34_foto_tenant('1988-05-31', v_e, true,  39000, v_basic, 'mensual', false);
+  perform r34_foto_tenant('1988-05-31', v_r, false,     0, v_pro,   'mensual', false);
+  perform r34_foto_tenant('1988-05-31', v_n, true,  39000, v_basic, 'mensual', false);
+  perform r34_foto_plataforma('1988-05-31', 6, 3, 382650, null, 2, 2, 0, 0, 0, 0);
+
+  -- Junio, cerrado, todo igual que mayo (Σ = 382650).
+  perform r34_foto_tenant('1988-06-30', v_a, false,     0, v_basic, 'mensual', false);
+  perform r34_foto_tenant('1988-06-30', v_b, true, 105000, v_ultra, 'mensual', false);
+  perform r34_foto_tenant('1988-06-30', v_c, true, 109000, v_ultra, 'mensual', true);
+  perform r34_foto_tenant('1988-06-30', v_d, true,  49000, v_pro,   'mensual', false);
+  perform r34_foto_tenant('1988-06-30', v_p, true,  41650, v_pro,   'anual',   false);
+  perform r34_foto_tenant('1988-06-30', v_e, true,  39000, v_basic, 'mensual', false);
+  perform r34_foto_tenant('1988-06-30', v_r, false,     0, v_pro,   'mensual', false);
+  perform r34_foto_tenant('1988-06-30', v_n, true,  39000, v_basic, 'mensual', false);
+  perform r34_foto_plataforma('1988-06-30', 6, 3, 382650, 1000, 0, 0, 0, 0, 0, 0);
+
+  -- Los cambio_plan de febrero: el de E cambia el descuento (20 → 0) y
+  -- explica su suba con el mismo plan; los dos de A (Basic → Pro y vuelta)
+  -- no tocan el descuento y las fotos lo ven Basic en las dos puntas, así
+  -- que su suba sigue siendo la lista. La forma del antes/despues es la del
+  -- trigger de suscripciones (20260922201000): descuento_pct numeric(5,2).
+  perform emitir_evento_tenant(v_e, 'cambio_plan',
+    jsonb_build_object('plan_id', v_basic, 'plan', 'Basic', 'periodo', 'mensual', 'descuento_pct', 20.00),
+    jsonb_build_object('plan_id', v_basic, 'plan', 'Basic', 'periodo', 'mensual', 'descuento_pct', 0.00),
+    null, 'admin', '1988-02-10 10:00-03', null);
+  perform emitir_evento_tenant(v_a, 'cambio_plan',
+    jsonb_build_object('plan_id', v_basic, 'plan', 'Basic', 'periodo', 'mensual', 'descuento_pct', 0.00),
+    jsonb_build_object('plan_id', v_pro,   'plan', 'Pro',   'periodo', 'mensual', 'descuento_pct', 0.00),
+    null, 'admin', '1988-02-05 10:00-03', null);
+  perform emitir_evento_tenant(v_a, 'cambio_plan',
+    jsonb_build_object('plan_id', v_pro,   'plan', 'Pro',   'periodo', 'mensual', 'descuento_pct', 0.00),
+    jsonb_build_object('plan_id', v_basic, 'plan', 'Basic', 'periodo', 'mensual', 'descuento_pct', 0.00),
+    null, 'admin', '1988-02-20 10:00-03', null);
+
+  -- Los eventos de estado, con la fecha en 1988 (hora argentina explícita).
+  perform emitir_evento_tenant(v_d, 'suspension',         '{"activo":true}',  '{"activo":false}', 'cierre_del_negocio · cerró',    'admin', '1988-02-20 10:00-03', null);
+  perform emitir_evento_tenant(v_a, 'suspension',         '{"activo":true}',  '{"activo":false}', 'falta_de_pago · no pagó',       'admin', '1988-03-05 10:00-03', null);
+  perform emitir_evento_tenant(v_p, 'suspension_reloj',   '{"activo":true}',  '{"activo":false}', 'reloj de cobranza',             'sistema', '1988-03-05 23:59:59-03', null);
+  perform emitir_evento_tenant(v_d, 'reactivacion',       '{"activo":false}', '{"activo":true}',  null,                            'admin', '1988-03-10 10:00-03', null);
+  perform emitir_evento_tenant(v_p, 'reactivacion_reloj', '{"activo":false}', '{"activo":true}',  'reloj de cobranza',             'sistema', '1988-03-20 23:59:59-03', null);
+  -- A las 23:30 argentinas del 31 de marzo ya es 1 de abril en UTC.
+  perform emitir_evento_tenant(v_r, 'suspension',         '{"activo":true}',  '{"activo":false}', 'pedido_del_cliente · se muda',  'admin', '1988-03-31 23:30-03', null);
+  perform emitir_evento_tenant(v_m, 'suspension',         '{"activo":true}',  '{"activo":false}', 'otro · se aburrió',             'admin', '1988-04-10 10:00-03', null);
+  perform emitir_evento_tenant(v_m, 'reactivacion',       '{"activo":false}', '{"activo":true}',  null,                            'admin', '1988-04-15 10:00-03', null);
+  perform emitir_evento_tenant(v_m, 'suspension',         '{"activo":true}',  '{"activo":false}', null,                            'admin', '1988-04-20 10:00-03', null);
+
+  -- El fantasma se va: sus filas por tenant se van en cascade, la foto de la
+  -- plataforma conserva su MRR. Se comprueba que quedó así, porque de eso
+  -- depende que la rotura @identidad_fin se vea.
+  delete from vehiculos  where lubricentro_id = v_x;
+  delete from clientes   where lubricentro_id = v_x;
+  delete from sucursales where lubricentro_id = v_x;
+  delete from lubricentros where id = v_x;
+  select coalesce(sum(mrr_ars), 0) into v_num from snapshots_tenant_diarios where fecha = '1988-02-29';
+  if v_num <> 376000 or (select mrr_ars from snapshots_diarios where fecha = '1988-02-29') <> 386000 then
+    raise exception 'R34 SIN PISO: tras borrar el fantasma, las filas por tenant del 29/02 suman % (esperaba 376000) y la foto de la plataforma dice % (esperaba 386000).',
+      v_num, (select mrr_ars from snapshots_diarios where fecha = '1988-02-29');
+  end if;
+
+  -- ---------- a · La guarda ----------
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  select count(*) into v_n_int from snapshots_mensuales;
+  if v_n_int <> 0 then
+    raise exception 'R34a UN OWNER LEE % FILAS DE snapshots_mensuales. La vista es security_invoker sobre snapshots_diarios: el RLS tiene que devolverle cero filas.', v_n_int;
+  end if;
+  for r in select unnest(array[
+      'select count(*) from movimientos_mrr(''1988-01-01'', ''1988-06-30'', ''ars'')',
+      'select count(*) from cohortes_logos(''1988-01-01'', ''1988-06-30'')',
+      'select count(*) from cohortes_ingresos(''1988-01-01'', ''1988-06-30'')',
+      'select count(*) from churn_por_mes(''1988-01-01'', ''1988-06-30'')',
+      'select count(*) from altas_bajas_por_mes(''1988-01-01'', ''1988-06-30'')',
+      'select count(*) from trabajos_por_mes(''1988-01-01'', ''1988-06-30'')']) as consulta
+  loop
+    v_ok := false;
+    begin
+      execute r.consulta;
+      v_ok := true;
+    exception when others then
+      if sqlstate <> '42501' then raise; end if;
+    end;
+    if v_ok then
+      raise exception 'R34a UN OWNER PUDO EJECUTAR «%». Las seis lecturas de Crecimiento son solo superadmin: 42501 antes de leer nada.', r.consulta;
+    end if;
+  end loop;
+
+  -- anon: sin grant, ni a las funciones ni a la vista.
+  perform set_config('request.jwt.claims', '{}', true);
+  execute 'set local role anon';
+  for r in select unnest(array[
+      'select count(*) from snapshots_mensuales',
+      'select count(*) from movimientos_mrr(''1988-01-01'', ''1988-06-30'', ''ars'')',
+      'select count(*) from cohortes_logos(''1988-01-01'', ''1988-06-30'')',
+      'select count(*) from cohortes_ingresos(''1988-01-01'', ''1988-06-30'')',
+      'select count(*) from churn_por_mes(''1988-01-01'', ''1988-06-30'')',
+      'select count(*) from altas_bajas_por_mes(''1988-01-01'', ''1988-06-30'')',
+      'select count(*) from trabajos_por_mes(''1988-01-01'', ''1988-06-30'')']) as consulta
+  loop
+    v_ok := false;
+    begin
+      execute r.consulta;
+      v_ok := true;
+    exception when others then
+      if sqlstate <> '42501' then raise; end if;
+    end;
+    if v_ok then
+      raise exception 'R34a ANON PUDO EJECUTAR «%». Nada de Crecimiento está grantado a anon.', r.consulta;
+    end if;
+  end loop;
+
+  -- De acá en adelante, el superadmin.
+  execute 'set local role authenticated';
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+
+  -- ---------- a · La identidad, sobre toda la historia y en las dos monedas ----------
+  for r in
+    select m.moneda, x.*
+    from (values ('ars'), ('usd')) as m(moneda)
+    cross join lateral movimientos_mrr('1900-01-01', current_date, m.moneda) x
+    where not x.sin_foto_anterior and x.mrr_inicio is not null
+  loop
+    if abs(r.mrr_inicio + r.nuevo + r.reactivacion + r.expansion - r.contraccion - r.churn + r.ajuste_precio - r.mrr_fin) > 1 then
+      raise exception 'R34a LA IDENTIDAD DE MRR NO CIERRA en % (%): % + nuevo % + reactivación % + expansión % − contracción % − churn % + ajuste % = %, y mrr_fin dice %. mrr_inicio y mrr_fin tienen que ser la suma de los mismos a y b por tenant; si se lee otra cosa, la tabla de «de dónde viene el MRR» no suma.',
+        r.mes, r.moneda, r.mrr_inicio, r.nuevo, r.reactivacion, r.expansion, r.contraccion, r.churn, r.ajuste_precio,
+        r.mrr_inicio + r.nuevo + r.reactivacion + r.expansion - r.contraccion - r.churn + r.ajuste_precio, r.mrr_fin;
+    end if;
+    if r.neto is distinct from r.nuevo + r.reactivacion + r.expansion - r.contraccion - r.churn then
+      raise exception 'R34a: en % (%) neto = % y no es nuevo + reactivación + expansión − contracción − churn (%). El ajuste de precio queda afuera del neto comercial.',
+        r.mes, r.moneda, r.neto, r.nuevo + r.reactivacion + r.expansion - r.contraccion - r.churn;
+    end if;
+  end loop;
+  -- El piso: los cinco meses de 1988 con foto anterior tienen que haber
+  -- pasado por el bucle en ARS (si la función devolviera vacío, el verde de
+  -- arriba no significaría nada).
+  select count(*) into v_n_int
+    from movimientos_mrr('1988-01-01', '1988-06-30', 'ars') x
+   where not x.sin_foto_anterior and x.mrr_inicio is not null;
+  if v_n_int <> 5 then
+    raise exception 'R34a SIN PISO: movimientos_mrr() devolvió % meses de 1988 con foto anterior y montos (esperaba 5: febrero a junio).', v_n_int;
+  end if;
+
+  -- ---------- b · La vista y la clasificación ----------
+  select count(*) into v_n_int from snapshots_mensuales where mes between '1988-01-01' and '1988-12-01';
+  if v_n_int <> 6 then
+    raise exception 'R34b: snapshots_mensuales tiene % meses de 1988 (esperaba 6: enero a junio, con las dos fotos de marzo en una sola fila).', v_n_int;
+  end if;
+  select * into r from snapshots_mensuales where mes = '1988-03-01';
+  if r.fecha <> '1988-03-15' or not r.en_curso then
+    raise exception 'R34b MARZO NO ES «EN CURSO» CON LA FOTO DEL 15 (fecha %, en_curso %). El mes está cerrado solo cuando su último día calendario tiene foto; si no, se muestra el último día con foto y se dice en curso.', r.fecha, r.en_curso;
+  end if;
+  select * into r from snapshots_mensuales where mes = '1988-02-01';
+  if r.fecha <> '1988-02-29' or r.en_curso then
+    raise exception 'R34b: febrero de 1988 (bisiesto) con la foto del 29 tenía que salir cerrado (fecha %, en_curso %).', r.fecha, r.en_curso;
+  end if;
+
+  -- Enero: el primer mes con historia.
+  select * into r from movimientos_mrr('1988-01-01', '1988-06-30', 'ars') x where x.mes = '1988-01-01';
+  if not found then
+    raise exception 'R34b: movimientos_mrr() no devolvió enero de 1988.';
+  end if;
+  if not r.sin_foto_anterior or r.mrr_inicio is not null or r.nuevo is not null or r.churn is not null
+     or r.neto is not null or r.crecimiento_pct is not null or r.tenants_inicio is not null then
+    raise exception 'R34b EL PRIMER MES CON HISTORIA INVENTÓ UN INICIO (sin_foto_anterior %, mrr_inicio %, nuevo %, churn %, neto %, tenants_inicio %). Sin foto del mes anterior no hay movimientos: todo null, no cero.',
+      r.sin_foto_anterior, r.mrr_inicio, r.nuevo, r.churn, r.neto, r.tenants_inicio;
+  end if;
+  if r.mrr_fin <> 258850 or r.tenants_fin <> 7 or r.en_curso then
+    raise exception 'R34b: enero tenía que salir con mrr_fin 258850 (la suma de las filas por tenant, sin el fantasma), tenants_fin 7 y cerrado; salió %, %, en_curso %.', r.mrr_fin, r.tenants_fin, r.en_curso;
+  end if;
+
+  -- Febrero: las ocho clases en un mes.
+  select * into r from movimientos_mrr('1988-01-01', '1988-06-30', 'ars') x where x.mes = '1988-02-01';
+  if r.sin_foto_anterior or r.en_curso then
+    raise exception 'R34b: febrero salió con sin_foto_anterior % y en_curso % (esperaba false y false).', r.sin_foto_anterior, r.en_curso;
+  end if;
+  -- Primero el descuento: si E cayera en ajuste, el ajuste subiría y la
+  -- expansión bajaría exactamente en sus 7800.
+  if r.ajuste_precio = 3000 + 7800 and r.expansion = 75150 - 7800 then
+    raise exception 'R34b UN DESCUENTO RENEGOCIADO CAYÓ EN AJUSTE DE PRECIO: E pasó de 31200 a 39000 con el mismo plan, período y módulo porque un cambio_plan del 10/02 le quitó el 20 %% (descuento_pct 20 → 0). La foto no guarda el descuento, pero el evento sí, y un descuento que se renegocia es el cliente, no la lista: expansión +7800 (salió ajuste %, expansión %).', r.ajuste_precio, r.expansion;
+  end if;
+  if r.ajuste_precio is distinct from 3000 then
+    raise exception 'R34b UN CAMBIO DE PRECIO DE LISTA CAYÓ EN EXPANSIÓN: la expansión mide al cliente, no a la lista. A pasó de 39000 a 42000 con el mismo plan, período y módulo, y sus dos cambio_plan del mes (Basic → Pro y vuelta) no tocaron el descuento: es ajuste_precio +3000 (salió ajuste %, expansión %).', r.ajuste_precio, r.expansion;
+  end if;
+  if r.expansion is distinct from 75150 then
+    raise exception 'R34b LA EXPANSIÓN NO SUMA LOS CUATRO CAMBIOS DEL CLIENTE: Pro → Ultra (+50000), el módulo pago prendido (+10000), anual → mensual con el mismo plan (+7350: cambió el período, así que nunca es ajuste) y el descuento del 20 %% quitado a E con el mismo plan (+7800: cambio_plan con otro descuento_pct) = 75150; salió % (ajuste %, contracción %).', r.expansion, r.ajuste_precio, r.contraccion;
+  end if;
+  if r.nuevo is distinct from 39000 or r.reactivacion is distinct from 49000 then
+    raise exception 'R34b NUEVO Y REACTIVACIÓN SE CONFUNDEN: N (alta 10/02/1988) es nuevo con 39000 y R (alta de 1987, en cero en enero) es reactivación con 49000; salió nuevo %, reactivación %. Lo que decide es el mes del alta en hora argentina.', r.nuevo, r.reactivacion;
+  end if;
+  if r.churn is distinct from 49000 or r.contraccion is distinct from 0 then
+    raise exception 'R34b: D pasó de 49000 a 0 y es churn 49000 (magnitud positiva); no hubo contracción. Salió churn %, contracción %.', r.churn, r.contraccion;
+  end if;
+  if r.mrr_inicio <> 258850 or r.mrr_fin <> 376000 or r.neto <> 114150 or r.crecimiento_pct <> 0.4410
+     or r.tenants_inicio <> 7 or r.tenants_fin <> 8 then
+    raise exception 'R34b: febrero tenía que dar inicio 258850, fin 376000, neto 114150 (sin el ajuste), crecimiento 0,4410 y tenants 7 → 8; salió %, %, %, %, % → %.',
+      r.mrr_inicio, r.mrr_fin, r.neto, r.crecimiento_pct, r.tenants_inicio, r.tenants_fin;
+  end if;
+
+  -- Marzo: en curso, una baja de lista y una contracción por período.
+  select * into r from movimientos_mrr('1988-01-01', '1988-06-30', 'ars') x where x.mes = '1988-03-01';
+  if not r.en_curso then
+    raise exception 'R34b: marzo tenía que salir en curso (la última foto es del 15).';
+  end if;
+  if r.ajuste_precio is distinct from -2000 or r.contraccion is distinct from 7350
+     or r.expansion is distinct from 0 or r.nuevo is distinct from 0 or r.reactivacion is distinct from 0 or r.churn is distinct from 0 then
+    raise exception 'R34b UNA BAJA DE LISTA O UN CAMBIO A ANUAL SE CLASIFICÓ MAL: A bajó de 42000 a 40000 con todo igual (ajuste −2000, con signo) y P volvió de mensual a anual con el mismo plan (49000 → 41650: contracción 7350, cambió el período). Salió ajuste %, contracción %, expansión %, nuevo %, reactivación %, churn %.',
+      r.ajuste_precio, r.contraccion, r.expansion, r.nuevo, r.reactivacion, r.churn;
+  end if;
+  if r.mrr_inicio <> 376000 or r.mrr_fin <> 366650 or r.neto <> -7350 or r.crecimiento_pct <> -0.0195
+     or r.tenants_inicio <> 8 or r.tenants_fin <> 7 then
+    raise exception 'R34b: marzo tenía que dar inicio 376000, fin 366650, neto −7350, crecimiento −0,0195 y tenants 8 → 7; salió %, %, %, %, % → %.',
+      r.mrr_inicio, r.mrr_fin, r.neto, r.crecimiento_pct, r.tenants_inicio, r.tenants_fin;
+  end if;
+
+  -- Abril: el inicio es la foto del 15/03 aunque marzo esté en curso.
+  select * into r from movimientos_mrr('1988-01-01', '1988-06-30', 'ars') x where x.mes = '1988-04-01';
+  if r.reactivacion is distinct from 49000 or r.expansion is distinct from 50000 or r.churn is distinct from 89000
+     or r.nuevo is distinct from 0 or r.contraccion is distinct from 0 or r.ajuste_precio is distinct from 0 then
+    raise exception 'R34b: abril tenía que dar reactivación 49000 (D vuelve, alta de enero), expansión 50000 (C Pro → Ultra con módulo) y churn 89000 (A 40000 + R 49000); salió reactivación %, expansión %, churn %, nuevo %, contracción %, ajuste %.',
+      r.reactivacion, r.expansion, r.churn, r.nuevo, r.contraccion, r.ajuste_precio;
+  end if;
+  if r.mrr_inicio <> 366650 or r.mrr_fin <> 376650 or r.neto <> 10000 or r.crecimiento_pct <> 0.0273
+     or r.tenants_inicio <> 7 or r.tenants_fin <> 6 or r.en_curso then
+    raise exception 'R34b: abril tenía que dar inicio 366650 (la foto del 15/03), fin 376650, neto 10000, crecimiento 0,0273, tenants 7 → 6 y cerrado; salió %, %, %, %, % → %, en_curso %.',
+      r.mrr_inicio, r.mrr_fin, r.neto, r.crecimiento_pct, r.tenants_inicio, r.tenants_fin, r.en_curso;
+  end if;
+
+  -- Mayo y junio en ARS: un ajuste y después nada; el crecimiento es 0, no null.
+  select * into r from movimientos_mrr('1988-01-01', '1988-06-30', 'ars') x where x.mes = '1988-05-01';
+  if r.ajuste_precio is distinct from 6000 or r.neto is distinct from 0 or r.crecimiento_pct is distinct from 0
+     or r.mrr_inicio <> 376650 or r.mrr_fin <> 382650 then
+    raise exception 'R34b: mayo en ARS tenía que dar ajuste 6000 (B 99000 → 105000, mismo plan), neto 0, crecimiento 0, inicio 376650 y fin 382650; salió ajuste %, neto %, crecimiento %, inicio %, fin %.',
+      r.ajuste_precio, r.neto, r.crecimiento_pct, r.mrr_inicio, r.mrr_fin;
+  end if;
+  select * into r from movimientos_mrr('1988-01-01', '1988-06-30', 'ars') x where x.mes = '1988-06-01';
+  if r.mrr_inicio <> 382650 or r.mrr_fin <> 382650 or r.neto <> 0 or r.crecimiento_pct <> 0 or r.ajuste_precio <> 0 then
+    raise exception 'R34b: junio en ARS, sin cambios, tenía que dar inicio = fin = 382650 y todo en cero; salió inicio %, fin %, neto %, crecimiento %, ajuste %.',
+      r.mrr_inicio, r.mrr_fin, r.neto, r.crecimiento_pct, r.ajuste_precio;
+  end if;
+
+  -- Las mismas filas en USD (tc 1000 en todas las fotos salvo mayo).
+  select * into r from movimientos_mrr('1988-01-01', '1988-06-30', 'usd') x where x.mes = '1988-01-01';
+  if not r.sin_foto_anterior or r.mrr_fin is distinct from 258.85 or r.tenants_fin <> 7 then
+    raise exception 'R34b: enero en USD tenía que salir sin foto anterior con mrr_fin 258,85 y tenants_fin 7; salió sin_foto_anterior %, mrr_fin %, tenants_fin %.', r.sin_foto_anterior, r.mrr_fin, r.tenants_fin;
+  end if;
+  select * into r from movimientos_mrr('1988-01-01', '1988-06-30', 'usd') x where x.mes = '1988-02-01';
+  if r.mrr_inicio is distinct from 258.85 or r.nuevo is distinct from 39 or r.reactivacion is distinct from 49
+     or r.expansion is distinct from 75.15 or r.contraccion is distinct from 0 or r.churn is distinct from 49
+     or r.ajuste_precio is distinct from 3 or r.mrr_fin is distinct from 376 or r.neto is distinct from 114.15
+     or r.crecimiento_pct is distinct from 0.4410 or r.tenants_inicio <> 7 or r.tenants_fin <> 8 then
+    raise exception 'R34b FEBRERO EN USD NO ES FEBRERO EN ARS ÷ 1000 (tc 1000 en las dos fotos): esperaba inicio 258,85 · nuevo 39 · reactivación 49 · expansión 75,15 · contracción 0 · churn 49 · ajuste 3 · fin 376 · neto 114,15 · 0,4410 · 7 → 8; salió % · % · % · % · % · % · % · % · % · % · % → %.',
+      r.mrr_inicio, r.nuevo, r.reactivacion, r.expansion, r.contraccion, r.churn, r.ajuste_precio, r.mrr_fin, r.neto, r.crecimiento_pct, r.tenants_inicio, r.tenants_fin;
+  end if;
+  select * into r from movimientos_mrr('1988-01-01', '1988-06-30', 'usd') x where x.mes = '1988-05-01';
+  if r.sin_foto_anterior or r.mrr_inicio is not null or r.mrr_fin is not null or r.ajuste_precio is not null
+     or r.nuevo is not null or r.churn is not null or r.neto is not null or r.crecimiento_pct is not null then
+    raise exception 'R34b SIN TIPO DE CAMBIO EN LA FOTO DE FIN, MAYO SALIÓ CON MONTOS EN USD (inicio %, fin %, ajuste %, neto %, sin_foto_anterior %): sin cotización no se inventan dólares; todos los montos del mes van en null y sin_foto_anterior sigue en false.',
+      r.mrr_inicio, r.mrr_fin, r.ajuste_precio, r.neto, r.sin_foto_anterior;
+  end if;
+  if r.tenants_inicio <> 6 or r.tenants_fin <> 6 then
+    raise exception 'R34b: en mayo sin tipo de cambio los tenants no son montos y tenían que salir igual (6 → 6); salió % → %.', r.tenants_inicio, r.tenants_fin;
+  end if;
+  select * into r from movimientos_mrr('1988-01-01', '1988-06-30', 'usd') x where x.mes = '1988-06-01';
+  if r.sin_foto_anterior or r.mrr_inicio is not null or r.mrr_fin is not null or r.neto is not null or r.tenants_inicio <> 6 then
+    raise exception 'R34b SIN TIPO DE CAMBIO EN LA FOTO DE INICIO, JUNIO SALIÓ CON MONTOS EN USD (inicio %, fin %, neto %): alcanza con que falte en una de las dos fotos.',
+      r.mrr_inicio, r.mrr_fin, r.neto;
+  end if;
+
+  -- La moneda se valida.
+  v_ok := false;
+  begin
+    perform count(*) from movimientos_mrr('1988-01-01', '1988-06-30', 'eur');
+    v_ok := true;
+  exception when others then
+    if sqlerrm <> 'moneda_invalida' then raise; end if;
+  end;
+  if v_ok then
+    raise exception 'R34b: movimientos_mrr() aceptó la moneda «eur».';
+  end if;
+
+  -- La ventana «en el mes» (1986): febrero está en curso (foto del 15) y los
+  -- dos cambios (el descuento de W y el alta de V) son del 20/02, DESPUÉS de
+  -- esa foto. Febrero no ve diferencia de MRR (a = b para W; V no está en
+  -- ninguna de las dos fotos); marzo la ve, pero el evento y el alta son de
+  -- febrero: W es ajuste y V reactivación. Es la definición («en el mes» =
+  -- mes calendario en hora argentina, la misma frase para el alta y para el
+  -- evento), no un accidente: si se quiere la ventana entre las dos fotos,
+  -- se cambia primero docs/METRICAS.md § 1 (para las dos) y después estos
+  -- números.
+  select * into r from movimientos_mrr('1986-01-01', '1986-03-31', 'ars') x where x.mes = '1986-02-01';
+  if not found or not r.en_curso or r.mrr_inicio is distinct from 39200 or r.mrr_fin is distinct from 39200
+     or r.expansion is distinct from 0 or r.ajuste_precio is distinct from 0 or r.nuevo is distinct from 0 or r.reactivacion is distinct from 0 then
+    raise exception 'R34b: febrero de 1986 (en curso, foto del 15) tenía que salir sin movimientos con inicio = fin = 39200: el descuento de W se quitó el 20/02, después de la foto, así que febrero no lo ve. Salió en_curso %, inicio %, fin %, expansión %, ajuste %, nuevo %, reactivación %.',
+      r.en_curso, r.mrr_inicio, r.mrr_fin, r.expansion, r.ajuste_precio, r.nuevo, r.reactivacion;
+  end if;
+  select * into r from movimientos_mrr('1986-01-01', '1986-03-31', 'ars') x where x.mes = '1986-03-01';
+  if not found or r.ajuste_precio is distinct from 9800 or r.expansion is distinct from 0 then
+    raise exception 'R34b LA VENTANA DEL EVENTO cambio_plan NO ES EL MES CALENDARIO: W pasó de 39200 (foto del 15/02, febrero en curso) a 49000 (31/03) con el mismo plan, período y módulo, y el cambio_plan que le quitó el descuento es del 20/02, no de marzo: marzo lo clasifica como ajuste de precio +9800 (salió ajuste %, expansión %). «En el mes» es el mes calendario en hora argentina, la misma ventana que decide «alta en el mes» (docs/METRICAS.md § 1); si la ventana pasa a ser la de las dos fotos, la tabla de «de dónde viene el MRR» cambia sin que lo haya decidido la definición. Primero se cambia § 1, para el alta y para el evento, y después este número.',
+      r.ajuste_precio, r.expansion;
+  end if;
+  if r.reactivacion is distinct from 39000 or r.nuevo is distinct from 0 then
+    raise exception 'R34b EL ALTA POSTERIOR A LA ÚLTIMA FOTO DE UN MES EN CURSO NO SALIÓ COMO REACTIVACIÓN: V nació el 20/02/1986, después de la foto del 15/02, y aparece por primera vez en la del 31/03; su alta es de febrero, no de marzo, así que marzo lo clasifica como reactivación 39000 (salió reactivación %, nuevo %). Es el mismo borde que el del evento, con la misma lectura de «en el mes».',
+      r.reactivacion, r.nuevo;
+  end if;
+  if r.en_curso or r.mrr_inicio <> 39200 or r.mrr_fin <> 88000 or r.neto <> 39000 or r.tenants_inicio <> 1 or r.tenants_fin <> 2 then
+    raise exception 'R34b: marzo de 1986 tenía que dar cerrado, inicio 39200 (la foto del 15/02), fin 88000, neto 39000 y tenants 1 → 2; salió en_curso %, %, %, %, % → %.',
+      r.en_curso, r.mrr_inicio, r.mrr_fin, r.neto, r.tenants_inicio, r.tenants_fin;
+  end if;
+
+  -- ---------- c · cohortes_logos ----------
+  select count(*) into v_n_int from cohortes_logos('1988-01-01', '1988-03-31');
+  if v_n_int <> 3 then
+    raise exception 'R34c: cohortes_logos() de enero a marzo de 1988 devolvió % cohortes (esperaba 3: enero con 4 altas, febrero con 1, marzo con 1).', v_n_int;
+  end if;
+  select * into r from cohortes_logos('1988-01-01', '1988-03-31') x where x.cohorte = '1988-01-01';
+  if r.tamano <> 4 or r.activados <> 1 then
+    raise exception 'R34c: la cohorte de enero tenía que tener 4 altas y 1 activado (A cargó 20 trabajos en su primera semana); salió % y %.', r.tamano, r.activados;
+  end if;
+  if r.m1 is distinct from 0.75 then
+    raise exception 'R34c LA RETENCIÓN AL MES 1 NO ES 0,75: 4 altas de enero, 3 activas en la foto del 29/02 (D se fue); salió m1 = %. Un tenant sin fila en la foto cuenta como no activo.', r.m1;
+  end if;
+  if r.m2 is not null then
+    raise exception 'R34c UN MES NO CERRADO DEVOLVIÓ RETENCIÓN (m2 = %): marzo tiene la última foto el 15 y está en curso. Un mes a medias no dice cuántos se quedaron: null hasta que cierre.', r.m2;
+  end if;
+  if r.m3 is distinct from 0.75 then
+    raise exception 'R34c: m3 de la cohorte de enero tenía que ser 0,75 (abril cerrado: B, C y D activos, A suspendido); salió %.', r.m3;
+  end if;
+  if r.m6 is not null or r.m9 is not null or r.m12 is not null then
+    raise exception 'R34c: sin fotos de julio, octubre ni enero de 1989, m6/m9/m12 tenían que ser null; salió %, %, %.', r.m6, r.m9, r.m12;
+  end if;
+  select * into r from cohortes_logos('1988-01-01', '1988-03-31') x where x.cohorte = '1988-02-01';
+  if r.tamano <> 1 or r.activados <> 0 or r.m1 is not null or r.m2 is distinct from 1 or r.m3 is distinct from 1 then
+    raise exception 'R34c: la cohorte de febrero (N) tenía que dar tamaño 1, 0 activados, m1 null (marzo en curso), m2 = 1 (abril) y m3 = 1 (mayo); salió %, %, %, %, %.', r.tamano, r.activados, r.m1, r.m2, r.m3;
+  end if;
+  select * into r from cohortes_logos('1988-01-01', '1988-03-31') x where x.cohorte = '1988-03-01';
+  if r.tamano <> 1 or r.activados <> 1 or r.m1 is distinct from 0 or r.m2 is distinct from 0 or r.m3 is distinct from 0 then
+    raise exception 'R34c: la cohorte de marzo (M, alta a las 22:00 del 31, activada, sin fotos) tenía que dar tamaño 1, 1 activado y m1 = m2 = m3 = 0 (sin fila en la foto = no activo); salió %, %, %, %, %.', r.tamano, r.activados, r.m1, r.m2, r.m3;
+  end if;
+  -- La cohorte no depende de la zona de la sesión: M nació a las 22:00
+  -- argentinas del 31/03, que en UTC ya es 1/04. activacion_por_mes()
+  -- agrupa en la zona de la sesión; cohortes_logos() la fija a la
+  -- argentina, así que con la sesión en UTC la cohorte de marzo sigue
+  -- teniendo a M y su activación (y abril no aparece con un alta fantasma).
+  v_tz := current_setting('timezone');
+  execute 'set local timezone = ''UTC''';
+  select * into r from cohortes_logos('1988-01-01', '1988-04-30') x where x.cohorte = '1988-03-01';
+  select count(*) into v_n_int from cohortes_logos('1988-01-01', '1988-04-30') x where x.cohorte = '1988-04-01';
+  execute format('set local timezone = %L', v_tz);
+  if not found or r.tamano <> 1 or r.activados <> 1 or v_n_int <> 0 then
+    raise exception 'R34c LA COHORTE Y SU ACTIVACIÓN SE SEPARAN CON OTRA ZONA EN LA SESIÓN: con TimeZone = UTC la cohorte de marzo salió con tamaño % y % activados y abril con % fila(s) (esperaba 1, 1 y 0). M nació a las 22:00 argentinas del 31/03; la cohorte se calcula en hora argentina y activacion_por_mes() agrupa en la zona de la sesión, así que cohortes_logos() tiene que fijar la zona para que las dos coincidan.', r.tamano, r.activados, v_n_int;
+  end if;
+  select count(*) into v_n_int from cohortes_logos('1987-01-01', '1988-12-31');
+  if v_n_int <> 6 then
+    raise exception 'R34c: de 1987 a 1988 tenían que salir 6 cohortes (1987-06 con R y E, 1987-09, 1987-11, 1988-01, 1988-02, 1988-03; el fantasma de 1987-12 ya no existe); salieron %.', v_n_int;
+  end if;
+
+  -- ---------- d · cohortes_ingresos ----------
+  for r in select * from cohortes_ingresos('1987-01-01', '1988-12-31') loop
+    if (r.nrr_3 is not null and r.grr_3 is not null and r.nrr_3 < r.grr_3)
+       or (r.nrr_6 is not null and r.grr_6 is not null and r.nrr_6 < r.grr_6)
+       or (r.nrr_12 is not null and r.grr_12 is not null and r.nrr_12 < r.grr_12) then
+      raise exception 'R34d NRR < GRR EN LA COHORTE % (nrr_3 %, grr_3 %; nrr_6 %, grr_6 %; nrr_12 %, grr_12 %). GRR toma el mínimo por tenant contra su inicial y NRR el MRR tal cual: NRR ≥ GRR siempre.', r.cohorte, r.nrr_3, r.grr_3, r.nrr_6, r.grr_6, r.nrr_12, r.grr_12;
+    end if;
+  end loop;
+  select * into r from cohortes_ingresos('1987-01-01', '1988-12-31') x where x.cohorte = '1987-09-01';
+  if not found or r.mrr_inicial_usd is distinct from 20 or r.grr_6 is not null or r.nrr_6 is not null
+     or r.grr_3 is not null or r.nrr_3 is not null or r.grr_12 is not null or r.nrr_12 is not null then
+    raise exception 'R34d UN MES NO CUMPLIDO DEVOLVIÓ GRR/NRR A 6 MESES: la cohorte de septiembre de 1987 (Q, US$ 20) cumple 6 meses en marzo de 1988, que está en curso, y 3 y 12 en meses sin foto; esperaba inicial 20 y todo lo demás null; salió inicial %, grr_3 %, nrr_3 %, grr_6 %, nrr_6 %, grr_12 %, nrr_12 %.',
+      r.mrr_inicial_usd, r.grr_3, r.nrr_3, r.grr_6, r.nrr_6, r.grr_12, r.nrr_12;
+  end if;
+  select * into r from cohortes_ingresos('1988-01-01', '1988-03-31') x where x.cohorte = '1988-01-01';
+  if not found or r.tamano <> 4 or r.mrr_inicial_usd is distinct from 186 then
+    raise exception 'R34d: la cohorte de enero tenía que arrancar con US$ 186 (39 + 49 + 49 + 49 con tc 1000) y 4 tenants; salió % y %.', r.mrr_inicial_usd, r.tamano;
+  end if;
+  if r.nrr_3 is distinct from 1.3817 or r.grr_3 is distinct from 0.7903 then
+    raise exception 'R34d LA COHORTE CON EXPANSIÓN NO DA nrr > 1 ≥ grr: enero arrancó con US$ 186 y en abril tiene 257 (A 0 + B 99 + C 109 + D 49): nrr_3 = 257/186 = 1,3817 y grr_3 = (0 + 49 + 49 + 49)/186 = 0,7903; salió nrr %, grr %.', r.nrr_3, r.grr_3;
+  end if;
+  if r.grr_6 is not null or r.nrr_6 is not null or r.grr_12 is not null or r.nrr_12 is not null then
+    raise exception 'R34d UN MES NO CUMPLIDO DEVOLVIÓ GRR/NRR: julio de 1988 y enero de 1989 no tienen foto, así que grr_6/nrr_6/grr_12/nrr_12 tenían que ser null; salió %, %, %, %.', r.grr_6, r.nrr_6, r.grr_12, r.nrr_12;
+  end if;
+  select * into r from cohortes_ingresos('1988-01-01', '1988-03-31') x where x.cohorte = '1988-02-01';
+  if r.mrr_inicial_usd is distinct from 39 or r.grr_3 is not null or r.nrr_3 is not null then
+    raise exception 'R34d SIN TIPO DE CAMBIO EN LA FOTO DE MAYO, LA COHORTE DE FEBRERO SALIÓ CON GRR/NRR A 3 MESES (inicial %, grr_3 %, nrr_3 %): sin cotización no hay dólares, aunque el mes esté cerrado.', r.mrr_inicial_usd, r.grr_3, r.nrr_3;
+  end if;
+  select * into r from cohortes_ingresos('1988-01-01', '1988-03-31') x where x.cohorte = '1988-03-01';
+  if r.mrr_inicial_usd is not null or r.grr_3 is not null or r.nrr_3 is not null then
+    raise exception 'R34d UNA COHORTE CUYO MES DE ALTA NO CERRÓ TIENE INICIAL (%, grr_3 %, nrr_3 %): marzo está en curso, así que «sin historia todavía».', r.mrr_inicial_usd, r.grr_3, r.nrr_3;
+  end if;
+
+  -- ---------- e · churn_por_mes ----------
+  select count(*) into v_n_int from churn_por_mes('1988-01-01', '1988-06-30');
+  if v_n_int <> 6 then
+    raise exception 'R34e: churn_por_mes() de enero a junio devolvió % filas (esperaba 6: todos los meses del rango, con ceros).', v_n_int;
+  end if;
+  select * into r from churn_por_mes('1988-01-01', '1988-06-30') x where x.mes = '1988-03-01';
+  if r.bajas <> 3 then
+    raise exception 'R34e UNA BAJA A LAS 23:30 ARGENTINAS DEL 31/03 NO CAYÓ EN MARZO (bajas = %, esperaba 3): el día de un evento es su fecha en hora argentina, no en UTC.', r.bajas;
+  end if;
+  if r.involuntarias <> 2 or r.voluntarias <> 1 then
+    raise exception 'R34e EL RELOJ NO CUENTA COMO INVOLUNTARIO: falta_de_pago y suspension_reloj son involuntarias (2) y el pedido del cliente es voluntaria (1); salió % / %. El churn involuntario es el que el reloj y la cobranza explican; mezclarlo con el voluntario esconde el problema de cobro.', r.involuntarias, r.voluntarias;
+  end if;
+  if r.por_motivo <> '{"falta_de_pago": 1, "reloj": 1, "pedido_del_cliente": 1}'::jsonb then
+    raise exception 'R34e: por_motivo de marzo tenía que ser {falta_de_pago: 1, reloj: 1, pedido_del_cliente: 1}; salió %. El código es lo que hay antes de « ·» en el motivo, y el reloj va como reloj.', r.por_motivo;
+  end if;
+  if r.por_origen <> '{"meta": 2, "sin_origen": 1}'::jsonb then
+    raise exception 'R34e: por_origen de marzo tenía que ser {meta: 2, sin_origen: 1} (A y P son de Meta, R no tiene origen); salió %.', r.por_origen;
+  end if;
+  if r.tenants_inicio <> 8 or r.churn_pct is distinct from 0.375 then
+    raise exception 'R34e: marzo tenía que dividir 3 bajas por los 8 activos de la foto del 29/02 (0,375); salió tenants_inicio % y churn_pct %.', r.tenants_inicio, r.churn_pct;
+  end if;
+  select * into r from churn_por_mes('1988-01-01', '1988-06-30') x where x.mes = '1988-02-01';
+  if r.tenants_inicio <> 7 or r.bajas <> 1 or r.involuntarias <> 0 or r.voluntarias <> 1
+     or r.por_motivo <> '{"cierre_del_negocio": 1}'::jsonb or r.por_origen <> '{"sin_origen": 1}'::jsonb or r.churn_pct is distinct from 0.1429 then
+    raise exception 'R34e: febrero tenía que dar 7 al inicio, 1 baja voluntaria (D, cierre_del_negocio, sin origen) y 0,1429; salió inicio %, bajas %, invol %, vol %, motivos %, orígenes %, pct %.',
+      r.tenants_inicio, r.bajas, r.involuntarias, r.voluntarias, r.por_motivo, r.por_origen, r.churn_pct;
+  end if;
+  select * into r from churn_por_mes('1988-01-01', '1988-06-30') x where x.mes = '1988-04-01';
+  if r.bajas <> 2 or r.involuntarias <> 0 or r.por_motivo <> '{"otro": 2}'::jsonb or r.por_origen <> '{"calco": 2}'::jsonb
+     or r.tenants_inicio <> 7 or r.churn_pct is distinct from 0.2857 then
+    raise exception 'R34e UNA SUSPENSIÓN SIN MOTIVO NO CAYÓ EN «otro»: M tuvo una con «otro · se aburrió» y otra sin motivo, las dos voluntarias, origen calco; esperaba bajas 2, invol 0, {otro: 2}, {calco: 2}, inicio 7 (la foto del 15/03), 0,2857; salió bajas %, invol %, motivos %, orígenes %, inicio %, pct %.',
+      r.bajas, r.involuntarias, r.por_motivo, r.por_origen, r.tenants_inicio, r.churn_pct;
+  end if;
+  select * into r from churn_por_mes('1988-01-01', '1988-06-30') x where x.mes = '1988-01-01';
+  if r.tenants_inicio is not null or r.bajas <> 0 or r.por_motivo <> '{}'::jsonb or r.por_origen <> '{}'::jsonb or r.churn_pct is not null then
+    raise exception 'R34e: enero, sin foto anterior ni bajas, tenía que dar tenants_inicio null, 0 bajas, {} y churn_pct null; salió %, %, %, %, %.', r.tenants_inicio, r.bajas, r.por_motivo, r.por_origen, r.churn_pct;
+  end if;
+  select * into r from churn_por_mes('1988-01-01', '1988-06-30') x where x.mes = '1988-05-01';
+  if r.tenants_inicio <> 6 or r.bajas <> 0 or r.churn_pct is distinct from 0 then
+    raise exception 'R34e: mayo, con 6 al inicio y sin bajas, tenía que dar churn_pct 0 (no null); salió inicio %, bajas %, pct %.', r.tenants_inicio, r.bajas, r.churn_pct;
+  end if;
+
+  -- ---------- f · altas_bajas_por_mes y trabajos_por_mes ----------
+  select count(*) into v_n_int from altas_bajas_por_mes('1988-01-01', '1988-06-30');
+  if v_n_int <> 6 then
+    raise exception 'R34f: altas_bajas_por_mes() de enero a junio devolvió % filas (esperaba 6).', v_n_int;
+  end if;
+  select * into r from altas_bajas_por_mes('1988-01-01', '1988-06-30') x where x.mes = '1988-03-01';
+  if r.altas <> 1 then
+    raise exception 'R34f EL ALTA DE LAS 22:00 ARGENTINAS DEL 31/03 NO CAYÓ EN MARZO (altas = %): el día del alta es created_at en hora argentina, no en UTC.', r.altas;
+  end if;
+  if r.bajas <> 3 or r.reactivaciones <> 2 or r.neto <> -2 then
+    raise exception 'R34f: marzo tenía que dar 3 bajas, 2 reactivaciones (una manual y una del reloj) y neto −2; salió bajas %, reactivaciones %, neto %.', r.bajas, r.reactivaciones, r.neto;
+  end if;
+  select * into r from altas_bajas_por_mes('1988-01-01', '1988-06-30') x where x.mes = '1988-01-01';
+  if r.altas <> 4 or r.bajas <> 0 or r.reactivaciones <> 0 or r.neto <> 4 then
+    raise exception 'R34f: enero tenía que dar 4 altas y neto 4; salió altas %, bajas %, reactivaciones %, neto %.', r.altas, r.bajas, r.reactivaciones, r.neto;
+  end if;
+  select * into r from altas_bajas_por_mes('1988-01-01', '1988-06-30') x where x.mes = '1988-02-01';
+  if r.altas <> 1 or r.bajas <> 1 or r.reactivaciones <> 0 or r.neto <> 0 then
+    raise exception 'R34f: febrero tenía que dar 1 alta (N), 1 baja (D) y neto 0; salió altas %, bajas %, reactivaciones %, neto %.', r.altas, r.bajas, r.reactivaciones, r.neto;
+  end if;
+  select * into r from altas_bajas_por_mes('1988-01-01', '1988-06-30') x where x.mes = '1988-04-01';
+  if r.altas <> 0 or r.bajas <> 2 or r.reactivaciones <> 1 or r.neto <> -2 then
+    raise exception 'R34f: abril tenía que dar 0 altas, 2 bajas, 1 reactivación y neto −2; salió %, %, %, %.', r.altas, r.bajas, r.reactivaciones, r.neto;
+  end if;
+  select * into r from altas_bajas_por_mes('1988-01-01', '1988-06-30') x where x.mes = '1988-06-01';
+  if r.altas <> 0 or r.bajas <> 0 or r.reactivaciones <> 0 or r.neto <> 0 then
+    raise exception 'R34f: junio, sin nada, tenía que salir en ceros y no faltar; salió %, %, %, %.', r.altas, r.bajas, r.reactivaciones, r.neto;
+  end if;
+
+  select count(*) into v_n_int from trabajos_por_mes('1988-01-01', '1988-06-30');
+  if v_n_int <> 6 then
+    raise exception 'R34f: trabajos_por_mes() de enero a junio devolvió % filas (esperaba 6: los meses con alguna foto).', v_n_int;
+  end if;
+  select count(*) into v_n_int from trabajos_por_mes('1988-07-01', '1988-12-31');
+  if v_n_int <> 0 then
+    raise exception 'R34f: trabajos_por_mes() de julio a diciembre, sin fotos, devolvió % filas (esperaba 0: solo los meses con foto).', v_n_int;
+  end if;
+  select * into r from trabajos_por_mes('1988-01-01', '1988-06-30') x where x.mes = '1988-03-01';
+  if r.total <> 9 or r.service <> 5 or r.mecanica <> 3 or r.neumaticos <> 1 or r.recordatorios <> 2 or r.escaneos <> 4 then
+    raise exception 'R34f trabajos_por_mes() NO SUMA TODAS LAS FOTOS DEL MES: marzo tiene dos fotos (5 + 4 trabajos, 3 + 2 service, 2 + 1 mecánica, 0 + 1 neumáticos, 2 + 0 recordatorios, 3 + 1 escaneos) y salió total %, service %, mecánica %, neumáticos %, recordatorios %, escaneos %.',
+      r.total, r.service, r.mecanica, r.neumaticos, r.recordatorios, r.escaneos;
+  end if;
+  if not r.en_curso then
+    raise exception 'R34f: marzo tenía que salir en curso en trabajos_por_mes() (la última foto es del 15).';
+  end if;
+  select * into r from trabajos_por_mes('1988-01-01', '1988-06-30') x where x.mes = '1988-02-01';
+  if r.autos_que_volvieron <> 1 then
+    raise exception 'R34f EL AUTO CON RECORDATORIO ANTES DEL TRABAJO NO CUENTA COMO AUTO QUE VOLVIÓ en febrero (%): recordatorio el 1/02 y trabajo el 10/02 sobre el mismo auto; la ventana va del día 1 al último día con foto del mes.', r.autos_que_volvieron;
+  end if;
+  if r.total <> 8 or r.service <> 5 or r.mecanica <> 2 or r.neumaticos <> 1 or r.recordatorios <> 3 or r.escaneos <> 1 or r.en_curso then
+    raise exception 'R34f: febrero tenía que dar 8 trabajos (5/2/1), 3 recordatorios, 1 escaneo y cerrado; salió %, %/%/%, %, %, en_curso %.', r.total, r.service, r.mecanica, r.neumaticos, r.recordatorios, r.escaneos, r.en_curso;
+  end if;
+  select * into r from trabajos_por_mes('1988-01-01', '1988-06-30') x where x.mes = '1988-01-01';
+  if r.total <> 6 or r.service <> 4 or r.mecanica <> 1 or r.neumaticos <> 1 or r.autos_que_volvieron <> 0 or r.recordatorios <> 1 or r.escaneos <> 2 then
+    raise exception 'R34f: enero tenía que dar 6 trabajos (4/1/1), 0 autos que volvieron (los 20 trabajos de A no tienen recordatorio previo), 1 recordatorio y 2 escaneos; salió %, %/%/%, %, %, %.', r.total, r.service, r.mecanica, r.neumaticos, r.autos_que_volvieron, r.recordatorios, r.escaneos;
+  end if;
+  select * into r from trabajos_por_mes('1988-01-01', '1988-06-30') x where x.mes = '1988-06-01';
+  if r.total <> 0 or r.autos_que_volvieron <> 0 or r.en_curso then
+    raise exception 'R34f: junio, con una foto en cero, tenía que salir con 0 trabajos, 0 autos y cerrado; salió %, %, en_curso %.', r.total, r.autos_que_volvieron, r.en_curso;
+  end if;
+
+  -- ---------- limpieza ----------
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+  delete from services   where lubricentro_id in (v_a, v_b, v_c, v_d, v_p, v_r, v_n, v_m, v_q, v_e, v_w, v_v);
+  delete from contactos  where lubricentro_id in (v_a, v_b, v_c, v_d, v_p, v_r, v_n, v_m, v_q, v_e, v_w, v_v);
+  delete from vehiculos  where lubricentro_id in (v_a, v_b, v_c, v_d, v_p, v_r, v_n, v_m, v_q, v_e, v_w, v_v);
+  delete from clientes   where lubricentro_id in (v_a, v_b, v_c, v_d, v_p, v_r, v_n, v_m, v_q, v_e, v_w, v_v);
+  delete from sucursales where lubricentro_id in (v_a, v_b, v_c, v_d, v_p, v_r, v_n, v_m, v_q, v_e, v_w, v_v);
+  -- Las fotos por tenant y los eventos se van con el cascade; las fotos de
+  -- la plataforma de 1986 a 1988 las borra la limpieza final del archivo.
+  delete from lubricentros where id in (v_a, v_b, v_c, v_d, v_p, v_r, v_n, v_m, v_q, v_e, v_w, v_v);
+  select count(*) into v_n_int from snapshots_tenant_diarios where fecha between '1986-01-01' and '1988-12-31';
+  if v_n_int <> 0 then
+    raise exception 'R34: la limpieza dejó % fotos por tenant de 1986 a 1988.', v_n_int;
+  end if;
+end $$;
+
+drop function r34_crear_tenant(text, text, timestamptz, origen_tenant);
+drop function r34_foto_tenant(date, uuid, boolean, numeric, uuid, periodo_suscripcion, boolean, integer);
+drop function r34_foto_plataforma(date, integer, integer, numeric, numeric, integer, integer, integer, integer, integer, integer);
+
+-- ============================================================
+-- R34g–R34i · PERFORMANCE (bloque MÉTRICAS 4, migración 20260925101000)
+--
+-- Dos reescrituras y dos funciones nuevas. Lo que este tramo sostiene:
+--
+--   g · `listado_lubricentros()` reescrita con una pasada por tabla dice
+--       EXACTAMENTE lo mismo que la versión vieja (20260917100000), fila
+--       por fila y columna por columna, en el mismo orden, sobre diez
+--       tenants armados para cubrir cada rama que se inlineó: owner que
+--       entró, que nunca entró y sin owner; con pago y sin pago; contacto
+--       de Fidelli antes, después y EN EL MISMO INSTANTE del pago (el
+--       mismo instante no cuenta: `>` estricto); teléfono por WhatsApp de
+--       la página, por sucursal (salteando la inactiva y la vacía, y
+--       eligiendo la más vieja por created_at aunque se haya insertado
+--       después) y sin teléfono; bonificado al 100; override de módulo
+--       pago y de premios apagados; onboarding en cada paso (1, 2, 3,
+--       completo por los pasos y completo por decreto), con el único
+--       producto de un tenant APAGADO y el premio de otro definido pero
+--       APAGADO, que cuentan igual; trabajos en el borde del mes (el día 1
+--       cuenta para services_mes, el último del mes anterior no); dos
+--       suscripciones (la vigente y una cancelada); sin suscripción; dos
+--       suspendidos (uno con atención y otro sin, que solo `activo desc`
+--       manda al final); DOS con dos owners —uno con el insertado primero más
+--       nuevo por created_at, otro con los dos owners con el MISMO
+--       created_at—, que salen dos veces en las dos versiones
+--       (estados_owner() es por usuario) y son el único caso en que una
+--       columna puede diferir: `owner_nombre`, que la vieja elegía al azar
+--       (`limit 1` sin order by) y la nueva fija en el más antiguo por
+--       created_at y, con empate, en el de id menor. Ahí se compara todo
+--       menos esa columna y se afirma la regla nueva. Y uno suscripto a un
+--       PLAN DE PRUEBA con `neumaticos` en sus features (ningún plan real
+--       trae la clave): sin él, el escalón del plan del módulo es código
+--       muerto para la prueba. La versión vieja se copia TEXTUAL como
+--       `r34_listado_v1()` y se borra al final. Y la guarda: un owner
+--       recibe 42501 en las cuatro funciones del bloque, y el mensaje es
+--       el de CADA función (el del listado no es el de estados_owner()
+--       levantado desde adentro: la guarda propia corre antes de leer).
+--   h · `metricas_plataforma()` con un solo group by devuelve el MISMO
+--       jsonb que la versión de 20260924102000 (`=` de jsonb y la serie
+--       como texto), con trabajos de los tres tipos repartidos en varios
+--       días —hoy, ayer, hace 8, 40 y 100 días, el día 1 del mes y el
+--       último del mes anterior (el borde de `trabajos_mes`)— y uno
+--       anulado que no cuenta; y, en una subtransacción que se deshace,
+--       con `services` VACÍA: las tres series en `[]`, acumulado 0 y
+--       primer trabajo null en las dos (la rama que solo una instalación
+--       nueva ejercita). La vieja se copia textual como `r34_metricas_v1()`.
+--   i · `estado_owner(id)` coincide con la fila de `estados_owner()` para
+--       los tres casos (activo, pendiente, sin owner → null) y para todos
+--       los tenants (con dos owners, con una de sus filas: la del más
+--       viejo); `suscriptos_por_plan()` coincide con las columnas
+--       equivalentes del listado para todos los tenants con suscripción,
+--       toma la VIGENTE (no la cancelada de hace un año) y sale ordenada
+--       por plan y nombre.
+--
+-- Corre como el superadmin del seed bajo `authenticated`; los fixtures se
+-- escriben como postgres (los owners entran por auth.users, como en el
+-- seed, para que handle_new_user() les cree la fila de usuarios). Limpia
+-- al final. scripts/regresion-metricas.sh rompe cada regla y espera ver
+-- este tramo en rojo.
+-- ============================================================
+
+-- La versión de listado_lubricentros() ANTERIOR a 20260925101000, copiada
+-- textual de 20260917100000 con otro nombre. Es el patrón de la
+-- comparación: si la nueva difiere en algo, la nueva está mal.
+create or replace function r34_listado_v1()
+returns table (
+  id                uuid,
+  nombre            text,
+  slug              text,
+  activo            boolean,
+  calcos_entregadas integer,
+  creado            date,
+  suscripcion_id    uuid,
+  sub_estado        estado_suscripcion,
+  sub_periodo       periodo_suscripcion,
+  sub_descuento_pct numeric,
+  sub_vencimiento   date,
+  plan_id           uuid,
+  plan_nombre       text,
+  plan_precio       numeric,
+  plan_desc_sem     numeric,
+  plan_desc_anual   numeric,
+  services_mes      integer,
+  ultimo_service    date,
+  owner_estado      text,
+  owner_nombre      text,
+  atencion          text,
+  atencion_orden    integer,
+  contactado        boolean,
+  telefono          text,
+  onboarding_paso   integer,
+  onboarding_pasos  integer,
+  onboarding_avance timestamptz,
+  -- El módulo pago de gomería, resuelto EN LÍNEA con los tres escalones
+  -- de feature_de_tenant (override → plan → cerrado) y no llamándola.
+  --
+  -- No se la llama a propósito: feature_de_tenant es SECURITY DEFINER sin
+  -- guarda de llamador —acepta cualquier lubricentro_id— y por eso NO
+  -- está grantada a authenticated; la puerta pública es plan_permite(),
+  -- que se ata a mi_lubricentro_id(). Como esta función es security
+  -- INVOKER, llamarla desde acá la hace fallar con "permission denied" y
+  -- el listado de /fidelli se vacía SIN ERROR VISIBLE: la pantalla dice
+  -- "Todavía no hay ningún lubricentro". Pasó al escribir este bloque.
+  -- Grantarla habría sido peor: cualquier owner podría leer las features
+  -- de cualquier tenant.
+  --
+  -- Acá los datos ya están a mano (plan_overrides del tenant y features
+  -- del plan vigente, los dos en el CTE base) y el RLS de lubricentros ya
+  -- decide qué filas se ven, así que la resolución sale igual sin abrir
+  -- ninguna puerta. Lo vigila R15i.
+  modulo_neumaticos boolean
+)
+language sql
+stable
+set search_path = public
+as $$
+  with
+  vigente as (
+    select distinct on (s.lubricentro_id)
+      s.lubricentro_id, s.id, s.estado, s.periodo, s.descuento_pct,
+      s.vencimiento, s.plan_id
+    from suscripciones s
+    order by s.lubricentro_id, s.inicio desc, s.created_at desc
+  ),
+  actividad as (
+    select
+      sv.lubricentro_id,
+      count(*) filter (
+        where sv.fecha >= date_trunc('month', current_date))::integer as del_mes,
+      max(sv.fecha) as ultimo
+    from services sv
+    where not sv.anulado
+    group by sv.lubricentro_id
+  ),
+  owners as (
+    select * from estados_owner()
+  ),
+  base as (
+    select
+      l.*,
+      v.id as v_id, v.estado as v_estado, v.periodo as v_periodo,
+      v.descuento_pct as v_desc, v.vencimiento as v_venc, v.plan_id as v_plan,
+      p.nombre as p_nombre, p.precio_mensual as p_precio,
+      p.descuento_semestral_pct as p_sem, p.descuento_anual_pct as p_anual,
+      p.features as p_features,
+      coalesce(a.del_mes, 0) as del_mes,
+      a.ultimo,
+      coalesce(o.estado, 'sin_owner') as o_estado,
+      (select u.nombre from usuarios u
+        where u.lubricentro_id = l.id and u.rol = 'owner' limit 1) as o_nombre,
+      estado_atencion(v.estado, v.vencimiento, coalesce(v.descuento_pct, 0)) as atencion
+    from lubricentros l
+    left join vigente   v on v.lubricentro_id = l.id
+    left join planes    p on p.id = v.plan_id
+    left join actividad a on a.lubricentro_id = l.id
+    left join owners    o on o.lubricentro_id = l.id
+  )
+  select
+    b.id, b.nombre, b.slug, b.activo, b.calcos_entregadas, b.created_at::date,
+    b.v_id, b.v_estado, b.v_periodo, b.v_desc, b.v_venc,
+    b.v_plan, b.p_nombre, b.p_precio, b.p_sem, b.p_anual,
+    b.del_mes, b.ultimo,
+    b.o_estado, b.o_nombre,
+    b.atencion,
+    orden_atencion(b.atencion),
+    contactado_fidelli(b.id),
+    telefono_de_contacto(b.id),
+    (ob.estado->>'paso_actual')::integer,
+    (ob.estado->>'pasos')::integer,
+    (ob.estado->>'avance_at')::timestamptz,
+    -- Los tres escalones, en el mismo orden que feature_de_tenant.
+    coalesce(
+      (b.plan_overrides ->> 'neumaticos')::boolean,
+      (b.p_features     ->> 'neumaticos')::boolean,
+      false
+    )
+  from base b
+  cross join lateral onboarding_estado(b.id) as ob(estado)
+  order by
+    -- Primero el trabajo del día, y dentro de cada motivo el que vence antes.
+    orden_atencion(b.atencion),
+    case when b.atencion is not null then b.v_venc end nulls last,
+    -- El resto como siempre: los suspendidos al final, alfabético.
+    b.activo desc,
+    b.nombre;
+$$;
+
+-- La versión de metricas_plataforma() ANTERIOR a 20260925101000, copiada
+-- textual de 20260924102000 con otro nombre (los `-- @…` que trae son de
+-- la copia; ningún script los muerde acá).
+create or replace function r34_metricas_v1()
+returns jsonb
+language plpgsql
+stable
+set search_path = public
+as $$
+declare
+  v_primero date;
+  v_series  jsonb;
+begin
+  if not soy_superadmin() then
+    raise exception 'Solo el equipo Fidelli puede ver las métricas de la plataforma'
+      using errcode = '42501';
+  end if;
+
+  -- Un trabajo es una fila de services no anulada, DE CUALQUIER TIPO
+  -- (docs/METRICAS.md § 1). Ninguna rama de esta función filtra por tipo:
+  -- el desglose es además del total, no en vez.
+  select min(fecha) into v_primero
+  from services where not anulado;
+
+  if v_primero is null then
+    v_series := jsonb_build_object(
+      'dia', '[]'::jsonb, 'semana', '[]'::jsonb, 'mes', '[]'::jsonb);
+  else
+    select jsonb_object_agg(g.clave, serie.datos)
+      into v_series
+      from (values
+        ('dia',    'day',   interval '1 day',   30),
+        ('semana', 'week',  interval '1 week',  12),
+        ('mes',    'month', interval '1 month', 12)
+      ) as g(clave, unidad, paso, pasos)
+      cross join lateral (
+        select coalesce((
+          select jsonb_agg(
+            jsonb_build_object(
+              'inicio',     p.inicio,
+              'cantidad',   t.total,
+              'service',    t.svc,
+              'mecanica',   t.mec,
+              'neumaticos', t.neu)
+            order by p.inicio)
+          from (
+            select generate_series(
+              greatest(
+                (date_trunc(g.unidad, current_date) - (g.pasos - 1) * g.paso)::date,
+                date_trunc(g.unidad, v_primero)::date
+              ),
+              date_trunc(g.unidad, current_date)::date,
+              g.paso)::date as inicio
+          ) p
+          cross join lateral (
+            select
+              count(*)::integer                                       as total,
+              count(*) filter (where s.tipo = 'service')::integer     as svc,
+              count(*) filter (where s.tipo = 'mecanica')::integer    as mec,
+              count(*) filter (where s.tipo = 'neumaticos')::integer  as neu
+            from services s
+            where not s.anulado                                        -- @serie_todos
+              and s.fecha >= p.inicio
+              and s.fecha < (p.inicio + g.paso)::date
+          ) t
+        ), '[]'::jsonb) as datos
+      ) serie;
+  end if;
+
+  return jsonb_build_object(
+    'trabajos_mes', (select count(*) from services
+                     where not anulado                                 -- @trabajos_mes
+                       and fecha >= date_trunc('month', current_date)),
+    'acumulado', (select count(*) from services where not anulado),
+    'primer_trabajo', v_primero,
+    'series', v_series
+  );
+end;
+$$;
+
+-- Un tenant de prueba con su sucursal, un cliente, un auto y —si se pide—
+-- un owner que entró ('activo'), que nunca entró ('pendiente') o ninguno
+-- (null). El owner entra por auth.users como en el seed. Se borra al
+-- final del bloque.
+create or replace function r34_perf_tenant(
+  p_nombre text, p_slug text, p_activo boolean, p_owner text, p_alta timestamptz
+)
+returns table (lub uuid, suc uuid, veh uuid, uid uuid)
+language plpgsql
+as $$
+declare
+  v_lub uuid; v_suc uuid; v_cli uuid; v_veh uuid; v_uid uuid; v_pat text;
+begin
+  insert into lubricentros (nombre, slug, activo, created_at)
+  values (p_nombre, p_slug, p_activo, p_alta) returning id into v_lub;
+  insert into sucursales (lubricentro_id, nombre, created_at)
+  values (v_lub, 'Centro', p_alta) returning id into v_suc;
+  insert into clientes (lubricentro_id, nombre, telefono)
+  values (v_lub, 'Cliente R34', '3510000000') returning id into v_cli;
+  v_pat := 'AE' || lpad((floor(random() * 900) + 100)::text, 3, '0') || 'PF';
+  insert into vehiculos (lubricentro_id, cliente_id, patente, patente_normalizada, marca, modelo)
+  values (v_lub, v_cli, v_pat, v_pat, 'Toyota', 'Hilux') returning id into v_veh;
+
+  if p_owner is not null then
+    v_uid := gen_random_uuid();
+    insert into auth.users (
+      id, instance_id, email, encrypted_password, email_confirmed_at,
+      created_at, updated_at, last_sign_in_at, aud, role,
+      raw_app_meta_data, raw_user_meta_data,
+      confirmation_token, recovery_token, email_change_token_new, email_change
+    ) values (
+      v_uid, '00000000-0000-0000-0000-000000000000',
+      p_slug || '@r34.fidellimotors.app',
+      extensions.crypt('r34', extensions.gen_salt('bf')), now(),
+      p_alta, p_alta,
+      case when p_owner = 'activo' then p_alta + interval '1 day' end,
+      'authenticated', 'authenticated',
+      '{"provider":"email","providers":["email"]}'::jsonb,
+      jsonb_build_object('rol', 'owner', 'nombre', 'Owner ' || p_nombre, 'lubricentro_id', v_lub),
+      '', '', '', ''
+    );
+    if not exists (select 1 from usuarios u where u.id = v_uid and u.lubricentro_id = v_lub and u.rol = 'owner') then
+      raise exception 'R34 SIN PISO: el trigger de auth no creó el owner de prueba de %.', p_slug;
+    end if;
+  end if;
+
+  return query select v_lub, v_suc, v_veh, v_uid;
+end;
+$$;
+
+-- Un owner MÁS para un tenant que ya existe (el caso de la reinvitación
+-- con otro mail), con el `created_at` de `usuarios` fijado a mano: así el
+-- orden de inserción y el orden por antigüedad se pueden cruzar a
+-- propósito, que es lo que distingue «el más viejo» de «el primero que
+-- encuentro». Entra por auth.users como el otro helper; el trigger crea la
+-- fila de usuarios con created_at = now() y acá se corrige.
+create or replace function r34_perf_owner(
+  p_lub uuid, p_email text, p_nombre text, p_created timestamptz, p_entro boolean
+)
+returns uuid
+language plpgsql
+as $$
+declare
+  v_uid uuid := gen_random_uuid();
+begin
+  insert into auth.users (
+    id, instance_id, email, encrypted_password, email_confirmed_at,
+    created_at, updated_at, last_sign_in_at, aud, role,
+    raw_app_meta_data, raw_user_meta_data,
+    confirmation_token, recovery_token, email_change_token_new, email_change
+  ) values (
+    v_uid, '00000000-0000-0000-0000-000000000000',
+    p_email, extensions.crypt('r34', extensions.gen_salt('bf')), now(),
+    p_created, p_created,
+    case when p_entro then p_created + interval '1 day' end,
+    'authenticated', 'authenticated',
+    '{"provider":"email","providers":["email"]}'::jsonb,
+    jsonb_build_object('rol', 'owner', 'nombre', p_nombre, 'lubricentro_id', p_lub),
+    '', '', '', ''
+  );
+  update usuarios set created_at = p_created where id = v_uid;
+  if not exists (select 1 from usuarios u where u.id = v_uid and u.lubricentro_id = p_lub and u.rol = 'owner' and u.created_at = p_created) then
+    raise exception 'R34 SIN PISO: el trigger de auth no creó el segundo owner de prueba (%), o su created_at no se pudo fijar.', p_email;
+  end if;
+  return v_uid;
+end;
+$$;
+
+do $$
+declare
+  v_hoy     date := current_date;
+  -- El día 1 del mes en curso: el borde de «trabajos del mes» (`>=`).
+  v_mes1    date := date_trunc('month', current_date)::date;
+  v_super   uuid;
+  v_owner   uuid;      -- el owner del demo, para la guarda
+  v_pro     uuid;
+  v_basic   uuid;
+  v_ultra   uuid;
+  -- Los diez tenants (t), sus sucursales (s), el auto del séptimo y los
+  -- owners (u) para la limpieza.
+  t1 uuid; t2 uuid; t3 uuid; t4 uuid; t5 uuid; t6 uuid; t7 uuid; t8 uuid; t9 uuid; t10 uuid;
+  s1 uuid; s2 uuid; s3 uuid; s6 uuid; s7 uuid;
+  v_uid9a   uuid;      -- los dos owners empatados de T9
+  v_uid9b   uuid;
+  v_t9_nombre text;    -- lo que la regla del empate tiene que elegir para T9
+  v_t9_estado text;
+  v_plan_gom uuid;     -- el plan de prueba con `neumaticos` en sus features
+  v_msg     text;
+  v_claves_v1 text[];
+  v_claves_v2 text[];
+  v_nombres text[];
+  v_veh6    uuid;
+  v_veh7    uuid;
+  v_uid     uuid;
+  v_uids    uuid[] := '{}';
+  v_ids     uuid[];
+  v_sus     uuid;
+  v_n       integer;
+  v_m       integer;
+  v_k       integer;
+  v_ok      boolean;
+  v_a       jsonb;
+  v_b       jsonb;
+  v_ids_v1  uuid[];
+  v_ids_v2  uuid[];
+  v_ok_k    integer;
+  v_plan    uuid;
+  r         record;
+  k         text;
+begin
+  select u.id into v_super from usuarios u where u.rol = 'superadmin' limit 1;
+  select u.id into v_owner
+    from usuarios u join lubricentros l on l.id = u.lubricentro_id
+   where l.slug = 'demo' and u.rol = 'owner' limit 1;
+  select p.id into v_pro   from planes p where p.nombre = 'Pro'   and not p.heredado;
+  select p.id into v_basic from planes p where p.nombre = 'Basic' and not p.heredado;
+  select p.id into v_ultra from planes p where p.nombre = 'Ultra' and not p.heredado;
+  if v_super is null or v_owner is null or v_pro is null or v_basic is null or v_ultra is null then
+    raise exception 'R34g SIN PISO: falta el superadmin, el owner del demo o los planes Basic/Pro/Ultra del seed.';
+  end if;
+
+  -- ---------- Los fixtures, como postgres ----------
+
+  -- T1 · owner que entró; Pro activa al día; pagó hace 10 días y Fidelli
+  -- lo contactó hace 2 (después del pago → contactado); WhatsApp en la
+  -- página con espacios alrededor (gana sobre el de la sucursal);
+  -- onboarding completo POR LOS PASOS (sin decreto) con el premio definido
+  -- pero APAGADO, que cuenta igual; módulo gomería por override.
+  select lub, suc, uid into t1, s1, v_uid from r34_perf_tenant('Perf Uno R34', 'r34g-uno', true, 'activo', now() - interval '60 days');
+  v_uids := v_uids || v_uid;
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, inicio, vencimiento)
+  values (t1, v_pro, 'activa', 'mensual', 0, v_hoy - 30, v_hoy + 20) returning id into v_sus;
+  insert into pagos (lubricentro_id, suscripcion_id, registrado_por, periodo_desde, periodo_hasta, monto, fecha_pago, created_at)
+  values (t1, v_sus, v_super, v_hoy - 30, v_hoy, 49000, v_hoy - 10, now() - interval '10 days');
+  insert into contactos_fidelli (lubricentro_id, usuario_id, motivo, canal, created_at)
+  values (t1, v_super, 'cobranza', 'whatsapp', now() - interval '2 days');
+  insert into config_experiencia (lubricentro_id, datos_contacto)
+  values (t1, '{"whatsapp": "  351 400 0001 "}'::jsonb);
+  update sucursales set telefono = '351 999 9999' where id = s1;
+  insert into productos (lubricentro_id, categoria, nombre, created_at)
+  values (t1, 'aceite', 'Aceite R34 uno', now() - interval '40 days'),
+         (t1, 'filtro', 'Filtro R34 uno', now() - interval '35 days');
+  -- El premio va APAGADO y se inserta ANTES de confirmar el diseño, las
+  -- dos cosas a propósito: (a) un premio definido y apagado cuenta como
+  -- definido (onboarding_estado_de: «definirlo y apagarlo es una decisión,
+  -- no una omisión»), así que un `where activo` colado en el refactor lo
+  -- devolvería al paso 3; (b) el trigger de premios completa el onboarding
+  -- por decreto en cuanto el paso queda en null, y con el diseño todavía
+  -- sin confirmar no lo hace, así que T1 termina «completo por los pasos»
+  -- (onboarding_completado_at null) y su paso null sale de la regla, no
+  -- del decreto: la mutación se ve en onboarding_paso y no solo en
+  -- onboarding_avance. El premio activo lo tiene T6.
+  insert into premios (lubricentro_id, meta_services, descripcion, activo, created_at)
+  values (t1, 5, 'Quinto service gratis R34', false, now() - interval '20 days');
+  update lubricentros set diseno_confirmado_at = now() - interval '30 days' where id = t1;
+
+  -- T2 · owner que nunca entró; trial que vence mañana (trial_por_vencer);
+  -- sin pago, contactado después del alta; TRES sucursales activas: Centro
+  -- con el teléfono en blanco (la más vieja: no cuenta), Norte con
+  -- teléfono insertada primero pero creada hace 5 días, y Sur con teléfono
+  -- insertada DESPUÉS pero creada hace 9 días: gana Sur, porque la regla de
+  -- telefono_de_contacto() es «la primera activa con teléfono por
+  -- created_at», no la primera del heap (un `desc` colado elegiría Norte);
+  -- un único producto, APAGADO (cuenta igual para el paso 1), y sin diseño
+  -- → paso 2 de 3.
+  select lub, suc, uid into t2, s2, v_uid from r34_perf_tenant('Perf Dos R34', 'r34g-dos', true, 'pendiente', now() - interval '10 days');
+  v_uids := v_uids || v_uid;
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, inicio, vencimiento)
+  values (t2, v_pro, 'trial', 'mensual', 0, v_hoy - 10, v_hoy + 1);
+  insert into contactos_fidelli (lubricentro_id, usuario_id, motivo, canal, created_at)
+  values (t2, v_super, 'trial', 'manual', now() - interval '1 day');
+  update sucursales set telefono = '   ' where id = s2;
+  insert into sucursales (lubricentro_id, nombre, telefono, created_at)
+  values (t2, 'Norte', ' 351 400 0002 ', now() - interval '5 days');
+  insert into sucursales (lubricentro_id, nombre, telefono, created_at)
+  values (t2, 'Sur', '351 400 0022', now() - interval '9 days');
+  insert into productos (lubricentro_id, categoria, nombre, activo, created_at)
+  values (t2, 'aceite', 'Aceite R34 dos', false, now() - interval '3 days');
+
+  -- T3 · sin owner, sin suscripción y SUSPENDIDO: sin suscripción no hay
+  -- atención, así que su lugar en el listado lo decide solo `activo desc`
+  -- (al final); T6 también está suspendido pero tiene atención y sale
+  -- primero por eso, con lo que sin T3 un `activo asc` colado en el ORDER
+  -- BY no se vería. El único contacto es ANTERIOR al alta (no cuenta); la
+  -- sucursal tiene teléfono pero está inactiva (no cuenta); sin productos
+  -- → paso 1 de 2 (sin plan no aplica premio).
+  select lub, suc, uid into t3, s3, v_uid from r34_perf_tenant('Perf Tres R34', 'r34g-tres', false, null, now() - interval '5 days');
+  insert into contactos_fidelli (lubricentro_id, usuario_id, motivo, canal, created_at)
+  values (t3, v_super, 'trial', 'whatsapp', now() - interval '6 days');
+  update sucursales set telefono = '351 400 0003', activa = false where id = s3;
+
+  -- T4 · bonificado al 100 y vencido hace 30 días (atención null: exento);
+  -- pagó hace 5 y tiene DOS contactos: uno de hace 10 (antes del pago) y
+  -- otro EN EL MISMO INSTANTE del pago (now() es constante dentro de la
+  -- transacción): ninguno es posterior → no contactado, porque
+  -- contactado_fidelli() compara con `>` estricto y un `>=` colado lo
+  -- marcaría; premios apagados por override → 2 pasos; producto y diseño →
+  -- completo. Sin teléfono en ningún lado.
+  select lub, suc, uid into t4, v_sus, v_uid from r34_perf_tenant('Perf Cuatro R34', 'r34g-cuatro', true, 'activo', now() - interval '200 days');
+  v_uids := v_uids || v_uid;
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, inicio, vencimiento)
+  values (t4, v_pro, 'activa', 'mensual', 100, v_hoy - 60, v_hoy - 30) returning id into v_sus;
+  insert into pagos (lubricentro_id, suscripcion_id, registrado_por, periodo_desde, periodo_hasta, monto, fecha_pago, created_at)
+  values (t4, v_sus, v_super, v_hoy - 60, v_hoy - 30, 0, v_hoy - 5, now() - interval '5 days');
+  insert into contactos_fidelli (lubricentro_id, usuario_id, motivo, canal, created_at)
+  values (t4, v_super, 'cobranza', 'whatsapp', now() - interval '10 days'),
+         (t4, v_super, 'cobranza', 'manual',   now() - interval '5 days');
+  insert into productos (lubricentro_id, categoria, nombre, created_at)
+  values (t4, 'aceite', 'Aceite R34 cuatro', now() - interval '100 days');
+  update lubricentros set diseno_confirmado_at = now() - interval '90 days' where id = t4;
+
+  -- T5 · owner que nunca entró; DOS suscripciones: una Basic cancelada de
+  -- hace un año y la vigente Pro semestral con 20 de descuento; WhatsApp
+  -- en la página; producto y diseño pero sin premio ni omisión → paso 3.
+  select lub, suc, uid into t5, v_sus, v_uid from r34_perf_tenant('Perf Cinco R34', 'r34g-cinco', true, 'pendiente', now() - interval '400 days');
+  v_uids := v_uids || v_uid;
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, inicio, vencimiento, created_at)
+  values (t5, v_basic, 'cancelada', 'mensual', 0, v_hoy - 400, v_hoy - 35, now() - interval '400 days');
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, inicio, vencimiento, created_at)
+  values (t5, v_pro, 'activa', 'semestral', 20, v_hoy - 30, v_hoy + 150, now() - interval '30 days');
+  insert into config_experiencia (lubricentro_id, datos_contacto)
+  values (t5, '{"whatsapp": "351 400 0005"}'::jsonb);
+  insert into productos (lubricentro_id, categoria, nombre, created_at)
+  values (t5, 'aceite', 'Aceite R34 cinco', now() - interval '25 days');
+  update lubricentros set diseno_confirmado_at = now() - interval '20 days' where id = t5;
+
+  -- T6 · SUSPENDIDO (activo = false desde el alta, sin pasar por la puerta
+  -- de suspensión); Pro vencida (cobranza_vencida); onboarding completado
+  -- por decreto, con un premio ACTIVO (el de T1 está apagado: con uno de
+  -- cada, un filtro por `activo` en cualquier sentido cambia algo). Su
+  -- ÚNICO trabajo está anulado y es de ayer: services_mes
+  -- tiene que dar 0 y ultimo_service null. Sin este caso, sacarle el
+  -- `not anulado` al último trabajo o al mes del listado no se ve (en T7
+  -- el anulado comparte fecha con los válidos).
+  select lub, suc, veh, uid into t6, s6, v_veh6, v_uid from r34_perf_tenant('Perf Seis R34', 'r34g-seis', false, 'activo', now() - interval '300 days');
+  v_uids := v_uids || v_uid;
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, inicio, vencimiento)
+  values (t6, v_pro, 'vencida', 'mensual', 0, v_hoy - 90, v_hoy - 60);
+  update lubricentros set onboarding_completado_at = now() - interval '250 days' where id = t6;
+  insert into premios (lubricentro_id, meta_services, descripcion, created_at)
+  values (t6, 4, 'Cuarto service gratis R34', now() - interval '240 days');
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, created_at, kilometros, aceite_tipo, prox_service_km, anulado)
+  values (t6, s6, v_veh6, v_super, 'service', v_hoy - 1, now() - interval '1 day', 30000, '10W40', 40000, true);
+
+  -- T7 · Ultra anual con 10 de descuento; premio OMITIDO → completo; y los
+  -- trabajos de R34h: hoy uno de cada tipo más uno ANULADO, ayer un
+  -- service, hace 8 días una mecánica (otra semana), hace 40 una gomería
+  -- (fuera de la serie diaria, dentro de la semanal y la mensual), hace
+  -- 100 un service (solo en la mensual), y el BORDE DEL MES: un service el
+  -- día 1 del mes en curso (cuenta para services_mes y trabajos_mes: `>=`)
+  -- y una mecánica el último día del mes anterior (no cuenta). Sin esas
+  -- dos filas, un `>` en lugar de `>=` pasa en verde en las dos funciones.
+  select lub, suc, veh, uid into t7, s7, v_veh7, v_uid from r34_perf_tenant('Perf Siete R34', 'r34g-siete', true, 'activo', now() - interval '120 days');
+  v_uids := v_uids || v_uid;
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, inicio, vencimiento)
+  values (t7, v_ultra, 'activa', 'anual', 10, v_hoy - 100, v_hoy + 265);
+  insert into productos (lubricentro_id, categoria, nombre, created_at)
+  values (t7, 'aceite', 'Aceite R34 siete', now() - interval '90 days');
+  update lubricentros set diseno_confirmado_at = now() - interval '85 days', premio_omitido_at = now() - interval '80 days' where id = t7;
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, created_at, kilometros, aceite_tipo, prox_service_km, anulado)
+  values (t7, s7, v_veh7, v_super, 'service', v_hoy,       now(),                        50000, '10W40', 60000, false),
+         (t7, s7, v_veh7, v_super, 'service', v_hoy,       now(),                        50100, '10W40', 60100, true),
+         (t7, s7, v_veh7, v_super, 'service', v_hoy - 1,   now() - interval '1 day',     49000, '10W40', 59000, false),
+         (t7, s7, v_veh7, v_super, 'service', v_mes1,      v_mes1 + interval '12 hours', 46000, '10W40', 56000, false),
+         (t7, s7, v_veh7, v_super, 'service', v_hoy - 100, now() - interval '100 days',  40000, '10W40', 50000, false);
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, created_at, kilometros, trabajo_descripcion)
+  values (t7, s7, v_veh7, v_super, 'mecanica', v_hoy,      now(),                            50000, 'Cambio de pastillas R34'),
+         (t7, s7, v_veh7, v_super, 'mecanica', v_hoy - 8,  now() - interval '8 days',        48000, 'Cambio de correa R34'),
+         (t7, s7, v_veh7, v_super, 'mecanica', v_mes1 - 1, (v_mes1 - 1) + interval '12 hours', 45900, 'Cambio de bujías R34');
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, created_at, kilometros, alineacion)
+  values (t7, s7, v_veh7, v_super, 'neumaticos', v_hoy,      now(),                      50000, true),
+         (t7, s7, v_veh7, v_super, 'neumaticos', v_hoy - 40, now() - interval '40 days', 45000, false);
+
+  -- T8 · DOS owners. El primero que se inserta («nuevo») tiene el
+  -- created_at MÁS RECIENTE y nunca entró; el segundo («viejo») es el más
+  -- antiguo y ya entró. Cruzar el orden de inserción con el de antigüedad
+  -- es lo que hace visible la regla: `owner_nombre` y estado_owner() tienen
+  -- que elegir a «viejo» aunque no sea el primero del heap. El tenant sale
+  -- DOS veces en el listado (una fila por owner, en las dos versiones): la
+  -- comparación de abajo lo trata aparte. Basic activa al día, sin nada más.
+  select lub, suc, veh, uid into t8, v_sus, v_veh6, v_uid from r34_perf_tenant('Perf Ocho R34', 'r34g-ocho', true, null, now() - interval '110 days');
+  v_uid := r34_perf_owner(t8, 'r34g-ocho-nuevo@r34.fidellimotors.app', 'Owner Ocho nuevo', now() - interval '1 day',    false);
+  v_uids := v_uids || v_uid;
+  v_uid := r34_perf_owner(t8, 'r34g-ocho-viejo@r34.fidellimotors.app', 'Owner Ocho viejo', now() - interval '100 days', true);
+  v_uids := v_uids || v_uid;
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, inicio, vencimiento)
+  values (t8, v_basic, 'activa', 'mensual', 0, v_hoy - 20, v_hoy + 10);
+
+  -- T9 · DOS owners con el MISMO created_at (dos invitaciones en la misma
+  -- transacción: now() es constante). «El más antiguo» empata y la regla
+  -- sigue por `id`: un uuid al azar, así que el elegido es el de id MENOR,
+  -- sea cual sea de los dos; la vieja tomaba el primero del heap. Uno entró
+  -- («A») y el otro no («B») para que estado_owner() también tenga que
+  -- elegir. Lo esperado se calcula acá como postgres, con la regla del
+  -- empate y no con la de la migración (`order by id`, no `created_at, id`).
+  -- Basic activa al día, sin nada más. El nombre arranca con un dígito a
+  -- propósito: así el orden por `nombre` y el orden por `slug` no coinciden
+  -- en los fixtures (los demás ordenan igual por los dos) y un ORDER BY que
+  -- cambie la columna se ve en la secuencia de claves.
+  select lub, suc, veh, uid into t9, v_sus, v_veh6, v_uid from r34_perf_tenant('Perf 9 Empate R34', 'r34g-nueve', true, null, now() - interval '50 days');
+  v_uid9a := r34_perf_owner(t9, 'r34g-nueve-a@r34.fidellimotors.app', 'Owner Nueve A', now() - interval '50 days', true);
+  v_uid9b := r34_perf_owner(t9, 'r34g-nueve-b@r34.fidellimotors.app', 'Owner Nueve B', now() - interval '50 days', false);
+  v_uids := v_uids || v_uid9a || v_uid9b;
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, inicio, vencimiento)
+  values (t9, v_basic, 'activa', 'mensual', 0, v_hoy - 15, v_hoy + 15);
+  select u.nombre, case when u.id = v_uid9a then 'activo' else 'pendiente' end
+    into v_t9_nombre, v_t9_estado
+    from usuarios u where u.lubricentro_id = t9 order by u.id limit 1;
+
+  -- T10 · suscripto a un PLAN DE PRUEBA con `neumaticos: true` (y
+  -- `premios: true`) en sus features y sin override: el módulo tiene que
+  -- salir prendido por el SEGUNDO escalón de feature_de_tenant(), el del
+  -- plan. Ningún plan del seed trae la clave `neumaticos`, así que sin este
+  -- fixture ese escalón es código muerto para la prueba y un `when false`
+  -- colado ahí pasa la identidad en verde. El plan nace inactivo y
+  -- heredado para que ninguna pantalla lo ofrezca si la limpieza no
+  -- llegara a correr; el candado de planes solo cuida los precios y solo
+  -- en el UPDATE. Owner que entró, sin productos → paso 1 de 3 (el premio
+  -- aplica por el plan). Se borra al final, después de su suscripción.
+  insert into planes (nombre, precio_mensual, features, activo, heredado)
+  values ('Plan Gomería R34', 1000, '{"premios": true, "neumaticos": true}'::jsonb, false, true)
+  returning id into v_plan_gom;
+  select lub, suc, uid into t10, v_sus, v_uid from r34_perf_tenant('Perf Diez R34', 'r34g-diez', true, 'activo', now() - interval '15 days');
+  v_uids := v_uids || v_uid;
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, inicio, vencimiento)
+  values (t10, v_plan_gom, 'activa', 'mensual', 0, v_hoy - 15, v_hoy + 15);
+
+  v_ids := array[t1, t2, t3, t4, t5, t6, t7, t8, t9, t10];
+
+  -- Los overrides van por la puerta, como superadmin (el candado rechaza
+  -- el UPDATE directo).
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  perform fijar_override_plan(t1, '{"neumaticos": true}'::jsonb,
+    'Módulo gomería · pago · 2026-09-25 — prueba R34g del listado');
+  perform fijar_override_plan(t4, '{"premios": false}'::jsonb,
+    'Prueba R34g: premios apagados por override para que el onboarding tenga 2 pasos');
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- ---------- g · La guarda: un owner recibe 42501 en las cuatro ----------
+  -- Y el mensaje tiene que ser EL DE CADA FUNCIÓN. El listado llama a
+  -- estados_owner(), que es definer con la misma guarda: sin la guarda
+  -- propia el owner igual recibiría 42501, pero levantado desde adentro de
+  -- la consulta, después de que el plan arrancó a leer lubricentros. La
+  -- regla es «42501 antes de leer nada», y la única forma de ver la
+  -- diferencia es el texto del error.
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  for r in select * from (values
+      ('select count(*) from listado_lubricentros()',   'ver el listado de lubricentros'),
+      ('select metricas_plataforma()',                  'ver las métricas de la plataforma'),
+      ('select estado_owner(''' || t1 || ''')',         'consultar el estado de los owners'),
+      ('select count(*) from suscriptos_por_plan()',    'ver los suscriptos por plan')
+    ) as q(consulta, pista)
+  loop
+    v_ok := false; v_msg := null;
+    begin
+      execute r.consulta;
+    exception
+      when insufficient_privilege then v_ok := true; v_msg := sqlerrm;
+    end;
+    if not v_ok then
+      raise exception 'R34g UN OWNER PUDO EJECUTAR «%». Las cuatro lecturas del bloque 4 son solo superadmin: la guarda soy_superadmin() va antes de leer nada (42501).', r.consulta;
+    end if;
+    if v_msg not like '%' || r.pista || '%' then
+      raise exception 'R34g EL 42501 DE «%» NO ES EL SUYO: llegó «%» y la guarda propia dice «… puede %». Si el error lo levanta otra función desde adentro (estados_owner() en el listado), la consulta ya arrancó a leer antes de la guarda; la regla es 42501 ANTES de leer nada, en cada función.', r.consulta, v_msg, r.pista;
+    end if;
+  end loop;
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- ---------- g · El listado nuevo dice lo mismo que el viejo ----------
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  -- Primero, que los fixtures cubran lo que dicen cubrir: una identidad
+  -- entre dos funciones sobre siete tenants iguales no probaría nada.
+  select
+    count(distinct v.owner_estado) = 3                                 as f1,
+    bool_or(v.contactado) and bool_or(not v.contactado)                as f2,
+    bool_or(v.telefono is null) and bool_or(v.telefono is not null)    as f3,
+    count(distinct coalesce(v.onboarding_paso, 0)) = 4                 as f4,
+    count(distinct v.onboarding_pasos) = 2                             as f5,
+    bool_or(v.modulo_neumaticos) and bool_or(not v.modulo_neumaticos)  as f6,
+    bool_or(v.sub_descuento_pct >= 100)                                as f7,
+    bool_or(v.atencion is not null) and bool_or(v.atencion is null)    as f8,
+    bool_or(v.suscripcion_id is null)                                  as f9,
+    bool_or(not v.activo)                                              as f10,
+    bool_or(v.services_mes > 0) and bool_or(v.ultimo_service is null)  as f11,
+    count(*) filter (where v.id = t8) = 2 and count(*) filter (where v.id = t9) = 2 as f12
+    into r
+    from r34_listado_v1() v
+   where v.id = any(v_ids);
+  if not (r.f1 and r.f2 and r.f3 and r.f4 and r.f5 and r.f6 and r.f7 and r.f8 and r.f9 and r.f10 and r.f11 and r.f12) then
+    raise exception 'R34g SIN VARIEDAD: los diez tenants de prueba no cubren todas las ramas (owner 3 estados %, contactado %, teléfono %, pasos 1/2/3/null %, 2 y 3 pasos %, módulo %, bonificado %, atención %, sin suscripción %, suspendido %, trabajos %, dos owners = dos filas en T8 y T9 %). Con menos variedad la identidad con el listado viejo pasa en verde sin haber ejercitado lo que se inlineó.',
+      r.f1, r.f2, r.f3, r.f4, r.f5, r.f6, r.f7, r.f8, r.f9, r.f10, r.f11, r.f12;
+  end if;
+
+  -- Y que los BORDES estén donde tienen que estar. Cada uno existe porque
+  -- en la revisión del bloque una mutación concreta pasó en verde sin él:
+  -- `>` en vez de `>=` en el mes (listado y pulso), `desc` en el orden de
+  -- las sucursales, `where activo` en productos o en premios, `>=` en
+  -- contactado. Si un fixture se corre y deja de ser borde, esto lo dice
+  -- antes de que la identidad pase en verde sin haber probado nada.
+  select
+    exists (select 1 from services s where s.lubricentro_id = t7 and not s.anulado and s.fecha = v_mes1)
+      and exists (select 1 from services s where s.lubricentro_id = t7 and not s.anulado and s.fecha = v_mes1 - 1) as b1,
+    (select v.telefono from r34_listado_v1() v where v.id = t2) = '351 400 0022'                                   as b2,
+    exists (select 1 from productos p where p.lubricentro_id = t2)
+      and not exists (select 1 from productos p where p.lubricentro_id = t2 and p.activo)                          as b3,
+    exists (select 1 from premios p where p.lubricentro_id = t1 and not p.activo)
+      and exists (select 1 from premios p where p.lubricentro_id = t6 and p.activo)                                 as b4,
+    (select l.onboarding_completado_at is null from lubricentros l where l.id = t1)
+      and (select v.onboarding_paso is null from r34_listado_v1() v where v.id = t1)                               as b5,
+    exists (select 1 from contactos_fidelli c where c.lubricentro_id = t4
+              and c.created_at = (select max(p.created_at) from pagos p where p.lubricentro_id = t4))
+      and not (select v.contactado from r34_listado_v1() v where v.id = t4)                                        as b6,
+    -- T9: dos owners y UN solo created_at entre los dos (el empate existe).
+    (select count(*) = 2 and count(distinct u.created_at) = 1 from usuarios u where u.lubricentro_id = t9)          as b7,
+    -- T10: la clave `neumaticos` está en el plan y NO en el override, y la
+    -- vieja lo ve prendido: el escalón del plan es el que decide.
+    (select p.features -> 'neumaticos' = 'true'::jsonb from planes p where p.id = v_plan_gom)
+      and not (select coalesce(l.plan_overrides, '{}'::jsonb) ? 'neumaticos' from lubricentros l where l.id = t10)
+      and (select v.modulo_neumaticos from r34_listado_v1() v where v.id = t10)                                    as b8,
+    -- T3: suspendido y SIN atención (el orden lo decide `activo desc`), y T6
+    -- suspendido CON atención (lo decide la atención): uno de cada.
+    (select not v.activo and v.atencion is null from r34_listado_v1() v where v.id = t3)
+      and (select not v.activo and v.atencion is not null from r34_listado_v1() v where v.id = t6)                 as b9
+    into r;
+  if not (r.b1 and r.b2 and r.b3 and r.b4 and r.b5 and r.b6 and r.b7 and r.b8 and r.b9) then
+    raise exception 'R34g SIN BORDES: los fixtures no están en el borde que dicen cubrir (trabajo el día 1 del mes y el último del anterior %, teléfono de la sucursal más vieja por created_at aunque insertada después %, único producto apagado %, premio apagado en T1 y activo en T6 %, T1 completo por los pasos y no por decreto %, contacto en el mismo instante que el pago y no contactado %, dos owners con el mismo created_at %, módulo prendido solo por el plan %, un suspendido sin atención y otro con %). Sin el borde, un > por >=, un desc, un where activo, un >=, un when false o un activo asc colados en la reescritura pasan la identidad en verde.',
+      r.b1, r.b2, r.b3, r.b4, r.b5, r.b6, r.b7, r.b8, r.b9;
+  end if;
+
+  -- Las mismas filas y los mismos tenants: la cantidad de filas Y la de
+  -- ids distintos de la nueva tienen que ser las de la vieja (un join que
+  -- multiplica filas pasa un EXCEPT sin que nadie lo note). Es identidad,
+  -- no unicidad: un tenant con dos owners sale dos veces en las DOS
+  -- versiones (estados_owner() es por usuario), y eso no es una rotura.
+  select count(*), count(distinct x.id) into v_n, v_k from r34_listado_v1() x;
+  select count(*), count(distinct x.id) into v_m, v_ok_k from listado_lubricentros() x;
+  if v_n <> v_m or v_k <> v_ok_k then
+    raise exception 'R34g EL LISTADO NUEVO DEVUELVE % FILAS (% tenants distintos) Y EL VIEJO % (% distintos). Una pasada por tabla que multiplica o pierde filas cambia la tabla de /fidelli/lubricentros sin ningún error a la vista.', v_m, v_ok_k, v_n, v_k;
+  end if;
+
+  -- Fila por fila y columna por columna, con el nombre de lo que difiere.
+  -- Solo los tenants con UNA fila en cada versión: los de dos owners
+  -- (dos filas en las dos) se comparan después como multiconjunto, porque
+  -- un full join por id los cruzaría 2 × 2.
+  for r in
+    with unicos as (
+      select x.id
+      from (select a.id, 1 as v from r34_listado_v1() a
+            union all
+            select b.id, 2 from listado_lubricentros() b) x
+      group by x.id
+      having count(*) filter (where x.v = 1) = 1
+         and count(*) filter (where x.v = 2) = 1
+    ),
+    pares as (
+      select coalesce(a.id, b.id) as id, a.id is null as sin_v1, b.id is null as sin_v2,
+        array_remove(array[
+          case when a.nombre            is distinct from b.nombre            then 'nombre'            end,
+          case when a.slug              is distinct from b.slug              then 'slug'              end,
+          case when a.activo            is distinct from b.activo            then 'activo'            end,
+          case when a.calcos_entregadas is distinct from b.calcos_entregadas then 'calcos_entregadas' end,
+          case when a.creado            is distinct from b.creado            then 'creado'            end,
+          case when a.suscripcion_id    is distinct from b.suscripcion_id    then 'suscripcion_id'    end,
+          case when a.sub_estado        is distinct from b.sub_estado        then 'sub_estado'        end,
+          case when a.sub_periodo       is distinct from b.sub_periodo       then 'sub_periodo'       end,
+          case when a.sub_descuento_pct is distinct from b.sub_descuento_pct then 'sub_descuento_pct' end,
+          case when a.sub_vencimiento   is distinct from b.sub_vencimiento   then 'sub_vencimiento'   end,
+          case when a.plan_id           is distinct from b.plan_id           then 'plan_id'           end,
+          case when a.plan_nombre       is distinct from b.plan_nombre       then 'plan_nombre'       end,
+          case when a.plan_precio       is distinct from b.plan_precio       then 'plan_precio'       end,
+          case when a.plan_desc_sem     is distinct from b.plan_desc_sem     then 'plan_desc_sem'     end,
+          case when a.plan_desc_anual   is distinct from b.plan_desc_anual   then 'plan_desc_anual'   end,
+          case when a.services_mes      is distinct from b.services_mes      then 'services_mes'      end,
+          case when a.ultimo_service    is distinct from b.ultimo_service    then 'ultimo_service'    end,
+          case when a.owner_estado      is distinct from b.owner_estado      then 'owner_estado'      end,
+          case when a.owner_nombre      is distinct from b.owner_nombre      then 'owner_nombre'      end,
+          case when a.atencion          is distinct from b.atencion          then 'atencion'          end,
+          case when a.atencion_orden    is distinct from b.atencion_orden    then 'atencion_orden'    end,
+          case when a.contactado        is distinct from b.contactado        then 'contactado'        end,
+          case when a.telefono          is distinct from b.telefono          then 'telefono'          end,
+          case when a.onboarding_paso   is distinct from b.onboarding_paso   then 'onboarding_paso'   end,
+          case when a.onboarding_pasos  is distinct from b.onboarding_pasos  then 'onboarding_pasos'  end,
+          case when a.onboarding_avance is distinct from b.onboarding_avance then 'onboarding_avance' end,
+          case when a.modulo_neumaticos is distinct from b.modulo_neumaticos then 'modulo_neumaticos' end
+        ], null) as difs,
+        a.slug as slug_v1, b.slug as slug_v2
+      from (select * from r34_listado_v1() a0 where a0.id in (select u0.id from unicos u0)) a
+      full join (select * from listado_lubricentros() b0 where b0.id in (select u0.id from unicos u0)) b on b.id = a.id
+    )
+    select * from pares p where p.sin_v1 or p.sin_v2 or cardinality(p.difs) > 0
+    order by p.id limit 1
+  loop
+    if r.sin_v1 or r.sin_v2 then
+      raise exception 'R34g EL TENANT % ESTÁ EN UNA VERSIÓN DEL LISTADO Y NO EN LA OTRA (en la vieja: %, en la nueva: %).', r.id, not r.sin_v1, not r.sin_v2;
+    end if;
+    raise exception 'R34g EL LISTADO NUEVO NO DICE LO MISMO QUE EL VIEJO para «%» en %: la reescritura de una pasada por tabla cambió el dato que ve /fidelli/lubricentros. Cada columna inlineada (contactado, teléfono, owner, onboarding, módulo) tiene que reproducir la función que reemplazó.', r.slug_v1, r.difs;
+  end loop;
+
+  -- Los tenants con más de una fila (dos owners): las mismas filas como
+  -- multiconjunto en las 27 columnas que no dependen de qué owner se elige
+  -- (`except all` en las dos direcciones), y `owner_nombre` aparte.
+  select count(*) into v_n from (
+    select a.id, a.nombre, a.slug, a.activo, a.calcos_entregadas, a.creado, a.suscripcion_id, a.sub_estado, a.sub_periodo, a.sub_descuento_pct, a.sub_vencimiento, a.plan_id, a.plan_nombre, a.plan_precio, a.plan_desc_sem, a.plan_desc_anual, a.services_mes, a.ultimo_service, a.owner_estado, a.atencion, a.atencion_orden, a.contactado, a.telefono, a.onboarding_paso, a.onboarding_pasos, a.onboarding_avance, a.modulo_neumaticos
+      from r34_listado_v1() a where a.id in (select x.id from r34_listado_v1() x group by x.id having count(*) > 1)
+    except all
+    select b.id, b.nombre, b.slug, b.activo, b.calcos_entregadas, b.creado, b.suscripcion_id, b.sub_estado, b.sub_periodo, b.sub_descuento_pct, b.sub_vencimiento, b.plan_id, b.plan_nombre, b.plan_precio, b.plan_desc_sem, b.plan_desc_anual, b.services_mes, b.ultimo_service, b.owner_estado, b.atencion, b.atencion_orden, b.contactado, b.telefono, b.onboarding_paso, b.onboarding_pasos, b.onboarding_avance, b.modulo_neumaticos
+      from listado_lubricentros() b where b.id in (select x.id from listado_lubricentros() x group by x.id having count(*) > 1)
+  ) d;
+  select count(*) into v_m from (
+    select b.id, b.nombre, b.slug, b.activo, b.calcos_entregadas, b.creado, b.suscripcion_id, b.sub_estado, b.sub_periodo, b.sub_descuento_pct, b.sub_vencimiento, b.plan_id, b.plan_nombre, b.plan_precio, b.plan_desc_sem, b.plan_desc_anual, b.services_mes, b.ultimo_service, b.owner_estado, b.atencion, b.atencion_orden, b.contactado, b.telefono, b.onboarding_paso, b.onboarding_pasos, b.onboarding_avance, b.modulo_neumaticos
+      from listado_lubricentros() b where b.id in (select x.id from listado_lubricentros() x group by x.id having count(*) > 1)
+    except all
+    select a.id, a.nombre, a.slug, a.activo, a.calcos_entregadas, a.creado, a.suscripcion_id, a.sub_estado, a.sub_periodo, a.sub_descuento_pct, a.sub_vencimiento, a.plan_id, a.plan_nombre, a.plan_precio, a.plan_desc_sem, a.plan_desc_anual, a.services_mes, a.ultimo_service, a.owner_estado, a.atencion, a.atencion_orden, a.contactado, a.telefono, a.onboarding_paso, a.onboarding_pasos, a.onboarding_avance, a.modulo_neumaticos
+      from r34_listado_v1() a where a.id in (select x.id from r34_listado_v1() x group by x.id having count(*) > 1)
+  ) d;
+  if v_n <> 0 or v_m <> 0 then
+    raise exception 'R34g UN TENANT CON DOS OWNERS NO DICE LO MISMO EN LAS DOS VERSIONES (% filas solo en la vieja, % solo en la nueva, sin contar owner_nombre). Con dos owners el listado devuelve dos filas, una por estado del owner, en las dos versiones; el resto de las columnas tiene que ser idéntico.', v_n, v_m;
+  end if;
+
+  -- La única salida que cambia a propósito: con dos owners, `owner_nombre`
+  -- es el más antiguo (created_at, id), y no «el primero que encontró»
+  -- como el `limit 1` sin order by de la vieja. T8 tiene al más nuevo
+  -- insertado primero, así que el orden del heap y el de antigüedad no
+  -- coinciden y la regla se ve.
+  select array_agg(distinct b.owner_nombre) into v_nombres from listado_lubricentros() b where b.id = t8;
+  if v_nombres is distinct from array['Owner Ocho viejo'] then
+    raise exception 'R34g CON DOS OWNERS EL LISTADO NO ELIGIÓ AL MÁS VIEJO PARA owner_nombre: dio % y el owner más antiguo por usuarios.created_at es «Owner Ocho viejo» (el otro se insertó primero pero es más nuevo). El listado y estado_owner() eligen al mismo owner, el más antiguo, para que la tabla y la ficha no nombren a dos personas distintas.', v_nombres;
+  end if;
+  -- Y la vieja, que no ordenaba, tiene que haber nombrado a uno de los dos
+  -- (si no, la diferencia no sería la documentada).
+  select array_agg(distinct a.owner_nombre) into v_nombres from r34_listado_v1() a where a.id = t8;
+  if not (v_nombres <@ array['Owner Ocho nuevo', 'Owner Ocho viejo']) then
+    raise exception 'R34g SIN PISO: la copia vieja del listado nombra % para el tenant de dos owners; esperaba uno de los dos.', v_nombres;
+  end if;
+  -- Y con EMPATE de created_at (T9) decide el id menor. No es más
+  -- significativo que el heap —es un uuid—, pero es fijo y es el mismo que
+  -- usa estado_owner(). Lo esperado se calculó arriba con `order by id`.
+  select array_agg(distinct b.owner_nombre) into v_nombres from listado_lubricentros() b where b.id = t9;
+  if v_nombres is distinct from array[v_t9_nombre] then
+    raise exception 'R34g CON DOS OWNERS EMPATADOS EN created_at EL LISTADO NO ELIGIÓ AL DE id MENOR PARA owner_nombre: dio % y esperaba «%». La regla es created_at y después id, en el listado y en estado_owner(); si el desempate cambia, cambia en los dos y en docs/METRICAS.md § 6.', v_nombres, v_t9_nombre;
+  end if;
+  select array_agg(distinct a.owner_nombre) into v_nombres from r34_listado_v1() a where a.id = t9;
+  if not (v_nombres <@ array['Owner Nueve A', 'Owner Nueve B']) then
+    raise exception 'R34g SIN PISO: la copia vieja del listado nombra % para el tenant de dos owners empatados; esperaba uno de los dos.', v_nombres;
+  end if;
+
+  -- Y en el mismo orden: la atención primero, el que vence antes adentro
+  -- de cada motivo, los suspendidos al final, alfabético. Se compara la
+  -- SECUENCIA DE CLAVES del orden y no la de ids: dos tenants homónimos con
+  -- la misma atención empatan en las dos versiones y el ORDER BY no promete
+  -- cuál va primero, así que comparar ids ahí pondría el bloque en rojo sin
+  -- culpa de nadie. Si las claves van en la misma secuencia, el orden es el
+  -- mismo hasta donde SQL lo garantiza.
+  select array_agg(format('%s·%s·%s·%s', x.atencion_orden, case when x.atencion is not null then x.sub_vencimiento end, x.activo, x.nombre) order by x.ordinality)
+    into v_claves_v1 from r34_listado_v1() with ordinality x;
+  select array_agg(format('%s·%s·%s·%s', x.atencion_orden, case when x.atencion is not null then x.sub_vencimiento end, x.activo, x.nombre) order by x.ordinality)
+    into v_claves_v2 from listado_lubricentros() with ordinality x;
+  if v_claves_v1 <> v_claves_v2 then
+    raise exception 'R34g EL ORDEN DEL LISTADO CAMBIÓ. La tabla de /fidelli/lubricentros llega ordenada desde SQL (atención → vencimiento → activos → nombre); el front no la reordena.';
+  end if;
+
+  -- ---------- h · metricas_plataforma(): el mismo jsonb ----------
+  v_a := r34_metricas_v1();
+  v_b := metricas_plataforma();
+
+  -- Que los trabajos de prueba estén donde tienen que estar, en la NUEVA:
+  -- el punto de hoy de la serie diaria con los tres tipos y sin el anulado.
+  select count(*) into v_n from services s where not s.anulado and s.fecha = v_hoy;
+  select count(*) into v_m from services s where s.fecha = v_hoy;
+  select p into r from jsonb_array_elements(v_b -> 'series' -> 'dia') p where p ->> 'inicio' = v_hoy::text;
+  if r.p is null then
+    raise exception 'R34h la serie diaria nueva no tiene el punto de hoy (%).', v_hoy;
+  end if;
+  if (r.p ->> 'cantidad')::integer <> v_n or v_m <= v_n then
+    raise exception 'R34h EL PUNTO DE HOY DICE % TRABAJOS Y HAY % NO ANULADOS (% con el anulado). El group by por fecha tiene que excluir los anulados y contar los tres tipos.', r.p ->> 'cantidad', v_n, v_m;
+  end if;
+  if (r.p ->> 'service')::integer < 1 or (r.p ->> 'mecanica')::integer < 1 or (r.p ->> 'neumaticos')::integer < 1 then
+    raise exception 'R34h el punto de hoy no trae los tres tipos (%).', r.p;
+  end if;
+  select count(*) into v_n from jsonb_array_elements(v_b -> 'series' -> 'semana') p
+   where (p ->> 'neumaticos')::integer >= 1 and (p ->> 'inicio')::date <= v_hoy - 40;
+  if v_n = 0 then
+    raise exception 'R34h la gomería de hace 40 días no aparece en la serie semanal: el bucket por date_trunc no está colgando cada fecha en su semana.';
+  end if;
+
+  if v_a <> v_b then
+    -- Decir DÓNDE difiere, no solo que difiere.
+    foreach k in array array['trabajos_mes', 'acumulado', 'primer_trabajo'] loop
+      if v_a -> k is distinct from v_b -> k then
+        raise exception 'R34h metricas_plataforma() NUEVA DIFIERE DE LA VIEJA en «%»: % vs %. El contrato del Resumen es el mismo jsonb, clave por clave.', k, v_a -> k, v_b -> k;
+      end if;
+    end loop;
+    foreach k in array array['dia', 'semana', 'mes'] loop
+      if v_a -> 'series' -> k is distinct from v_b -> 'series' -> k then
+        select coalesce(min(i), -1) into v_n
+          from generate_series(0, greatest(jsonb_array_length(v_a -> 'series' -> k), jsonb_array_length(v_b -> 'series' -> k)) - 1) i
+         where v_a -> 'series' -> k -> i is distinct from v_b -> 'series' -> k -> i;
+        raise exception 'R34h LA SERIE «%» NUEVA DIFIERE DE LA VIEJA en el punto % (vieja %, nueva %; % vs % puntos). Un solo group by tiene que dar los mismos 30/12/12 puntos con los mismos números que los 54 count(*) que reemplazó.',
+          k, v_n, v_a -> 'series' -> k -> v_n, v_b -> 'series' -> k -> v_n,
+          jsonb_array_length(v_a -> 'series' -> k), jsonb_array_length(v_b -> 'series' -> k);
+      end if;
+    end loop;
+    raise exception 'R34h metricas_plataforma() nueva difiere de la vieja: % vs %.', v_a, v_b;
+  end if;
+  if (v_a -> 'series')::text <> (v_b -> 'series')::text then
+    raise exception 'R34h LAS SERIES SON IGUALES COMO JSONB PERO NO COMO TEXTO: cambió el orden de los puntos o el tipo de algún número (5 vs 5.0). El gráfico del Pulso lee los puntos en orden.';
+  end if;
+
+  -- La rama «cero trabajos» (una instalación nueva): la vieja tenía un `if
+  -- v_primero is null` explícito; la nueva depende del `where r.primero is
+  -- not null` de `puntos` (sin él, greatest() ignora el null y salen 30/12/12
+  -- puntos en cero). Se prueba con `services` VACÍA adentro de una
+  -- subtransacción que se deshace (el patrón de R27/R29): los trabajos del
+  -- seed y de T6/T7 siguen ahí al salir. Cualquier otra excepción de adentro
+  -- NO se atrapa: sube y pone el reset en rojo.
+  begin
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    delete from services;
+    if exists (select 1 from services) then
+      raise exception 'R34h SIN PISO: no se pudo vaciar services adentro de la subtransacción.';
+    end if;
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    v_a := r34_metricas_v1();
+    v_b := metricas_plataforma();
+    if v_b -> 'series' <> '{"dia": [], "semana": [], "mes": []}'::jsonb
+       or (v_b ->> 'acumulado')::bigint <> 0
+       or v_b ->> 'primer_trabajo' is not null
+       or (v_b ->> 'trabajos_mes')::bigint <> 0 then
+      raise exception 'R34h SIN NINGÚN TRABAJO EL PULSO NUEVO NO ESTÁ VACÍO: series % (% puntos diarios), acumulado %, primer_trabajo %, trabajos_mes %. Una base recién instalada tiene que ver el Pulso vacío (las tres series en []), no 30 puntos en cero: lo garantiza el `where r.primero is not null` de `puntos`.',
+        v_b -> 'series', jsonb_array_length(v_b -> 'series' -> 'dia'), v_b -> 'acumulado', v_b -> 'primer_trabajo', v_b -> 'trabajos_mes';
+    end if;
+    if v_a <> v_b then
+      raise exception 'R34h SIN NINGÚN TRABAJO metricas_plataforma() nueva difiere de la vieja: % vs %.', v_a, v_b;
+    end if;
+    raise exception 'rollback_r34h' using errcode = 'P0034';
+  exception
+    when sqlstate 'P0034' then
+      execute 'reset role';
+      perform set_config('request.jwt.claims', '{}', true);
+  end;
+  if not exists (select 1 from services s where s.lubricentro_id = t7) then
+    raise exception 'R34h SIN PISO: la subtransacción no deshizo el borrado de services.';
+  end if;
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  -- ---------- i · estado_owner() y suscriptos_por_plan() ----------
+  if estado_owner(t1) is distinct from 'activo' then
+    raise exception 'R34i estado_owner() dio «%» para un owner que ya inició sesión (esperaba activo).', estado_owner(t1);
+  end if;
+  if estado_owner(t2) is distinct from 'pendiente' then
+    raise exception 'R34i estado_owner() dio «%» para un owner que nunca inició sesión (esperaba pendiente). La ficha muestra el chip «Owner sin activar» con esto.', estado_owner(t2);
+  end if;
+  if estado_owner(t3) is not null then
+    raise exception 'R34i estado_owner() dio «%» para un tenant SIN owner (esperaba null).', estado_owner(t3);
+  end if;
+  -- estados_owner() devuelve una fila por owner: con uno, estado_owner()
+  -- tiene que dar exactamente esa; con dos, una de las dos (y cuál, se
+  -- prueba abajo con T8).
+  select count(*) into v_n from (
+    select eo.lubricentro_id, array_agg(eo.estado) as estados
+    from estados_owner() eo group by eo.lubricentro_id
+  ) x
+  where estado_owner(x.lubricentro_id) is null
+     or not (estado_owner(x.lubricentro_id) = any(x.estados));
+  if v_n <> 0 then
+    raise exception 'R34i estado_owner() Y estados_owner() SE CONTRADICEN en % tenant(s). Son la misma regla (auth.users.last_sign_in_at) en dos funciones; si difieren, la cabecera de la ficha y el listado dicen cosas distintas del mismo owner.', v_n;
+  end if;
+  if estado_owner(t8) is distinct from 'activo' then
+    raise exception 'R34i estado_owner() CON DOS OWNERS NO ELIGIÓ AL MÁS VIEJO: dio «%» y el owner más antiguo por usuarios.created_at ya entró (activo); el otro, insertado primero pero más nuevo, nunca entró. La ficha tiene que hablar del mismo owner que el listado (owner_nombre): el más antiguo, no el primero del heap.', estado_owner(t8);
+  end if;
+  if estado_owner(t9) is distinct from v_t9_estado then
+    raise exception 'R34i estado_owner() CON DOS OWNERS EMPATADOS EN created_at NO ELIGIÓ AL DE id MENOR: dio «%» y el de id menor % (esperaba «%»). El desempate es el mismo del listado (created_at, después id): la ficha y la tabla nombran a la misma persona también en el empate.',
+      estado_owner(t9), case when v_t9_estado = 'activo' then 'ya entró' else 'nunca entró' end, v_t9_estado;
+  end if;
+  select count(*) into v_n from lubricentros l
+   where l.id not in (select eo.lubricentro_id from estados_owner() eo)
+     and estado_owner(l.id) is not null;
+  if v_n <> 0 then
+    raise exception 'R34i estado_owner() inventa un owner para % tenant(s) que estados_owner() no lista.', v_n;
+  end if;
+
+  -- suscriptos_por_plan() = las columnas equivalentes del listado, para
+  -- TODOS los tenants con suscripción; ni una fila más ni una menos.
+  -- Tenants, no filas: el listado repite la fila de un tenant con dos
+  -- owners y suscriptos_por_plan() no (una por tenant con suscripción).
+  select count(*) into v_n from suscriptos_por_plan();
+  select count(distinct li.id) into v_m from listado_lubricentros() li where li.suscripcion_id is not null;
+  if v_n <> v_m then
+    raise exception 'R34i suscriptos_por_plan() devuelve % filas y el listado tiene % tenants (distintos) con suscripción. Una fila por tenant CON suscripción, la vigente.', v_n, v_m;
+  end if;
+  select count(*) into v_n from (
+    select sp.plan_id, sp.lubricentro_id, sp.nombre, sp.periodo, sp.descuento_pct, sp.estado from suscriptos_por_plan() sp
+    except
+    select li.plan_id, li.id, li.nombre, li.sub_periodo, li.sub_descuento_pct, li.sub_estado from listado_lubricentros() li where li.suscripcion_id is not null
+  ) x;
+  select count(*) into v_m from (
+    select li.plan_id, li.id, li.nombre, li.sub_periodo, li.sub_descuento_pct, li.sub_estado from listado_lubricentros() li where li.suscripcion_id is not null
+    except
+    select sp.plan_id, sp.lubricentro_id, sp.nombre, sp.periodo, sp.descuento_pct, sp.estado from suscriptos_por_plan() sp
+  ) x;
+  if v_n <> 0 or v_m <> 0 then
+    raise exception 'R34i suscriptos_por_plan() Y EL LISTADO NO COINCIDEN (% filas de más, % de menos). /fidelli/precios y /fidelli/lubricentros tienen que decir el mismo plan, período, descuento y estado de cada tenant.', v_n, v_m;
+  end if;
+  select sp.plan_id into v_plan from suscriptos_por_plan() sp where sp.lubricentro_id = t5;
+  if v_plan is distinct from v_pro then
+    raise exception 'R34i SUSCRIPTOS TOMÓ UNA SUSCRIPCIÓN QUE NO ES LA VIGENTE: el tenant con una Basic cancelada de hace un año y una Pro activa salió con el plan %. La vigente es la última que arrancó (inicio desc, created_at desc), el mismo criterio del listado.',
+      (select p.nombre from planes p where p.id = v_plan);
+  end if;
+  -- Ordenada por plan y nombre: ninguna fila va DETRÁS de una con clave
+  -- mayor. Se mira así y no contra un reordenado, porque dos tenants
+  -- homónimos en el mismo plan empatan y el ORDER BY no promete cuál va
+  -- primero; un reordenado los podría dar vuelta sin que nada esté mal.
+  select count(*) into v_n from (
+    select x.plan_id, x.nombre,
+           lag(x.plan_id) over (order by x.ordinality) as plan_ant,
+           lag(x.nombre)  over (order by x.ordinality) as nombre_ant
+    from suscriptos_por_plan() with ordinality x
+  ) y
+  where (y.plan_id, y.nombre) < (y.plan_ant, y.nombre_ant);
+  if v_n <> 0 then
+    raise exception 'R34i suscriptos_por_plan() no sale ordenada por plan y nombre (% fila(s) detrás de una con clave mayor). /fidelli/precios agrupa por plan leyendo las filas en orden.', v_n;
+  end if;
+
+  -- ---------- limpieza ----------
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+  delete from services            where lubricentro_id = any(v_ids);
+  delete from contactos_fidelli   where lubricentro_id = any(v_ids);
+  delete from pagos               where lubricentro_id = any(v_ids);
+  delete from productos           where lubricentro_id = any(v_ids);
+  delete from premios             where lubricentro_id = any(v_ids);
+  delete from config_experiencia  where lubricentro_id = any(v_ids);
+  delete from vehiculos           where lubricentro_id = any(v_ids);
+  delete from clientes            where lubricentro_id = any(v_ids);
+  delete from sucursales          where lubricentro_id = any(v_ids);
+  delete from suscripciones       where lubricentro_id = any(v_ids);
+  delete from cambios_override_plan where lubricentro_id = any(v_ids);
+  delete from auth.users          where id = any(v_uids);   -- cascade → usuarios
+  -- Los eventos, la config de gomería y los pedidos de calcos se van con
+  -- el cascade.
+  delete from lubricentros        where id = any(v_ids);
+  -- El plan de prueba, ya sin suscripciones que lo apunten (restrict).
+  delete from planes              where id = v_plan_gom;
+  if exists (select 1 from planes p where p.id = v_plan_gom) then
+    raise exception 'R34g SIN LIMPIEZA: el plan de prueba «Plan Gomería R34» quedó en el catálogo.';
+  end if;
+end $$;
+
+drop function r34_perf_tenant(text, text, boolean, text, timestamptz);
+drop function r34_perf_owner(uuid, text, text, timestamptz, boolean);
+drop function r34_listado_v1();
+drop function r34_metricas_v1();
+
+-- ============================================================
+-- R34j · EL CANDADO DEL CONTADOR DE CALCOS (bloque MÉTRICAS 4)
+--
+-- La migración 20260925102000_calcos_candado.sql. docs/METRICAS.md § 1
+-- «Pedido de calcos»: lubricentros.calcos_entregadas ES LA SUMA de
+-- pedidos_calcos. Lo que este bloque sostiene:
+--
+--   1 · Un UPDATE directo del contador como postgres queda en la suma.
+--   2 · actualizar_lubricentro() con otro p_calcos (la RPC del ABM, que
+--       el dialog Editar ya manda en solo lectura) tampoco lo mueve.
+--   3 · registrar_pedido_calcos() sigue sumando y deja el evento `calcos`.
+--   4 · Después de un pedido, EN LA MISMA TRANSACCIÓN, la bandera está
+--       apagada: un update directo (también como superadmin por PostgREST,
+--       que tiene política ALL) vuelve a la suma.
+--   5 · No hay trigger de alta porque crear_lubricentro() no escribe la
+--       columna: un tenant nuevo nace con 0 y sin pedidos. Si algún día el
+--       alta trae calcos, esto se pone rojo y ahí sí hace falta el trigger.
+--   6 · El camino del seed sigue sano: un tenant que nace con calcos > 0
+--       por INSERT directo (como el demo) + backfill_pedidos_calcos() da
+--       contador = suma, y desde ahí el candado lo cuida.
+--   7 · tenant_eventos: un update forzado al mismo valor NO deja evento
+--       `calcos` (new = old, no hubo cambio real); el pedido sí.
+--
+-- Corre como el superadmin del seed bajo `authenticated` donde la puerta
+-- lo exige; los fixtures y los updates «de postgres» van como postgres.
+-- Limpia al final. scripts/regresion-metricas.sh rompe el candado y la
+-- bandera y espera ver este bloque en rojo.
+-- ============================================================
+
+-- >>> R34j
+do $$
+declare
+  v_super  uuid;
+  v_plan   uuid;
+  v_lub    uuid;   -- el tenant del candado: pedidos por la puerta y updates por afuera
+  v_seed   uuid;   -- nace con 30 por insert directo, como el demo del seed
+  v_alta   uuid;   -- nace por crear_lubricentro(): 0 y sin pedidos
+  v_n      integer;
+  v_m      integer;
+  v_ev     integer;
+begin
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  select id into v_plan from planes where nombre = 'Pro' and not heredado;
+  if v_super is null or v_plan is null then
+    raise exception 'R34j SIN PISO: falta el superadmin o el plan Pro del seed.';
+  end if;
+
+  -- ---------- Los fixtures, como postgres ----------
+  insert into lubricentros (nombre, slug) values ('Calcos R34', 'calcos-r34') returning id into v_lub;
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, vencimiento)
+  values (v_lub, v_plan, 'activa', 'mensual', 0, current_date + 30);
+
+  -- ---------- 1 · Un update directo, como postgres, sin pedidos ----------
+  update lubricentros set calcos_entregadas = 999 where id = v_lub;
+  select calcos_entregadas into v_n from lubricentros where id = v_lub;
+  if v_n <> 0 then
+    raise exception 'R34j EL CANDADO NO RIGE: un update directo dejó calcos_entregadas = % en un tenant SIN pedidos (tenía que quedar en 0). El contador es la suma de pedidos_calcos (docs/METRICAS.md § 1 «Pedido de calcos»); si cualquier UPDATE lo pisa, el número de la ficha y la constancia de entregas dejan de ser lo mismo.', v_n;
+  end if;
+  -- 7 · Forzado al mismo valor (0 → 0) no hay cambio real: sin evento.
+  select count(*) into v_ev from tenant_eventos where lubricentro_id = v_lub and tipo = 'calcos';
+  if v_ev <> 0 then
+    raise exception 'R34j: un update forzado al mismo valor dejó % evento(s) calcos. El trigger AFTER recibe la fila ya corregida (new = old) y no tiene nada que contar.', v_ev;
+  end if;
+
+  -- ---------- 3 · La puerta, como superadmin ----------
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  perform registrar_pedido_calcos(v_lub, current_date, 40, true, null, 'R34j');
+  select calcos_entregadas into v_n from lubricentros where id = v_lub;
+  if v_n <> 40 then
+    raise exception 'R34j LA PUERTA QUEDÓ TAPADA POR SU PROPIO CANDADO: tras un pedido de 40, calcos_entregadas = %. La bandera app.calcos_desde_pedido tiene que estar prendida durante el update de registrar_pedido_calcos().', v_n;
+  end if;
+  select count(*) into v_ev from tenant_eventos where lubricentro_id = v_lub and tipo = 'calcos';
+  if v_ev <> 1 then
+    raise exception 'R34j: el pedido no dejó el evento calcos (hay %). El candado no puede comerse el evento del cambio real.', v_ev;
+  end if;
+
+  -- ---------- 4 · La bandera se apagó al salir de la puerta ----------
+  if current_setting('app.calcos_desde_pedido', true) is not distinct from 'true' then
+    raise exception 'R34j LA BANDERA QUEDÓ PRENDIDA DESPUÉS DEL PEDIDO. En una transacción larga, todo update posterior del contador heredaría el permiso de la puerta: hay que apagarla justo después del update.';
+  end if;
+  -- Como superadmin por PostgREST: la política lubricentros_admin es ALL,
+  -- así que este update es exactamente lo que un `from('lubricentros').update()`
+  -- podría hacer.
+  update lubricentros set calcos_entregadas = 999 where id = v_lub;
+  select calcos_entregadas into v_n from lubricentros where id = v_lub;
+  if v_n <> 40 then
+    raise exception 'R34j UN UPDATE DIRECTO DESPUÉS DE UN PEDIDO, EN LA MISMA TRANSACCIÓN, PISÓ EL CONTADOR (% con pedidos que suman 40). La bandera de la puerta no se apagó o el candado no la mira.', v_n;
+  end if;
+
+  -- ---------- 2 · actualizar_lubricentro() con otro número ----------
+  perform actualizar_lubricentro(v_lub, 'Calcos R34', 'calcos-r34', 999, v_plan, 'mensual', 0, current_date + 30);
+  select calcos_entregadas into v_n from lubricentros where id = v_lub;
+  if v_n <> 40 then
+    raise exception 'R34j actualizar_lubricentro() PISÓ EL CONTADOR: p_calcos = 999 dejó calcos_entregadas = % con pedidos que suman 40. Es el hueco que § 6 del bloque 3 dejó anotado: la RPC del ABM no mira los pedidos, el candado tiene que hacerlo por ella.', v_n;
+  end if;
+  select count(*) into v_ev from tenant_eventos where lubricentro_id = v_lub and tipo = 'calcos';
+  if v_ev <> 1 then
+    raise exception 'R34j: el update forzado al mismo valor por actualizar_lubricentro() dejó un evento calcos de más (hay %). Sin cambio real no hay evento.', v_ev;
+  end if;
+  -- Y con el valor actual, que es lo que manda el dialog Editar, el resto
+  -- de la edición pasa y el contador ni se entera.
+  perform actualizar_lubricentro(v_lub, 'Calcos R34 editado', 'calcos-r34', 40, v_plan, 'mensual', 0, current_date + 30);
+  select calcos_entregadas, (select count(*) from tenant_eventos e where e.lubricentro_id = v_lub and e.tipo = 'edicion')
+    into v_n, v_m from lubricentros where id = v_lub;
+  if v_n <> 40 or v_m <> 1 then
+    raise exception 'R34j: la edición con el valor actual dejó calcos = % y % evento(s) edicion (esperaba 40 y 1). El candado no puede frenar la edición del nombre.', v_n, v_m;
+  end if;
+
+  -- Un segundo pedido: la suma es el total, y el evento sale.
+  perform registrar_pedido_calcos(v_lub, current_date, 10, false, 1500, null);
+  select calcos_entregadas into v_n from lubricentros where id = v_lub;
+  if v_n <> 50 then
+    raise exception 'R34j: con pedidos de 40 y 10, calcos_entregadas = % (tenía que ser 50).', v_n;
+  end if;
+  select count(*) into v_ev from tenant_eventos where lubricentro_id = v_lub and tipo = 'calcos';
+  if v_ev <> 2 then
+    raise exception 'R34j: el segundo pedido no dejó su evento calcos (hay %).', v_ev;
+  end if;
+
+  -- ---------- 1 (bis) · Como postgres, ahora con pedidos ----------
+  execute 'reset role';
+  update lubricentros set calcos_entregadas = 999 where id = v_lub;
+  select calcos_entregadas into v_n from lubricentros where id = v_lub;
+  if v_n <> 50 then
+    raise exception 'R34j EL CANDADO NO RIGE PARA postgres: un update directo dejó calcos_entregadas = % con pedidos que suman 50. El trigger es ALWAYS: no distingue roles.', v_n;
+  end if;
+
+  -- ---------- 6 · El camino del seed ----------
+  -- El demo nace con 50 por INSERT en seed_demo() y seed.sql corre el
+  -- backfill después. El candado es BEFORE UPDATE: no se mete en el insert
+  -- ni en el backfill (que solo escribe pedidos_calcos).
+  insert into lubricentros (nombre, slug, calcos_entregadas)
+  values ('Calcos seed R34', 'calcos-seed-r34', 30) returning id into v_seed;
+  if backfill_pedidos_calcos() <> 1 then
+    raise exception 'R34j: el backfill tenía que insertar exactamente 1 pedido para el tenant que nació con 30 por insert directo.';
+  end if;
+  select l.calcos_entregadas, (select sum(pc.cantidad) from pedidos_calcos pc where pc.lubricentro_id = v_seed)
+    into v_n, v_m from lubricentros l where l.id = v_seed;
+  if v_n <> 30 or v_m <> 30 then
+    raise exception 'R34j: tras el backfill, el tenant del seed tiene contador % y suma % (esperaba 30 y 30).', v_n, v_m;
+  end if;
+  update lubricentros set calcos_entregadas = 5 where id = v_seed;
+  select calcos_entregadas into v_n from lubricentros where id = v_seed;
+  if v_n <> 30 then
+    raise exception 'R34j: un update directo bajó el contador del tenant del seed a % (la suma es 30).', v_n;
+  end if;
+
+  -- ---------- 5 · El alta no trae calcos ----------
+  -- Es la razón por la que NO hay trigger AFTER INSERT que registre un
+  -- «pedido inicial». Mismo baile que R33l: el alta es un constraint
+  -- trigger diferido y el `set constraints all immediate` de bloques
+  -- anteriores puede seguir vigente.
+  execute 'set local role authenticated';
+  set constraints all deferred;
+  select crear_lubricentro('Alta calcos R34', 'alta-calcos-r34',
+    '[{"nombre":"Centro"}]'::jsonb, v_plan, 'mensual', 0) into v_alta;
+  set constraints all immediate;
+  select l.calcos_entregadas, (select count(*) from pedidos_calcos pc where pc.lubricentro_id = v_alta)
+    into v_n, v_m from lubricentros l where l.id = v_alta;
+  if v_n <> 0 or v_m <> 0 then
+    raise exception 'R34j EL ALTA AHORA TRAE CALCOS (contador %, pedidos %). crear_lubricentro() empezó a escribir calcos_entregadas: hace falta el trigger AFTER INSERT que registre el pedido inicial (fecha = alta, incluidas, nota ''alta''), y que no duplique lo que hace backfill_pedidos_calcos().', v_n, v_m;
+  end if;
+
+  -- ---------- limpieza ----------
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+  delete from sucursales where lubricentro_id = v_alta;
+  delete from mensaje_templates where lubricentro_id = v_alta;
+  delete from config_experiencia where lubricentro_id = v_alta;
+  delete from suscripciones where lubricentro_id in (v_lub, v_alta);
+  -- Los pedidos de calcos y los eventos se van con el cascade.
+  delete from lubricentros where id in (v_lub, v_seed, v_alta);
+end $$;
+-- <<< R34j
+-- <<< R34
+
+-- ============================================================
+-- Limpieza final: las fotos de prueba de R31c. cerrar_dia() se prueba sobre
+-- días de 1991 para no pisar ningún día real, y como los candados de
+-- snapshots_diarios no dejan borrar nunca (ni a postgres), esas tres fotos
+-- quedaban en cada base local y el gráfico del MRR del Resumen arrancaba en
+-- 1991 (treinta y cinco años de rótulos de mes pisados). Acá, y SOLO acá,
+-- se bajan los dos candados de borrado, se van las fotos y el tipo de cambio
+-- de prueba, y los candados vuelven a ALWAYS. Fuera de este archivo la única
+-- forma legítima de vaciar snapshots sigue siendo supabase db reset.
+-- ============================================================
+alter table snapshots_diarios disable trigger candado_borrado_snapshot_diario;
+alter table snapshots_diarios disable trigger candado_purga_snapshots_diarios;
+alter table snapshots_tenant_diarios disable trigger candado_borrado_snapshot_tenant;
+alter table snapshots_tenant_diarios disable trigger candado_purga_snapshots_tenant;
+delete from snapshots_tenant_diarios where fecha < '2000-01-01';
+delete from snapshots_diarios where fecha < '2000-01-01';
+delete from tipo_cambio where fecha < '2000-01-01';
+alter table snapshots_diarios enable always trigger candado_borrado_snapshot_diario;
+alter table snapshots_diarios enable always trigger candado_purga_snapshots_diarios;
+alter table snapshots_tenant_diarios enable always trigger candado_borrado_snapshot_tenant;
+alter table snapshots_tenant_diarios enable always trigger candado_purga_snapshots_tenant;
+
+do $$
+declare v_n integer;
+begin
+  select count(*) into v_n from snapshots_diarios where fecha < '2000-01-01';
+  if v_n <> 0 then
+    raise exception 'La limpieza final dejó % fotos de prueba en snapshots_diarios.', v_n;
+  end if;
+  select count(*) into v_n from pg_trigger
+   where tgrelid in ('snapshots_diarios'::regclass, 'snapshots_tenant_diarios'::regclass)
+     and not tgisinternal and tgenabled <> 'A';
+  if v_n <> 0 then
+    raise exception 'La limpieza final dejó % candados de snapshots sin ALWAYS.', v_n;
+  end if;
+end $$;
