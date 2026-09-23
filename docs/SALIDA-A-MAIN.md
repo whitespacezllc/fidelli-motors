@@ -6,7 +6,8 @@
 > producción migrada ANTES: **prod (`cutzedfmxyyxxqfjutru`) tiene las 104
 > migraciones** (las 21 del 22/09 al 25/09 entraron juntas, incluidas las
 > seis del sprint legal que main publicaba desde el 22/09 sin su base). Dev
-> también está en 104. Lo que sigue pendiente es lo de las secciones C, D y E.
+> también está en 104. La historia (sección D) se cargó esa misma noche. Lo
+> que sigue pendiente es lo de las secciones C y E.
 
 La regla de siempre: **la base primero, la app después.** El front nuevo nunca
 tiene que convivir con el schema viejo.
@@ -29,7 +30,7 @@ tiene que convivir con el schema viejo.
 
 - [x] `git log origin/develop..origin/main` sin commits propios de main (23/09) (nada en main que no esté en develop); si no, traer main a develop primero.
 - [x] Release PR develop → main (#127, 23/09) con el CI (`supabase db reset`) en verde; merge con merge commit.
-- [ ] Deploy de Vercel en `main` con éxito (ver el informe del 23/09); humo: `/login` responde, `/fidelli` con sesión de superadmin muestra el Resumen, `/fidelli/pauta` y una ficha abren.
+- [x] Deploy de Vercel en `main` con éxito (23/09, merge `5947ad1`); humo hecho: `/login` responde, `/fidelli` con sesión de superadmin muestra el Resumen, `/fidelli/pauta` y una ficha abren.
 
 ## C · Variables y cron en Vercel (Production)
 
@@ -39,8 +40,8 @@ tiene que convivir con el schema viejo.
 
 ## D · La historia, una sola vez, después del merge
 
-- [ ] **Tipo de cambio**: `node --no-warnings scripts/backfill-tc.mjs --dry-run` y después sin `--dry-run`, con `NEXT_PUBLIC_SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` **de prod exportadas en la shell** (no tocar `.env.local`). Esperado: todos los días desde el 16/08/2026 hasta ayer.
-- [ ] **Fotos reconstruidas**: `select reconstruir_snapshots('2026-08-16', current_date - 1);` como `postgres`/`service_role` (`npx supabase db query --linked --workdir <scratch>/prod-link -f archivo.sql`, una consulta por archivo). Verificar `select fuente, count(*), min(fecha), max(fecha) from snapshots_diarios group by fuente;`.
+- [x] **Tipo de cambio** (hecho el 23/09 por la Management API con la misma fuente y regla del script: 38 días, 16/08 → 22/09; desde acá lo mantiene el cron): `node --no-warnings scripts/backfill-tc.mjs --dry-run` y después sin `--dry-run`, con `NEXT_PUBLIC_SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` **de prod exportadas en la shell** (no tocar `.env.local`). Esperado: todos los días desde el 16/08/2026 hasta ayer.
+- [x] **Fotos reconstruidas** (hecho el 23/09: 38 días, 415 fotos por tenant; el último MRR reconstruido es ARS 833.000 / US$ 542,67): `select reconstruir_snapshots('2026-08-16', current_date - 1);` como `postgres`/`service_role` (`npx supabase db query --linked --workdir <scratch>/prod-link -f archivo.sql`, una consulta por archivo). Verificar `select fuente, count(*), min(fecha), max(fecha) from snapshots_diarios group by fuente;`.
 - [ ] Mirar el Resumen de prod: la franja del MRR compara contra el último día del mes anterior y el gráfico dice «reconstruido hasta …».
 
 ## E · Datos que se cargan a mano (Santiago)
