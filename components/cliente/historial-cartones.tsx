@@ -13,6 +13,7 @@ import { formatearKm, type ClaseVehiculo } from "@/lib/renglones";
 import { formatearFecha } from "@/lib/fechas";
 import { ESTILO_PAPEL } from "@/lib/cliente/tema";
 import { ETIQUETA_TIPO, type TipoTrabajo } from "@/lib/trabajos";
+import { plazoEdicionTexto } from "@/lib/servicios";
 import { resumenRuedas } from "@/lib/ruedas";
 
 // LA LÍNEA SECUNDARIA DEL ACORDEÓN, por tipo. Antes era un ternario con
@@ -77,8 +78,10 @@ export function HistorialCartones({
           <span className="font-bold text-ink">
             Este historial no se puede editar.
           </span>{" "}
-          Pasadas las 24 horas cada trabajo queda fijado para siempre: ni el
-          taller que lo cargó puede cambiarlo.
+          Cada trabajo queda fijado para siempre al vencer su plazo de
+          edición —{plazoEdicionTexto("mecanica")} en una mecánica,{" "}
+          {plazoEdicionTexto("service")} en el resto—: ni el taller que lo
+          cargó puede cambiarlo.
         </p>
       </div>
 

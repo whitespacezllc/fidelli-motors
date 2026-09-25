@@ -28,12 +28,18 @@ cd "$(dirname "$0")/.."
 DB="docker exec -i supabase_db_fidelli-motors psql -U postgres -d postgres -X"
 V=supabase/verificaciones.sql
 M=supabase/migrations/20260915130000_clase_vehiculo.sql
+# get_carton se redefinió después (el plazo de edición por tipo): la
+# versión vigente vive acá y es la que hay que romper.
+M_CARTON=supabase/migrations/20260925110000_edicion_mecanica_7_dias.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
 
 # Una función de la migración, rota con un sed sobre su línea `-- @clase`.
 funcion_rota() {
   bloque "$1" "$M" | sed "s/^create function/create or replace function/" | sed "$2"
+}
+carton_roto() {
+  bloque get_carton "$M_CARTON" | sed "$1"
 }
 
 fallas=0
@@ -58,7 +64,7 @@ correr "CHECK con los once" "alter table service_items add constraint r17_solo_o
 echo "── R18 · la clase con default, el alta que la ignora, la puerta pública que la calla ──"
 correr "default 'liviano'" "alter table vehiculos alter column clase set default 'liviano';" R18 "R18"
 correr "alta que ignora p_clase" "$(funcion_rota crear_cliente_con_vehiculo "/@clase/s/p_clase)/null)/")" R18 "R18"
-correr "get_carton sin la clase" "$(funcion_rota get_carton "/@clase/s/v_vehiculo.clase/null/")" R18 "R18"
+correr "get_carton sin la clase" "$(carton_roto "/@clase/s/v_vehiculo.clase/null/")" R18 "R18"
 
 echo "── R19 · un trigger que rellena la clase al editar ──"
 correr "trigger que inventa liviano" "create function r19_rellena() returns trigger language plpgsql as \$f\$ begin new.clase := coalesce(new.clase, 'liviano'); return new; end \$f\$; create trigger r19_rellena before update on vehiculos for each row execute function r19_rellena();" R19 "R19"

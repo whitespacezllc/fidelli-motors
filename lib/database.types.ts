@@ -3338,6 +3338,10 @@ export type Database = {
       }
       plan_limite: { Args: { p_limite: string }; Returns: number }
       plan_permite: { Args: { p_feature: string }; Returns: boolean }
+      plazo_edicion: {
+        Args: { p_tipo: Database["public"]["Enums"]["tipo_trabajo"] }
+        Returns: string
+      }
       premio_disponible: {
         Args: { p_vehiculo_id: string }
         Returns: {

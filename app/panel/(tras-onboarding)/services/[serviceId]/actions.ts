@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { sesionParaEscribir } from "@/lib/auth/session";
+import { NOMBRE_TRABAJO } from "@/lib/trabajos";
+import { plazoEdicionConArticulo } from "@/lib/servicios";
 
 export type ResultadoAnulado = { error?: string };
 
@@ -34,9 +36,17 @@ export async function anularService(
   }
 
   if (!data || data.length === 0) {
+    // El plazo que venció es el del tipo —24 horas, o 7 días en una
+    // mecánica— y la fila no volvió, así que se lee aparte: la lectura
+    // no la recorta la policy de UPDATE.
+    const { data: fila } = await supabase
+      .from("services")
+      .select("tipo")
+      .eq("id", serviceId)
+      .maybeSingle();
+    const tipo = fila?.tipo ?? "service";
     return {
-      error:
-        "Este service se fijó: pasaron las 24 horas y ya no se puede anular. Si hay un error grave, escribinos.",
+      error: `Este ${NOMBRE_TRABAJO[tipo]} se fijó: pasaron ${plazoEdicionConArticulo(tipo)} y ya no se puede anular. Si hay un error grave, escribinos.`,
     };
   }
 

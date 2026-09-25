@@ -15,8 +15,8 @@ type Props = { params: Promise<{ serviceId: string }> };
 
 // La edición reusa el MISMO formulario de la carga, precargado. El estado
 // se chequea acá para no ofrecer una pantalla que va a fallar — pero la
-// regla la impone la base: si las 24 hs vencen con la pantalla abierta,
-// el guardado falla limpio con su mensaje.
+// regla la impone la base: si el plazo —24 hs, o 7 días en una mecánica—
+// vence con la pantalla abierta, el guardado falla limpio con su mensaje.
 export default async function PaginaEditarService({ params }: Props) {
   const { serviceId } = await params;
 

@@ -8639,3 +8639,202 @@ begin
     raise exception 'La limpieza final dejó % candados de snapshots sin ALWAYS.', v_n;
   end if;
 end $$;
+
+
+-- ============================================================
+-- R35 · El plazo de edición por tipo: 7 días para la mecánica
+--
+-- La regla de las 24 horas era la única de las reglas grandes sin
+-- regresión. Ahora que el plazo depende del tipo hay dos formas de
+-- romperla y las dos son silenciosas: que la mecánica vuelva a fijarse a
+-- las 24 horas (la ficha queda a medias y el taller llama a Fidelli), o
+-- que un service quede editable una semana (el cartón deja de ser
+-- confiable para el dueño del auto). Ninguna da error: la policy filtra
+-- filas y el UPDATE afecta cero, o afecta una que no debía.
+--
+-- Fixtures propios —cliente, auto y cuatro trabajos retrodatados como
+-- postgres— para no depender de la edad de lo que dejó el seed. Todo se
+-- borra al final.
+-- ============================================================
+-- >>> R35
+do $$
+declare
+  v_demo    uuid;
+  v_own     uuid;
+  v_super   uuid;
+  v_suc     uuid;
+  v_cli     uuid;
+  v_veh     uuid;
+  v_mec3    uuid;  -- mecánica de hace 3 días: editable
+  v_mec8    uuid;  -- mecánica de hace 8 días: fijada
+  v_srv3    uuid;  -- service de hace 3 días: fijado
+  v_neu3    uuid;  -- neumáticos de hace 3 días: fijado
+  v_tipo    tipo_trabajo;
+  v_n       integer;
+  v_carton  jsonb;
+  v_fila    jsonb;
+  v_hasta   timestamptz;
+begin
+  select id into v_demo  from lubricentros where slug = 'demo';
+  select id into v_own   from usuarios where lubricentro_id = v_demo and rol = 'owner' limit 1;
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  select id into v_suc   from sucursales where lubricentro_id = v_demo and activa order by created_at limit 1;
+  if v_demo is null or v_own is null or v_super is null or v_suc is null then
+    raise exception 'R35 SIN PISO: falta el demo, su owner, su sucursal o el superadmin.';
+  end if;
+
+  -- ---------- a · plazo_edicion(): existe y contesta por CADA tipo ----------
+  if not exists (
+    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'plazo_edicion'
+  ) then
+    raise exception 'R35a plazo_edicion() no existe: las policies y get_carton no tienen de dónde sacar el plazo.';
+  end if;
+  foreach v_tipo in array enum_range(null::tipo_trabajo) loop
+    if plazo_edicion(v_tipo) is null then
+      raise exception 'R35a plazo_edicion(%) devuelve null: el tipo quedó afuera del case y sus trabajos nacen fijados.', v_tipo;
+    end if;
+  end loop;
+  if plazo_edicion('mecanica') <> interval '7 days' then
+    raise exception 'R35a la mecánica se fija a % y no a los 7 días: la ficha de un arreglo de motor vuelve a quedar a medias.', plazo_edicion('mecanica');
+  end if;
+  if plazo_edicion('service') <> interval '24 hours' or plazo_edicion('neumaticos') <> interval '24 hours' then
+    raise exception 'R35a el service o los neumáticos dejaron de fijarse a las 24 horas (service: %, neumáticos: %): el cartón del dueño del auto deja de ser confiable.', plazo_edicion('service'), plazo_edicion('neumaticos');
+  end if;
+
+  -- ---------- los fixtures, como postgres ----------
+  insert into clientes (lubricentro_id, nombre, telefono, email)
+  values (v_demo, 'Persona R35', '351 555 0350', 'r35@ejemplo.com') returning id into v_cli;
+  insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+  values (v_demo, v_cli, 'AB135CD', 'Peugeot', '208') returning id into v_veh;
+
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, fecha, tipo, trabajo_descripcion, created_at)
+  values (v_demo, v_suc, v_veh, v_own, current_date - 3, 'mecanica', 'R35 mecánica de hace tres días', now() - interval '3 days')
+  returning id into v_mec3;
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, fecha, tipo, trabajo_descripcion, created_at)
+  values (v_demo, v_suc, v_veh, v_own, current_date - 8, 'mecanica', 'R35 mecánica de hace ocho días', now() - interval '8 days')
+  returning id into v_mec8;
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, fecha, kilometros, aceite_tipo, prox_service_km, created_at)
+  values (v_demo, v_suc, v_veh, v_own, current_date - 3, 50000, '10W40', 60000, now() - interval '3 days')
+  returning id into v_srv3;
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, fecha, tipo, kilometros, alineacion, created_at)
+  values (v_demo, v_suc, v_veh, v_own, current_date - 3, 'neumaticos', 50100, true, now() - interval '3 days')
+  returning id into v_neu3;
+
+  insert into service_items (service_id, item_tipo, detalle) values (v_mec3, null, 'R35 renglón de la mecánica');
+  insert into service_items (service_id, item_tipo, detalle) values (v_srv3, null, 'R35 renglón del service');
+
+  -- ---------- b · la cabecera, como owner del demo ----------
+  -- RLS no lanza error cuando rechaza: filtra la fila y el UPDATE afecta
+  -- 0. Si el USING dejara pasar y el WITH CHECK (plan) rechazara, sería
+  -- un 42501: se lo cuenta como "pasó el USING", que es lo que se prueba.
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  update services set observaciones = 'R35 editada' where id = v_mec3;
+  get diagnostics v_n = row_count;
+  if v_n <> 1 then
+    raise exception 'R35b una mecánica de hace 3 días NO se puede editar (filas: %): la policy services_edicion no está midiendo con plazo_edicion(tipo).', v_n;
+  end if;
+
+  begin
+    update services set observaciones = 'R35 editada' where id = v_srv3;
+    get diagnostics v_n = row_count;
+  exception when insufficient_privilege then v_n := 1;
+  end;
+  if v_n <> 0 then
+    raise exception 'R35b un service de hace 3 días SE PUDO editar: la policy dejó de fijarlo a las 24 horas y el cartón del cliente deja de ser confiable.';
+  end if;
+
+  begin
+    update services set observaciones = 'R35 editada' where id = v_neu3;
+    get diagnostics v_n = row_count;
+  exception when insufficient_privilege then v_n := 1;
+  end;
+  if v_n <> 0 then
+    raise exception 'R35b un trabajo de neumáticos de hace 3 días SE PUDO editar: el plazo de la mecánica se le contagió a la gomería.';
+  end if;
+
+  begin
+    update services set observaciones = 'R35 editada' where id = v_mec8;
+    get diagnostics v_n = row_count;
+  exception when insufficient_privilege then v_n := 1;
+  end;
+  if v_n <> 0 then
+    raise exception 'R35b una mecánica de hace 8 días SE PUDO editar: el plazo de la mecánica no cierra a los 7 días.';
+  end if;
+
+  -- ---------- c · los renglones heredan el plazo de la cabecera ----------
+  delete from service_items where service_id = v_mec3;
+  get diagnostics v_n = row_count;
+  if v_n <> 1 then
+    raise exception 'R35c el renglón de una mecánica de hace 3 días NO se puede borrar (filas: %): items_escritura sigue midiendo 24 horas y la mecánica es editable solo a medias.', v_n;
+  end if;
+  delete from service_items where service_id = v_srv3;
+  get diagnostics v_n = row_count;
+  if v_n <> 0 then
+    raise exception 'R35c el renglón de un service de hace 3 días SE PUDO borrar: items_escritura dejó de fijarlo a las 24 horas.';
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- ---------- d · lo que ve el dueño del auto: el sello por tipo ----------
+  v_carton := get_carton('demo', 'AB135CD');
+  if v_carton ? 'error' then
+    raise exception 'R35d get_carton devolvió % para el auto de la prueba.', v_carton->>'error';
+  end if;
+
+  select e.value into v_fila from jsonb_array_elements(v_carton->'services') e
+  where e.value->>'trabajo_descripcion' = 'R35 mecánica de hace tres días';
+  if v_fila is null then
+    raise exception 'R35d la mecánica de la prueba no viaja en get_carton.';
+  end if;
+  if (v_fila->>'fijado')::boolean then
+    raise exception 'R35d get_carton le muestra al dueño del auto una mecánica de hace 3 días con el candado: el sello sigue midiendo 24 horas mientras el panel dice «editable».';
+  end if;
+
+  select e.value into v_fila from jsonb_array_elements(v_carton->'services') e
+  where e.value->>'trabajo_descripcion' = 'R35 mecánica de hace ocho días';
+  if v_fila is null or not (v_fila->>'fijado')::boolean then
+    raise exception 'R35d get_carton muestra una mecánica de hace 8 días sin el candado.';
+  end if;
+
+  select e.value into v_fila from jsonb_array_elements(v_carton->'services') e
+  where e.value->>'tipo' = 'service';
+  if v_fila is null or not (v_fila->>'fijado')::boolean then
+    raise exception 'R35d get_carton muestra un service de hace 3 días sin el candado: el sello dejó de cerrarse a las 24 horas.';
+  end if;
+
+  -- ---------- e · la ventana de desbloqueo: 24 horas fijas, para cualquier tipo ----------
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  v_hasta := desbloquear_service(v_mec8);
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+  if v_hasta is null
+     or v_hasta < now() + interval '23 hours 59 minutes'
+     or v_hasta > now() + interval '24 hours 1 minute' then
+    raise exception 'R35e desbloquear_service abrió hasta % sobre una mecánica: la ventana extraordinaria es de 24 horas fijas, para cualquier tipo — es la salida, no el plazo.', v_hasta;
+  end if;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  update services set observaciones = 'R35 desbloqueada' where id = v_mec8;
+  get diagnostics v_n = row_count;
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+  if v_n <> 1 then
+    raise exception 'R35e la mecánica fijada que Fidelli desbloqueó sigue sin poder editarse (filas: %).', v_n;
+  end if;
+
+  -- ---------- La limpieza ----------
+  delete from services where vehiculo_id = v_veh;
+  delete from landing_busquedas where lubricentro_id = v_demo and patente = 'AB135CD';
+  delete from vehiculos where id = v_veh;
+  delete from clientes where id = v_cli;
+end $$;
+-- <<< R35

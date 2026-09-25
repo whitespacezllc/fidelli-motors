@@ -11,7 +11,12 @@ import {
 } from "@/components/services/carton-papel";
 import { BadgeEstado } from "@/components/services/badge-estado";
 import { AnularService } from "@/components/services/anular-service";
-import { estadoService, puedeEditarse } from "@/lib/servicios";
+import {
+  estadoService,
+  plazoEdicionConArticulo,
+  puedeEditarse,
+  restanteEnPalabras,
+} from "@/lib/servicios";
 import { formatearKm } from "@/lib/renglones";
 import { ETIQUETA_TIPO } from "@/lib/trabajos";
 import {
@@ -190,8 +195,7 @@ export default async function PaginaService({ params }: Props) {
               <>
                 Editable por{" "}
                 <span className="font-bold tabular-nums">
-                  {Math.max(1, Math.floor(estado.horasRestantes))}{" "}
-                  {Math.floor(estado.horasRestantes) === 1 ? "hora" : "horas"}
+                  {restanteEnPalabras(estado.horasRestantes)}
                 </span>{" "}
                 más. Después queda fijado en el historial.
               </>
@@ -222,10 +226,14 @@ export default async function PaginaService({ params }: Props) {
           <p className="font-brand text-body font-bold text-ink">
             Registro fijado
           </p>
+          {/* El plazo es del tipo: las 24 horas de un service, los 7 días
+              de una mecánica. Lo dice plazoEdicionConArticulo, el espejo
+              de plazo_edicion() en la base. */}
           <p className="mt-1 text-ui text-ink-60">
-            Pasadas las 24 horas el trabajo queda fijado en el historial y ni
-            el lubricentro puede modificarlo — es lo que hace confiable el
-            cartón para tu cliente. Si hay un error grave,{" "}
+            Después de {plazoEdicionConArticulo(service.tipo)} el trabajo
+            queda fijado en el historial y ni el lubricentro puede
+            modificarlo — es lo que hace confiable el cartón para tu
+            cliente. Si hay un error grave,{" "}
             <a
               href={urlWhatsappSoporte()}
               target="_blank"

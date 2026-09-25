@@ -17,6 +17,9 @@ cd "$(dirname "$0")/.."
 DB="docker exec -i supabase_db_fidelli-motors psql -U postgres -d postgres -X"
 V=supabase/verificaciones.sql
 M=supabase/migrations/20260912100100_neumaticos_retornos.sql
+# get_carton se redefinió después (la clase del vehículo, el plazo de
+# edición por tipo): la versión vigente vive acá y es la que hay que romper.
+M_CARTON=supabase/migrations/20260925110000_edicion_mecanica_7_dias.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
 
@@ -36,6 +39,9 @@ vista_rota() {
 # Una función de la migración, rota con un sed.
 funcion_rota() {
   bloque "$1" "$M" | sed "s/^create function/create or replace function/" | sed "$2"
+}
+carton_roto() {
+  bloque get_carton "$M_CARTON" | sed "$1"
 }
 
 # vista_proximos_service sin el filtro de tipo: la rotura de R2, para R16a.
@@ -93,7 +99,7 @@ correr "contacto por otro motivo" "$(vista_rota "/@antispam/s/'neumaticos'/'pend
 echo "── R16i · el beneficio ──"
 correr "beneficio recién con tres" "$(funcion_rota calcular_beneficio_neumaticos "/@beneficio/s/>= 2/>= 3/")" R16i "R16i"
 correr "beneficio con la config en 0" "$(funcion_rota calcular_beneficio_neumaticos "/@beneficio/s/coalesce(v_cfg.beneficio_km, 0) > 0/true/")" R16i "R16i"
-correr "cartón que ignora la config" "$(funcion_rota get_carton "s/coalesce(v_beneficio_km, 0) > 0/true/g")" R16i "R16i"
+correr "cartón que ignora la config" "$(carton_roto "s/coalesce(v_beneficio_km, 0) > 0/true/g")" R16i "R16i"
 
 echo "── R16j · CHECK y RLS de la configuración ──"
 correr "sin el CHECK de rotación" "alter table config_neumaticos drop constraint km_rotacion_rango;" R16j "R16j"
