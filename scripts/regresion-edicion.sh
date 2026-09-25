@@ -18,6 +18,11 @@
 #          dice "editable 6 días" y la página del cliente ya muestra el
 #          candado.
 #   R35e · desbloquear_service() que "acompaña" el plazo y abre 7 días.
+#   R35f · el WITH CHECK de items_escritura sin la ventana —el hueco que
+#   R35g   tapó 20260925120000: un INSERT evalúa solo el WITH CHECK, así
+#          que con la ventana en el USING solo, un renglón entra en un
+#          trabajo fijado por la API directa— o con el literal de 24
+#          horas; y el de ruedas_escritura sin la ventana.
 #
 # Todo corre en transacciones con rollback: no deja rastro. Requiere el
 # stack local levantado (supabase start) con el schema al día
@@ -29,6 +34,7 @@ cd "$(dirname "$0")/.."
 DB="docker exec -i supabase_db_fidelli-motors psql -U postgres -d postgres -X"
 V=supabase/verificaciones.sql
 M=supabase/migrations/20260925110000_edicion_mecanica_7_dias.sql
+M2=supabase/migrations/20260925120000_ventana_edicion_en_with_check.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
 
@@ -79,6 +85,21 @@ correr_marcada "services_edicion con el literal de 24 horas" services_edicion "$
   "/@policy-services/s/plazo_edicion(tipo)/interval '24 hours'/" R35 "R35b"
 correr_marcada "items_escritura con el literal de 24 horas" items_escritura "$M" \
   "/@policy-items/s/plazo_edicion(s.tipo)/interval '24 hours'/" R35 "R35c"
+# El hueco que tapó 20260925120000: un INSERT evalúa solo el WITH CHECK.
+# Con la ventana de vuelta en el USING solo, el renglón entra en el
+# trabajo fijado por la API directa y ninguna pantalla se entera. La
+# segunda es la del refactor: el WITH CHECK con el literal, que fija la
+# mecánica a las 24 horas solo para los renglones nuevos.
+correr_marcada "items_escritura: el WITH CHECK sin la ventana (el hueco de vuelta)" items_check "$M2" \
+  "/@check-items/s/now() - s.created_at < plazo_edicion(s.tipo)/true/" R35 "R35f"
+correr_marcada "items_escritura: el WITH CHECK con el literal de 24 horas" items_check "$M2" \
+  "/@check-items/s/plazo_edicion(s.tipo)/interval '24 hours'/" R35 "R35f"
+correr_marcada "ruedas_escritura: el WITH CHECK sin la ventana" ruedas_check "$M2" \
+  "/@check-ruedas/s/now() - s.created_at < plazo_edicion(s.tipo)/true/" R35 "R35g"
+# No hay «ruedas_check con el literal de 24 horas»: los neumáticos se
+# fijan a las 24 horas, así que el literal y la función contestan lo
+# mismo y la rotura no rompería nada. Una rotura que no rompe nada es
+# una prueba que miente sobre lo que cubre: se escribe el comentario.
 correr_marcada "get_carton con el sello a 24 horas" get_carton "$M" \
   "/@fijado/s/plazo_edicion(s.tipo)/interval '24 hours'/" R35 "R35d"
 # La ventana de desbloqueo que "acompaña" el plazo: es la salida
