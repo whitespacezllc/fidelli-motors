@@ -592,7 +592,9 @@ y con 24 horas la ficha quedaba fijada a medias.
 sola función, `plazo_edicion(tipo)`:
 - `services_edicion` sobre `services` (`USING` con `now() - created_at < plazo_edicion(tipo)`)
 - `items_escritura` sobre `service_items` y `ruedas_escritura` sobre `service_ruedas` (misma
-  condición, vía el service padre)
+  condición, vía el service padre, en el `USING` **y en el `WITH CHECK`** desde `20260925120000`:
+  un INSERT evalúa solo el segundo, y con la ventana en el primero solo un renglón entraba en un
+  trabajo fijado por la API directa)
 - `get_carton` le muestra al dueño del auto el sello *"Registro fijado"* con el mismo cálculo
 
 El front repite el plazo en `lib/servicios.ts` (`PLAZO_EDICION_HORAS`) solo para pintar el

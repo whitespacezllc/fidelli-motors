@@ -8652,9 +8652,18 @@ end $$;
 -- confiable para el dueño del auto). Ninguna da error: la policy filtra
 -- filas y el UPDATE afecta cero, o afecta una que no debía.
 --
--- Fixtures propios —cliente, auto y cuatro trabajos retrodatados como
--- postgres— para no depender de la edad de lo que dejó el seed. Todo se
--- borra al final.
+-- Y hay una tercera, que vivió en producción desde el primer día: un
+-- INSERT no evalúa el USING, solo el WITH CHECK. Con la ventana escrita
+-- solo en el USING de items_escritura y ruedas_escritura, un renglón —o
+-- una rueda— entraba en un trabajo fijado con un POST directo a
+-- PostgREST (las RPC no lo dejaban porque tocan primero la cabecera).
+-- Desde 20260925120000 la ventana está en las dos mitades; f y g lo
+-- vigilan. Acá RLS sí lanza error —la fila nueva viola la policy— y por
+-- eso esas dos esperan un 42501, no cero filas.
+--
+-- Fixtures propios —cliente, auto y cinco trabajos, cuatro retrodatados,
+-- como postgres— para no depender de la edad de lo que dejó el seed. Todo
+-- se borra al final.
 -- ============================================================
 -- >>> R35
 do $$
@@ -8669,6 +8678,8 @@ declare
   v_mec8    uuid;  -- mecánica de hace 8 días: fijada
   v_srv3    uuid;  -- service de hace 3 días: fijado
   v_neu3    uuid;  -- neumáticos de hace 3 días: fijado
+  v_neu0    uuid;  -- neumáticos recién cargado: editable (para g)
+  v_tenia_modulo boolean;
   v_tipo    tipo_trabajo;
   v_n       integer;
   v_carton  jsonb;
@@ -8720,6 +8731,9 @@ begin
   insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, fecha, tipo, kilometros, alineacion, created_at)
   values (v_demo, v_suc, v_veh, v_own, current_date - 3, 'neumaticos', 50100, true, now() - interval '3 days')
   returning id into v_neu3;
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, fecha, tipo, kilometros, alineacion)
+  values (v_demo, v_suc, v_veh, v_own, current_date, 'neumaticos', 50200, true)
+  returning id into v_neu0;
 
   insert into service_items (service_id, item_tipo, detalle) values (v_mec3, null, 'R35 renglón de la mecánica');
   insert into service_items (service_id, item_tipo, detalle) values (v_srv3, null, 'R35 renglón del service');
@@ -8777,6 +8791,28 @@ begin
     raise exception 'R35c el renglón de un service de hace 3 días SE PUDO borrar: items_escritura dejó de fijarlo a las 24 horas.';
   end if;
 
+  -- ---------- f · el INSERT: la ventana también en el WITH CHECK ----------
+  -- Un INSERT no evalúa el USING. Hasta 20260925120000 la ventana vivía
+  -- solo ahí y un renglón entraba en un trabajo fijado con un POST
+  -- directo a PostgREST. Acá RLS sí lanza error: la fila nueva viola la
+  -- policy y es un 42501, no cero filas.
+  begin
+    insert into service_items (service_id, item_tipo, detalle)
+    values (v_srv3, null, 'R35 renglón colado en un service fijado');
+    v_n := 1;
+  exception when insufficient_privilege then v_n := 0;
+  end;
+  if v_n <> 0 then
+    raise exception 'R35f un renglón ENTRÓ en un service de hace 3 días por INSERT directo: items_escritura mide la ventana solo en el USING y el WITH CHECK deja pasar. Un cartón fijado se sigue escribiendo por la API.';
+  end if;
+
+  begin
+    insert into service_items (service_id, item_tipo, detalle)
+    values (v_mec3, null, 'R35 renglón nuevo de la mecánica');
+  exception when insufficient_privilege then
+    raise exception 'R35f un renglón NO entra en una mecánica de hace 3 días: el WITH CHECK de items_escritura no está midiendo con plazo_edicion(tipo) y la mecánica es editable solo a medias.';
+  end;
+
   execute 'reset role';
   perform set_config('request.jwt.claims', '{}', true);
 
@@ -8829,6 +8865,61 @@ begin
   perform set_config('request.jwt.claims', '{}', true);
   if v_n <> 1 then
     raise exception 'R35e la mecánica fijada que Fidelli desbloqueó sigue sin poder editarse (filas: %).', v_n;
+  end if;
+
+  -- ---------- g · las ruedas: el mismo hueco, con el módulo prendido por la puerta real ----------
+  -- El demo no tiene el módulo de gomería (R15a se apoya en eso), y sin
+  -- módulo el WITH CHECK rechaza toda rueda por plan_permite antes de
+  -- mirar la ventana: la prueba no diría nada. Se prende con
+  -- fijar_override_plan(), como R15 —exige superadmin, motivo y deja el
+  -- registro— y se apaga al final. Si algún día el demo nace con el
+  -- módulo, se prueba igual y no se toca el interruptor.
+  v_tenia_modulo := feature_de_tenant(v_demo, 'neumaticos');
+  if not v_tenia_modulo then
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform fijar_override_plan(v_demo, '{"neumaticos": true}'::jsonb,
+      'Módulo gomería · bonificado · 2026-09-24 — prueba de regresión R35');
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+  end if;
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  if not plan_permite('neumaticos') then
+    raise exception 'R35g SIN PISO: el override no prendió el módulo de gomería para el demo; sin módulo la prueba de las ruedas no dice nada.';
+  end if;
+
+  begin
+    insert into service_ruedas (service_id, posicion, balanceada)
+    values (v_neu3, 'delantera_izquierda', true);
+    v_n := 1;
+  exception when insufficient_privilege then v_n := 0;
+  end;
+  if v_n <> 0 then
+    raise exception 'R35g una rueda ENTRÓ en un trabajo de neumáticos de hace 3 días por INSERT directo: ruedas_escritura mide la ventana solo en el USING y el WITH CHECK deja pasar.';
+  end if;
+
+  begin
+    insert into service_ruedas (service_id, posicion, balanceada)
+    values (v_neu0, 'delantera_izquierda', true);
+  exception when insufficient_privilege then
+    raise exception 'R35g una rueda NO entra en un trabajo de neumáticos recién cargado, con el módulo prendido: el WITH CHECK de ruedas_escritura se cerró de más (perdió el plan_permite o la ventana).';
+  end;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  if not v_tenia_modulo then
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform fijar_override_plan(v_demo, '{}'::jsonb,
+      'Módulo gomería · bonificado · 2026-09-24 — fin de la prueba de regresión R35');
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
   end if;
 
   -- ---------- La limpieza ----------
