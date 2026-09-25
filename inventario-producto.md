@@ -579,36 +579,48 @@ fila**, no por tenant.
 
 ## 5 · Reglas de negocio que el usuario percibe
 
-### 5.1 · La inmutabilidad de los trabajos (la regla de 24 horas)
+### 5.1 · La inmutabilidad de los trabajos (el plazo de edición)
 
-**Se cuentan 24 horas desde que se guardó la fila** (`created_at`), con el reloj de
-Postgres. La *fecha* del trabajo —que el mecánico puede retro-fechar— no participa.
+**Cada trabajo tiene un plazo de edición que se cuenta desde que se guardó la fila**
+(`created_at`), con el reloj de Postgres. La *fecha* del trabajo —que el mecánico puede
+retro-fechar— no participa. **El plazo depende del tipo:** 24 horas para un service y para un
+trabajo de gomería; **7 días para una mecánica** (desde la migración `20260925110000`), porque
+un arreglo de motor se termina de cerrar en días —el repuesto que faltaba, la prueba en ruta—
+y con 24 horas la ficha quedaba fijada a medias.
 
-**Está implementada como policies de RLS**, no como un `if` en React:
-- `services_edicion` sobre `services` (`USING` con `now() - created_at < interval '24 hours'`)
-- `items_escritura` sobre `service_items` (misma condición, vía el service padre)
+**Está implementada como policies de RLS**, no como un `if` en React, y el plazo sale de una
+sola función, `plazo_edicion(tipo)`:
+- `services_edicion` sobre `services` (`USING` con `now() - created_at < plazo_edicion(tipo)`)
+- `items_escritura` sobre `service_items` y `ruedas_escritura` sobre `service_ruedas` (misma
+  condición, vía el service padre)
+- `get_carton` le muestra al dueño del auto el sello *"Registro fijado"* con el mismo cálculo
+
+El front repite el plazo en `lib/servicios.ts` (`PLAZO_EDICION_HORAS`) solo para pintar el
+badge y decidir qué botones ofrecer. Lo vigila R35.
 
 **Qué se puede hacer antes:** editar la cabecera (sucursal, fecha, kilómetros, aceite,
 próximo service, producto, observaciones, litros; en mecánica: descripción), **agregar y
 quitar renglones libremente**, y anular. **Nunca editable:** a qué vehículo pertenece, quién
 lo cargó, y el tipo de trabajo.
 
-**Después de las 24 horas se bloquea la fila entera**, no campos sueltos.
+**Vencido el plazo se bloquea la fila entera**, no campos sueltos.
 
 **La ventana de desbloqueo:** solo un superadmin, desde `/fidelli`, abre **24 horas fijas**
-más. Queda registrado **quién** lo desbloqueó y **hasta cuándo**, se puede repetir, y el
-copy del diálogo lo define bien: *"No lo corregimos nosotros: le devolvemos la posibilidad
-de hacerlo."*
+más, para cualquier tipo de trabajo. Queda registrado **quién** lo desbloqueó y **hasta
+cuándo**, se puede repetir, y el copy del diálogo lo define bien: *"No lo corregimos nosotros:
+le devolvemos la posibilidad de hacerlo."*
 
-**Qué ve el usuario:** un badge de estado en cada trabajo (`EDITABLE 22 HS` en verde,
-porque ser editable es lo normal de las primeras 24 horas, no una alarma). Cuando ya no se
-puede, **los botones de editar y anular no se renderizan** —no hay botón muerto— y en su
-lugar aparece: *"Registro fijado. Pasadas las 24 horas el trabajo queda fijado en el
-historial y ni el lubricentro puede modificarlo — es lo que hace confiable el cartón para
-tu cliente."*
+**Qué ve el usuario:** un badge de estado en cada trabajo (`EDITABLE 22 HS` en un service,
+`EDITABLE 6 DÍAS` en una mecánica; en verde, porque ser editable es lo normal mientras corre
+el plazo, no una alarma). Al confirmar la carga, el aviso dice *"Editable por 24 horas"* o
+*"Editable por 7 días"* según el tipo. Cuando ya no se puede, **los botones de editar y anular
+no se renderizan** —no hay botón muerto— y en su lugar aparece: *"Registro fijado. Después de
+las 24 horas [de los 7 días] el trabajo queda fijado en el historial y ni el lubricentro puede
+modificarlo — es lo que hace confiable el cartón para tu cliente."*
 
 Y si la ventana venció con la pantalla abierta: *"Este service se fijó mientras lo editabas:
-pasaron las 24 horas y ya no se puede modificar."*
+pasaron las 24 horas y ya no se puede modificar."* — o, en una mecánica, *"Este trabajo se
+fijó mientras lo editabas: pasaron los 7 días…"*.
 
 ### 5.2 · `vista_proximos_service` — cómo se decide a quién llamar
 
