@@ -9,19 +9,27 @@ import type {
   ResultadoGuardado,
 } from "@/app/panel/(tras-onboarding)/services/nuevo/[vehiculoId]/actions";
 import { DOT_FORMATO, MEDIDA_FORMATO, validarNeumaticos } from "@/lib/ruedas";
+import { NOMBRE_TRABAJO, type TipoTrabajo } from "@/lib/trabajos";
+import { plazoEdicionConArticulo } from "@/lib/servicios";
 
 const SIN_CONEXION =
   "Se cortó la conexión a internet. No cierres ni recargues esta pantalla: los cambios que hiciste siguen acá. Cuando vuelva la señal, tocá Guardar de nuevo.";
 
-// El caso borde real: el mecánico dejó la pantalla abierta y las 24 horas
-// vencieron mientras editaba. La base rechaza el UPDATE (la policy filtra
-// la fila), actualizar_service lo convierte en service_no_editable, y acá
-// se le pone el mensaje. Nunca un error crudo.
-const SE_FIJO =
-  "Este service se fijó mientras lo editabas: pasaron las 24 horas y ya no se puede modificar. Si hay un error grave, escribinos y lo resolvemos.";
+// El caso borde real: el mecánico dejó la pantalla abierta y el plazo
+// venció mientras editaba —las 24 horas de un service, los 7 días de una
+// mecánica—. La base rechaza el UPDATE (la policy filtra la fila),
+// actualizar_service lo convierte en service_no_editable, y acá se le
+// pone el mensaje con el plazo del tipo que estaba editando. Nunca un
+// error crudo.
+function seFijo(tipo: TipoTrabajo): string {
+  return `Este ${NOMBRE_TRABAJO[tipo]} se fijó mientras lo editabas: pasaron ${plazoEdicionConArticulo(tipo)} y ya no se puede modificar. Si hay un error grave, escribinos y lo resolvemos.`;
+}
 
-function traducirError(error: { code?: string; message?: string }): string {
-  if (/service_no_editable/.test(error.message ?? "")) return SE_FIJO;
+function traducirError(
+  error: { code?: string; message?: string },
+  tipo: TipoTrabajo,
+): string {
+  if (/service_no_editable/.test(error.message ?? "")) return seFijo(tipo);
   if (/descripcion_requerida/.test(error.message ?? "")) {
     return "Contá qué trabajo se hizo: es lo que va a ver tu cliente en su historial.";
   }
@@ -55,8 +63,9 @@ export async function actualizarService(
 ): Promise<ResultadoGuardado> {
   await sesionParaEscribir();
 
-  const esMecanica = payload.tipo === "mecanica";
-  const esNeumaticos = payload.tipo === "neumaticos";
+  const tipo: TipoTrabajo = payload.tipo ?? "service";
+  const esMecanica = tipo === "mecanica";
+  const esNeumaticos = tipo === "neumaticos";
 
   if (!payload.sucursalId) return { error: "Elegí la sucursal donde se hizo." };
   if (esMecanica) {
@@ -122,7 +131,7 @@ export async function actualizarService(
     p_ruedas: esNeumaticos ? (payload.ruedas ?? []) : undefined,
   });
 
-  if (error) return { error: traducirError(error) };
+  if (error) return { error: traducirError(error, tipo) };
 
   revalidatePath("/panel/services");
   revalidatePath(`/panel/services/${serviceId}`);

@@ -157,8 +157,9 @@ export const VIDEOS: readonly VideoAyuda[] = [
   },
   {
     id: "editar-service-cargado",
-    titulo: "Editar un trabajo dentro de las 24 horas",
-    descripcion: "Corregir un dato antes de que el trabajo quede fijado.",
+    titulo: "Editar un trabajo antes de que quede fijado",
+    descripcion:
+      "Corregir un dato dentro del plazo de edición: 24 horas para un service, 7 días para una mecánica.",
     youtubeId: "licaGQVMqnU",
     duracion: 97,
     seccion: "Trabajos",

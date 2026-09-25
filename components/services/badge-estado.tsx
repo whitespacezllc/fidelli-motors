@@ -6,7 +6,7 @@ import {
 
 // El badge de estado del hi-fi (pantalla 4): EDITABLE en verde de éxito,
 // FIJADO y ANULADO apagados. Verde y no rojo/ámbar a propósito — que un
-// service sea editable es lo normal de las primeras 24 hs, no una alarma.
+// trabajo sea editable es lo normal mientras corre su plazo, no una alarma.
 const CLASE_BASE =
   "inline-flex items-center rounded-sm border px-2.5 py-1 text-label font-semibold tracking-[0.04em] whitespace-nowrap";
 

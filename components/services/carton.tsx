@@ -51,6 +51,7 @@ import {
 } from "@/lib/trabajos";
 import { POSICIONES, type PosicionRueda } from "@/lib/ruedas";
 import { recordarSucursal, recordarTipoTrabajo } from "@/lib/preferencias";
+import { plazoEdicionConArticulo, plazoEdicionTexto } from "@/lib/servicios";
 import { formatearFecha as formatearFechaCorta } from "@/lib/fechas";
 import {
   guardarService,
@@ -751,7 +752,7 @@ export function Carton({
         {/* LA SUCURSAL, OTRA VEZ Y ANTES DE GUARDAR. Es el último punto
             donde el error se puede atrapar gratis: después queda escrito
             en la métrica del local equivocado. Va primero en la columna,
-            arriba del aviso de las 24 horas. */}
+            arriba del aviso del plazo de edición. */}
         <div className="mb-4 rounded-md border border-line bg-surface px-4 py-3.5">
           <p className="font-brand text-ui font-bold text-ink">
             Se guarda en {datos.sucursales.find((s) => s.id === sucursalId)?.nombre}
@@ -767,13 +768,16 @@ export function Carton({
           )}
         </div>
 
+        {/* El plazo es del tipo que se está cargando: 24 horas para un
+            service o un trabajo de gomería, 7 días para una mecánica. */}
         <div className="rounded-md border border-line bg-surface px-4 py-3.5">
           <p className="font-brand text-ui font-bold text-ink">
-            Editable por 24 horas
+            Editable por {plazoEdicionTexto(tipo)}
           </p>
           <p className="mt-0.5 text-ui text-ink-60">
-            Este trabajo podrá editarse solo durante las 24 horas posteriores.
-            Después queda fijado en el historial y no se puede modificar.
+            Este trabajo podrá editarse solo durante{" "}
+            {plazoEdicionConArticulo(tipo)} posteriores. Después queda fijado
+            en el historial y no se puede modificar.
           </p>
         </div>
 

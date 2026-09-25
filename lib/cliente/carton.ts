@@ -62,7 +62,7 @@ export type ServiceCarton = {
   proxServiceKm: number | null;
   sucursal: string | null;
   observaciones: string | null;
-  /** Pasaron 24 horas: nadie lo puede retocar. */
+  /** Venció el plazo de edición (24 horas; 7 días en una mecánica): nadie lo puede retocar. */
   fijado: boolean;
   items: ItemCarton[];
   /** Gomería: la alineación del vehículo. null en los otros dos tipos. */
