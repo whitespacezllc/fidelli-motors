@@ -9,7 +9,15 @@ import { textoDeCobranza, enlaceDePagoDe, esEnlaceExterno } from "@/lib/cobranza
 import type { Cobranza } from "@/lib/auth/cobranza";
 
 // ============================================================
-// EL MODAL DE GRACIA — uno por día, y SOLO en Inicio
+// EL MODAL DE GRACIA Y DE SUSPENSIÓN — uno por día, y SOLO en Inicio
+//
+// Se muestra en GRACIA (venció, todavía trabaja) y en SUSPENDIDO POR RELOJ
+// (el panel ya está en solo lectura). El suspendido es el que MÁS tiene
+// que ver el botón de pagar: hasta el 26/09 el modal se apagaba justo al
+// suspenderse y el dueño se quedaba con un cartel de WhatsApp (hallazgo #1
+// de la verificación). La suspensión MANUAL no lo muestra —pagar no la
+// levanta—, y quién es quién lo dice `suspensionManual`, que viene de la
+// sesión: con `activo = false` el reloj también dice `suspendido`.
 //
 // ⚠ POR QUÉ ES IMPOSIBLE QUE APAREZCA SOBRE LA CARGA DE UN SERVICE, y no
 // solo improbable: este componente se monta en UN solo lugar,
@@ -46,15 +54,22 @@ export function ModalGracia({
   cobranza,
   monto,
   taller,
+  suspensionManual = false,
 }: {
   cobranza: Cobranza;
   monto: string | null;
   taller: string | null;
+  /** `activo = false`: la suspendió Fidelli y pagar no la levanta, así que
+   *  el modal no se muestra. Sin este dato, el estado `suspendido` del
+   *  reloj no alcanza para distinguir las dos. */
+  suspensionManual?: boolean;
 }) {
   const [abierto, setAbierto] = useState(false);
+  const aplica =
+    cobranza.estado === "gracia" || (cobranza.estado === "suspendido" && !suspensionManual);
 
   useEffect(() => {
-    if (cobranza.estado !== "gracia") return;
+    if (!aplica) return;
 
     const hoy = hoyEnArgentina();
     try {
@@ -76,9 +91,9 @@ export function ModalGracia({
     // efecto sale temprano cuando la fecha ya quedó marcada arriba.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setAbierto(true);
-  }, [cobranza.estado]);
+  }, [aplica]);
 
-  if (cobranza.estado !== "gracia") return null;
+  if (!aplica) return null;
 
   const texto = textoDeCobranza(cobranza, monto);
   if (!texto) return null;

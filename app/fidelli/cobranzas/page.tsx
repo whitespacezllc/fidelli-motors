@@ -51,6 +51,13 @@ const ESTILO: Record<EstadoCobranza, { etiqueta: string; clase: string }> = {
   al_dia: { etiqueta: "Al día", clase: "border-line bg-surface text-ink-60" },
 };
 
+// El que nunca pagó y ya pasó su plazo: el reloj lo deja en `por_vencer`
+// mientras el tercer interruptor esté apagado (no tiene gracia, y sin
+// bloqueo no hay a dónde ir), y la fila decía «POR VENCER · venció ayer»
+// (hallazgo #9 de la verificación del 26/09). Cuando la fecha ya pasó, la
+// etiqueta dice que pasó, sea cual sea el estado del interruptor.
+const ESTILO_VENCIDO = { etiqueta: "Vencido", clase: "border-overdue bg-overdue-soft text-overdue" };
+
 function esEstado(v: string): v is EstadoCobranza {
   return (ESTADOS_COBRANZA as readonly string[]).includes(v);
 }
@@ -160,7 +167,7 @@ function Grupo({
 
 function FilaCobranza({ f }: { f: Fila }) {
   const estado = esEstado(f.estado_cobranza) ? f.estado_cobranza : "al_dia";
-  const estilo = ESTILO[estado];
+  const estilo = estado === "por_vencer" && f.dias < 0 ? ESTILO_VENCIDO : ESTILO[estado];
 
   // El mensaje sale con el monto DE LA BASE, el mismo que el dueño ve en su
   // pantalla de pago. Si los dos números no coinciden, la conversación
@@ -180,6 +187,9 @@ function FilaCobranza({ f }: { f: Fila }) {
         descuentoPct: Number(f.descuento_pct),
         plan: null,
         montoTotal: Number(f.monto),
+        // La voz del alta: al que nunca pagó no se le habla de un plan que
+        // vence. Es la misma columna que parte la pantalla en dos.
+        nuncaPago: f.nunca_pago,
       })
     : null;
 

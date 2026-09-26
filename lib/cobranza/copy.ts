@@ -86,8 +86,15 @@ const TEXTOS: Record<Clave, (c: Cobranza, monto: string | null) => TextoCobranza
   // se queda en `gracia` pasada la ventana. Ahí el texto cambia de "te
   // quedan" a "venció hace", que es lo único honesto — prometer un plazo
   // que ya pasó es peor que no decir nada.
+  //
+  // ⚠ Y «DESPUÉS DE ESTO EL PANEL PASA A SOLO LECTURA» SOLO SI ES CIERTO:
+  // con `suspension_automatica` apagada (`corta` en false) el reloj avisa
+  // y no cierra nada, y la frase prometía algo que el interruptor no hace
+  // (hallazgo #8 de la verificación del 26/09). El copy no promete lo que
+  // el interruptor no hace.
   "gracia:cobranza": (c, monto) => {
     const n = c.diasRestantes ?? 0;
+    const cierre = c.corta ? "Después de esto el panel pasa a solo lectura." : "";
     return {
       titulo:
         n > 1
@@ -95,9 +102,7 @@ const TEXTOS: Record<Clave, (c: Cobranza, monto: string | null) => TextoCobranza
           : n === 1
             ? "Tu plan venció — hoy es el último día"
             : `Tu plan venció el ${fecha(c.vencimiento)}`,
-      detalle: monto
-        ? `Son ${monto}. Después de esto el panel pasa a solo lectura.`
-        : "Después de esto el panel pasa a solo lectura.",
+      detalle: [monto ? `Son ${monto}.` : "", cierre].filter(Boolean).join(" ") || undefined,
       accion: "Pagar",
     };
   },
@@ -110,23 +115,34 @@ const TEXTOS: Record<Clave, (c: Cobranza, monto: string | null) => TextoCobranza
           : n === 1
             ? "Tu prueba terminó — hoy es el último día"
             : `Tu prueba terminó el ${fecha(c.vencimiento)}`,
-      detalle: "Después de esto vas a poder consultar tus datos, pero no cargar.",
+      detalle: c.corta
+        ? "Después de esto vas a poder consultar tus datos, pero no cargar."
+        : "Si querés seguir, lo vemos por WhatsApp.",
       accion: "¿Charlamos?",
     };
   },
 
   // ---------- SUSPENDIDO ----------
-  // La barra no se usa acá: el suspendido ve `AvisoSuspension`, que ya
-  // existe y tiene su copy escrito. Estas entradas existen para que el
-  // mapa sea exhaustivo y para la fila de /fidelli.
-  "suspendido:cobranza": () => ({
-    titulo: "Tu cuenta está suspendida",
-    detalle: "Podés consultar todos tus datos, pero no cargar nada nuevo.",
+  // Es lo que ve el suspendido POR RELOJ en todo el panel
+  // (`AvisoSuspensionReloj`, la tarjeta ámbar) y en el modal del primer
+  // ingreso del día. El suspendido A MANO ve otra cosa —`AvisoSuspension`,
+  // con WhatsApp—, porque pagar no lo levanta: lo levanta Fidelli.
+  //
+  // El que se atrasó es el que MÁS tiene que ver el botón de pagar: la
+  // salida natural de una suspensión por falta de pago es pagar, no
+  // escribir (hallazgo #1 de la verificación del 26/09).
+  "suspendido:cobranza": (c, monto) => ({
+    titulo: "Tu cuenta está suspendida por falta de pago",
+    detalle:
+      `Tu plan venció el ${fecha(c.vencimiento)} y el plazo para renovarlo pasó: ` +
+      "podés consultar todos tus datos, pero no cargar nada nuevo." +
+      (monto ? ` Son ${monto}.` : ""),
     accion: "Pagar",
   }),
   "suspendido:trial": () => ({
     titulo: "Tu prueba gratuita terminó",
-    detalle: "Podés consultar todos tus datos, pero no cargar nada nuevo.",
+    detalle:
+      "Podés consultar todos tus datos, pero no cargar nada nuevo. Si querés seguir, lo vemos por WhatsApp.",
     accion: "¿Charlamos?",
   }),
 

@@ -70,14 +70,17 @@ export default async function PaginaInicio({
       ? supabase.rpc("onboarding_estado", { p_lubricentro_id: sesion.lubricentroId })
       : Promise.resolve({ data: null }),
     // El monto de la próxima renovación. Se pide SOLO si hay algo que
-    // decir —`por_vencer` o `gracia`—: para un tenant al día, o afuera del
-    // reloj, que son los 17 el día del deploy, esta consulta no existe.
+    // decir —`por_vencer`, `gracia` o suspendido POR RELOJ—: para un tenant
+    // al día, afuera del reloj, o apagado a mano (a ese no se le cobra
+    // desde acá), esta consulta no existe.
     //
     // Y va acá y no en el layout del panel a propósito: en el layout sería
     // una consulta por CADA pantalla, incluida la de cargar un service.
     // Acá es una, en la única pantalla donde el número se mira.
     sesion?.lubricentroId &&
-    (sesion.cobranza?.estado === "por_vencer" || sesion.cobranza?.estado === "gracia")
+    (sesion.cobranza?.estado === "por_vencer" ||
+      sesion.cobranza?.estado === "gracia" ||
+      (sesion.cobranza?.estado === "suspendido" && !sesion.suspensionManual))
       ? supabase.rpc("monto_de_renovacion", { p_lubricentro: sesion.lubricentroId })
       : Promise.resolve({ data: null }),
   ]);
@@ -146,6 +149,7 @@ export default async function PaginaInicio({
         cobranza={sesion.cobranza}
         monto={monto}
         taller={sesion.lubricentroNombre}
+        suspensionManual={sesion.suspensionManual}
       />
     </>
   ) : null;

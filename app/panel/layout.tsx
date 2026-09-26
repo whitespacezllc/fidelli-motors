@@ -4,7 +4,12 @@ import { exigirRol, featureHabilitada } from "@/lib/auth/session";
 import { cerrarSesion } from "@/lib/auth/actions";
 import { Sidebar } from "@/components/panel/sidebar";
 import { BarraMobile } from "@/components/panel/barra-mobile";
-import { AvisoSuspension } from "@/components/panel/aviso-suspension";
+import {
+  AvisoSuspension,
+  AvisoSuspensionReloj,
+  MOTIVO_SUSPENSION_MANUAL,
+  MOTIVO_SUSPENSION_RELOJ,
+} from "@/components/panel/aviso-suspension";
 import { BarraCobranza } from "@/components/panel/barra-cobranza";
 import { ModalTerminos } from "@/components/panel/modal-terminos";
 import { metadataPwa } from "@/lib/pwa";
@@ -32,6 +37,11 @@ export default async function LayoutPanel({
   // suspendido con un panel de apariencia normal que lo rebota sin
   // decirle por qué.
   const suspendido = sesion.suspendido;
+  // POR QUÉ está suspendido, para el cartel y para el motivo de los
+  // candados. No decide ningún gate —eso es `suspendido`—: decide qué se
+  // le dice y a dónde se lo manda. Manual: WhatsApp. Por reloj: Pagar.
+  const suspensionManual = sesion.suspensionManual;
+  const motivoSuspension = suspensionManual ? MOTIVO_SUSPENSION_MANUAL : MOTIVO_SUSPENSION_RELOJ;
   // Resueltas por la base y viajaron con la sesión: acá solo se reparten.
   const features = sesion.capacidades?.features ?? {};
 
@@ -66,6 +76,7 @@ export default async function LayoutPanel({
       <Sidebar
         lubricentroNombre={sesion.lubricentroNombre ?? "Tu lubricentro"}
         suspendido={suspendido}
+        motivoSuspension={motivoSuspension}
         features={features}
         porLlamar={porLlamar ?? 0}
         bloqueado={bloqueado}
@@ -79,13 +90,22 @@ export default async function LayoutPanel({
         {/* pb extra en mobile para que la barra inferior no tape contenido */}
         <main className="mx-auto max-w-6xl px-4 py-6 pb-28 lg:px-8 lg:py-8 print:p-0">
           {/* Arriba de todo y en todas las pantallas: la suspensión no es de
-              una sección, es de la cuenta. */}
-          {suspendido && <AvisoSuspension />}
+              una sección, es de la cuenta. Dos tarjetas, según quién la
+              levanta: la manual con WhatsApp; la del reloj con Pagar, en la
+              voz que corresponda (cobranza, alta o trial). Sin payload del
+              reloj —no debería pasar con `activo` en true— se cae a la
+              manual, que siempre es cierta. */}
+          {suspendido &&
+            (suspensionManual || !sesion.cobranza ? (
+              <AvisoSuspension />
+            ) : (
+              <AvisoSuspensionReloj cobranza={sesion.cobranza} taller={sesion.lubricentroNombre} />
+            ))}
           {/* La ventana de gracia, en TODAS las pantallas del panel: ya
               venció y todavía se puede trabajar. `por_vencer` NO va acá —
-              es la barra discreta de Inicio— y `suspendido` ya lo cuenta
-              AvisoSuspension. El componente decide solo: con cualquier
-              otro estado devuelve null.
+              es la barra discreta de Inicio— y `suspendido` ya lo cuentan
+              las tarjetas de arriba. El componente decide solo: con
+              cualquier otro estado devuelve null.
 
               Es un Server Component sin consultas propias: el estado viajó
               con la sesión. La carga de un service no hace ni un fetch más
@@ -99,6 +119,7 @@ export default async function LayoutPanel({
       <BarraMobile
         cerrarSesion={cerrarSesion}
         suspendido={suspendido}
+        motivoSuspension={motivoSuspension}
         features={features}
         porLlamar={porLlamar ?? 0}
         bloqueado={bloqueado}
