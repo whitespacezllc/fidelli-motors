@@ -5,9 +5,15 @@
 //   RESEND_API_KEY=re_… node --no-warnings scripts/enviar-emails-de-prueba.mjs fidelli.motors@gmail.com
 //
 // Lee RESEND_API_KEY, EMAIL_REMITENTE y EMAIL_REPLY_TO del entorno o de
-// .env.local (el entorno gana). Si RESEND_BASE_URL apunta al doble
-// (scripts/doble-resend.mjs), no sale ningún email de verdad: sirve para
-// probar este script sin key.
+// .env.local (el entorno gana).
+//
+// ⚠ RESEND_BASE_URL SE LEE SOLO DEL ENTORNO DEL PROCESO, NUNCA DE .env.local.
+// En esta máquina .env.local la deja apuntando al doble (puerto 4020) para
+// que next dev no mande nada, y la primera corrida real de este script se
+// la llevó puesta: ocho «Unable to fetch data. The request could not be
+// resolved», que es el SDK sin poder conectarse a un doble que no estaba
+// corriendo. Para probar el script contra el doble, explícito:
+//   RESEND_BASE_URL=http://localhost:4020 node --no-warnings scripts/enviar-emails-de-prueba.mjs …
 //
 // ⚠ Con una key REAL manda ocho emails de verdad a la casilla que le pases.
 // Compila lib/email/{marco,cobranza}.ts con tsc a un temporal, como hace
@@ -33,7 +39,11 @@ const env = Object.fromEntries(
 const leer = (k) => process.env[k] ?? env[k];
 const key = leer("RESEND_API_KEY");
 if (!key) { console.error("Falta RESEND_API_KEY (entorno o .env.local). No se manda nada."); process.exit(1); }
-if (leer("RESEND_BASE_URL")) process.env.RESEND_BASE_URL = leer("RESEND_BASE_URL");
+if (key === "re_prueba_local" && !process.env.RESEND_BASE_URL) {
+  console.error("RESEND_API_KEY es la del doble (re_prueba_local). Con esa key Resend rechaza; poné la real en el entorno o en .env.local.");
+  process.exit(1);
+}
+const destino = process.env.RESEND_BASE_URL || "https://api.resend.com";
 const remitente = leer("EMAIL_REMITENTE") || "Fidelli Motors <hola@fidellimotors.app>";
 const replyTo = leer("EMAIL_REPLY_TO") || "fidelli.motors@gmail.com";
 
@@ -58,7 +68,7 @@ const casos = [
 ];
 
 const resend = new Resend(key);
-console.log(`mandando ${casos.length} emails a ${destinatario} desde ${remitente}${process.env.RESEND_BASE_URL ? ` (vía ${process.env.RESEND_BASE_URL})` : ""}`);
+console.log(`mandando ${casos.length} emails a ${destinatario} desde ${remitente}, vía ${destino}`);
 let fallas = 0;
 for (const [clave, datos] of casos) {
   const e = emailDeCobranza(clave, datos);
