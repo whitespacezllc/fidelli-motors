@@ -28,9 +28,10 @@ cd "$(dirname "$0")/.."
 DB="docker exec -i supabase_db_fidelli-motors psql -U postgres -d postgres -X"
 V=supabase/verificaciones.sql
 M=supabase/migrations/20260915130000_clase_vehiculo.sql
-# get_carton se redefinió después (el plazo de edición por tipo): la
-# versión vigente vive acá y es la que hay que romper.
-M_CARTON=supabase/migrations/20260925110000_edicion_mecanica_7_dias.sql
+# get_carton se redefinió después (el plazo de edición por tipo, la
+# suspensión por reloj): la versión vigente vive acá y es la que hay que
+# romper.
+M_CARTON=supabase/migrations/20260926200000_suspension_por_reloj.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
 
