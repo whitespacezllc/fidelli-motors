@@ -32,6 +32,19 @@ export function AccionBloqueada({ etiqueta }: { etiqueta: string }) {
 // Server Component que lee la sesión (memoizada por request: cero
 // consultas extra). Las doce pantallas que lo montan no tienen que saber
 // nada: el componente decide con `suspensionManual`.
+//
+// La descripción que manda cada página termina con la salida manual
+// («…escribinos y reactivamos la cuenta», «Para reactivarla, escribinos»).
+// Con el reloj esa última oración se reemplaza por la salida real, que es
+// pagar; lo que cada pantalla dice de SUS datos («el service quedó
+// guardado tal cual», «los presupuestos se siguen viendo») queda intacto.
+function descripcionPorReloj(descripcion: string): string {
+  const oraciones = descripcion.trim().split(/(?<=\.)\s+/);
+  const ultima = oraciones[oraciones.length - 1] ?? "";
+  const propio = /escrib/i.test(ultima) ? oraciones.slice(0, -1).join(" ") : descripcion.trim();
+  return `${propio} Pagás y en minutos vuelve todo, sin que tengas que avisarnos.`.trim();
+}
+
 export async function BloqueoSuspension({
   titulo,
   descripcion,
@@ -56,7 +69,9 @@ export async function BloqueoSuspension({
       </div>
 
       <p className="font-brand text-body font-bold text-ink">{titulo}</p>
-      <p className="mx-auto mt-1.5 max-w-md text-ui text-ink-60">{descripcion}</p>
+      <p className="mx-auto mt-1.5 max-w-md text-ui text-ink-60">
+        {texto && !externo ? descripcionPorReloj(descripcion) : descripcion}
+      </p>
 
       {externo ? (
         <a
