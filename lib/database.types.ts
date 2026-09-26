@@ -735,6 +735,47 @@ export type Database = {
           },
         ]
       }
+      emails_cobranza: {
+        Row: {
+          destinatario: string
+          enviado_at: string
+          id: string
+          lubricentro_id: string
+          resend_id: string | null
+          tipo: string
+          vencimiento: string
+          voz: string
+        }
+        Insert: {
+          destinatario: string
+          enviado_at?: string
+          id?: string
+          lubricentro_id: string
+          resend_id?: string | null
+          tipo: string
+          vencimiento: string
+          voz: string
+        }
+        Update: {
+          destinatario?: string
+          enviado_at?: string
+          id?: string
+          lubricentro_id?: string
+          resend_id?: string | null
+          tipo?: string
+          vencimiento?: string
+          voz?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "emails_cobranza_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       gasto_pauta: {
         Row: {
           canal: Database["public"]["Enums"]["canal_pauta"]
@@ -2819,6 +2860,24 @@ export type Database = {
       autos_que_volvieron_plataforma: {
         Args: { p_desde: string; p_hasta: string }
         Returns: number
+      }
+      avisos_pendientes: {
+        Args: never
+        Returns: {
+          alias: string
+          corta: boolean
+          destinatario: string
+          dias: number
+          lubricentro_id: string
+          monto: number
+          nombre: string
+          periodo: Database["public"]["Enums"]["periodo_suscripcion"]
+          plan_nombre: string
+          slug: string
+          tipo: string
+          vencimiento: string
+          voz: string
+        }[]
       }
       backfill_pedidos_calcos: { Args: never; Returns: number }
       bloqueo_de_alta_activo: { Args: never; Returns: boolean }

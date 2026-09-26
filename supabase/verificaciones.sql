@@ -9232,3 +9232,301 @@ begin
   end if;
 end $$;
 -- <<< R36
+
+
+
+
+
+-- ============================================================
+-- R37 · Los tres emails de cobranza (20260926230000)
+--
+-- a · Quién NO recibe nada, nunca: el exento, el de afuera del reloj, el
+--     suspendido a mano y el que está al día.
+-- b · Los umbrales y la voz: a 7 días → por_vencer (el borde entra); el
+--     día 0 → vencido; vencido ayer → SOLO el 2; suspendido por reloj →
+--     el 3, y con el interruptor apagado el mismo tenant sigue en el 2.
+--     El alta: el día del alta → por_vencer con voz alta; pasado el plazo
+--     con el bloqueo apagado → nada (no tiene email intermedio). El trial:
+--     por_vencer y vencido con voz trial.
+-- c · El más avanzado y nunca dos veces: con el 2 mandado no se manda el
+--     2 otra vez NI se cae al 1; con solo el 1 mandado se manda el 2.
+-- d · El que paga entre el 2 y el 3 no recibe el 3; un vencimiento nuevo
+--     habilita los tres otra vez.
+-- e · El destinatario es el email del owner, el monto es el de
+--     monto_de_renovacion() y `corta` es el segundo interruptor.
+-- f · La evidencia: dos filas iguales no entran (unique); delete, update
+--     y truncate se rechazan; los tres candados están en ALWAYS.
+-- g · Un owner no ejecuta avisos_pendientes() (42501): cruza los datos de
+--     todos los tenants.
+--
+-- Las escrituras corren en una subtransacción que se deshace: los
+-- tenants, el owner de prueba y las filas de emails no quedan. Los dos
+-- helpers se crean antes y se borran después, como r34_crear_tenant.
+-- ============================================================
+-- >>> R37
+
+-- Un tenant sintético adentro del reloj (o afuera), con o sin pago, con el
+-- vencimiento a `p_dias` de hoy. Devuelve su id.
+create or replace function r37_crear(
+  p_slug text, p_dias integer, p_pago boolean,
+  p_estado estado_suscripcion default 'activa',
+  p_desc numeric default 0, p_reloj boolean default true,
+  p_activo boolean default true, p_susp boolean default false,
+  p_desde_hoy boolean default false
+)
+returns uuid
+language plpgsql
+as $$
+declare
+  v_id uuid; v_s uuid; v_plan uuid; v_super uuid; v_hoy date := current_date;
+begin
+  select id into v_plan  from planes where nombre = 'Pro' and not heredado;
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  insert into lubricentros (nombre, slug, cobranza_desde, suspension_automatica)
+  values ('Email ' || p_slug, 'email-r37-' || p_slug,
+          case when p_reloj then (case when p_desde_hoy then v_hoy else v_hoy - 60 end) end,
+          p_susp)
+  returning id into v_id;
+  insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, inicio, vencimiento)
+  values (v_id, v_plan, p_estado, 'mensual', p_desc, v_hoy - 30, v_hoy + p_dias)
+  returning id into v_s;
+  if p_pago then
+    insert into pagos (lubricentro_id, suscripcion_id, registrado_por, periodo_desde, periodo_hasta, monto, fecha_pago)
+    values (v_id, v_s, v_super, v_hoy - 30, v_hoy + p_dias, 49000, v_hoy - 30);
+  end if;
+  -- El apagado a mano va al final: el trigger de eventos pide motivo por GUC.
+  if not p_activo then
+    perform set_config('app.motivo_evento', 'otro · prueba R37', true);
+    update lubricentros set activo = false where id = v_id;
+  end if;
+  return v_id;
+end;
+$$;
+
+-- Qué le toca a un tenant según avisos_pendientes(): 'tipo:voz' o null.
+create or replace function r37_toca(p_id uuid)
+returns text
+language sql
+as $$
+  select a.tipo || ':' || a.voz from avisos_pendientes() a where a.lubricentro_id = p_id;
+$$;
+
+do $$
+declare
+  v_hoy    date := current_date;
+  v_plan   uuid;
+  v_super  uuid;
+  v_uid    uuid := gen_random_uuid();
+  v_lub    uuid;
+  v_n      integer;
+  v_r      record;
+begin
+  select id into v_plan  from planes where nombre = 'Pro' and not heredado;
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  if v_plan is null or v_super is null then
+    raise exception 'R37 SIN PISO: falta el plan Pro o el superadmin del seed.';
+  end if;
+
+  begin
+    -- ---------- a · quién no recibe nada ----------
+    -- El exento CON pago: sin pago caería en la voz `alta`, que pasado el
+    -- plazo no manda nada de todos modos, y la exención no sería lo que lo
+    -- calla. Se vio en verde por la razón equivocada.
+    if r37_toca(r37_crear('exento', -8, true, 'activa', 100)) is not null then
+      raise exception 'R37a EL EXENTO RECIBE EMAILS: un tenant con descuento_pct = 100 y vencido hace 8 días tiene un aviso pendiente. Quien no paga nada no puede deber nada: ni barra, ni modal, ni email, nunca.';
+    end if;
+    if r37_toca(r37_crear('sin-reloj', 3, true, 'activa', 0, false)) is not null then
+      raise exception 'R37a EL DE AFUERA DEL RELOJ RECIBE EMAILS: cobranza_desde es null y aun así tiene un aviso pendiente. No vio ninguna barra en su panel; no puede recibir un email que la barra no dijo.';
+    end if;
+    if r37_toca(r37_crear('manual', -8, true, 'activa', 0, true, false)) is not null then
+      raise exception 'R37a EL SUSPENDIDO A MANO RECIBE EMAILS DE COBRANZA: con activo = false tiene un aviso pendiente. A ése no le habla el reloj, le habla Fidelli por WhatsApp (bloque 1).';
+    end if;
+    if r37_toca(r37_crear('al-dia', 20, true)) is not null then
+      raise exception 'R37a un tenant al día (vence en 20 días) tiene un aviso pendiente.';
+    end if;
+
+    -- ---------- b · los umbrales y la voz ----------
+    v_lub := r37_crear('borde', 7, true);
+    if r37_toca(v_lub) is distinct from 'por_vencer:cobranza' then
+      raise exception 'R37b EL BORDE DEL AVISO NO ENTRA: a exactamente dias_de_aviso() días del vencimiento dio «%» y tenía que ser por_vencer:cobranza. Los umbrales son <=, no <.', r37_toca(v_lub);
+    end if;
+    v_lub := r37_crear('hoy', 0, true);
+    if r37_toca(v_lub) is distinct from 'vencido:cobranza' then
+      raise exception 'R37b EL DÍA 0 NO ES «VENCIDO»: con el vencimiento hoy dio «%» y tenía que ser vencido:cobranza («Hoy vence tu plan — tenés 7 días»). El umbral del 2 es días <= 0.', r37_toca(v_lub);
+    end if;
+    v_lub := r37_crear('ayer', -1, true);
+    if r37_toca(v_lub) is distinct from 'vencido:cobranza' then
+      raise exception 'R37b VENCIDO AYER: dio «%» y tenía que ser SOLO el 2 (vencido:cobranza).', r37_toca(v_lub);
+    end if;
+    v_lub := r37_crear('suspendido', -20, true, 'activa', 0, true, true, true);
+    if r37_toca(v_lub) is distinct from 'suspendido:cobranza' then
+      raise exception 'R37b EL SUSPENDIDO POR RELOJ NO RECIBE EL 3: con el interruptor prendido y vencido hace 20 días dio «%» y tenía que ser suspendido:cobranza.', r37_toca(v_lub);
+    end if;
+    v_lub := r37_crear('gracia-larga', -20, true, 'activa', 0, true, true, false);
+    if r37_toca(v_lub) is distinct from 'vencido:cobranza' then
+      raise exception 'R37b con la suspensión APAGADA un vencido hace 20 días dio «%» y tenía que quedarse en vencido:cobranza: el email no puede decir «solo lectura» si el interruptor no cierra nada.', r37_toca(v_lub);
+    end if;
+    -- El alta: dos escalones, sin email intermedio.
+    v_lub := r37_crear('alta-hoy', 1, false, 'activa', 0, true, true, false, true);
+    if r37_toca(v_lub) is distinct from 'por_vencer:alta' then
+      raise exception 'R37b EL DÍA DEL ALTA: dio «%» y tenía que ser por_vencer:alta («tenés hasta mañana para el primer pago»).', r37_toca(v_lub);
+    end if;
+    v_lub := r37_crear('alta-pasada', -1, false, 'activa', 0, true, true, false, true);
+    if r37_toca(v_lub) is not null then
+      raise exception 'R37b EL ALTA TIENE EMAIL INTERMEDIO: pasado el plazo con el bloqueo apagado dio «%» y tenía que ser nada. Su escalera es de dos escalones: el día del alta y al bloquearse.', r37_toca(v_lub);
+    end if;
+    -- El trial: sus momentos, en su voz.
+    v_lub := r37_crear('trial-3', 3, false, 'trial');
+    if r37_toca(v_lub) is distinct from 'por_vencer:trial' then
+      raise exception 'R37b el trial a 3 días dio «%» y tenía que ser por_vencer:trial.', r37_toca(v_lub);
+    end if;
+    v_lub := r37_crear('trial-ayer', -1, false, 'trial');
+    if r37_toca(v_lub) is distinct from 'vencido:trial' then
+      raise exception 'R37b el trial vencido ayer dio «%» y tenía que ser vencido:trial.', r37_toca(v_lub);
+    end if;
+
+    -- ---------- c · el más avanzado, y nunca dos veces ----------
+    v_lub := r37_crear('nunca-dos', -2, true);
+    insert into emails_cobranza (lubricentro_id, tipo, voz, vencimiento, destinatario, resend_id)
+    values (v_lub, 'vencido', 'cobranza', v_hoy - 2, 'r37@fidellimotors.app', 're_r37_2');
+    if r37_toca(v_lub) is not null then
+      raise exception 'R37c NUNCA DOS VECES SE ROMPIÓ: con el 2 ya mandado para este vencimiento dio «%» y tenía que ser nada. O se manda el 2 otra vez, o se cae al 1 después del 2 («vence el DD/MM» después de «hoy vence»).', r37_toca(v_lub);
+    end if;
+    v_lub := r37_crear('solo-el-uno', -2, true);
+    insert into emails_cobranza (lubricentro_id, tipo, voz, vencimiento, destinatario, resend_id)
+    values (v_lub, 'por_vencer', 'cobranza', v_hoy - 2, 'r37@fidellimotors.app', 're_r37_1');
+    if r37_toca(v_lub) is distinct from 'vencido:cobranza' then
+      raise exception 'R37c con SOLO el 1 mandado, el vencido dio «%» y tenía que ser vencido:cobranza: el 2 sigue pendiente.', r37_toca(v_lub);
+    end if;
+
+    -- ---------- d · paga entre el 2 y el 3; un ciclo nuevo habilita los tres ----------
+    v_lub := r37_crear('paga', -20, true, 'activa', 0, true, true, true);
+    insert into emails_cobranza (lubricentro_id, tipo, voz, vencimiento, destinatario, resend_id)
+    values (v_lub, 'vencido', 'cobranza', v_hoy - 20, 'r37@fidellimotors.app', 're_r37_paga');
+    if r37_toca(v_lub) is distinct from 'suspendido:cobranza' then
+      raise exception 'R37 SIN PISO: el tenant que va a pagar tenía que estar en suspendido:cobranza y dio «%».', r37_toca(v_lub);
+    end if;
+    update suscripciones set vencimiento = v_hoy + 30 where lubricentro_id = v_lub;
+    if r37_toca(v_lub) is not null then
+      raise exception 'R37d EL QUE PAGÓ ENTRE EL 2 Y EL 3 RECIBE EL 3: con el vencimiento movido a +30 dio «%» y tenía que ser nada.', r37_toca(v_lub);
+    end if;
+    -- El ciclo nuevo: mismo tenant, vencimiento nuevo a 3 días, con el 1 y
+    -- el 2 del ciclo viejo ya mandados. Vuelve a tocarle el 1.
+    insert into emails_cobranza (lubricentro_id, tipo, voz, vencimiento, destinatario, resend_id)
+    values (v_lub, 'por_vencer', 'cobranza', v_hoy - 20, 'r37@fidellimotors.app', 're_r37_paga_1');
+    update suscripciones set vencimiento = v_hoy + 3 where lubricentro_id = v_lub;
+    if r37_toca(v_lub) is distinct from 'por_vencer:cobranza' then
+      raise exception 'R37d UN VENCIMIENTO NUEVO NO HABILITÓ LOS TRES: con el 1 y el 2 del ciclo anterior mandados y un vencimiento nuevo a 3 días dio «%» y tenía que ser por_vencer:cobranza. La clave de «nunca dos veces» es (tenant, tipo, vencimiento).', r37_toca(v_lub);
+    end if;
+
+    -- ---------- e · destinatario, monto y corta ----------
+    v_lub := r37_crear('con-owner', 3, true);
+    insert into auth.users (
+      id, instance_id, email, encrypted_password, email_confirmed_at,
+      created_at, updated_at, aud, role, raw_app_meta_data, raw_user_meta_data,
+      confirmation_token, recovery_token, email_change_token_new, email_change
+    ) values (
+      v_uid, '00000000-0000-0000-0000-000000000000',
+      'owner-r37@fidellimotors.app', extensions.crypt('r37', extensions.gen_salt('bf')), now(),
+      now(), now(), 'authenticated', 'authenticated',
+      '{"provider":"email","providers":["email"]}'::jsonb,
+      jsonb_build_object('rol', 'owner', 'nombre', 'Owner R37', 'lubricentro_id', v_lub),
+      '', '', '', ''
+    );
+    select * into v_r from avisos_pendientes() a where a.lubricentro_id = v_lub;
+    if v_r.destinatario is distinct from 'owner-r37@fidellimotors.app' then
+      raise exception 'R37e el destinatario es «%» y tenía que ser el email del owner del tenant.', v_r.destinatario;
+    end if;
+    if v_r.monto is distinct from (monto_de_renovacion(v_lub) ->> 'total')::numeric or v_r.monto <= 0 then
+      raise exception 'R37e el monto del email (%) no es el de monto_de_renovacion() (%): el email cotizaría un número distinto del de la pantalla de pago.', v_r.monto, monto_de_renovacion(v_lub) ->> 'total';
+    end if;
+    if v_r.corta then
+      raise exception 'R37e `corta` dice true para un tenant con suspension_automatica apagada: el email prometería el solo lectura que el interruptor no hace.';
+    end if;
+    if v_r.plan_nombre is distinct from 'Pro' or v_r.periodo is distinct from 'mensual' then
+      raise exception 'R37e plan «%» / período «%»: tenían que ser Pro / mensual.', v_r.plan_nombre, v_r.periodo;
+    end if;
+
+    -- ---------- f · la evidencia ----------
+    begin
+      insert into emails_cobranza (lubricentro_id, tipo, voz, vencimiento, destinatario, resend_id)
+      values (v_lub, 'por_vencer', 'cobranza', v_hoy + 3, 'owner-r37@fidellimotors.app', 're_a');
+      insert into emails_cobranza (lubricentro_id, tipo, voz, vencimiento, destinatario, resend_id)
+      values (v_lub, 'por_vencer', 'cobranza', v_hoy + 3, 'owner-r37@fidellimotors.app', 're_b');
+      raise exception 'R37f DOS EMAILS DEL MISMO TIPO PARA EL MISMO CICLO ENTRARON: el unique (lubricentro_id, tipo, vencimiento) es la garantía de «nunca dos veces» y no está.';
+    exception
+      when unique_violation then null;
+    end;
+
+    -- ⚠ UNA FILA QUE EXISTA, o el candado de borrado nunca se despierta: el
+    -- sub-bloque de arriba deshizo su primer insert junto con la violación
+    -- del unique, y un delete sobre cero filas no dispara ningún trigger
+    -- por fila. Se vio en rojo: «LA EVIDENCIA SE PUEDE BORRAR» con el
+    -- candado intacto.
+    insert into emails_cobranza (lubricentro_id, tipo, voz, vencimiento, destinatario, resend_id)
+    values (v_lub, 'por_vencer', 'cobranza', v_hoy + 3, 'owner-r37@fidellimotors.app', 're_c');
+    if r37_toca(v_lub) is not null then
+      raise exception 'R37c con el 1 mandado, el tenant a 3 días dio «%» y tenía que ser nada.', r37_toca(v_lub);
+    end if;
+
+    begin
+      delete from emails_cobranza where lubricentro_id = v_lub;
+      raise exception 'R37f LA EVIDENCIA SE PUEDE BORRAR: un delete sobre emails_cobranza pasó. Mañana el cron manda el mismo email otra vez.';
+    exception
+      when sqlstate 'P0001' then
+        if sqlerrm not like '%email_no_se_borra%' then raise; end if;
+    end;
+
+    begin
+      update emails_cobranza set destinatario = 'otro@fidellimotors.app' where lubricentro_id = v_lub;
+      raise exception 'R37f LA EVIDENCIA SE PUEDE EDITAR: un update sobre emails_cobranza pasó.';
+    exception
+      when sqlstate 'P0001' then
+        if sqlerrm not like '%email_no_se_edita%' then raise; end if;
+    end;
+
+    begin
+      truncate emails_cobranza;
+      raise exception 'R37f LA EVIDENCIA SE PUEDE VACIAR: un truncate sobre emails_cobranza pasó. La próxima corrida manda los tres emails del ciclo a todos.';
+    exception
+      when sqlstate 'P0001' then
+        if sqlerrm not like '%email_no_se_vacia%' then raise; end if;
+    end;
+
+    select count(*) into v_n from pg_trigger
+     where tgrelid = 'emails_cobranza'::regclass and not tgisinternal and tgenabled = 'A';
+    if v_n <> 3 then
+      raise exception 'R37f LOS CANDADOS TIENEN UNA PERILLA DE APAGADO AL LADO: % de 3 triggers de emails_cobranza están en ALWAYS. Los que quedaron en ORIGIN se apagan enteros con `set session_replication_role = replica`.', v_n;
+    end if;
+
+    -- ---------- g · un owner no ejecuta la decisión ----------
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_uid, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+      perform count(*) from avisos_pendientes();
+      raise exception 'R37g UN OWNER EJECUTA avisos_pendientes(): devolvió filas en vez de 42501. La función es definer y cruza usuarios, suscripciones y pagos de TODOS los tenants: solo service_role.';
+    exception
+      when insufficient_privilege then null;
+    end;
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+
+    -- Todo lo escrito en este bloque se deshace acá. Cualquier otra
+    -- excepción de arriba NO se atrapa: sube y pone el reset en rojo.
+    raise exception 'rollback_r37' using errcode = 'P0037';
+  exception
+    when sqlstate 'P0037' then
+      execute 'reset role';
+      perform set_config('request.jwt.claims', '{}', true);
+  end;
+
+  if exists (select 1 from lubricentros where slug like 'email-r37-%')
+     or exists (select 1 from emails_cobranza where destinatario like '%r37@fidellimotors.app') then
+    raise exception 'R37 SIN PISO: la subtransacción no deshizo los tenants o los emails de prueba.';
+  end if;
+end $$;
+
+drop function r37_toca(uuid);
+drop function r37_crear(text, integer, boolean, estado_suscripcion, numeric, boolean, boolean, boolean, boolean);
+-- <<< R37
