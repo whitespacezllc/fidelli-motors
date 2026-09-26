@@ -22,7 +22,13 @@ import {
   ErrorCresium,
   esAliasTomado,
 } from "@/lib/cresium/cliente";
-import { aliasParaLaOrden, conIntentos, estadoEfectivo } from "@/lib/cresium/orden";
+import {
+  aliasParaLaOrden,
+  conIntentos,
+  estadoEfectivo,
+  periodoHastaDeLaOrden,
+} from "@/lib/cresium/orden";
+import { hoyISO } from "@/lib/fechas";
 import { MESES_DEL_PERIODO, type Periodo } from "@/lib/fidelli/plan";
 
 export type EstadoOrden = { error?: string; ok?: boolean };
@@ -60,6 +66,16 @@ export async function crearOrden(
   if (!sesion?.lubricentroId) redirect("/login");
   if (sesion.rol !== "owner") redirect("/panel");
   const lubricentroId = sesion.lubricentroId;
+
+  // ⚠ PERO LA SUSPENSIÓN MANUAL SÍ SE RECHAZA. `activo = false` lo apagó
+  // Fidelli y pagar no lo levanta: emitirle un CVU es invitarlo a
+  // transferir para nada (hallazgo #5 de la verificación del 26/09). La
+  // orden que tuviera viva ya la cerró la base al apagarlo (trigger
+  // cerrar_ordenes_al_suspender); acá no se le abre otra. El suspendido
+  // POR RELOJ pasa: para él esta acción es la salida.
+  if (!sesion.lubricentroActivo) {
+    return { error: "Tu cuenta está suspendida por Fidelli. Escribinos y lo resolvemos." };
+  }
 
   const periodo = String(formData.get("periodo") ?? "");
   if (!PERIODOS_VALIDOS.includes(periodo as Periodo)) {
@@ -118,10 +134,21 @@ export async function crearOrden(
     return { error: "Tu plan no tiene nada por cobrar. Si creés que es un error, escribinos." };
   }
 
-  const desde = new Date(sub.vencimiento + "T00:00:00");
-  const hasta = new Date(desde);
-  hasta.setMonth(hasta.getMonth() + MESES_DEL_PERIODO[periodo as Periodo]);
-  const hastaISO = hasta.toISOString().slice(0, 10);
+  // ⚠ HASTA CUÁNDO COMPRA: `greatest(vencimiento, hoy) + período`, y no
+  // `vencimiento + período` como hasta el 26/09. Las dos mitades son de
+  // Santiago: el que paga DENTRO del ciclo no gana días (el período se
+  // apoya en el vencimiento), y el que paga DESPUÉS de vencido compra un
+  // período ENTERO desde hoy. Con la cuenta vieja, un tenant vencido el
+  // 01/10, suspendido el 09/10 y pagando el 20/11 compraba hasta el 01/11
+  // —ya pasado—: pagaba y seguía suspendido. La regla vive en
+  // lib/cresium/orden.ts (pura, con su regresión); la base la acompaña con
+  // `greatest(v_venc, v_hasta)` al acreditar (R36d). El "hoy" es el del
+  // negocio (hora argentina), nunca el del proceso.
+  const hastaISO = periodoHastaDeLaOrden(
+    sub.vencimiento,
+    hoyISO(),
+    MESES_DEL_PERIODO[periodo as Periodo],
+  );
 
   const { data: externalId } = await supabase.rpc("cresium_external_id", {
     p_suscripcion: sub.id,

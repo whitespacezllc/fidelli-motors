@@ -31,7 +31,7 @@ import fs from "node:fs";
 
 process.env.PUERTO = "4017";
 const { arrancar, parar } = await import("./doble-cresium.mjs");
-const { aliasParaLaOrden, conIntentos, externalIdDelIntento, estadoEfectivo, ordenVencida, DIAS_DE_VIDA_DE_LA_ORDEN } =
+const { aliasParaLaOrden, conIntentos, externalIdDelIntento, estadoEfectivo, ordenVencida, periodoHastaDeLaOrden, DIAS_DE_VIDA_DE_LA_ORDEN } =
   await import("../lib/cresium/orden.ts");
 const { aliasSugerido, esAliasValido, ALIAS_LARGO_MAXIMO } =
   await import("../lib/cresium/alias.ts");
@@ -229,6 +229,30 @@ try {
         aliasSugerido("gomeria-el-colo").includes("gomeria") &&
         aliasSugerido("gomería-el-colo") === aliasSugerido("gomeria-el-colo"),
         aliasSugerido("gomería-el-colo"));
+
+  // --- 6 · Hasta cuándo compra la orden (bloque 1 del sprint de cobranza, 1.4).
+  //     `greatest(vencimiento, hoy) + período`: el que paga dentro del ciclo
+  //     no gana días, y el que paga después de vencido compra un período
+  //     ENTERO desde hoy. Con `vencimiento + período` a secas, el tercero
+  //     compraba hasta una fecha ya pasada y seguía suspendido.
+  console.log("\n— 6 · hasta cuándo compra la orden");
+  const hasta = periodoHastaDeLaOrden;
+  check("vencido el 01/10, pagando el 20/11: un mes ENTERO desde hoy (20/12), no hasta el 01/11",
+        hasta("2026-10-01", "2026-11-20", 1) === "2026-12-20", hasta("2026-10-01", "2026-11-20", 1));
+  check("vencido el 01/10, pagando el 20/11 un año: hasta el 20/11/2027",
+        hasta("2026-10-01", "2026-11-20", 12) === "2027-11-20", hasta("2026-10-01", "2026-11-20", 12));
+  check("en gracia (venció el 01/10, paga el 05/10): desde hoy, 05/11",
+        hasta("2026-10-01", "2026-10-05", 1) === "2026-11-05", hasta("2026-10-01", "2026-10-05", 1));
+  check("dentro del ciclo (vence el 01/10, paga el 05/09): 01/11, sin días de regalo",
+        hasta("2026-10-01", "2026-09-05", 1) === "2026-11-01", hasta("2026-10-01", "2026-09-05", 1));
+  check("el día del vencimiento (01/10): 01/11",
+        hasta("2026-10-01", "2026-10-01", 1) === "2026-11-01", hasta("2026-10-01", "2026-10-01", 1));
+  check("un año dentro del ciclo: 01/10/2027",
+        hasta("2026-10-01", "2026-09-28", 12) === "2027-10-01", hasta("2026-10-01", "2026-09-28", 12));
+  check("el 31/01 + 1 mes es el 28/02, como en Postgres",
+        hasta("2026-01-31", "2026-01-31", 1) === "2026-02-28", hasta("2026-01-31", "2026-01-31", 1));
+  check("el 31/12 + 1 mes cruza el año: 31/01",
+        hasta("2026-12-31", "2026-12-31", 1) === "2027-01-31", hasta("2026-12-31", "2026-12-31", 1));
 } finally {
   parar();
 }

@@ -94,6 +94,50 @@ export function aliasParaLaOrden(
   return propio ? { alias: propio, fijo: true } : { alias: derivado(), fijo: false };
 }
 
+// ============================================================
+// HASTA CUÁNDO COMPRA UNA ORDEN DE RENOVACIÓN
+//
+// `greatest(vencimiento, hoy) + período`, en fechas-calendario: las dos
+// entran como YYYY-MM-DD (la del negocio, hora argentina) y sale
+// YYYY-MM-DD. Es pura y vive acá, y no en la acción, para que la
+// regresión la corra con literales (scripts/regresion-cresium-orden.mjs § 6).
+//
+// ⚠ ARRANCA EN EL MAYOR DE LOS DOS, y las dos mitades son de Santiago:
+//
+//   · el que paga DENTRO del ciclo no gana días: con el vencimiento
+//     adelante, el período se apoya en el vencimiento. Pagar tres días
+//     antes no regala tres días menos, ni de más.
+//   · el que paga DESPUÉS de vencido compra un período entero desde hoy.
+//     Con `vencimiento + período` a secas —lo que había—, un tenant
+//     vencido el 01/10 que se suspendía el 09/10 y pagaba el 20/11
+//     compraba hasta el 01/11, ya pasado: pagaba y seguía suspendido.
+//     Es el 1.4 del bloque 1 del sprint de cobranza (26/09/2026).
+//
+// La base hace su mitad del otro lado (`greatest(v_venc, v_hasta)` en
+// `ciclo_tras_el_pago`), y R36d prueba que con este `hasta` el vencimiento
+// queda exactamente acá y el pago registra el período que cubre de verdad.
+// Los meses se suman como los suma Postgres: el 31/01 + 1 mes es el 28/02,
+// no el 03/03.
+// ============================================================
+export function periodoHastaDeLaOrden(vencimiento: string, hoy: string, meses: number): string {
+  // YYYY-MM-DD compara bien como texto: el mayor de los dos es el más nuevo.
+  const desde = vencimiento > hoy ? vencimiento : hoy;
+  return sumarMesesISO(desde, meses);
+}
+
+// En UTC a propósito: la TZ del proceso (UTC en Vercel, -03 acá) no puede
+// mover el día. `new Date("2026-10-01T00:00:00")` + `toISOString()`, que
+// era la cuenta anterior, funcionaba solo porque ninguna de las dos zonas
+// es positiva.
+function sumarMesesISO(iso: string, meses: number): string {
+  const [a, m, d] = iso.slice(0, 10).split("-").map(Number);
+  const f = new Date(Date.UTC(a, m - 1 + meses, d));
+  // El 31 + 1 mes desborda al mes siguiente: se retrocede al último día
+  // del mes que corresponde, como hace `date + interval '1 month'`.
+  if (f.getUTCDate() !== d) f.setUTCDate(0);
+  return f.toISOString().slice(0, 10);
+}
+
 export type Intento<T> =
   | { ok: true; valor: T; externalId: string; intento: number }
   | { ok: false; error: unknown; externalId: string; intento: number };

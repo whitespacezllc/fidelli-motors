@@ -119,6 +119,7 @@ function ItemBarraBloqueado({
 export function BarraMobile({
   cerrarSesion,
   suspendido = false,
+  motivoSuspension = MOTIVO_SUSPENSION,
   features = {},
   porLlamar = 0,
   bloqueado = false,
@@ -127,6 +128,9 @@ export function BarraMobile({
 }: {
   cerrarSesion: () => Promise<void>;
   suspendido?: boolean;
+  /** Por qué está suspendido, con la salida que corresponde (WhatsApp o
+   *  Pagar). Lo elige el layout, que sabe si fue a mano o por reloj. */
+  motivoSuspension?: string;
   features?: Partial<Record<FeaturePlan, boolean>>;
   /** Contactos sin hacer en "A quién llamar" — pinta el círculo. */
   porLlamar?: number;
@@ -199,7 +203,7 @@ export function BarraMobile({
             se apaga y dice por qué. */}
         {suspendido || bloqueado ? (
           <ItemBloqueado
-            motivo={suspendido ? MOTIVO_SUSPENSION : motivo}
+            motivo={suspendido ? motivoSuspension : motivo}
             posicion="arriba"
             className={`${CLASE_ITEM_BARRA} text-ink-40`}
           >
