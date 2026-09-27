@@ -67,3 +67,23 @@ origen. Así un push «a prod» fue a dev. Copiar solo `config.toml`, `migration
 `cat <workdir>/supabase/.temp/project-ref`: tiene que decir `cutzedfmxyyxxqfjutru`.
 El primer `migration list` contra prod puede fallar con «failed to connect to
 postgres»: es transitorio, reintentar.
+
+## G · Sprint de cobranza (bloques 1 y 2, releases #136, #137, #138 → #139)
+
+Lo que pasó el 26 y 27/09, para que no se repita: **la app se mergeó a main
+(#139, 26/09 21:03) antes que la base**, y la primera corrida del cron de
+avisos (27/09 9:00) falló con 500 porque `avisos_pendientes()` no existía
+en producción. Cero emails. El orden de la sección A no es opcional.
+
+- [x] Migraciones `20260926200000_suspension_por_reloj.sql` y
+      `20260926230000_emails_cobranza.sql` en dev y en prod (27/09, 108/108).
+- [x] `RESEND_API_KEY` en Vercel (Production).
+- [ ] `CRON_SECRET`: si se cambia el valor en Vercel, **hay que redesplegar**
+      para que el deployment lo tome; hasta entonces las dos rutas del cron
+      responden 401 a ese valor.
+- [ ] Primera corrida real de `/api/fidelli/avisos-cobranza`: a mano con el
+      bearer, o sola a las 9:00 del día siguiente. Verificar después con
+      `select tipo, voz, count(*) from emails_cobranza group by 1, 2;`.
+- [ ] Bloque 3 (Santiago, tras un pago real por Cresium):
+      `update lubricentros set suspension_automatica = true where slug <> 'demo';`
+      y la migración de una línea que pone `bloqueo_de_alta_activo()` en `true`.
