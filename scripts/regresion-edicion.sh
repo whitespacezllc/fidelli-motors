@@ -34,6 +34,10 @@ cd "$(dirname "$0")/.."
 DB="docker exec -i supabase_db_fidelli-motors psql -U postgres -d postgres -X"
 V=supabase/verificaciones.sql
 M=supabase/migrations/20260925110000_edicion_mecanica_7_dias.sql
+# get_carton se redefinió después (la suspensión por reloj, 20260926200000):
+# la versión vigente vive ahí y es la que hay que romper. El sello
+# `@fijado` viaja intacto en esa copia.
+M_CARTON=supabase/migrations/20260926200000_suspension_por_reloj.sql
 M2=supabase/migrations/20260925120000_ventana_edicion_en_with_check.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
@@ -100,7 +104,7 @@ correr_marcada "ruedas_escritura: el WITH CHECK sin la ventana" ruedas_check "$M
 # fijan a las 24 horas, así que el literal y la función contestan lo
 # mismo y la rotura no rompería nada. Una rotura que no rompe nada es
 # una prueba que miente sobre lo que cubre: se escribe el comentario.
-correr_marcada "get_carton con el sello a 24 horas" get_carton "$M" \
+correr_marcada "get_carton con el sello a 24 horas" get_carton "$M_CARTON" \
   "/@fijado/s/plazo_edicion(s.tipo)/interval '24 hours'/" R35 "R35d"
 # La ventana de desbloqueo que "acompaña" el plazo: es la salida
 # extraordinaria, no el plazo, y son 24 horas fijas para cualquier tipo.

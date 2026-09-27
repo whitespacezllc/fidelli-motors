@@ -169,6 +169,12 @@ export async function armarPagoDelTenant(
   // NOT_PAID, porque nadie nos avisa del vencimiento (lib/cresium/orden.ts).
   const estadoOrden = orden ? estadoEfectivo(orden.estado, orden.created_at) : null;
   const vencida = estadoOrden === "EXPIRED";
+  // CERRADA es NUESTRA palabra (20260926200000): la orden viva de un tenant
+  // que Fidelli apagó a mano. No se pinta ni se reusa —el dueño reactivado
+  // genera una nueva, con su número de intento— y sin el aviso de "venció":
+  // no venció, la cerramos nosotros. Si Cresium igual recibe el depósito,
+  // el webhook la pisa con PAID y ahí sí se muestra el éxito.
+  const cerrada = estadoOrden === "CERRADA";
 
   // ¿Ya está pagada? La orden en PAID es lo que dispara la pantalla de
   // éxito, y llega ahí por el webhook: el dueño ve cambiar la pantalla sin
@@ -196,7 +202,7 @@ export async function armarPagoDelTenant(
       // Una orden vencida no es una orden abierta: se le da el selector y el
       // botón de nuevo, con el aviso de que la cuenta anterior ya no sirve.
       orden:
-        orden && !pagada && !vencida
+        orden && !pagada && !vencida && !cerrada
           ? {
               alias: orden.alias,
               cvu: orden.cvu,

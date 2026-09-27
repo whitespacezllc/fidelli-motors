@@ -1,6 +1,6 @@
-import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { crearClienteAdmin } from "@/lib/supabase/admin";
+import { rechazoDelCron } from "@/lib/cron/guarda";
 import { hoyISO } from "@/lib/fechas";
 import { sumarDias } from "@/lib/fidelli/plan";
 
@@ -14,7 +14,9 @@ import { sumarDias } from "@/lib/fidelli/plan";
 //
 //   1 · Vercel manda `Authorization: Bearer $CRON_SECRET` solo. Sin ese
 //       header exacto: 401 y no se toca la base. Sin CRON_SECRET en el
-//       entorno: 500, para que se note en el primer intento.
+//       entorno: 500, para que se note en el primer intento. La guarda
+//       vive en lib/cron/guarda.ts y es la misma que la de los avisos de
+//       cobranza (/api/fidelli/avisos-cobranza).
 //   2 · EL TIPO DE CAMBIO NUNCA SE INVENTA. Se pide la cotización oficial
 //       del día a dolarapi.com; si falla, se repite la última conocida con
 //       fuente = 'repetido', y queda registrado así. Si tampoco hay una
@@ -35,14 +37,6 @@ function rechazar(motivo: string, status: number, cuerpo: Record<string, unknown
   // webhook de Cresium.
   console.error(`[fidelli/cierre-diario] ${motivo}`);
   return NextResponse.json(cuerpo, { status });
-}
-
-// Comparación en tiempo constante, aunque los largos difieran.
-function bearerCoincide(header: string | null, secret: string): boolean {
-  const esperado = Buffer.from(`Bearer ${secret}`);
-  const recibido = Buffer.from(header ?? "");
-  if (esperado.length !== recibido.length) return false;
-  return timingSafeEqual(esperado, recibido);
 }
 
 // La cotización oficial de hoy. A las 00:10 el mercado está cerrado, así
@@ -74,14 +68,8 @@ async function cotizacionOficial(): Promise<Cotizacion | null> {
 }
 
 export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) {
-    return rechazar("falta CRON_SECRET en el entorno", 500, { error: "misconfigured" });
-  }
-
-  if (!bearerCoincide(request.headers.get("authorization"), secret)) {
-    return rechazar("rechazado: authorization inválido", 401, { error: "unauthorized" });
-  }
+  const rechazo = rechazoDelCron(request, "fidelli/cierre-diario");
+  if (rechazo) return rechazo;
 
   // La fecha: ayer en hora argentina, o la pedida (solo días que ya pasaron).
   const hoy = hoyISO();

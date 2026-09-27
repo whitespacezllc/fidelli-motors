@@ -96,6 +96,7 @@ const CLASE_ITEM =
 export function Sidebar({
   lubricentroNombre,
   suspendido = false,
+  motivoSuspension = MOTIVO_SUSPENSION,
   features = {},
   porLlamar = 0,
   bloqueado = false,
@@ -104,6 +105,9 @@ export function Sidebar({
 }: {
   lubricentroNombre: string;
   suspendido?: boolean;
+  /** Por qué está suspendido, dicho con la salida que corresponde (WhatsApp
+   *  o Pagar). Lo elige el layout, que sabe si fue a mano o por reloj. */
+  motivoSuspension?: string;
   features?: Partial<Record<FeaturePlan, boolean>>;
   /** Contactos sin hacer en "A quién llamar" — pinta el círculo. */
   porLlamar?: number;
@@ -144,7 +148,7 @@ export function Sidebar({
         {suspendido || bloqueado ? (
           // Apagado, en su lugar y con el motivo: el botón no desaparece
           // —eso haría pensar que se rompió algo— pero tampoco engaña.
-          <ItemBloqueado motivo={suspendido ? MOTIVO_SUSPENSION : motivo}>
+          <ItemBloqueado motivo={suspendido ? motivoSuspension : motivo}>
             <span className="flex h-11 w-full items-center justify-center gap-1.5 rounded-md bg-surface font-brand text-ui font-bold text-ink-40">
               <IconoCandado className="size-4" />
               Nuevo trabajo

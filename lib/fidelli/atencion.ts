@@ -8,7 +8,9 @@ import {
 } from "@/lib/fidelli/plan";
 import {
   mensajeCobranza,
+  mensajePrimerPago,
   mensajeTrial,
+  mensajeVencido,
   type MotivoAviso,
 } from "@/lib/config";
 import { diasEntre, formatearFecha, hoyISO } from "@/lib/fechas";
@@ -76,6 +78,14 @@ export const ETIQUETA_MOTIVO: Record<MotivoAviso, string> = {
 //
 // Devuelve null cuando no hay a quién escribirle: la pantalla muestra "Sin
 // teléfono cargado" en vez de un botón que abre wa.me/null.
+//
+// LA VOZ ES LA DEL RELOJ. El mensaje sale con la misma voz que el panel le
+// puso al dueño ese día (lib/cobranza/copy.ts): al trial se le pregunta si
+// sigue; al que nunca pagó (`nuncaPago`) se le habla del PRIMER pago, en
+// plazo o vencido; al que ya es cliente y venció, en pasado; y al que está
+// por vencer, como siempre. Antes todo salía de `mensajeCobranza()` —«el
+// 18/09 vence tu plan», ocho días después, o a alguien que nunca pagó
+// (hallazgo #3 de la verificación del 26/09).
 // ============================================================
 export function linkDeAviso({
   atencion,
@@ -87,6 +97,7 @@ export function linkDeAviso({
   descuentoPct,
   plan,
   montoTotal,
+  nuncaPago = false,
 }: {
   atencion: Atencion;
   telefono: string | null;
@@ -96,6 +107,11 @@ export function linkDeAviso({
   periodo: Periodo;
   descuentoPct: number;
   plan: PlanCompleto | null;
+  /** ¿No tiene NINGÚN pago acreditado? Es la voz `alta`: no se le habla de
+   *  un plan que vence sino del primer pago que falta. Lo sabe la pantalla
+   *  de cobranzas (`cobranzas_pendientes.nunca_pago`); el listado no lo
+   *  trae y se queda con la voz de cobranza, que es lo que había. */
+  nuncaPago?: boolean;
   /** El total YA CALCULADO POR LA BASE. Si viene, gana sobre la cuenta de
    *  acá — y debería venir siempre que el que llama pueda pedirlo.
    *
@@ -114,25 +130,24 @@ export function linkDeAviso({
   // marca sirve igual y no queda un "Hola null!".
   const nombre = ownerNombre?.trim() || lubricentroNombre;
   const fecha = formatearFecha(vencimiento);
+  const etiquetaPeriodo = ETIQUETA_PERIODO[periodo].toLowerCase();
+  // Lo que tiene que transferir por el período completo, con la cadena de
+  // descuentos ya aplicada: no el precio de lista.
+  const monto =
+    montoTotal != null
+      ? pesos(montoTotal).replace("ARS ", "")
+      : plan
+        ? pesos(totalDelPeriodo(plan, periodo, descuentoPct)).replace("ARS ", "")
+        : "—";
 
   const texto =
     motivoDe(atencion) === "trial"
       ? mensajeTrial(nombre, fecha)
-      : mensajeCobranza(
-          nombre,
-          fecha,
-          ETIQUETA_PERIODO[periodo].toLowerCase(),
-          // Lo que tiene que transferir por el período completo, con la
-          // cadena de descuentos ya aplicada: no el precio de lista.
-          montoTotal != null
-            ? pesos(montoTotal).replace("ARS ", "")
-            : plan
-              ? pesos(totalDelPeriodo(plan, periodo, descuentoPct)).replace(
-                  "ARS ",
-                  "",
-                )
-              : "—",
-        );
+      : nuncaPago
+        ? mensajePrimerPago(nombre, fecha, atencion !== "cobranza_vencida", etiquetaPeriodo, monto)
+        : atencion === "cobranza_vencida"
+          ? mensajeVencido(nombre, fecha, etiquetaPeriodo, monto)
+          : mensajeCobranza(nombre, fecha, etiquetaPeriodo, monto);
 
   return `https://wa.me/${numero}?text=${encodeURIComponent(texto)}`;
 }

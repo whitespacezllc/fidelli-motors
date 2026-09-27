@@ -22,7 +22,7 @@ export function urlWhatsappSoporte(): string {
 export const TITULAR_CVU = "SANTIAGO AFUR";
 
 // ============================================================
-// Los dos mensajes del aviso de vencimiento
+// Los mensajes del aviso de vencimiento
 //
 // Viven acá y no en la base a propósito. Los templates del lubricentro sí
 // están en `mensaje_templates` porque son una feature de SU producto: cada
@@ -30,13 +30,21 @@ export const TITULAR_CVU = "SANTIAGO AFUR";
 // cinco o diez clientes cambiar dos frases en el código es más rápido que
 // construir y mantener un ABM para editarlas.
 //
-// Son dos y no uno porque son dos conversaciones distintas:
+// Son conversaciones distintas, con la MISMA voz que el reloj le pone al
+// panel (lib/cobranza/copy.ts): el mensaje de /fidelli dice lo que el dueño
+// ya leyó en su Inicio, no otra cosa.
 //
 //   · TRIAL — una venta por cerrar. Todavía no pagó nunca, así que el
 //     mensaje pregunta si sigue. Hablar de plata acá espanta.
-//   · COBRANZA — ya es cliente. El mensaje da el dato concreto —cuándo
-//     vence y cuánto— y ofrece los datos de la transferencia. Sin rodeos:
-//     los dos saben de qué se trata.
+//   · COBRANZA, por vencer — ya es cliente. El mensaje da el dato concreto
+//     —cuándo vence y cuánto— y ofrece los datos de la transferencia. Sin
+//     rodeos: los dos saben de qué se trata.
+//   · COBRANZA, vencido — ya venció. Se dice en pasado: «el 18/09 vence tu
+//     plan», ocho días después, es hablarle a alguien que vive en otra
+//     fecha (hallazgo #3 de la verificación del 26/09).
+//   · ALTA — se dio de alta y nunca pagó. NO ES UNA RENOVACIÓN: no vence
+//     nada, le falta el primer pago. Con el plazo vigente se le dice hasta
+//     cuándo; pasado, que le falta el primer pago para activar la cuenta.
 // ============================================================
 
 export type MotivoAviso = "trial" | "cobranza";
@@ -58,6 +66,35 @@ export function mensajeCobranza(
   return (
     `Hola ${nombre}! Te escribo de Fidelli Motors. ` +
     `El ${fecha} vence tu plan (${periodo}, ARS ${monto}). ` +
+    `Te paso los datos para la transferencia cuando quieras.`
+  );
+}
+
+export function mensajeVencido(
+  nombre: string,
+  fecha: string,
+  periodo: string,
+  monto: string,
+): string {
+  return (
+    `Hola ${nombre}! Te escribo de Fidelli Motors. ` +
+    `El ${fecha} venció tu plan (${periodo}, ARS ${monto}) y todavía no nos llegó la transferencia. ` +
+    `Te paso los datos para renovarlo cuando quieras; si pasó algo, contame.`
+  );
+}
+
+export function mensajePrimerPago(
+  nombre: string,
+  fecha: string,
+  enPlazo: boolean,
+  periodo: string,
+  monto: string,
+): string {
+  return (
+    `Hola ${nombre}! Te escribo de Fidelli Motors. ` +
+    (enPlazo
+      ? `Te falta el primer pago para dejar tu cuenta activa: tenés tiempo hasta el ${fecha} (${periodo}, ARS ${monto}). `
+      : `Te falta el primer pago para activar tu cuenta (${periodo}, ARS ${monto}); el plazo era el ${fecha}. `) +
     `Te paso los datos para la transferencia cuando quieras.`
   );
 }

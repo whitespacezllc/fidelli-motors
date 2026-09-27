@@ -74,6 +74,16 @@ export type Sesion = {
   // apaga el AvisoSuspension dejando al suspendido con un panel de
   // apariencia normal que lo rebota sin decirle por qué.
   suspendido: boolean;
+  // POR QUÉ está suspendido, para elegir el cartel y el botón (bloque 1
+  // del sprint de cobranza, 26/09/2026). `suspendido` sigue siendo el
+  // único predicado de los gates: esto no decide ningún gate, decide qué
+  // se le DICE. Manual (`activo = false`): la levanta Fidelli y el botón es
+  // WhatsApp. Por reloj: la levanta el pago y el botón es Pagar.
+  //
+  // ⚠ EL CORTE ES `activo`, NUNCA EL ESTADO DEL RELOJ: con `activo = false`
+  // el reloj TAMBIÉN dice `suspendido` (la rama @activo de estado_cobranza
+  // gana sobre todo), así que mirar `cobranza.estado` no distingue nada.
+  suspensionManual: boolean;
 };
 
 // El rol y el tenant salen de public.usuarios (RLS deja leer solo la fila propia).
@@ -171,6 +181,7 @@ export const obtenerSesion = cache(async (): Promise<Sesion | null> => {
     lubricentroActivo: activo,
     cobranza,
     suspendido: usuario.rol === "owner" && (!activo || cobranza?.estado === "suspendido"),
+    suspensionManual: usuario.rol === "owner" && !activo,
     capacidades: usuario.plan_capacidades,
     onboardingCompleto: usuario.lubricentros
       ? usuario.lubricentros.onboarding_completado_at !== null
