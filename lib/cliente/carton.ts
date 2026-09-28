@@ -16,7 +16,8 @@ import { esClaseVehiculo } from "@/lib/clase-vehiculo";
 // La función ya respeta campos_visibles del tenant: si el lubri apagó
 // "mostrar productos", los detalles vienen en null; si apagó la sucursal,
 // viene null; si apagó la fidelización, el bloque entero viene null. Acá
-// no se reimplementa nada de eso — se consume lo que llega.
+// no se reimplementa nada de eso — se consume lo que llega. La única
+// decisión propia es la del programa apagado (ver `fidelizacion`, abajo).
 
 export type ItemCarton = {
   /** Uno de los renglones del cartón (lib/renglones), o null: renglón libre de mecánica. */
@@ -163,9 +164,10 @@ type CartonJson = {
   fidelizacion?: {
     disponible: boolean;
     services_ciclo: number;
-    meta_services: number;
+    /** null cuando el lubricentro no tiene un premio activo. */
+    meta_services: number | null;
     descripcion: string | null;
-    alcance?: string;
+    alcance?: string | null;
   } | null;
   services?: {
     tipo?: TipoTrabajo;
@@ -266,8 +268,16 @@ export async function obtenerCarton(
         objetivoKm: tp.objetivo_km,
         creado: tp.creado,
       })),
-      fidelizacion: json.fidelizacion
-        ? {
+      // SIN PROGRAMA NO HAY BLOQUE. Cuando el lubricentro no tiene un
+      // premio activo, get_carton manda `fidelizacion` igual, con
+      // meta_services en null: premio_disponible cuenta los services del
+      // vehículo contra una meta que no existe. Dibujarlo daba "Vas 0 de
+      // services · faltan 0" (Shaddai, 28/09/2026). El programa apagado se
+      // ve como nada, no como un contador vacío. La función no se toca: el
+      // bloque que llega es el mismo, acá se decide no mostrarlo.
+      fidelizacion:
+        json.fidelizacion && json.fidelizacion.meta_services != null
+          ? {
             disponible: json.fidelizacion.disponible,
             servicesCiclo: json.fidelizacion.services_ciclo,
             metaServices: json.fidelizacion.meta_services,
