@@ -29,6 +29,13 @@ export function aTamanoLogo(v: string | null | undefined): TamanoLogo {
 // tenant oscuro, la app abriría con un flash antes de pintar la página.
 export const GRAFITO = "#0A0A0A";
 
+// El fondo suave del premio también cambia con el tema. `reward-soft` es
+// un crema fijo pensado para el panel, que es siempre claro; sobre el
+// grafito quedaba una tarjeta clara con la tinta blanca de la página
+// encima, y no se leía nada (la tarjeta de fidelización del demo, 28/09).
+// Acá es el dorado disuelto hacia el grafito con la misma proporción que
+// usa `paletaTenant` para `tenant-soft` en oscuro: el mismo token sigue
+// significando "premio" en los dos modos.
 const VARIABLES_OSCURO = {
   "--color-ink": "#FFFFFF",
   "--color-ink-60": "rgba(255,255,255,0.72)",
@@ -36,6 +43,7 @@ const VARIABLES_OSCURO = {
   "--color-line": "rgba(255,255,255,0.14)",
   "--color-base": "#141414",
   "--color-surface": "#1D1D1D",
+  "--color-reward-soft": "#3C2E11",
 } as const;
 
 /**
@@ -78,6 +86,7 @@ export const ESTILO_PAPEL: React.CSSProperties = {
   "--color-line": "#E4E4E4",
   "--color-base": "#FFFFFF",
   "--color-surface": "#F5F5F5",
+  "--color-reward-soft": "#FDF8E7",
 } as React.CSSProperties;
 
 // El tamaño del logo, en clases y no en un número libre: un logo sin
