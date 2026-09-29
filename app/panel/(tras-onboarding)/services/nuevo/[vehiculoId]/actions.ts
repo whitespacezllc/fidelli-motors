@@ -76,6 +76,10 @@ export type PayloadService = {
   alineacion?: boolean | null;
   /** Gomería: una fila por rueda con sustancia. */
   ruedas?: RuedaCargada[];
+  /** La mecánica adjunta del final del cartón (solo en un service): se
+   *  guarda como segunda fila, con la fecha, los km y la sucursal del
+   *  service, en la MISMA transacción. Sus renglones son libres. */
+  mecanica?: { descripcion: string; items: ItemCargado[] } | null;
 };
 
 export type ResultadoGuardado = { error?: string; serviceId?: string };
@@ -100,6 +104,9 @@ function traducirError(error: { code?: string; message?: string }): string {
   if (/descripcion_requerida/.test(error.message ?? "")) {
     return "Contá qué trabajo se hizo: es lo que va a ver tu cliente en su historial.";
   }
+  if (/mecanica_adjunta_solo_en_service/.test(error.message ?? "")) {
+    return "La mecánica adjunta va al final de un service. Para cargarla sola, elegí Mecánica arriba del cartón.";
+  }
   if (/pendiente_sin_objetivo|pendiente_invalido/.test(error.message ?? "")) {
     return "A cada pendiente ponele qué es y una fecha o kilómetros.";
   }
@@ -122,6 +129,12 @@ function traducirError(error: { code?: string; message?: string }): string {
   if (/fetch|network|conexión/i.test(error.message ?? "")) return SIN_CONEXION;
   if (error.code === "23514") {
     return "Algún dato quedó fuera de rango. Revisá los kilómetros y el próximo service.";
+  }
+  // La policy de plan rechazó una de las filas (la mecánica adjunta en un
+  // plan sin la feature). La transacción entera volvió: el service tampoco
+  // quedó, y el mecánico tiene que saber qué destildar.
+  if (error.code === "42501") {
+    return "Tu plan no incluye ese tipo de trabajo, así que no se guardó nada. Volvé a editar, destildá la mecánica y confirmá de nuevo, o escribinos si la querés activar.";
   }
   return "No se pudo guardar el service. No cierres esta pantalla y probá de nuevo.";
 }
@@ -156,6 +169,32 @@ export async function guardarService(
         ? "El módulo de gomería no está activo en tu cuenta. Escribinos si lo querés activar."
         : "Los trabajos de mecánica no están en tu plan. Escribinos si los querés activar.",
     };
+  }
+
+  // La mecánica adjunta: la misma feature que la mecánica sola, y solo al
+  // final de un service. La base lo repite (policy y función); acá el
+  // mensaje llega ANTES de perder lo tipeado — y como la transacción es
+  // una, un rechazo tardío se llevaría también el service.
+  const mecanica = payload.mecanica ?? null;
+  if (mecanica) {
+    if (tipo !== "service") {
+      return {
+        error:
+          "La mecánica adjunta va al final de un service. Para cargarla sola, elegí Mecánica arriba del cartón.",
+      };
+    }
+    if (!featureHabilitada(sesion, "mecanica")) {
+      return {
+        error:
+          "Los trabajos de mecánica no están en tu plan. Destildá la mecánica para guardar el service, o escribinos si los querés activar.",
+      };
+    }
+    if (mecanica.descripcion.trim().length < 5) {
+      return {
+        error:
+          "Contá qué trabajo de mecánica se hizo: es lo que va a ver tu cliente en su historial.",
+      };
+    }
   }
 
   const pendientes = (payload.pendientes ?? []).filter(
@@ -250,6 +289,11 @@ export async function guardarService(
     // pero contestada: el CHECK la exige) y nunca en los otros dos.
     p_alineacion: esNeumaticos ? Boolean(payload.alineacion) : undefined,
     p_ruedas: esNeumaticos ? (payload.ruedas ?? []) : undefined,
+    // La mecánica adjunta viaja en el MISMO RPC: la base guarda las dos
+    // filas en una transacción, con la fecha y los km del service.
+    p_mecanica: mecanica
+      ? { descripcion: mecanica.descripcion.trim(), items: mecanica.items }
+      : undefined,
   });
 
   if (error) return { error: traducirError(error) };

@@ -314,6 +314,16 @@ export function Carton({
   // no algo que pase solo. Si el service no se confirma, no queda nada.
   const [canjear, setCanjear] = useState(false);
 
+  // ¿SE LE HIZO ALGO DE MECÁNICA? El tilde del final del cartón de un
+  // service. Apagado por defecto: es la excepción de la visita, no la
+  // regla. Reusa los estados de la mecánica (descripcion, libres,
+  // cantidadesLibres): con el tipo en Service nadie más los usa. Se ofrece
+  // con la misma puerta que el segmento «Mecánica» del selector —la
+  // feature— y solo en el alta.
+  const [conMecanica, setConMecanica] = useState(false);
+  const ofreceMecanica = esService && Boolean(datos.puedeMecanica) && !edicion;
+  const mecanicaAdjunta = ofreceMecanica && conMecanica;
+
   // Los pendientes que el mecánico tilda porque los hizo EN este trabajo,
   // y los nuevos que anota al final ("¿quedó algo pendiente?").
   const [resolver, setResolver] = useState<Record<string, boolean>>({});
@@ -455,16 +465,19 @@ export function Carton({
       };
     });
 
+    // Los renglones libres valen para la mecánica sola y para la adjunta.
+    const itemsLibres: ItemCargado[] = libres
+      .map((texto, i) => ({ texto: texto.trim(), i }))
+      .filter(({ texto }) => Boolean(texto))
+      .map(({ texto, i }) => ({
+        producto_id: productos.find((p) => p.nombre === texto)?.id ?? null,
+        detalle: texto,
+        cambiado: true,
+        cantidad: Number(cantidadesLibres[i]?.replace(",", ".")) || 1,
+      }));
+
     const items: ItemCargado[] = esMecanica
-      ? libres
-          .map((texto, i) => ({ texto: texto.trim(), i }))
-          .filter(({ texto }) => Boolean(texto))
-          .map(({ texto, i }) => ({
-            producto_id: productos.find((p) => p.nombre === texto)?.id ?? null,
-            detalle: texto,
-            cambiado: true,
-            cantidad: Number(cantidadesLibres[i]?.replace(",", ".")) || 1,
-          }))
+      ? itemsLibres
       : Object.entries(marcados).map(([tipo, detalle]) => {
           const limpio = detalle.trim();
           const producto = productos.find((p) => p.nombre === limpio);
@@ -519,6 +532,12 @@ export function Carton({
       resolverPendientes: edicion
         ? []
         : Object.keys(resolver).filter((id) => resolver[id]),
+      // La mecánica adjunta (solo en un service, solo en el alta): viaja en
+      // el mismo RPC y nace en la misma transacción, con la fecha y los
+      // km del service. Sus renglones son los libres del sub-formulario.
+      mecanica: mecanicaAdjunta
+        ? { descripcion: descripcion.trim(), items: itemsLibres }
+        : null,
     };
 
     if (edicion) {
@@ -600,7 +619,11 @@ export function Carton({
     neumaticos: listoNeumaticos,
   };
 
-  const listoParaRevisar = listoPorTipo[tipo] && !pendienteIncompleto;
+  // Con la mecánica adjunta tildada, su descripción es obligatoria ANTES de
+  // revisar: la base la rechazaría al confirmar y se llevaría el service.
+  const mecanicaLista = descripcion.trim().length >= 5;
+  const listoParaRevisar =
+    listoPorTipo[tipo] && !pendienteIncompleto && (!mecanicaAdjunta || mecanicaLista);
 
   // El premio en una mecánica solo si el programa cuenta todos los
   // trabajos — con el alcance clásico, el contador ni se movió.
@@ -626,7 +649,9 @@ export function Carton({
   };
   const queFalta = pendienteIncompleto
     ? "A cada pendiente ponele qué es (5 letras mínimo) y una fecha o kilómetros."
-    : faltaPorTipo[tipo];
+    : !listoPorTipo[tipo]
+      ? faltaPorTipo[tipo]
+      : "Contá qué trabajo de mecánica se hizo, o destildá la pregunta.";
 
   // Los segmentos del control, en el orden del catálogo. El service no
   // se gatea nunca: es el trabajo base y ningún plan lo apaga.
@@ -642,7 +667,7 @@ export function Carton({
     return (
       <div className="pb-4">
         <h1 className="font-brand text-h3 font-bold text-ink">
-          Revisá el {NOMBRE_TRABAJO[tipo]}
+          Revisá el {mecanicaAdjunta ? "service y la mecánica" : NOMBRE_TRABAJO[tipo]}
         </h1>
         <p className="mt-0.5 mb-4 text-ui text-ink-60">
           Así lo va a ver {datos.clienteNombre.split(" ")[0]} en su celular
@@ -708,7 +733,26 @@ export function Carton({
                 }}
               />
             ) : (
-              <CartonPapel datos={datosPreview} />
+              <>
+                <CartonPapel datos={datosPreview} />
+                {/* La mecánica adjunta, como la va a ver el cliente: un
+                    segundo cartón de la misma fecha, debajo del de aceite. */}
+                {mecanicaAdjunta && (
+                  <div className="mt-4">
+                    <CartonPapelMecanica
+                      datos={{
+                        lubricentroNombre: datos.lubricentroNombre,
+                        colorTenant: datos.colorTenant,
+                        colorPapel: datos.colorPapel,
+                        fecha,
+                        kilometros: kmCargado ? kmNum : null,
+                        descripcion: descripcion.trim(),
+                        renglones: libres.map((l) => l.trim()).filter(Boolean),
+                      }}
+                    />
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -722,6 +766,19 @@ export function Carton({
             <p className="mt-0.5 text-ui text-ink-60">
               {premioAplicable.descripcion}. Al confirmar queda
               registrado el canje y el contador del cliente vuelve a cero.
+            </p>
+          </div>
+        )}
+
+        {mecanicaAdjunta && (
+          <div className="mb-4 rounded-md border border-line bg-surface px-4 py-3.5">
+            <p className="font-brand text-ui font-bold text-ink">
+              Se registra además una mecánica
+            </p>
+            <p className="mt-0.5 text-ui text-ink-60">
+              {descripcion.trim()}. Queda como otro trabajo de la misma
+              visita, con la misma fecha y los mismos kilómetros. Para el
+              premio, la visita cuenta una sola vez.
             </p>
           </div>
         )}
@@ -769,15 +826,20 @@ export function Carton({
         </div>
 
         {/* El plazo es del tipo que se está cargando: 24 horas para un
-            service o un trabajo de gomería, 7 días para una mecánica. */}
+            service o un trabajo de gomería, 7 días para una mecánica. Con
+            la mecánica adjunta son dos trabajos y dos plazos: se dicen los
+            dos, porque a las 24 horas el service se fija y la mecánica
+            sigue abierta seis días más. */}
         <div className="rounded-md border border-line bg-surface px-4 py-3.5">
           <p className="font-brand text-ui font-bold text-ink">
-            Editable por {plazoEdicionTexto(tipo)}
+            {mecanicaAdjunta
+              ? `Editable por ${plazoEdicionTexto("service")} el service y ${plazoEdicionTexto("mecanica")} la mecánica`
+              : `Editable por ${plazoEdicionTexto(tipo)}`}
           </p>
           <p className="mt-0.5 text-ui text-ink-60">
-            Este trabajo podrá editarse solo durante{" "}
-            {plazoEdicionConArticulo(tipo)} posteriores. Después queda fijado
-            en el historial y no se puede modificar.
+            {mecanicaAdjunta
+              ? `El service podrá editarse durante ${plazoEdicionConArticulo("service")} posteriores y la mecánica durante ${plazoEdicionConArticulo("mecanica")}. Después quedan fijados en el historial y no se pueden modificar.`
+              : `Este trabajo podrá editarse solo durante ${plazoEdicionConArticulo(tipo)} posteriores. Después queda fijado en el historial y no se puede modificar.`}
           </p>
         </div>
 
@@ -816,7 +878,9 @@ export function Carton({
               ? "Guardando…"
               : edicion
                 ? "Guardar cambios"
-                : `Confirmar ${NOMBRE_TRABAJO[tipo]}`}
+                : mecanicaAdjunta
+                  ? "Confirmar service y mecánica"
+                  : `Confirmar ${NOMBRE_TRABAJO[tipo]}`}
           </Boton>
         </div>
           </div>
@@ -925,6 +989,83 @@ export function Carton({
             </div>
           )}
         </div>
+    );
+  }
+
+  // El sub-formulario de la mecánica: descripción + renglones libres. Es
+  // UNA pieza para los dos lugares donde se dibuja —el cartón de una
+  // mecánica y la pregunta del final de un service—, así los dos piden lo
+  // mismo y se guardan igual. La MISMA velocidad que un service: un
+  // textarea y renglones a botón, con el catálogo sugiriendo. SIN IMPORTES,
+  // ni acá ni en ningún campo: la plata vive en presupuestos (bloque 4).
+  function camposMecanica() {
+    return (
+      <>
+        <label htmlFor="trabajo" className={CLASE_LABEL}>
+          Qué trabajo se hizo
+        </label>
+        <textarea
+          id="trabajo"
+          value={descripcion}
+          onChange={(e) => setDescripcion(e.target.value)}
+          rows={2}
+          placeholder="Cambio de pastillas de freno delanteras"
+          className="w-full rounded-md border border-line bg-base px-3.5 py-3 text-body text-ink placeholder:text-ink-40"
+        />
+
+        <div className="mt-3">
+          <span className={CLASE_LABEL}>Repuestos y tareas</span>
+          {libres.length > 0 && (
+            <div className="flex flex-col gap-2">
+              {libres.map((valor, i) => (
+                <div key={i} className="flex gap-2">
+                  <div className="min-w-0 flex-1">
+                    <Combobox
+                      value={valor}
+                      onChange={(v) =>
+                        setLibres((prev) =>
+                          prev.map((x, j) => (j === i ? v : x)),
+                        )
+                      }
+                      opciones={nombresProductos}
+                      ariaLabel={`Repuesto o tarea ${i + 1}`}
+                    />
+                  </div>
+                  <input
+                    value={cantidadesLibres[i] ?? "1"}
+                    onChange={(e) =>
+                      setCantidadesLibres((prev) => ({
+                        ...prev,
+                        [i]: e.target.value,
+                      }))
+                    }
+                    inputMode="decimal"
+                    aria-label={`Cantidad del repuesto ${i + 1}`}
+                    className="h-11 w-13 shrink-0 rounded-md border border-line bg-base text-center text-ui text-ink tabular-nums"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setLibres((prev) => prev.filter((_, j) => j !== i))
+                    }
+                    aria-label={`Quitar el renglón ${i + 1}`}
+                    className="flex size-11 shrink-0 items-center justify-center rounded-md border border-line text-ink-60 hover:bg-surface"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setLibres((prev) => [...prev, ""])}
+            className="mt-1.5 min-h-11 text-ui font-semibold text-brand"
+          >
+            + Repuesto o tarea
+          </button>
+        </div>
+      </>
     );
   }
 
@@ -1146,76 +1287,12 @@ export function Carton({
           />
         </div>
 
-        {/* 4-M. El trabajo de mecánica: descripción + renglones libres.
-            La MISMA velocidad que un service: un textarea y renglones a
-            botón, con el catálogo sugiriendo. SIN IMPORTES, ni acá ni en
-            ningún campo: la plata vive en presupuestos (bloque 4). */}
+        {/* 4-M. El trabajo de mecánica: descripción + renglones libres
+            (camposMecanica, compartido con la pregunta del final de un
+            service). */}
         {esMecanica && (
           <div className="rounded-lg border border-line bg-surface/60 p-4">
-            <label htmlFor="trabajo" className={CLASE_LABEL}>
-              Qué trabajo se hizo
-            </label>
-            <textarea
-              id="trabajo"
-              value={descripcion}
-              onChange={(e) => setDescripcion(e.target.value)}
-              rows={2}
-              placeholder="Cambio de pastillas de freno delanteras"
-              className="w-full rounded-md border border-line bg-base px-3.5 py-3 text-body text-ink placeholder:text-ink-40"
-            />
-
-            <div className="mt-3">
-              <span className={CLASE_LABEL}>Repuestos y tareas</span>
-              {libres.length > 0 && (
-                <div className="flex flex-col gap-2">
-                  {libres.map((valor, i) => (
-                    <div key={i} className="flex gap-2">
-                      <div className="min-w-0 flex-1">
-                        <Combobox
-                          value={valor}
-                          onChange={(v) =>
-                            setLibres((prev) =>
-                              prev.map((x, j) => (j === i ? v : x)),
-                            )
-                          }
-                          opciones={nombresProductos}
-                          ariaLabel={`Repuesto o tarea ${i + 1}`}
-                        />
-                      </div>
-                      <input
-                        value={cantidadesLibres[i] ?? "1"}
-                        onChange={(e) =>
-                          setCantidadesLibres((prev) => ({
-                            ...prev,
-                            [i]: e.target.value,
-                          }))
-                        }
-                        inputMode="decimal"
-                        aria-label={`Cantidad del repuesto ${i + 1}`}
-                        className="h-11 w-13 shrink-0 rounded-md border border-line bg-base text-center text-ui text-ink tabular-nums"
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setLibres((prev) => prev.filter((_, j) => j !== i))
-                        }
-                        aria-label={`Quitar el renglón ${i + 1}`}
-                        className="flex size-11 shrink-0 items-center justify-center rounded-md border border-line text-ink-60 hover:bg-surface"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={() => setLibres((prev) => [...prev, ""])}
-                className="mt-1.5 min-h-11 text-ui font-semibold text-brand"
-              >
-                + Repuesto o tarea
-              </button>
-            </div>
+            {camposMecanica()}
           </div>
         )}
 
@@ -1556,6 +1633,53 @@ export function Carton({
         )}
         </div>
       </div>
+
+      {/* 8-bis. ¿SE LE HIZO ALGO DE MECÁNICA? — el final del cartón de un
+          service, solo con la feature y solo en el alta. Muchos talleres
+          hacen algo de mecánica en la misma visita del cambio de aceite, y
+          cargarlo eran dos trabajos completos, dos pantallas y dos veces el
+          mismo auto. Tildado, despliega el mismo sub-formulario de la
+          mecánica; al confirmar viajan los dos trabajos en el mismo RPC y
+          nacen juntos, con la misma fecha y los mismos kilómetros. Apagado,
+          no agrega ni un toque al flujo (el cronómetro manda). Va ANTES de
+          los pendientes: primero lo que se hizo, después lo que quedó. */}
+      {ofreceMecanica && (
+        <div className="mt-4 overflow-hidden rounded-lg border border-line bg-surface/60">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={conMecanica}
+            onClick={() => setConMecanica((v) => !v)}
+            className="flex min-h-14 w-full items-center justify-between gap-3 px-4 py-2.5 text-left"
+          >
+            <span className="min-w-0">
+              <span className="block font-brand text-body font-bold text-ink">
+                ¿Se le hizo algo de mecánica?
+              </span>
+              <span className="block text-ui text-ink-60">
+                Se guarda como otro trabajo de la misma visita, con la misma
+                fecha y los mismos kilómetros.
+              </span>
+            </span>
+            <span
+              className={`flex h-6 w-10 shrink-0 items-center rounded-full p-0.5 transition-colors ${
+                conMecanica ? "bg-ink" : "bg-line"
+              }`}
+            >
+              <span
+                className={`size-5 rounded-full bg-base shadow-sm transition-transform ${
+                  conMecanica ? "translate-x-4" : "translate-x-0"
+                }`}
+              />
+            </span>
+          </button>
+          {conMecanica && (
+            <div className="border-t border-line px-4 pb-4 pt-3">
+              {camposMecanica()}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 9. ¿QUEDÓ ALGO PENDIENTE? — opcional y colapsado: no le agrega
           NI UNA interacción obligatoria al flujo (el cronómetro manda).

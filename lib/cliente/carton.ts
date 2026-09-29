@@ -7,7 +7,7 @@ import type {
   Lubricentro,
   SucursalPublica,
 } from "@/lib/cliente/landing";
-import type { TipoTrabajo } from "@/lib/trabajos";
+import { TIPOS_TRABAJO, type TipoTrabajo } from "@/lib/trabajos";
 import type { PosicionRueda } from "@/lib/ruedas";
 import type { ClaseVehiculo } from "@/lib/renglones";
 import { esClaseVehiculo } from "@/lib/clase-vehiculo";
@@ -286,8 +286,12 @@ export async function obtenerCarton(
               json.fidelizacion.alcance === "todos" ? "todos" : "services",
           }
         : null,
-      // Vienen ordenados por fecha descendente desde la base: el primero es
-      // el último service, que es el cartón grande de arriba.
+      // Vienen ordenados por fecha descendente desde la base, y adentro de
+      // una fecha por created_at. La pareja service + mecánica nace con el
+      // MISMO created_at (regla 22), así que entre las dos la base no
+      // promete orden: el desempate por tipo va acá, estable (a igual fecha
+      // y tipo se conserva el orden que vino), con el orden del catálogo
+      // —service, mecánica, neumáticos—, el mismo del listado del panel.
       services: (json.services ?? []).map((s) => ({
         // Un JSON de antes de la migración no trae la clave: era un service.
         tipo: s.tipo ?? "service",
@@ -322,7 +326,11 @@ export async function obtenerCarton(
             r.profundidad_mm != null ? Number(r.profundidad_mm) : null,
           presionPsi: r.presion_psi,
         })),
-      })),
+      })).sort(
+        (a, b) =>
+          (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0) ||
+          TIPOS_TRABAJO.indexOf(a.tipo) - TIPOS_TRABAJO.indexOf(b.tipo),
+      ),
     },
   };
 }

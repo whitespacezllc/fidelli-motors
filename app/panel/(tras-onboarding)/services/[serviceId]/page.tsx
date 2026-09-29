@@ -46,6 +46,7 @@ export default async function PaginaService({ params }: Props) {
          aceite_tipo, aceite_nombre, alineacion,
          beneficio_hasta_km, beneficio_hasta_fecha,
          prox_service_km, observaciones, anulado, desbloqueado_hasta,
+         cargado_con_id,
          vehiculos(patente, marca, modelo, clase, cliente_id, clientes(nombre)),
          sucursales(nombre),
          usuarios!usuario_id(nombre),
@@ -76,6 +77,32 @@ export default async function PaginaService({ params }: Props) {
       </EstadoVacio>
     );
   }
+
+  // La otra mitad de la visita, si este trabajo nació en una carga doble:
+  // el service de una mecánica adjunta, o la mecánica adjunta de un
+  // service. Son dos trabajos con sus plazos (24 horas / 7 días); acá solo
+  // se muestran juntos y el anular avisa del otro.
+  // En las dos direcciones se ignora la mitad anulada: un service anulado
+  // no es «misma visita» de nadie, y el diálogo de anular no puede mandar a
+  // anular lo que ya está anulado.
+  const parejaRes = service.cargado_con_id
+    ? await supabase
+        .from("services")
+        .select("id, tipo, fecha, trabajo_descripcion")
+        .eq("id", service.cargado_con_id)
+        .eq("anulado", false)
+        .maybeSingle()
+    : service.tipo === "service"
+      ? await supabase
+          .from("services")
+          .select("id, tipo, fecha, trabajo_descripcion")
+          .eq("cargado_con_id", service.id)
+          .eq("anulado", false)
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle()
+      : null;
+  const pareja = parejaRes?.data ?? null;
 
   const estado = estadoService(service);
   const patente = service.vehiculos?.patente.toUpperCase() ?? "";
@@ -212,6 +239,14 @@ export default async function PaginaService({ params }: Props) {
               serviceId={service.id}
               fecha={formatearFecha(service.fecha)}
               patente={patente}
+              pareja={
+                pareja
+                  ? {
+                      href: `/panel/services/${pareja.id}`,
+                      esService: pareja.tipo === "service",
+                    }
+                  : null
+              }
             />
             <Link
               href={`/panel/services/${service.id}/editar`}
@@ -313,6 +348,21 @@ export default async function PaginaService({ params }: Props) {
           </dd>
           <dt className="text-ink-60">Sucursal</dt>
           <dd className="text-ink">{service.sucursales?.nombre ?? "—"}</dd>
+          {pareja && (
+            <>
+              <dt className="text-ink-60">Misma visita</dt>
+              <dd className="text-ink">
+                <Link
+                  href={`/panel/services/${pareja.id}`}
+                  className="underline underline-offset-4 hover:text-ink-60"
+                >
+                  {pareja.tipo === "service"
+                    ? `El service del ${formatearFecha(pareja.fecha)}`
+                    : `Una mecánica: ${pareja.trabajo_descripcion}`}
+                </Link>
+              </dd>
+            </>
+          )}
           {service.aceite_nombre && (
             <>
               <dt className="text-ink-60">Aceite</dt>

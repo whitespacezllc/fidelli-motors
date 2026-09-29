@@ -9530,3 +9530,450 @@ end $$;
 drop function r37_toca(uuid);
 drop function r37_crear(text, integer, boolean, estado_suscripcion, numeric, boolean, boolean, boolean, boolean);
 -- <<< R37
+
+
+-- ============================================================
+-- R38 · Service + mecánica en UNA carga, y el premio cuenta visitas
+--       (20260929100000)
+--
+-- Tres cosas se rompen sin ruido acá. La primera es la atomicidad: si la
+-- mecánica adjunta se guardara en una segunda llamada, un corte de red o
+-- un plan sin la feature dejaría el service guardado y la mecánica no —y
+-- el reintento duplicaría el service—. La segunda es el gating: la
+-- segunda fila tiene que pasar por la MISMA policy que cualquier
+-- mecánica; si alguien vuelve `guardar_service` security definer «para
+-- simplificar», un Basic cuela mecánicas por /rpc/ y R3b no lo ve porque
+-- prueba la mecánica sola. La tercera es el conteo: `premio_disponible` y
+-- `ciclos_fidelizacion` son dos copias del mismo criterio; si una pasa a
+-- contar visitas y la otra sigue contando filas, la tarjeta del cliente y
+-- la pantalla Fidelización dicen números distintos y nadie se entera.
+--
+-- Fixtures propios (cliente, dos autos, trabajos) y TODO dentro de una
+-- subtransacción que se deshace al final, como R36 y R37: el plan del
+-- demo y el alcance del premio se tocan y vuelven solos.
+-- ============================================================
+-- >>> R38
+do $$
+declare
+  v_demo    uuid;
+  v_own     uuid;
+  v_super   uuid;
+  v_suc     uuid;
+  v_plan    uuid;
+  v_basic   uuid;
+  v_premio  uuid;
+  v_cli     uuid;
+  v_veh     uuid;
+  v_veh2    uuid;
+  v_srv     uuid;   -- el service de la pareja (a)
+  v_mec     uuid;   -- su mecánica adjunta
+  v_srv_c   uuid;   -- el service del día del canje (f)
+  v_otro    uuid;
+  v_padre   services%rowtype;
+  v_fila    services%rowtype;
+  v_n       integer;
+  v_ciclo   integer;
+  v_flota   integer;
+  v_disp    boolean;
+  v_secdef  boolean;
+  v_pend    uuid;
+  v_suc2    uuid;
+  v_d1      date := current_date - 10;  -- la pareja, y el segundo service del mismo día
+  v_d2      date := current_date - 11;  -- los intentos que NO deben dejar nada (b, c)
+  v_d3      date := current_date - 12;  -- el Basic (d)
+  v_d4      date := current_date - 20;  -- un service suelto
+  v_d5      date := current_date - 30;  -- una mecánica sola
+  v_d6      date := current_date - 40;  -- el tercer service, para llegar a la meta
+begin
+  select id into v_demo  from lubricentros where slug = 'demo';
+  select id into v_own   from usuarios where lubricentro_id = v_demo and rol = 'owner' limit 1;
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  select id into v_suc   from sucursales where lubricentro_id = v_demo and activa order by created_at limit 1;
+  select p.id into v_basic from planes p where p.nombre = 'Basic';
+  select s.plan_id into v_plan from suscripciones s where s.lubricentro_id = v_demo
+    order by s.inicio desc, s.created_at desc limit 1;
+  select p.id into v_premio from premios p where p.lubricentro_id = v_demo and p.activo limit 1;
+  if v_demo is null or v_own is null or v_super is null or v_suc is null
+     or v_basic is null or v_plan is null or v_premio is null then
+    raise exception 'R38 SIN PISO: falta el demo, su owner, su sucursal, el superadmin, el plan Basic o el premio activo del seed.';
+  end if;
+
+  -- ---------- j · la función, antes de tocar nada ----------
+  -- Una sola firma (el DROP de la de 18 tipos tiene que haber pasado: con
+  -- dos sobrecargas PostgREST contesta ambiguo y NADIE carga un trabajo) y
+  -- security invoker (la policy de plan rige adentro).
+  select count(*), bool_or(p.prosecdef) into v_n, v_secdef
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'guardar_service';
+  if v_n <> 1 then
+    raise exception 'R38j hay % firmas de guardar_service: la vieja no se soltó, PostgREST contesta «ambiguous» y ningún tenant puede cargar un trabajo.', v_n;
+  end if;
+  if v_secdef then
+    raise exception 'R38j guardar_service es SECURITY DEFINER: services_insercion deja de regir adentro y un Basic mete la mecánica adjunta por /rpc/.';
+  end if;
+
+  begin
+    -- ---------- los fixtures, como postgres ----------
+    insert into clientes (lubricentro_id, nombre, telefono, email)
+    values (v_demo, 'Persona R38', '351 555 0380', 'r38@ejemplo.com') returning id into v_cli;
+    insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+    values (v_demo, v_cli, 'AB138CD', 'Fiat', 'Cronos') returning id into v_veh;
+    insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+    values (v_demo, v_cli, 'AB238CD', 'Fiat', 'Toro') returning id into v_veh2;
+    update premios set alcance = 'services', meta_services = 3 where id = v_premio;
+    -- Un pendiente abierto del auto, para tildarlo en la carga doble.
+    insert into trabajos_pendientes (lubricentro_id, vehiculo_id, usuario_id, descripcion, objetivo_km)
+    values (v_demo, v_veh, v_own, 'R38 pendiente previo', 52000) returning id into v_pend;
+
+    -- ---------- a · la pareja nace junta ----------
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    v_srv := guardar_service(
+      p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => v_d1,
+      p_kilometros => 50000, p_aceite_tipo => '10W40', p_prox_service_km => 60000,
+      p_items => jsonb_build_array(jsonb_build_object('tipo', 'filtro_aceite', 'cambiado', true)),
+      p_observaciones => 'R38 observación del service',
+      p_pendientes => jsonb_build_array(
+        jsonb_build_object('descripcion', 'R38 revisar frenos traseros', 'objetivo_km', 55000)),
+      p_resolver_pendientes => array[v_pend],
+      p_mecanica => jsonb_build_object(
+        'descripcion', '  R38 cambio de pastillas delanteras ',
+        'items', jsonb_build_array(
+          jsonb_build_object('detalle', 'R38 pastillas', 'cantidad', 2),
+          jsonb_build_object('detalle', '   '))));
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+
+    select * into v_padre from services where id = v_srv;
+    if v_padre.tipo <> 'service' then
+      raise exception 'R38a guardar_service devolvió la fila % en vez del service: la pantalla de guardado aterriza en la mecánica.', v_padre.tipo;
+    end if;
+    if v_padre.cargado_con_id is not null then
+      raise exception 'R38a el SERVICE lleva cargado_con_id: el vínculo va en la mecánica, hacia el service.';
+    end if;
+    select count(*) into v_n from services where cargado_con_id = v_srv;
+    if v_n <> 1 then
+      raise exception 'R38a la mecánica adjunta no quedó vinculada al service (filas con cargado_con_id: %). Sin el vínculo, el guardado y el detalle no pueden mostrar la pareja.', v_n;
+    end if;
+    select * into v_fila from services where cargado_con_id = v_srv;
+    v_mec := v_fila.id;
+    if v_fila.tipo <> 'mecanica' then
+      raise exception 'R38a la fila vinculada es un % y no una mecánica.', v_fila.tipo;
+    end if;
+    if v_fila.fecha <> v_padre.fecha then
+      raise exception 'R38a la mecánica adjunta quedó con fecha % y el service con %: la regla «una visita, un punto» necesita la MISMA fecha.', v_fila.fecha, v_padre.fecha;
+    end if;
+    if v_fila.kilometros is distinct from 50000 or v_fila.sucursal_id <> v_padre.sucursal_id then
+      raise exception 'R38a la mecánica adjunta no heredó los kilómetros (%) o la sucursal del service.', v_fila.kilometros;
+    end if;
+    if v_fila.created_at <> v_padre.created_at then
+      raise exception 'R38a la mecánica adjunta nació con OTRO created_at que el service: la del día del canje contaría para el ciclo siguiente.';
+    end if;
+    if v_fila.trabajo_descripcion <> 'R38 cambio de pastillas delanteras' then
+      raise exception 'R38a la descripción de la mecánica adjunta no se guardó recortada: «%».', v_fila.trabajo_descripcion;
+    end if;
+    if v_fila.observaciones is not null then
+      raise exception 'R38a las observaciones del service se copiaron a la mecánica: quedan en el service.';
+    end if;
+    select count(*) into v_n from service_items
+    where service_id = v_mec and item_tipo is null and detalle = 'R38 pastillas' and cantidad = 2;
+    if v_n <> 1 then
+      raise exception 'R38a los renglones de la mecánica adjunta no se guardaron como renglones libres con su cantidad (%).', v_n;
+    end if;
+    select count(*) into v_n from service_items where service_id = v_mec;
+    if v_n <> 1 then
+      raise exception 'R38a la mecánica adjunta tiene % renglones: el renglón vacío tenía que saltearse.', v_n;
+    end if;
+    select count(*) into v_n from service_items where service_id = v_srv and item_tipo = 'filtro_aceite';
+    if v_n <> 1 then
+      raise exception 'R38a el renglón del SERVICE se perdió al guardar la pareja.';
+    end if;
+    -- El vocabulario de la base ya distingue services de trabajos: la
+    -- pareja es UN service y DOS trabajos, y el último service es el de la
+    -- pareja. Es lo que lee la retención (regla 5) sin mirar la mecánica.
+    select cantidad_services, cantidad_trabajos into v_n, v_ciclo
+    from vista_vehiculos where id = v_veh;
+    if v_n <> 1 or v_ciclo <> 2 then
+      raise exception 'R38a vista_vehiculos ve % services y % trabajos para la pareja (esperaba 1 y 2).', v_n, v_ciclo;
+    end if;
+    -- Los pendientes cuelgan del SERVICE: el nuevo nace con origen en él y
+    -- el tildado se resuelve en él. La llamada recursiva no los reenvía; si
+    -- lo hiciera, cada pendiente nuevo entraría dos veces sin ningún error.
+    select count(*) into v_n from trabajos_pendientes where origen_service_id = v_srv;
+    if v_n <> 1 then
+      raise exception 'R38a el pendiente anotado en la carga doble no quedó colgado del service (%).', v_n;
+    end if;
+    select count(*) into v_n from trabajos_pendientes where origen_service_id = v_mec;
+    if v_n <> 0 then
+      raise exception 'R38a la mecánica adjunta duplicó % pendiente(s): los pendientes quedan en el service, la llamada recursiva no los reenvía.', v_n;
+    end if;
+    select count(*) into v_n from trabajos_pendientes
+    where id = v_pend and estado = 'resuelto' and resuelto_service_id = v_srv;
+    if v_n <> 1 then
+      raise exception 'R38a el pendiente tildado en la carga doble no quedó resuelto por el service.';
+    end if;
+
+    -- ---------- e (1) · la pareja vale UNA visita, con los dos alcances ----------
+    select services_ciclo into v_ciclo from premio_disponible(v_veh);
+    if v_ciclo <> 1 then
+      raise exception 'R38e la pareja service + mecánica vale % con alcance ''services'' (esperaba 1).', v_ciclo;
+    end if;
+    update premios set alcance = 'todos' where id = v_premio;
+    select services_ciclo into v_ciclo from premio_disponible(v_veh);
+    if v_ciclo <> 1 then
+      raise exception 'R38e la pareja service + mecánica vale % con alcance ''todos'' (esperaba 1): el premio volvió a contar FILAS y la visita doble suma dos.', v_ciclo;
+    end if;
+    update premios set alcance = 'services' where id = v_premio;
+
+    -- ---------- b · la atomicidad: la descripción corta no deja NADA ----------
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+      perform guardar_service(
+        p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => v_d2,
+        p_kilometros => 50500, p_aceite_tipo => '10W40', p_prox_service_km => 60500,
+        p_mecanica => jsonb_build_object('descripcion', 'R38'));
+      raise exception 'R38b una mecánica adjunta con la descripción corta ENTRÓ.';
+    exception when others then
+      if sqlerrm not like '%descripcion_requerida%' then
+        raise exception 'R38b la mecánica adjunta con descripción corta falló con otro error: %', sqlerrm;
+      end if;
+    end;
+
+    -- ---------- c · la adjunta solo cuelga de un service ----------
+    begin
+      perform guardar_service(
+        p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => v_d2,
+        p_kilometros => null, p_aceite_tipo => null, p_prox_service_km => null,
+        p_tipo => 'mecanica', p_trabajo_descripcion => 'R38 mecánica madre',
+        p_mecanica => jsonb_build_object('descripcion', 'R38 mecánica hija'));
+      raise exception 'R38c una mecánica adjunta a OTRA mecánica ENTRÓ.';
+    exception when others then
+      if sqlerrm not like '%mecanica_adjunta_solo_en_service%' then
+        raise exception 'R38c la mecánica adjunta a una mecánica falló con otro error: %', sqlerrm;
+      end if;
+    end;
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    if exists (select 1 from services where vehiculo_id = v_veh and fecha = v_d2) then
+      raise exception 'R38b/c quedó un trabajo A MEDIAS: el service se guardó aunque la mecánica adjunta fue rechazada. La visita se guarda entera o no se guarda.';
+    end if;
+
+    -- ---------- d · el Basic: la policy rige adentro, y no queda ni el service ----------
+    update suscripciones set plan_id = v_basic where lubricentro_id = v_demo;
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+      perform guardar_service(
+        p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => v_d3,
+        p_kilometros => 50600, p_aceite_tipo => '10W40', p_prox_service_km => 60600,
+        p_mecanica => jsonb_build_object('descripcion', 'R38 mecánica que un Basic no puede'));
+      raise exception 'R38d UN BASIC CARGÓ UNA MECÁNICA ADJUNTA: la segunda fila no pasó por services_insercion.';
+    exception
+      when insufficient_privilege then null;
+      when others then
+        raise exception 'R38d el Basic con mecánica adjunta falló con otro error: %', sqlerrm;
+    end;
+    if exists (select 1 from services where vehiculo_id = v_veh and fecha = v_d3) then
+      raise exception 'R38d la carga doble del Basic dejó el SERVICE guardado sin la mecánica: la visita se guarda entera o no se guarda.';
+    end if;
+    -- El contracaso: el service común del Basic sigue entrando con la firma nueva (R3a).
+    begin
+      v_otro := guardar_service(
+        p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => v_d3,
+        p_kilometros => 50600, p_aceite_tipo => '10W40', p_prox_service_km => 60600);
+    exception when others then
+      raise exception 'R38d EL PEOR BUG: un Basic no puede cargar un service común con la firma nueva de guardar_service (%).', sqlerrm;
+    end;
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    update suscripciones set plan_id = v_plan where lubricentro_id = v_demo;
+    if exists (select 1 from services where vehiculo_id = v_veh and fecha = v_d3 and tipo = 'mecanica') then
+      raise exception 'R38d la mecánica adjunta del Basic QUEDÓ guardada.';
+    end if;
+    delete from service_items where service_id = v_otro;
+    delete from services where id = v_otro;
+
+    -- ---------- e (2) · el conteo por visita, de punta a punta ----------
+    -- Dos services el mismo día valen 1 (el caso que la regla cambia).
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform guardar_service(
+      p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => v_d1,
+      p_kilometros => 50100, p_aceite_tipo => '10W40', p_prox_service_km => 60100);
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    select services_ciclo into v_ciclo from premio_disponible(v_veh);
+    if v_ciclo <> 1 then
+      raise exception 'R38e dos services del mismo día valen % (esperaba 1): el premio cuenta filas, no visitas.', v_ciclo;
+    end if;
+    -- Otra fecha con service: 2.
+    insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, fecha, kilometros, aceite_tipo, prox_service_km)
+    values (v_demo, v_suc, v_veh, v_own, v_d4, 48000, '10W40', 58000);
+    select services_ciclo into v_ciclo from premio_disponible(v_veh);
+    if v_ciclo <> 2 then
+      raise exception 'R38e con dos fechas con service el ciclo vale % (esperaba 2).', v_ciclo;
+    end if;
+    -- Una mecánica SOLA en otra fecha: con 'services' no abre visita; con 'todos' sí.
+    insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, fecha, tipo, trabajo_descripcion)
+    values (v_demo, v_suc, v_veh, v_own, v_d5, 'mecanica', 'R38 mecánica sola de otro día');
+    select services_ciclo into v_ciclo from premio_disponible(v_veh);
+    if v_ciclo <> 2 then
+      raise exception 'R38e con alcance ''services'' una mecánica sola movió el ciclo a % (esperaba 2): el alcance dejó de decidir qué tipos cuentan.', v_ciclo;
+    end if;
+    update premios set alcance = 'todos' where id = v_premio;
+    select services_ciclo into v_ciclo from premio_disponible(v_veh);
+    if v_ciclo <> 3 then
+      raise exception 'R38e con alcance ''todos'' el ciclo vale % (esperaba 3: tres fechas, la pareja y el par de services valen 1 cada una).', v_ciclo;
+    end if;
+    -- ciclos_fidelizacion dice lo mismo, en los dos alcances.
+    select services_ciclo into v_flota from ciclos_fidelizacion() where vehiculo_id = v_veh;
+    if v_flota is distinct from v_ciclo then
+      raise exception 'R38e ciclos_fidelizacion dice % y premio_disponible % con alcance ''todos'': la pantalla Fidelización y la tarjeta del cliente cuentan distinto.', v_flota, v_ciclo;
+    end if;
+    update premios set alcance = 'services' where id = v_premio;
+    select services_ciclo into v_ciclo from premio_disponible(v_veh);
+    select services_ciclo into v_flota from ciclos_fidelizacion() where vehiculo_id = v_veh;
+    if v_ciclo <> 2 or v_flota is distinct from v_ciclo then
+      raise exception 'R38e con alcance ''services'' premio_disponible dice % y ciclos_fidelizacion %: tienen que decir 2 las dos.', v_ciclo, v_flota;
+    end if;
+
+    -- ---------- g · la visita viaja junta al editar el service ----------
+    -- Corregir la fecha, los kilómetros o la sucursal del service dentro de
+    -- sus 24 horas copia los tres a la mecánica adjunta. Sin eso, un typo
+    -- corregido partía la visita en dos fechas y, con alcance 'todos', en
+    -- dos puntos; y el detalle decía «misma visita» sobre dos días distintos.
+    select id into v_suc2 from sucursales
+    where lubricentro_id = v_demo and activa and id <> v_suc order by created_at limit 1;
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform actualizar_service(
+      p_service_id => v_srv, p_sucursal_id => coalesce(v_suc2, v_suc), p_fecha => v_d1 - 1,
+      p_kilometros => 50050, p_aceite_tipo => '10W40', p_prox_service_km => 60050);
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    select * into v_fila from services where id = v_mec;
+    if v_fila.fecha <> v_d1 - 1 or v_fila.kilometros is distinct from 50050
+       or v_fila.sucursal_id <> coalesce(v_suc2, v_suc) then
+      raise exception 'R38g al corregir el service de la pareja la mecánica adjunta no lo siguió (fecha %, km %): la visita queda partida en dos y con alcance ''todos'' vale dos puntos.', v_fila.fecha, v_fila.kilometros;
+    end if;
+    -- El downgrade no bloquea la edición (regla 2): con el plan en Basic la
+    -- policy rechaza tocar la mecánica, la función lo atrapa, el service se
+    -- corrige igual y la mecánica queda como estaba.
+    update suscripciones set plan_id = v_basic where lubricentro_id = v_demo;
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+      perform actualizar_service(
+        p_service_id => v_srv, p_sucursal_id => coalesce(v_suc2, v_suc), p_fecha => v_d1 - 1,
+        p_kilometros => 50060, p_aceite_tipo => '10W40', p_prox_service_km => 60060);
+    exception when others then
+      raise exception 'R38g un Basic no pudo corregir su service porque la mecánica adjunta ya no está en su plan (%): un downgrade nunca bloquea lo que ya se tenía.', sqlerrm;
+    end;
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    update suscripciones set plan_id = v_plan where lubricentro_id = v_demo;
+    select kilometros into v_n from services where id = v_srv;
+    select kilometros into v_ciclo from services where id = v_mec;
+    if v_n <> 50060 or v_ciclo <> 50050 then
+      raise exception 'R38g con el plan en Basic el service quedó en % km y la mecánica en % (esperaba 50060 y 50050): o la edición no pasó, o la propagación pasó por encima de la policy.', v_n, v_ciclo;
+    end if;
+
+    -- ---------- f · el canje en la carga doble, y el corte del ciclo ----------
+    -- Con alcance 'todos': es el único alcance en el que la mecánica del
+    -- día del canje PODRÍA contar, y lo que se prueba es que no cuenta.
+    update premios set alcance = 'todos' where id = v_premio;
+    insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, fecha, kilometros, aceite_tipo, prox_service_km)
+    values (v_demo, v_suc, v_veh, v_own, v_d6, 46000, '10W40', 56000);
+    select disponible into v_disp from premio_disponible(v_veh);
+    if not v_disp then
+      raise exception 'R38f SIN PISO: con más fechas que la meta el premio tendría que estar disponible.';
+    end if;
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    v_srv_c := guardar_service(
+      p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => current_date,
+      p_kilometros => 51000, p_aceite_tipo => '10W40', p_prox_service_km => 61000,
+      p_canjear_premio => true,
+      p_mecanica => jsonb_build_object('descripcion', 'R38 mecánica del día del canje'));
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    select count(*) into v_n from canjes where vehiculo_id = v_veh;
+    if v_n <> 1 then
+      raise exception 'R38f la carga doble con «Aplicar premio» dejó % canjes (esperaba 1).', v_n;
+    end if;
+    select service_id into v_otro from canjes where vehiculo_id = v_veh;
+    if v_otro is distinct from v_srv_c then
+      raise exception 'R38f el canje quedó atado a otra fila que el service (a la mecánica adjunta?): la pantalla de guardado no lo encuentra.';
+    end if;
+    select services_ciclo, disponible into v_ciclo, v_disp from premio_disponible(v_veh);
+    if v_ciclo <> 0 or v_disp then
+      raise exception 'R38f tras el canje el ciclo vale % (esperaba 0): el service o la mecánica adjunta del día del canje están contando para el ciclo siguiente.', v_ciclo;
+    end if;
+    -- LO QUE NO CAMBIA: el corte sigue siendo created_at, no la fecha. Un
+    -- trabajo cargado después del canje cuenta aunque su fecha sea vieja, y
+    -- el distinct se aplica dentro de la ventana del ciclo.
+    insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, fecha, kilometros, aceite_tipo, prox_service_km, created_at)
+    values (v_demo, v_suc, v_veh, v_own, v_d1, 52000, '10W40', 62000, now() + interval '1 minute');
+    select services_ciclo into v_ciclo from premio_disponible(v_veh);
+    if v_ciclo <> 1 then
+      raise exception 'R38f un service cargado DESPUÉS del canje, con fecha anterior, vale % (esperaba 1): el corte del ciclo dejó de ser created_at.', v_ciclo;
+    end if;
+
+    -- ---------- h · el vínculo: el CHECK y el trigger ----------
+    begin
+      update services set cargado_con_id = v_srv where id = v_srv_c;
+      raise exception 'R38h un SERVICE aceptó cargado_con_id: el CHECK cargado_con_solo_mecanica no está.';
+    exception
+      when check_violation then null;
+      when others then
+        raise exception 'R38h el vínculo sobre un service falló con otro error: %', sqlerrm;
+    end;
+    begin
+      insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, fecha, tipo, trabajo_descripcion, cargado_con_id)
+      values (v_demo, v_suc, v_veh2, v_own, current_date, 'mecanica', 'R38 mecánica de otro auto', v_srv);
+      raise exception 'R38h una mecánica de OTRO vehículo se vinculó al service: el trigger no compara el vehículo.';
+    exception when others then
+      if sqlerrm not like '%vinculo_invalido%' then
+        raise exception 'R38h el vínculo cruzado de vehículo falló con otro error: %', sqlerrm;
+      end if;
+    end;
+    begin
+      insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, fecha, tipo, trabajo_descripcion, cargado_con_id)
+      values (v_demo, v_suc, v_veh, v_own, current_date, 'mecanica', 'R38 mecánica colgada de una mecánica', v_mec);
+      raise exception 'R38h una mecánica se vinculó a OTRA mecánica: el trigger no exige que el destino sea un service.';
+    exception when others then
+      if sqlerrm not like '%vinculo_invalido%' then
+        raise exception 'R38h el vínculo hacia una mecánica falló con otro error: %', sqlerrm;
+      end if;
+    end;
+    -- El contracaso: el vínculo bien formado entra (el trigger no se cerró de más).
+    begin
+      insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, fecha, tipo, trabajo_descripcion, cargado_con_id)
+      values (v_demo, v_suc, v_veh, v_own, v_d1, 'mecanica', 'R38 segunda mecánica de la misma visita', v_srv);
+    exception when others then
+      raise exception 'R38h un vínculo bien formado (misma patente, hacia un service) fue rechazado: %', sqlerrm;
+    end;
+
+    -- Todo lo escrito en este bloque se deshace acá. Cualquier otra
+    -- excepción de arriba NO se atrapa: sube y pone el reset en rojo.
+    raise exception 'rollback_r38' using errcode = 'P0038';
+  exception
+    when sqlstate 'P0038' then
+      execute 'reset role';
+      perform set_config('request.jwt.claims', '{}', true);
+  end;
+
+  if exists (select 1 from vehiculos where patente_normalizada in ('AB138CD', 'AB238CD'))
+     or exists (select 1 from clientes where email = 'r38@ejemplo.com') then
+    raise exception 'R38 SIN PISO: la subtransacción no deshizo los fixtures.';
+  end if;
+end $$;
+-- <<< R38

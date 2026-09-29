@@ -122,7 +122,10 @@ export default async function FichaCliente({
       vehiculos.map((v) => v.id),
     )
     .order("fecha", { ascending: false })
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    // La pareja service + mecánica comparte created_at: el tipo desempata
+    // y el service queda arriba (orden del enum).
+    .order("tipo", { ascending: true });
 
   const servicesPorVehiculo = new Map<string, typeof filasServices>();
   for (const s of filasServices ?? []) {

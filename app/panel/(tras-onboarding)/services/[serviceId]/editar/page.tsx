@@ -41,7 +41,7 @@ export default async function PaginaEditarService({ params }: Props) {
            aceite_litros, alineacion,
            aceite_tipo, aceite_producto_id,
            prox_service_km, observaciones, anulado, desbloqueado_hasta,
-           sucursal_id, vehiculo_id,
+           sucursal_id, vehiculo_id, cargado_con_id,
            vehiculos(patente, marca, modelo, clase, clientes(nombre)),
            service_items(item_tipo, detalle, cambiado, cantidad, producto_id, productos(nombre, marca)),
            service_ruedas(posicion, posicion_anterior, colocada, rotada, balanceada,
@@ -82,6 +82,28 @@ export default async function PaginaEditarService({ params }: Props) {
   if (!puedeEditarse(estadoService(service))) {
     redirect(`/panel/services/${serviceId}`);
   }
+
+  // La otra mitad de una carga doble. Editar el SERVICE copia fecha, km y
+  // sucursal a la mecánica adjunta (actualizar_service); editar la MECÁNICA
+  // la separa. En los dos casos el mecánico tiene que saberlo antes.
+  const parejaRes = service.cargado_con_id
+    ? await supabase
+        .from("services")
+        .select("id, tipo, fecha")
+        .eq("id", service.cargado_con_id)
+        .eq("anulado", false)
+        .maybeSingle()
+    : service.tipo === "service"
+      ? await supabase
+          .from("services")
+          .select("id, tipo, fecha")
+          .eq("cargado_con_id", service.id)
+          .eq("anulado", false)
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle()
+      : null;
+  const pareja = parejaRes?.data ?? null;
 
   // El service anterior a ESTE, para la advertencia de kilómetros: al
   // editar no tiene sentido comparar el service contra sí mismo.
@@ -184,6 +206,37 @@ export default async function PaginaEditarService({ params }: Props) {
           Volver sin guardar
         </Link>
       </div>
+
+      {pareja && (
+        <p className="mb-4 rounded-md border border-line bg-surface px-3.5 py-2.5 text-ui text-ink-60">
+          {pareja.tipo === "mecanica" ? (
+            <>
+              Este service se cargó junto con{" "}
+              <Link
+                href={`/panel/services/${pareja.id}`}
+                className="font-semibold text-ink underline underline-offset-4"
+              >
+                una mecánica
+              </Link>{" "}
+              de la misma visita. Si corregís la fecha, los kilómetros o la
+              sucursal, se copian también a la mecánica.
+            </>
+          ) : (
+            <>
+              Esta mecánica se cargó junto con{" "}
+              <Link
+                href={`/panel/services/${pareja.id}`}
+                className="font-semibold text-ink underline underline-offset-4"
+              >
+                el service
+              </Link>{" "}
+              de la misma visita. La fecha, los kilómetros y la sucursal son
+              los de la visita: para corregirlos, editá el service y se copian
+              a los dos.
+            </>
+          )}
+        </p>
+      )}
 
       <Carton
         datos={{

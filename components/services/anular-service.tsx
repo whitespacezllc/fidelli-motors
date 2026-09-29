@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Dialog, DialogTrigger, DialogContenido } from "@/components/ui/dialog";
 import { Boton, clasesBoton } from "@/components/ui/boton";
@@ -14,10 +15,14 @@ export function AnularService({
   serviceId,
   fecha,
   patente,
+  pareja = null,
 }: {
   serviceId: string;
   fecha: string;
   patente: string;
+  /** La otra mitad de una carga doble (service + mecánica): no se anula
+   *  con esta, y el mecánico tiene que saberlo antes de confirmar. */
+  pareja?: { href: string; esService: boolean } | null;
 }) {
   const router = useRouter();
   const [abierto, setAbierto] = useState(false);
@@ -50,6 +55,22 @@ export function AnularService({
           cliente dejará de verlo en su historial y no contará para su premio.
           Esta acción no se puede deshacer.
         </p>
+
+        {pareja && (
+          <p className="mt-3 rounded-md bg-surface px-3.5 py-3 text-ui text-ink-60">
+            Este trabajo se cargó junto con{" "}
+            {pareja.esService ? "el service" : "una mecánica"} de la misma
+            visita, que no se anula con este. Si el error es de la visita
+            entera, anulá también{" "}
+            <Link
+              href={pareja.href}
+              className="font-semibold text-ink underline underline-offset-4"
+            >
+              {pareja.esService ? "el service" : "la mecánica"}
+            </Link>
+            .
+          </p>
+        )}
 
         {error && (
           <p
