@@ -56,6 +56,11 @@ export default async function PaginaServices({
     )
     .order("fecha", { ascending: false })
     .order("created_at", { ascending: false })
+    // El desempate: la pareja service + mecánica nace con el MISMO
+    // created_at, y sin un tercer criterio el orden entre las dos queda al
+    // azar (y la paginación puede repetir u omitir una al cruzar el corte).
+    // El enum ordena service, mecánica, neumáticos: el service arriba.
+    .order("tipo", { ascending: true })
     .range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1);
 
   const consulta = aplicarFiltrosTrabajos(base, filtros);

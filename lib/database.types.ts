@@ -1716,6 +1716,7 @@ export type Database = {
           anulado: boolean
           beneficio_hasta_fecha: string | null
           beneficio_hasta_km: number | null
+          cargado_con_id: string | null
           created_at: string
           desbloqueado_hasta: string | null
           desbloqueado_por: string | null
@@ -1741,6 +1742,7 @@ export type Database = {
           anulado?: boolean
           beneficio_hasta_fecha?: string | null
           beneficio_hasta_km?: number | null
+          cargado_con_id?: string | null
           created_at?: string
           desbloqueado_hasta?: string | null
           desbloqueado_por?: string | null
@@ -1766,6 +1768,7 @@ export type Database = {
           anulado?: boolean
           beneficio_hasta_fecha?: string | null
           beneficio_hasta_km?: number | null
+          cargado_con_id?: string | null
           created_at?: string
           desbloqueado_hasta?: string | null
           desbloqueado_por?: string | null
@@ -1789,6 +1792,27 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "productos"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "services_cargado_con_id_fkey"
+            columns: ["cargado_con_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "services_cargado_con_id_fkey"
+            columns: ["cargado_con_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_neumaticos"
+            referencedColumns: ["ultimo_service_id"]
+          },
+          {
+            foreignKeyName: "services_cargado_con_id_fkey"
+            columns: ["cargado_con_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_service"
+            referencedColumns: ["ultimo_service_id"]
           },
           {
             foreignKeyName: "services_desbloqueado_por_fkey"
@@ -3234,6 +3258,7 @@ export type Database = {
           p_fecha: string
           p_items?: Json
           p_kilometros: number
+          p_mecanica?: Json
           p_observaciones?: string
           p_pendientes?: Json
           p_prox_service_km: number
