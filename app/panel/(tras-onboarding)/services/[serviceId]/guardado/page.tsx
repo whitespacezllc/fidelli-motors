@@ -22,7 +22,7 @@ export default async function PaginaGuardado({
   const { data: service } = await supabase
     .from("services")
     .select(
-      `id, tipo, trabajo_descripcion, fecha, kilometros, alineacion, vehiculo_id,
+      `id, tipo, trabajo_descripcion, fecha, kilometros, alineacion, vehiculo_id, created_at,
        vehiculos(patente, marca, modelo, clientes(nombre)),
        service_ruedas(colocada, rotada, balanceada, reparada)`,
     )
@@ -42,23 +42,39 @@ export default async function PaginaGuardado({
     );
   }
 
-  const [conteoRes, premioRes, canjeRes] = await Promise.all([
+  const [anterioresRes, premioRes, canjeRes, adjuntaRes] = await Promise.all([
+    // «Primera visita» = ningún trabajo del auto creado ANTES que este. La
+    // pareja service + mecánica nace con el MISMO created_at (mismo now()),
+    // así que el `<` estricto la deja afuera y la calco se pide una sola
+    // vez; un segundo service del mismo día, o uno retro-fechado al único
+    // día con historial, ya tiene un created_at anterior y no la repite.
     supabase
       .from("services")
       .select("id", { count: "exact", head: true })
       .eq("vehiculo_id", service.vehiculo_id)
-      .eq("anulado", false),
+      .eq("anulado", false)
+      .lt("created_at", service.created_at),
     supabase.rpc("premio_disponible", { p_vehiculo_id: service.vehiculo_id }),
     supabase
       .from("canjes")
       .select("id")
       .eq("service_id", serviceId)
       .maybeSingle(),
+    // La mecánica que nació junto con este service, si la hubo.
+    supabase
+      .from("services")
+      .select("id, trabajo_descripcion")
+      .eq("cargado_con_id", serviceId)
+      .eq("anulado", false)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
-  const primeraVisita = (conteoRes.count ?? 0) <= 1;
+  const primeraVisita = (anterioresRes.count ?? 0) === 0;
   const premio = premioRes.data?.[0] ?? null;
   const yaCanjeado = Boolean(canjeRes.data);
+  const adjunta = adjuntaRes.data ?? null;
 
   const vehiculo = service.vehiculos;
   const clienteNombre = vehiculo?.clientes?.nombre ?? "";
@@ -69,7 +85,12 @@ export default async function PaginaGuardado({
   return (
     <div className="mx-auto max-w-md lg:max-w-xl lg:pt-4">
       <p className="rounded-md bg-success-soft px-3.5 py-3 font-brand text-body font-bold text-success">
-        ✓ {service.tipo === "service" ? "Service guardado" : "Trabajo guardado"}
+        ✓{" "}
+        {service.tipo === "service"
+          ? adjunta
+            ? "Service y mecánica guardados"
+            : "Service guardado"
+          : "Trabajo guardado"}
       </p>
 
       <div className="surface-card mt-4 p-4">
@@ -93,6 +114,24 @@ export default async function PaginaGuardado({
             .filter(Boolean)
             .join(" · ")}
         </p>
+        {/* La mecánica adjunta: la otra mitad de la visita, con su propia
+            ficha (y su propio plazo de edición de 7 días). */}
+        {adjunta && (
+          <div className="mt-2.5 border-t border-line pt-2.5 text-ui text-ink-60">
+            <p>
+              <span className="font-semibold text-ink">Mecánica de la misma visita:</span>{" "}
+              {adjunta.trabajo_descripcion}
+            </p>
+            {/* Un enlace de una línea con 44 px de alto: el mecánico lo toca
+                con el cliente parado en el mostrador. */}
+            <Link
+              href={`/panel/services/${adjunta.id}`}
+              className="inline-flex min-h-11 items-center font-semibold text-ink-60 underline underline-offset-4 hover:text-ink"
+            >
+              Ver la mecánica
+            </Link>
+          </div>
+        )}
       </div>
 
       {/* Primera visita del vehículo → la calco, con el guion de 20 segundos */}

@@ -100,8 +100,24 @@ la resuelve.
   ficha. Las vistas tampoco ayudan —tienen `security_invoker`, así que a un
   superadmin le devuelven la plataforma entera. Un filtro olvidado no da error:
   mezcla dos lubricentros en la misma pantalla.
-- **`premio_disponible(vehiculo_id)`** calcula el ciclo con reset (services desde
-  el último canje contra la meta vigente). No hay contadores guardados.
+- **`premio_disponible(vehiculo_id)`** calcula el ciclo con reset: cuenta las
+  **fechas distintas** con trabajo no anulado desde el último canje contra la
+  meta vigente (desde `20260929100000`: una visita es un punto, y service +
+  mecánica el mismo día —o dos services el mismo día— valen 1). Qué tipos
+  cuentan lo dice `premios.alcance`. El corte del ciclo sigue siendo
+  `created_at > canje`, no la fecha. `ciclos_fidelizacion()` es la misma
+  cuenta para toda la flota y tiene que decir lo mismo. No hay contadores
+  guardados. Lo vigila R38.
+- **La mecánica adjunta.** Al final del cartón de un service, con la feature
+  `mecanica`, «¿Se le hizo algo de mecánica?» guarda una SEGUNDA fila (tipo
+  mecánica, misma fecha, km y sucursal) dentro de la misma llamada a
+  `guardar_service` (`p_mecanica`), en la misma transacción y con el mismo
+  `now()`; queda atada al service por `services.cargado_con_id`. Después son
+  dos trabajos con su plazo cada uno y se anulan por separado (con aviso),
+  pero la fecha, los km y la sucursal son de LA VISITA: corregirlos en el
+  service los copia a la mecánica (`actualizar_service`; un plan sin la
+  feature no bloquea la edición). Nunca como segunda llamada desde la
+  acción: ver la regla 22.
 - **`vista_proximos_service`** devuelve el estado (`vencido` / `urgente` /
   `proximo`), el km/día real del vehículo, la fecha estimada y si ya se contactó
   en ese estado. Toda la pantalla de retención sale de ahí.
@@ -689,6 +705,31 @@ versión vigente NO vive en la base a propósito: guardarla ahí sería una
 segunda fuente que se desincroniza en silencio. Exentos: el superadmin y el
 tenant demo, por slug. Lo vigila R27.
 
+Y la del sprint de service + mecánica (septiembre de 2026):
+
+**22 · Una visita es una FECHA, la pareja nace en UNA transacción, y el
+contador del premio vive en DOS funciones que tienen que decir lo mismo.**
+El premio cuenta `count(distinct s.fecha)`, no filas: si alguien lo
+«arregla» de vuelta a `count(*)`, service + mecánica del mismo día vuelven
+a valer 2 con alcance `'todos'` y dos services del mismo día también, sin
+ningún error. Y la cuenta está escrita dos veces —`premio_disponible` para
+un auto, `ciclos_fidelizacion` para la flota—: cambiar una sola deja la
+tarjeta del cliente diciendo un número y la pantalla Fidelización otro.
+La mecánica adjunta se guarda ADENTRO de `guardar_service` (la función se
+llama a sí misma con `p_tipo => 'mecanica'`), nunca con una segunda
+llamada al RPC desde la acción, por tres razones que no dan error: (1) con
+dos llamadas, un corte de red o un plan sin la feature deja el service
+guardado y la mecánica no, y el reintento duplica el service; (2) las dos
+filas y el canje comparten `now()`, y `premio_disponible` corta con
+`created_at > canje` estricto — una segunda llamada le da a la mecánica un
+`created_at` posterior y, con alcance `'todos'`, arranca el ciclo nuevo en
+1 el mismo día del canje; (3) la llamada recursiva pasa por la MISMA
+policy `services_insercion`, porque la función es **security invoker** —
+volverla definer «para simplificar» deja a un Basic colando mecánicas por
+`/rpc/`, y R3b no lo ve porque prueba la mecánica sola. Tampoco pongas
+`clock_timestamp()` en la mecánica adjunta para «ordenarla»: es el mismo
+bug que la segunda llamada. Lo vigila R38.
+
 ---
 
 ## La red de regresión — qué protege cada cosa
@@ -739,6 +780,7 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R37** | Los tres emails de cobranza: `avisos_pendientes()` no le toca nada al exento (con pago), al de afuera del reloj, al suspendido a mano ni al que está al día; a 7 días → `por_vencer` (el borde entra), el día 0 → `vencido`, vencido ayer → SOLO el 2, suspendido por reloj → el 3 y con el interruptor apagado el mismo tenant sigue en el 2; el alta recibe el 1 el día del alta y NADA pasado el plazo con el bloqueo apagado; el trial en su voz; con el 2 mandado no se manda el 2 ni se cae al 1, con solo el 1 mandado se manda el 2; el que paga entre el 2 y el 3 no recibe el 3 y un vencimiento nuevo habilita los tres; el destinatario es el owner, el monto el de `monto_de_renovacion()` y `corta` el segundo interruptor; `emails_cobranza` rechaza el duplicado (unique), el delete, el update y el truncate, con los tres candados en ALWAYS; y un owner recibe 42501 al ejecutar la decisión | Un email a quien no debe nada o a quien no vio ninguna barra, «vence el DD/MM» el día que vence o después de «hoy vence», el mismo email dos veces (o el 3 a quien ya pagó), «solo lectura» prometido con el interruptor apagado, un monto distinto del de la pantalla de pago, la evidencia que se borra y el cron que vuelve a mandar, o un owner leyendo el vencimiento y el email de todos los demás |
 | **R36** | La suspensión por reloj, de verdad: la vidriera y el cartón de un tenant suspendido POR RELOJ (activo, interruptor prendido, con pago, vencido hace 20 días) responden como `anon` sin el premio, sin el progreso y sin el mensaje al escanear, y con el historial; en GRACIA los tres siguen (contracaso); apagar el tenant a mano cierra sus órdenes vivas (NOT_PAID y PARTIAL → `CERRADA`), no toca la PAID, reactivarlo no las reabre y un depósito a una CERRADA igual se acredita; con el `hasta` de la acción (`greatest(vencimiento, hoy) + período`) el pago tardío deja el vencimiento en hoy + período, el pago registra el período que cubre de verdad y el tenant vuelve a al_dia, y dentro del ciclo el vencimiento nuevo es exactamente vencimiento + período; y el cierre del día siguiente al pago emite `reactivacion_reloj` | Un suspendido por reloj sigue prometiendo el premio en su página (los Términos dicen lo contrario), el premio desapareció en gracia, un suspendido a mano tiene una cuenta abierta a la que transferir para nada, un pago tardío compra un período ya vencido y el tenant paga y sigue suspendido, el que paga en plazo gana días, o la vuelta de un suspendido no deja rastro en Crecimiento |
 | **R35** | El plazo de edición por tipo: `plazo_edicion()` existe y contesta por CADA valor del enum (7 días para mecánica, 24 horas para service y neumáticos); como owner del demo, una mecánica de hace 3 días se edita y un service, un trabajo de neumáticos de hace 3 días y una mecánica de hace 8 no (cero filas, sin error); los renglones heredan el plazo de la cabecera; `get_carton` le muestra al dueño del auto el sello `fijado` con el mismo cálculo; y la ventana de desbloqueo sigue siendo de 24 horas fijas sobre cualquier tipo, y con ella abierta la mecánica fijada vuelve a editarse; y la ventana rige también en el `WITH CHECK`: como owner, un INSERT directo de un renglón en un service de hace 3 días falla con 42501 y en una mecánica de hace 3 días entra, e ídem una rueda con el módulo de gomería prendido por la puerta real | La mecánica volvió a fijarse a las 24 horas (la ficha queda a medias y el taller llama a Fidelli), un service quedó editable una semana (el cartón del cliente deja de ser confiable), el panel dice «editable» y la base dice que no, un tipo nuevo nació sin plazo, o un renglón vuelve a entrar en un trabajo fijado por la API directa |
+| **R38** | Service + mecánica en UNA carga, y el premio por visitas (`20260929100000`): `guardar_service` tiene UNA sola firma y sigue siendo security invoker; con `p_mecanica` nacen las dos filas juntas (misma fecha, km, sucursal y `created_at`; la mecánica vinculada por `cargado_con_id`, con sus renglones libres, las observaciones solo en el service) y la función devuelve el service; los pendientes nuevos y tildados cuelgan del service y la mecánica no los duplica; con la descripción corta o colgando de una mecánica no queda NADA; como owner de un Basic la carga doble falla con 42501 sin dejar ni el service, y el service común sigue entrando; la pareja vale UNA visita con los dos alcances, dos services del mismo día valen 1, una mecánica sola cuenta solo con `'todos'`, y `ciclos_fidelizacion()` dice lo mismo que `premio_disponible` en los dos alcances; corregir fecha, km y sucursal del service los copia a la mecánica adjunta, y con el plan en Basic el service se corrige igual y la mecánica queda como estaba; con «Aplicar premio» en la carga doble, con alcance `'todos'`, queda UN canje atado al service y el ciclo vuelve a 0 (ninguna de las dos filas cuenta), y un trabajo cargado DESPUÉS del canje con fecha anterior vale 1 (el corte sigue siendo `created_at`); el CHECK rechaza el vínculo en un service y el trigger lo rechaza hacia otro vehículo o hacia una mecánica, y acepta el bien formado | La carga doble dejó media visita guardada, un Basic metió una mecánica por la puerta nueva, el premio volvió a contar filas (la visita doble suma 2), la tarjeta del cliente y la pantalla Fidelización cuentan distinto, un typo corregido en el service partió la visita en dos fechas, el canje se ató a la mecánica y el guardado no lo encuentra, la mecánica del día del canje abrió el ciclo nuevo, o una mecánica de otro auto quedó «cargada con» un service |
 
 Además, fuera del reset, **las roturas a mano** (regla 13):
 
@@ -758,6 +800,7 @@ Además, fuera del reset, **las roturas a mano** (regla 13):
 ./scripts/regresion-edicion.sh
 ./scripts/regresion-cobranza-suspension.sh
 ./scripts/regresion-cobranza-emails.sh
+./scripts/regresion-visita.sh
 node --no-warnings scripts/regresion-cresium-orden.mjs
 node --no-warnings scripts/regresion-cobranza-emails.mjs
 node --no-warnings scripts/regresion-avisos-cobranza.mjs   # contra next dev + el doble de Resend
@@ -867,6 +910,8 @@ El decimotercero rompe R35 (once roturas): la mecánica de vuelta a 24 horas —
 El decimocuarto rompe R36 (once roturas), y es el molde de una clase nueva: **la regla que vive en dos lados a la vez**. Del lado de la base: `get_landing` con el premio decidido por `l.activo` —la forma exacta en que estaba, y que con la suspensión por reloj derivada dejaba el premio prendido—; `get_carton` con el progreso y con el mensaje al escanear, cada uno por separado, porque cualquiera de las dos condiciones puede volver sola; **la vidriera apagada para el suspendido por reloj** (un `and es_activo(l)` en el where), que es el arreglo equivocado que la regla 8 prohíbe; la pasada de rosca del premio apagado también en gracia; el trigger de las órdenes que no cierra nada, el que cierra TAMBIÉN la PAID (se lleva la contabilidad) y el trigger borrado; `ciclo_tras_el_pago()` ignorando el `hasta` de la orden y, al revés, arrancando siempre desde hoy; y `cerrar_dia()` sin la rama de `reactivacion_reloj`. Del lado de TypeScript, la mitad que ningún `sed` sobre SQL puede ver: la regla del `hasta` (`periodoHastaDeLaOrden`) la rompe la sección 6 de `scripts/regresion-cresium-orden.mjs`, que se vio en rojo con la cuenta vieja (`vencimiento + período`: el vencido el 01/10 que paga el 20/11 compraba hasta el 01/11). R36 corre entero en una subtransacción que se deshace: el tenant, los pagos, las órdenes, las fotos y los eventos de prueba no quedan.
 
 El decimoquinto rompe R37 (quince roturas), y dos de ellas se vieron en verde por la razón equivocada antes de existir de verdad: **el exento sin pago** cae en la voz `alta`, que pasado el plazo no manda nada, así que sacar la exención no cambiaba nada (el exento de la prueba tiene pago); y **el filtro de «afuera del reloj» está doblemente cubierto** (`is not null` y `<= current_date`), así que la rotura saca las dos condiciones o no es una rotura. Las demás: el suspendido a mano recibiendo emails; el 2 con `< 0` (el día 0 recibe el 1); el 1 con `< 7` (el borde no entra); el 3 decidido por nada; el alta con email intermedio y el alta con el 1 pasado el plazo; «nunca dos veces» sacado; los tres candados de `emails_cobranza` bajados a `notice` de a uno y los tres bajados a ORIGIN; el unique borrado; y la decisión grantada a `authenticated`. Y del lado de Node, dos regresiones más: `scripts/regresion-cobranza-emails.mjs` compila `lib/email/{marco,cobranza}.ts` con `tsc` a un temporal y rompe ocho cosas de las plantillas sobre una copia (el solo lectura prometido sin mirar `corta`, «hasta hoy» y «hasta mañana» al revés, el trial mandado a pagar, el monto sin punto de miles, el alias ignorado, fecha8 como fecha7, el pasado sin conjugar y el HTML sin escapar); y `scripts/regresion-avisos-cobranza.mjs` corre la ruta de punta a punta contra `next dev` y el doble de Resend (guarda, simular, primera corrida y segunda en cero, key inválida sin insertar y reintento, el que paga entre el 2 y el 3, el ciclo nuevo, el delete rechazado y el 500 sin `RESEND_API_KEY`), y se vio en rojo con la ruta simulando siempre. **`emails_cobranza` no se puede vaciar ni por la prueba**: esa regresión deja sus tenants (`email-run-*`), y `supabase db reset` es la única limpieza.
+
+El decimosexto rompe R38 (dieciséis roturas), y dos de ellas enseñaron algo al escribirse. **La policy de inserción sin el gate por tipo NO rompía nada**, porque el vínculo de la mecánica adjunta se escribe con un UPDATE sobre la fila recién creada y el `WITH CHECK` de `services_edicion`, solo, ya frenaba al Basic — la rotura tuvo que sacar las dos policies a la vez, o el verde mentía. Y **la mecánica del día del canje solo puede contar con alcance `'todos'`**: con `'services'`, la sub-prueba del canje estaba en verde por el alcance y no por el `created_at`, así que R38f corre con `'todos'` y la rotura que la acusa es la del `clock_timestamp()` que nombra la regla 22. Las demás: `premio_disponible` de vuelta a `count(*)` (la más probable: alguien «arregla» el distinct) y `ciclos_fidelizacion` ídem (la copia que se olvida); el corte del ciclo pasado a la fecha; la mecánica adjunta con la fecha de hoy en vez de la del service, sin el vínculo, con sus renglones ignorados y con los pendientes reenviados a la recursiva (cada uno entra dos veces); la descripción mínima bajada a cero (el CHECK de la tabla frena igual, pero con otro error que el front no traduce); la adjunta colgando de una mecánica; `guardar_service` como `security definer`, que R38j ve en el catálogo antes de que R38d lo descubra por las malas; `actualizar_service` sin propagar a la adjunta (la visita se parte en dos al corregir un typo); y el vínculo por tres lados: el CHECK borrado, el trigger sin comparar el vehículo y el trigger sin exigir un service como destino.
 
 ⚠ Y DOS DE ESTOS SCRIPTS APUNTAN A MÁS DE UNA MIGRACIÓN, porque
 `estado_cobranza`, `reloj_cobranza` y `crear_lubricentro` se redefinieron en
