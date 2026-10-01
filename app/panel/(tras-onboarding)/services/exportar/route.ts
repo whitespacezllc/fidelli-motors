@@ -6,6 +6,7 @@ import {
 } from "@/lib/trabajos";
 import { ETIQUETA_POSICION, resumenRuedas } from "@/lib/ruedas";
 import { RENGLONES, type ItemTipo } from "@/lib/renglones";
+import { descripcionEnUnaLinea } from "@/lib/renglones-mecanica";
 import {
   contextoExportacion,
   respuestaError,
@@ -233,11 +234,13 @@ export async function GET(request: NextRequest) {
         texto(resumenProductos(t, items)),
         // La columna Detalle cuenta de qué se trató el trabajo. En
         // gomería, el resumen de las ruedas: la descripción libre es de
-        // la mecánica y en neumáticos viene siempre en null.
+        // la mecánica y en neumáticos viene siempre en null. En una
+        // línea: una celda con saltos se lee mal en una tabla y obliga a
+        // configurar el ajuste de texto.
         texto(
           t.tipo === "neumaticos"
             ? resumenRuedas(t.service_ruedas ?? [], t.alineacion ?? false)
-            : t.trabajo_descripcion,
+            : descripcionEnUnaLinea(t.trabajo_descripcion),
         ),
         texto(renglones(items)),
         texto(t.observaciones),

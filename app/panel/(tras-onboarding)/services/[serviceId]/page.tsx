@@ -18,6 +18,7 @@ import {
   restanteEnPalabras,
 } from "@/lib/servicios";
 import { formatearKm } from "@/lib/renglones";
+import { descripcionEnUnaLinea } from "@/lib/renglones-mecanica";
 import { ETIQUETA_TIPO } from "@/lib/trabajos";
 import {
   formatearFecha,
@@ -358,7 +359,7 @@ export default async function PaginaService({ params }: Props) {
                 >
                   {pareja.tipo === "service"
                     ? `El service del ${formatearFecha(pareja.fecha)}`
-                    : `Una mecánica: ${pareja.trabajo_descripcion}`}
+                    : `Una mecánica: ${descripcionEnUnaLinea(pareja.trabajo_descripcion) ?? ""}`}
                 </Link>
               </dd>
             </>

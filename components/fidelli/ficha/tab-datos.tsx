@@ -11,6 +11,7 @@ import { HistorialCorrecciones } from "./historial-correcciones";
 import { DialogSuprimirCliente } from "@/components/clientes/dialog-suprimir-cliente";
 import { anonimizarClienteFidelli } from "@/app/fidelli/[id]/actions";
 import { clienteSuprimido } from "@/lib/clientes";
+import { descripcionEnUnaLinea } from "@/lib/renglones-mecanica";
 import { VISTAS_DATOS, esVistaDatos, type Tenant, type VistaDatos } from "./tipos";
 import type { ParamsFicha } from "@/app/fidelli/[id]/page";
 
@@ -568,7 +569,7 @@ async function ListaServices({
                     cliente: s.vehiculos.clientes?.nombre ?? null,
                     sucursal: s.sucursales?.nombre ?? "",
                     tipo: s.tipo,
-                    descripcion: s.trabajo_descripcion,
+                    descripcion: descripcionEnUnaLinea(s.trabajo_descripcion),
                     kilometros: s.kilometros,
                     desbloqueadoPor: s.desbloqueador?.nombre ?? null,
                   }}
