@@ -5,6 +5,7 @@ import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { clasesBoton } from "@/components/ui/boton";
 import { NotaPostGuardado } from "@/components/notas/nota-post-guardado";
 import { formatearKm } from "@/lib/renglones";
+import { descripcionEnUnaLinea } from "@/lib/renglones-mecanica";
 import { resumenRuedas } from "@/lib/ruedas";
 
 export const metadata: Metadata = { title: "Trabajo guardado" };
@@ -106,7 +107,9 @@ export default async function PaginaGuardado({
               : null,
             // Cada tipo se resume con lo suyo: la descripción en
             // mecánica, el trabajo hecho sobre las ruedas en gomería.
-            service.tipo === "mecanica" ? service.trabajo_descripcion : null,
+            service.tipo === "mecanica"
+              ? descripcionEnUnaLinea(service.trabajo_descripcion)
+              : null,
             service.tipo === "neumaticos"
               ? resumenRuedas(service.service_ruedas ?? [], service.alineacion ?? false)
               : null,
@@ -120,7 +123,7 @@ export default async function PaginaGuardado({
           <div className="mt-2.5 border-t border-line pt-2.5 text-ui text-ink-60">
             <p>
               <span className="font-semibold text-ink">Mecánica de la misma visita:</span>{" "}
-              {adjunta.trabajo_descripcion}
+              {descripcionEnUnaLinea(adjunta.trabajo_descripcion)}
             </p>
             {/* Un enlace de una línea con 44 px de alto: el mecánico lo toca
                 con el cliente parado en el mostrador. */}

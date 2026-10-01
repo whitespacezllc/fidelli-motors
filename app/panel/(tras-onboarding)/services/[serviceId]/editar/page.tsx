@@ -2,12 +2,22 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { obtenerSesion, panelSuspendido } from "@/lib/auth/session";
+import {
+  featureHabilitada,
+  obtenerSesion,
+  panelSuspendido,
+} from "@/lib/auth/session";
 import { BloqueoSuspension } from "@/components/panel/bloqueo-suspension";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { clasesBoton } from "@/components/ui/boton";
 import { Carton } from "@/components/services/carton";
 import { estadoService, puedeEditarse } from "@/lib/servicios";
+import { hoyISO } from "@/lib/fechas";
+import {
+  LIMITE_MAS_USADOS,
+  aceitesMasUsados,
+  desdeMasUsados,
+} from "@/lib/aceite";
 
 export const metadata: Metadata = { title: "Editar trabajo" };
 
@@ -32,7 +42,7 @@ export default async function PaginaEditarService({ params }: Props) {
   const supabase = await createClient();
   const sesion = await obtenerSesion();
 
-  const [serviceRes, sucursalesRes, productosRes, configRes] =
+  const [serviceRes, sucursalesRes, productosRes, configRes, masUsadosRes] =
     await Promise.all([
       supabase
         .from("services")
@@ -61,6 +71,20 @@ export default async function PaginaEditarService({ params }: Props) {
         .eq("activo", true)
         .order("nombre"),
       supabase.from("config_experiencia").select("color_primario, color_carton").maybeSingle(),
+      // Los aceites que el taller más usó en sus services de los últimos
+      // 90 días: son los chips del bloque «Aceite de motor». Chica (una
+      // columna, 300 filas como mucho) y se cuenta en TypeScript. El RLS
+      // recorta al tenant.
+      supabase
+        .from("services")
+        .select("aceite_producto_id")
+        .eq("tipo", "service")
+        .eq("anulado", false)
+        .not("aceite_producto_id", "is", null)
+        .gte("fecha", desdeMasUsados(hoyISO()))
+        .order("fecha", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(LIMITE_MAS_USADOS),
     ]);
 
   const service = serviceRes.data;
@@ -263,6 +287,7 @@ export default async function PaginaEditarService({ params }: Props) {
             unidad: p.unidad,
             litrosSugeridos: p.litros_sugeridos,
           })),
+          aceitesMasUsados: aceitesMasUsados(masUsadosRes.data ?? []),
           ultimoService:
             anterior && anterior.kilometros != null
               ? { fecha: anterior.fecha, kilometros: anterior.kilometros }
@@ -274,6 +299,10 @@ export default async function PaginaEditarService({ params }: Props) {
           // Editar no toca el canje: si el service se guardó con premio,
           // el canje ya está registrado y atado a él.
           premioDisponible: null,
+          // La orden de trabajo de una mecánica oculta alineación y
+          // rotación cuando el taller tiene gomería (se cargan como
+          // Neumáticos): la misma señal que en el alta.
+          puedeNeumaticos: featureHabilitada(sesion, "neumaticos"),
         }}
         edicion={{
           serviceId: service.id,

@@ -8,6 +8,11 @@ import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { clasesBoton } from "@/components/ui/boton";
 import { Carton } from "@/components/services/carton";
 import { formatearHora, hoyISO } from "@/lib/fechas";
+import {
+  LIMITE_MAS_USADOS,
+  aceitesMasUsados,
+  desdeMasUsados,
+} from "@/lib/aceite";
 import { COOKIE_SUCURSAL, COOKIE_TIPO_TRABAJO } from "@/lib/preferencias";
 import { esTipoTrabajo, type TipoTrabajo } from "@/lib/trabajos";
 
@@ -48,6 +53,7 @@ export default async function PaginaCarton({
     configNeumRes,
     premioRes,
     pendientesRes,
+    masUsadosRes,
   ] = await Promise.all([
       supabase
         .from("vehiculos")
@@ -108,6 +114,20 @@ export default async function PaginaCarton({
             .eq("estado", "pendiente")
             .order("created_at")
         : Promise.resolve({ data: null }),
+      // Los aceites que el taller más usó en sus services de los últimos
+      // 90 días: son los chips del bloque «Aceite de motor». Chica (una
+      // columna, 300 filas como mucho) y se cuenta en TypeScript. El RLS
+      // recorta al tenant.
+      supabase
+        .from("services")
+        .select("aceite_producto_id")
+        .eq("tipo", "service")
+        .eq("anulado", false)
+        .not("aceite_producto_id", "is", null)
+        .gte("fecha", desdeMasUsados(hoyISO()))
+        .order("fecha", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(LIMITE_MAS_USADOS),
     ]);
 
   const vehiculo = vehiculoRes.data;
@@ -233,6 +253,7 @@ export default async function PaginaCarton({
             unidad: p.unidad,
             litrosSugeridos: p.litros_sugeridos,
           })),
+          aceitesMasUsados: aceitesMasUsados(masUsadosRes.data ?? []),
           ultimoService:
             ultimo && ultimo.kilometros != null
               ? { fecha: ultimo.fecha, kilometros: ultimo.kilometros }

@@ -161,8 +161,13 @@ casos, **todos sin navegar**:
 conjuntos de datos en paralelo. En orden: cabecera sticky con selector de sucursal ·
 **selector de tipo** (solo con la feature) · aviso de "ya hay un service de hoy" ·
 pendientes abiertos del auto para tildar · fecha · **kilómetros** (avisa en ámbar si son
-menos que el último, pero **no bloquea**) · **aceite** (viscosidad con 11 chips SAE +
-producto buscable del catálogo con precio y stock + litros) · **los 11 renglones** en 4
+menos que el último, pero **no bloquea**) · **aceite** (primero el producto, opcional:
+hasta 4 chips con los aceites que el taller más usó en 90 días, el buscador «Nombre o
+marca…» para el resto —con la lista en el flujo— y el alta rápida con el nombre
+precargado desde lo que se escribió; después la viscosidad, obligatoria: 11 chips SAE
+más «Otra», que abre el campo libre; elegir un aceite completa la viscosidad vacía con
+la de su nombre y, si no coinciden, avisa sin pisar; litros solo si el aceite descuenta
+a granel) · **los 11 renglones** en 4
 grupos · premio · **próximo service** (chips +8.000 / +10.000 / +15.000) · observaciones ·
 pendientes nuevos.
 
@@ -192,7 +197,7 @@ guardado no se reescribe).
 | Descripción del trabajo | no existe | **obligatoria**, ≥5 caracteres |
 | Kilómetros | **obligatorios** | opcionales |
 | Aceite (viscosidad, producto, litros) | obligatorio | **no existe** |
-| Los 11 renglones | sí | **no** — en su lugar, renglones libres "Repuestos y tareas" |
+| Los 11 renglones | sí | **no** — en su lugar, la **orden de trabajo**: 42 renglones en 6 grupos que escriben la descripción (tocar uno escribe su línea; tocarlo de nuevo la borra), más los renglones libres de "Repuestos" |
 | Próximo service | sí | **no existe** |
 | Premio | sí | **solo si el premio cuenta "todos los trabajos"** |
 | Papel que se dibuja | cartón de 11 renglones | orden de trabajo |

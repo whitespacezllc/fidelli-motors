@@ -13,6 +13,7 @@ import { obtenerSesion, featureHabilitada } from "@/lib/auth/session";
 import { formatearCuit } from "@/lib/cuit";
 import { formatearFecha, formatearMesAnio } from "@/lib/fechas";
 import { resumenRuedas } from "@/lib/ruedas";
+import { descripcionEnUnaLinea } from "@/lib/renglones-mecanica";
 import type { TipoTrabajo } from "@/lib/trabajos";
 
 // De qué se trató el trabajo, en una línea, por tipo. Es un Record y no
@@ -34,7 +35,7 @@ type FilaTrabajo = {
 
 const RESUMEN_POR_TIPO: Record<TipoTrabajo, (s: FilaTrabajo) => string> = {
   service: (s) => [s.aceite_tipo, s.aceite_nombre].filter(Boolean).join(" · "),
-  mecanica: (s) => s.trabajo_descripcion ?? "",
+  mecanica: (s) => descripcionEnUnaLinea(s.trabajo_descripcion) ?? "",
   neumaticos: (s) =>
     resumenRuedas(s.service_ruedas ?? [], s.alineacion ?? false),
 };

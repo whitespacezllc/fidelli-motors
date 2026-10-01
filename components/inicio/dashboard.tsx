@@ -6,6 +6,7 @@ import { GraficoServices } from "@/components/inicio/grafico-services";
 import { formatearKm } from "@/lib/renglones";
 import { ETIQUETA_TIPO, type TipoTrabajo } from "@/lib/trabajos";
 import { resumenRuedas } from "@/lib/ruedas";
+import { descripcionEnUnaLinea } from "@/lib/renglones-mecanica";
 
 // De qué se trató cada uno de los últimos trabajos, por tipo: el service
 // no dice nada (sus kilómetros van en la celda de la derecha), la mecánica
@@ -15,7 +16,7 @@ const RESUMEN_POR_TIPO: Record<
   (s: DatosInicio["ultimos"][number]) => string | null
 > = {
   service: () => null,
-  mecanica: (s) => s.descripcion ?? null,
+  mecanica: (s) => descripcionEnUnaLinea(s.descripcion),
   neumaticos: (s) => resumenRuedas(s.ruedas ?? [], s.alineacion ?? false) || null,
 };
 import { formatearFechaHora, nombreDelMes } from "@/lib/fechas";

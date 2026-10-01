@@ -11,6 +11,7 @@ import { FilaService } from "@/components/services/fila-service";
 import { BotonExportar } from "@/components/panel/boton-exportar";
 import { estadoService } from "@/lib/servicios";
 import { resumenRuedas } from "@/lib/ruedas";
+import { descripcionEnUnaLinea } from "@/lib/renglones-mecanica";
 import {
   aplicarFiltrosTrabajos,
   filtrosTrabajos,
@@ -77,11 +78,12 @@ export default async function PaginaServices({
     id: s.id,
     tipo: s.tipo,
     // La columna del medio dice de qué se trató el trabajo: la
-    // descripción en mecánica, el resumen de las ruedas en gomería.
+    // descripción en mecánica (en una línea: la orden de trabajo la
+    // escribe en varias), el resumen de las ruedas en gomería.
     descripcion:
       s.tipo === "neumaticos"
         ? resumenRuedas(s.service_ruedas ?? [], s.alineacion ?? false)
-        : s.trabajo_descripcion,
+        : descripcionEnUnaLinea(s.trabajo_descripcion),
     creado: s.created_at,
     patente: s.vehiculos.patente,
     vehiculo:

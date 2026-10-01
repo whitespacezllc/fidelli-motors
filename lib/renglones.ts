@@ -142,6 +142,13 @@ export function normalizarViscosidad(texto: string): string {
   return texto.toUpperCase().replace(/[\s-]/g, "");
 }
 
+/** La viscosidad que trae un nombre de producto ("Magnatec 5W30 Castrol"
+ *  → "5W30"; "Elaion F50 5w-40" → "5W40"). null si no trae. */
+export function viscosidadDelNombre(nombre: string): string | null {
+  const m = nombre.toUpperCase().match(/\b(\d{1,2})W-?(\d{2})\b/);
+  return m ? `${m[1]}W${m[2]}` : null;
+}
+
 export function esViscosidadValida(texto: string): boolean {
   return /^\d{1,2}W\d{2}$/.test(normalizarViscosidad(texto));
 }

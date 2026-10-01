@@ -15,6 +15,7 @@ import { ESTILO_PAPEL } from "@/lib/cliente/tema";
 import { ETIQUETA_TIPO, type TipoTrabajo } from "@/lib/trabajos";
 import { plazoEdicionTexto } from "@/lib/servicios";
 import { resumenRuedas } from "@/lib/ruedas";
+import { descripcionEnUnaLinea } from "@/lib/renglones-mecanica";
 
 // LA LÍNEA SECUNDARIA DEL ACORDEÓN, por tipo. Antes era un ternario con
 // el service como caso por ausencia; con tres tipos eso le mostraba al
@@ -23,7 +24,10 @@ import { resumenRuedas } from "@/lib/ruedas";
 const RESUMEN_POR_TIPO: Record<TipoTrabajo, (s: ServiceCarton) => string> = {
   service: (s) =>
     `${formatearKm(s.kilometros ?? 0)} km${s.sucursal ? ` · ${s.sucursal}` : ""}`,
-  mecanica: (s) => [s.trabajoDescripcion, s.sucursal].filter(Boolean).join(" · "),
+  mecanica: (s) =>
+    [descripcionEnUnaLinea(s.trabajoDescripcion), s.sucursal]
+      .filter(Boolean)
+      .join(" · "),
   neumaticos: (s) =>
     [
       s.kilometros != null ? `${formatearKm(s.kilometros)} km` : null,
