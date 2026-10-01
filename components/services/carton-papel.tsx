@@ -237,10 +237,13 @@ export function CartonPapel({
         <p className={`font-brand ${e.nombre} font-bold text-ink`}>
           {datos.lubricentroNombre}
         </p>
+        {/* La bajada nombra LA PIEZA, no el negocio —como «Orden de
+            trabajo» en las otras dos—: la mitad de los talleres no son
+            lubricentros. */}
         <p
           className={`${e.bajada} font-semibold tracking-[0.14em] uppercase`}
         >
-          Lubricentro
+          Service
         </p>
       </div>
 
