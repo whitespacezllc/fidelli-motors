@@ -6,6 +6,7 @@ import { clasesBoton } from "@/components/ui/boton";
 import { formatearFecha } from "@/lib/fechas";
 import {
   VISCOSIDADES_SAE,
+  esViscosidadValida,
   normalizarViscosidad,
   formatearKm,
 } from "@/lib/renglones";
@@ -218,53 +219,147 @@ export function CampoKilometros({
   );
 }
 
-// ---------- Viscosidad: texto libre + las once SAE ----------
+// ---------- Viscosidad: las once SAE y «Otra» ----------
+// Los chips son el control; el campo libre aparece SOLO al tocar «Otra».
+// Antes era al revés —un cuadro vacío sin placeholder arriba de los
+// chips— y lo primero que veía el mecánico, obligatorio, no decía qué iba.
+// Es el patrón de «Próximo service» (atajos + «Otro») copiado, no
+// generalizado.
+//
+// El valor sigue siendo UN string. Un valor que coincide con un chip
+// prende ese chip; cualquier otro prende «Otra» y muestra el campo con el
+// valor (un service guardado con 0W16 abre así en la edición). El estado
+// propio existe solo para el rato en que «Otra» está tocada y el campo
+// todavía vacío.
 export function SelectorViscosidad({
   valor,
   alCambiar,
+  delProducto = null,
 }: {
   valor: string;
   alCambiar: (valor: string) => void;
+  /** El aceite elegido, cuando su nombre trae viscosidad ("Magnatec 5W30"
+   *  → 5W30). Con otra marcada se avisa y se ofrece la del producto.
+   *  Nunca pisa sola. */
+  delProducto?: { nombre: string; viscosidad: string } | null;
 }) {
+  const [otraElegida, setOtraElegida] = useState(false);
+  // Lo último que salió del campo de «Otra»: si el valor cambia por otro
+  // lado (un chip de aceite, «Usar 5W30») el campo se va solo.
+  const [escrito, setEscrito] = useState<string | null>(null);
+  // El campo toma el foco solo cuando se acaba de tocar «Otra», no al
+  // abrir un service que ya se guardó con una viscosidad propia.
+  const [recienElegida, setRecienElegida] = useState(false);
+
+  const normal = normalizarViscosidad(valor);
+  const enLista = (VISCOSIDADES_SAE as readonly string[]).includes(normal);
+  const campoVisible =
+    (normal !== "" && !enLista) ||
+    (otraElegida && (valor === "" || valor === escrito));
+  const otraPrendida = campoVisible && !enLista;
+
+  function elegir(v: string) {
+    setOtraElegida(false);
+    setEscrito(null);
+    alCambiar(v);
+  }
+
+  const claseChip = (activa: boolean) =>
+    `flex h-11 items-center rounded-md border px-2.5 text-ui tabular-nums transition-colors ${
+      activa
+        ? "border-ink bg-ink font-semibold text-white"
+        : "border-line bg-base text-ink-60 hover:bg-surface"
+    }`;
+
   return (
-    <>
-      <label htmlFor="viscosidad" className={CLASE_LABEL}>
+    <div role="group" aria-labelledby="viscosidad-etiqueta">
+      <span id="viscosidad-etiqueta" className={CLASE_LABEL}>
         Viscosidad
-      </label>
-      <input
-        id="viscosidad"
-        value={valor}
-        onChange={(e) => alCambiar(e.target.value.toUpperCase())}
-        autoCapitalize="characters"
-        autoComplete="off"
-        className={`${CLASE_CAMPO} tabular-nums`}
-      />
+      </span>
       {/* Las once SAE de un tap, en el orden del rubro y SIEMPRE en
           el mismo lugar: la posición fija hace memoria muscular.
-          Ninguna viene marcada — el campo arranca vacío a propósito
-          (la viscosidad nunca se autocompleta) — y el texto libre
-          sigue: el que tiene el envase en la mano sabe más. */}
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {VISCOSIDADES_SAE.map((v) => {
-          const activa = normalizarViscosidad(valor) === v;
-          return (
-            <button
-              key={v}
-              type="button"
-              onClick={() => alCambiar(v)}
-              aria-pressed={activa}
-              className={`flex h-11 items-center rounded-md border px-2.5 text-ui tabular-nums transition-colors ${
-                activa
-                  ? "border-ink bg-ink font-semibold text-white"
-                  : "border-line bg-base text-ink-60 hover:bg-surface"
-              }`}
-            >
-              {v}
-            </button>
-          );
-        })}
+          Ninguna viene marcada —la viscosidad nunca se autocompleta sin
+          que el mecánico elija algo— y «Otra» va al final, punteada. */}
+      <div className="flex flex-wrap gap-1.5">
+        {VISCOSIDADES_SAE.map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => elegir(v)}
+            aria-pressed={normal === v}
+            className={claseChip(normal === v)}
+          >
+            {v}
+          </button>
+        ))}
+        <button
+          type="button"
+          data-viscosidad-otra
+          onClick={() => {
+            if (otraPrendida) return;
+            setOtraElegida(true);
+            setEscrito(null);
+            setRecienElegida(true);
+            alCambiar("");
+          }}
+          aria-pressed={otraPrendida}
+          className={`${claseChip(otraPrendida)} ${otraPrendida ? "" : "border-dashed"}`}
+        >
+          Otra
+        </button>
       </div>
-    </>
+
+      {/* El texto libre, para lo que no está (un 0W16 de japoneses
+          nuevos): el que tiene el envase en la mano sabe más. Angosto y
+          en su propia fila, para no romper la de los chips. */}
+      {campoVisible && (
+        <div className="mt-2 max-w-[200px]">
+          <input
+            id="viscosidad"
+            value={valor}
+            onChange={(e) => {
+              const v = e.target.value.toUpperCase();
+              setEscrito(v);
+              alCambiar(v);
+            }}
+            // Si lo escrito terminó siendo una de las once, el chip ya la
+            // muestra: al salir, el campo se va.
+            onBlur={() => {
+              if (enLista) setOtraElegida(false);
+            }}
+            autoFocus={recienElegida}
+            autoCapitalize="characters"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="Ej: 0W16"
+            aria-label="Otra viscosidad"
+            className={`${CLASE_CAMPO} tabular-nums`}
+          />
+        </div>
+      )}
+
+      {/* El nombre del aceite ya dice su viscosidad. Si se marcó otra, se
+          avisa y se ofrece; decidir, decide el mecánico. Con el campo a
+          medio escribir no se avisa: recién con una viscosidad entera. */}
+      {delProducto &&
+        esViscosidadValida(valor) &&
+        delProducto.viscosidad !== normal && (
+          <p
+            data-aviso-viscosidad
+            className="mt-1 text-ui text-overdue tabular-nums"
+          >
+            {delProducto.nombre} es {delProducto.viscosidad} y marcaste{" "}
+            {normal}.{" "}
+            <button
+              type="button"
+              onClick={() => elegir(delProducto.viscosidad)}
+              className="inline-flex min-h-11 items-center font-semibold text-brand"
+            >
+              Usar {delProducto.viscosidad}
+            </button>
+          </p>
+        )}
+    </div>
   );
 }
 
