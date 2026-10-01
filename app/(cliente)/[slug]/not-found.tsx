@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { LubricentroNoEncontrado } from "@/components/cliente/lubricentro-no-encontrado";
 
-export const metadata: Metadata = { title: "Lubricentro no encontrado" };
+export const metadata: Metadata = { title: "Taller no encontrado" };
 
 // Va como boundary de not-found y no como un render más de la página para
 // que la respuesta sea un 404 de verdad. `/[slug]` matchea cualquier cosa

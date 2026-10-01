@@ -1,14 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { clasesBoton } from "@/components/ui/boton";
 import { formatearFecha } from "@/lib/fechas";
 import {
   VISCOSIDADES_SAE,
+  esViscosidadValida,
   normalizarViscosidad,
   formatearKm,
 } from "@/lib/renglones";
+import { normalizar } from "@/lib/texto";
 import type { VehiculoIdentificado } from "@/app/panel/(tras-onboarding)/services/nuevo/actions";
 
 // ============================================================
@@ -218,53 +220,147 @@ export function CampoKilometros({
   );
 }
 
-// ---------- Viscosidad: texto libre + las once SAE ----------
+// ---------- Viscosidad: las once SAE y «Otra» ----------
+// Los chips son el control; el campo libre aparece SOLO al tocar «Otra».
+// Antes era al revés —un cuadro vacío sin placeholder arriba de los
+// chips— y lo primero que veía el mecánico, obligatorio, no decía qué iba.
+// Es el patrón de «Próximo service» (atajos + «Otro») copiado, no
+// generalizado.
+//
+// El valor sigue siendo UN string. Un valor que coincide con un chip
+// prende ese chip; cualquier otro prende «Otra» y muestra el campo con el
+// valor (un service guardado con 0W16 abre así en la edición). El estado
+// propio existe solo para el rato en que «Otra» está tocada y el campo
+// todavía vacío.
 export function SelectorViscosidad({
   valor,
   alCambiar,
+  delProducto = null,
 }: {
   valor: string;
   alCambiar: (valor: string) => void;
+  /** El aceite elegido, cuando su nombre trae viscosidad ("Magnatec 5W30"
+   *  → 5W30). Con otra marcada se avisa y se ofrece la del producto.
+   *  Nunca pisa sola. */
+  delProducto?: { nombre: string; viscosidad: string } | null;
 }) {
+  const [otraElegida, setOtraElegida] = useState(false);
+  // Lo último que salió del campo de «Otra»: si el valor cambia por otro
+  // lado (un chip de aceite, «Usar 5W30») el campo se va solo.
+  const [escrito, setEscrito] = useState<string | null>(null);
+  // El campo toma el foco solo cuando se acaba de tocar «Otra», no al
+  // abrir un service que ya se guardó con una viscosidad propia.
+  const [recienElegida, setRecienElegida] = useState(false);
+
+  const normal = normalizarViscosidad(valor);
+  const enLista = (VISCOSIDADES_SAE as readonly string[]).includes(normal);
+  const campoVisible =
+    (normal !== "" && !enLista) ||
+    (otraElegida && (valor === "" || valor === escrito));
+  const otraPrendida = campoVisible && !enLista;
+
+  function elegir(v: string) {
+    setOtraElegida(false);
+    setEscrito(null);
+    alCambiar(v);
+  }
+
+  const claseChip = (activa: boolean) =>
+    `flex h-11 items-center rounded-md border px-2.5 text-ui tabular-nums transition-colors ${
+      activa
+        ? "border-ink bg-ink font-semibold text-white"
+        : "border-line bg-base text-ink-60 hover:bg-surface"
+    }`;
+
   return (
-    <>
-      <label htmlFor="viscosidad" className={CLASE_LABEL}>
+    <div role="group" aria-labelledby="viscosidad-etiqueta">
+      <span id="viscosidad-etiqueta" className={CLASE_LABEL}>
         Viscosidad
-      </label>
-      <input
-        id="viscosidad"
-        value={valor}
-        onChange={(e) => alCambiar(e.target.value.toUpperCase())}
-        autoCapitalize="characters"
-        autoComplete="off"
-        className={`${CLASE_CAMPO} tabular-nums`}
-      />
+      </span>
       {/* Las once SAE de un tap, en el orden del rubro y SIEMPRE en
           el mismo lugar: la posición fija hace memoria muscular.
-          Ninguna viene marcada — el campo arranca vacío a propósito
-          (la viscosidad nunca se autocompleta) — y el texto libre
-          sigue: el que tiene el envase en la mano sabe más. */}
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {VISCOSIDADES_SAE.map((v) => {
-          const activa = normalizarViscosidad(valor) === v;
-          return (
-            <button
-              key={v}
-              type="button"
-              onClick={() => alCambiar(v)}
-              aria-pressed={activa}
-              className={`flex h-11 items-center rounded-md border px-2.5 text-ui tabular-nums transition-colors ${
-                activa
-                  ? "border-ink bg-ink font-semibold text-white"
-                  : "border-line bg-base text-ink-60 hover:bg-surface"
-              }`}
-            >
-              {v}
-            </button>
-          );
-        })}
+          Ninguna viene marcada —la viscosidad nunca se autocompleta sin
+          que el mecánico elija algo— y «Otra» va al final, punteada. */}
+      <div className="flex flex-wrap gap-1.5">
+        {VISCOSIDADES_SAE.map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => elegir(v)}
+            aria-pressed={normal === v}
+            className={claseChip(normal === v)}
+          >
+            {v}
+          </button>
+        ))}
+        <button
+          type="button"
+          data-viscosidad-otra
+          onClick={() => {
+            if (otraPrendida) return;
+            setOtraElegida(true);
+            setEscrito(null);
+            setRecienElegida(true);
+            alCambiar("");
+          }}
+          aria-pressed={otraPrendida}
+          className={`${claseChip(otraPrendida)} ${otraPrendida ? "" : "border-dashed"}`}
+        >
+          Otra
+        </button>
       </div>
-    </>
+
+      {/* El texto libre, para lo que no está (un 0W16 de japoneses
+          nuevos): el que tiene el envase en la mano sabe más. Angosto y
+          en su propia fila, para no romper la de los chips. */}
+      {campoVisible && (
+        <div className="mt-2 max-w-[200px]">
+          <input
+            id="viscosidad"
+            value={valor}
+            onChange={(e) => {
+              const v = e.target.value.toUpperCase();
+              setEscrito(v);
+              alCambiar(v);
+            }}
+            // Si lo escrito terminó siendo una de las once, el chip ya la
+            // muestra: al salir, el campo se va.
+            onBlur={() => {
+              if (enLista) setOtraElegida(false);
+            }}
+            autoFocus={recienElegida}
+            autoCapitalize="characters"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="Ej: 0W16"
+            aria-label="Otra viscosidad"
+            className={`${CLASE_CAMPO} tabular-nums`}
+          />
+        </div>
+      )}
+
+      {/* El nombre del aceite ya dice su viscosidad. Si se marcó otra, se
+          avisa y se ofrece; decidir, decide el mecánico. Con el campo a
+          medio escribir no se avisa: recién con una viscosidad entera. */}
+      {delProducto &&
+        esViscosidadValida(valor) &&
+        delProducto.viscosidad !== normal && (
+          <p
+            data-aviso-viscosidad
+            className="mt-1 text-ui text-overdue tabular-nums"
+          >
+            {delProducto.nombre} es {delProducto.viscosidad} y marcaste{" "}
+            {normal}.{" "}
+            <button
+              type="button"
+              onClick={() => elegir(delProducto.viscosidad)}
+              className="inline-flex min-h-11 items-center font-semibold text-brand"
+            >
+              Usar {delProducto.viscosidad}
+            </button>
+          </p>
+        )}
+    </div>
   );
 }
 
@@ -351,99 +447,194 @@ export function RenglonInterruptor({
   );
 }
 
-// ---------- Producto de aceite, con buscador — SOLO el panel ----------
+// ---------- Producto del catálogo, con buscador — SOLO el panel ----------
 // La landing sigue usando el select de arriba: su simulación no se toca.
-// Acá el catálogo real puede tener decenas de aceites, y el mecánico
+// Acá el catálogo real puede tener decenas de productos, y el mecánico
 // escribe tres letras en vez de scrollear una lista. Elegirlo muestra el
-// precio y el stock, y precarga los litros del service (litros_sugeridos)
-// sin pedir un toque más.
+// precio y el stock.
 export type ProductoBuscable = {
   id: string;
   nombre: string;
+  /** La marca cruda: se busca también por ella, y se le saca al nombre
+   *  cuando hay que nombrar el producto en una oración. */
+  marca?: string | null;
   precioVenta: number | null;
   stock: number | null;
   unidad: string;
   litrosSugeridos: number | null;
 };
 
+/** El nombre sin la marca. En el cartón el nombre llega armado como
+ *  "Magnatec 5W30 · Castrol" (así se lee en la lista y en los chips); en
+ *  una oración —«Quitar Magnatec 5W30»— va el producto a secas. */
+export function nombreSinMarca(p: {
+  nombre: string;
+  marca?: string | null;
+}): string {
+  const sufijo = p.marca ? ` · ${p.marca}` : "";
+  return sufijo && p.nombre.endsWith(sufijo)
+    ? p.nombre.slice(0, -sufijo.length)
+    : p.nombre;
+}
+
 // Nació para el aceite del cartón y lo usa también cada rueda del trabajo
 // de gomería, que busca en la categoría `neumatico`. Es el MISMO
-// componente y no una variante: lo único que cambia entre los dos usos es
-// el catálogo que recibe y el `id` del campo, que tiene que ser único
-// cuando hay cinco en la misma pantalla.
+// componente y no una variante: lo que cambia entre los dos usos es el
+// catálogo que recibe, el `id` del campo (único cuando hay cinco en la
+// misma pantalla) y dónde se ve el elegido.
+//
+// LA LISTA VA EN EL FLUJO, debajo del campo, y empuja lo de abajo. Flotando
+// (absolute) quedaba cortada por el teclado del celular. Por eso tampoco
+// se cierra al perder el foco: cerrarla ahí corre de lugar lo de abajo en
+// la mitad del toque, y el toque cae en otro lado. Se cierra al elegir, al
+// tocar afuera —cuando el toque ya terminó—, con Escape, o cuando el foco
+// sale del componente POR TECLADO (con Tab se recorre la lista, que son
+// botones; recién al pasar el último ítem se cierra).
 export function SelectorProductoBuscable({
   id = "producto-buscable",
   etiqueta = "Producto",
+  ariaLabel,
   productoId,
   alElegir,
   productos,
   alPedirAlta,
+  elegidoAfuera = false,
 }: {
   id?: string;
-  etiqueta?: string;
+  /** null = sin label propio: lo pone quien lo usa (y pasa `ariaLabel`). */
+  etiqueta?: string | null;
+  ariaLabel?: string;
   productoId: string;
   /** null = sin producto. */
   alElegir: (producto: ProductoBuscable | null) => void;
   productos: ProductoBuscable[];
-  alPedirAlta?: () => void;
+  /** El alta rápida, con lo que se había escrito ("" si no había nada).
+   *  Sin esto no se ofrece: donde no hay alta, no se inventa. */
+  alPedirAlta?: (texto: string) => void;
+  /** El elegido se muestra afuera (los chips del aceite): el campo queda
+   *  solo para buscar y se vacía al elegir. */
+  elegidoAfuera?: boolean;
 }) {
   const elegido = productos.find((p) => p.id === productoId) ?? null;
-  const [texto, setTexto] = useState(elegido?.nombre ?? "");
+  const [texto, setTexto] = useState(
+    elegidoAfuera ? "" : (elegido?.nombre ?? ""),
+  );
   const [abierto, setAbierto] = useState(false);
+  const caja = useRef<HTMLDivElement>(null);
+  const campo = useRef<HTMLInputElement>(null);
+  // ¿El foco se está moviendo con Tab? Solo ahí el blur cierra la lista.
+  const conTab = useRef(false);
 
-  const filtrados = texto.trim()
+  useEffect(() => {
+    if (!abierto) return;
+    function alTocarAfuera(e: MouseEvent) {
+      if (!caja.current?.contains(e.target as Node)) setAbierto(false);
+    }
+    document.addEventListener("click", alTocarAfuera);
+    return () => document.removeEventListener("click", alTocarAfuera);
+  }, [abierto]);
+
+  // Sin tildes ni mayúsculas, y también por la marca.
+  const buscado = normalizar(texto);
+  const filtrados = buscado
     ? productos.filter((p) =>
-        p.nombre.toLowerCase().includes(texto.trim().toLowerCase()),
+        normalizar(`${p.nombre} ${p.marca ?? ""}`).includes(buscado),
       )
     : productos;
+  const coincideExacto = productos.some(
+    (p) =>
+      normalizar(p.nombre) === buscado ||
+      normalizar(nombreSinMarca(p)) === buscado,
+  );
+  const ofreceAlta = Boolean(alPedirAlta) && !(buscado && coincideExacto);
+  const sinCoincidencias =
+    !alPedirAlta && buscado !== "" && filtrados.length === 0;
+  const hayLista =
+    elegido !== null || filtrados.length > 0 || ofreceAlta || sinCoincidencias;
+
+  function cerrar() {
+    setAbierto(false);
+    // El foco se va del campo: en el celular, eso baja el teclado.
+    campo.current?.blur();
+  }
+
+  const claseItem =
+    "flex min-h-11 w-full items-center px-3.5 text-left text-ui hover:bg-surface";
 
   return (
-    <div className="relative">
-      <label htmlFor={id} className={CLASE_LABEL}>
-        {etiqueta} <span className="text-ink-40 normal-case">(opcional)</span>
-      </label>
+    <div
+      ref={caja}
+      onKeyDown={(e) => {
+        conTab.current = e.key === "Tab";
+        if (e.key === "Escape") setAbierto(false);
+      }}
+      onBlur={(e) => {
+        if (conTab.current && !e.currentTarget.contains(e.relatedTarget))
+          setAbierto(false);
+        conTab.current = false;
+      }}
+    >
+      {etiqueta !== null && (
+        <label htmlFor={id} className={CLASE_LABEL}>
+          {etiqueta} <span className="text-ink-40 normal-case">(opcional)</span>
+        </label>
+      )}
       <input
+        ref={campo}
         id={id}
         value={texto}
         onChange={(e) => {
           setTexto(e.target.value);
           setAbierto(true);
-          // Escribir de nuevo invalida la elección anterior.
-          if (elegido && e.target.value !== elegido.nombre) alElegir(null);
+          // Escribir de nuevo invalida la elección anterior (cuando el
+          // campo la estaba mostrando).
+          if (!elegidoAfuera && elegido && e.target.value !== elegido.nombre)
+            alElegir(null);
         }}
         onFocus={() => setAbierto(true)}
-        onBlur={() => setTimeout(() => setAbierto(false), 150)}
-        placeholder="Buscar en el catálogo…"
+        onClick={() => setAbierto(true)}
+        placeholder="Nombre o marca…"
+        aria-label={etiqueta === null ? ariaLabel : undefined}
+        role="combobox"
+        aria-expanded={abierto && hayLista}
+        aria-controls={`${id}-lista`}
         autoComplete="off"
         className={CLASE_CAMPO}
       />
-      {abierto && (
-        <ul className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-line bg-base shadow-lg">
-          <li>
-            <button
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                setTexto("");
-                setAbierto(false);
-                alElegir(null);
-              }}
-              className="flex min-h-11 w-full items-center px-3.5 text-left text-ui text-ink-60 hover:bg-surface"
-            >
-              Sin producto
-            </button>
-          </li>
+      {abierto && hayLista && (
+        <ul
+          id={`${id}-lista`}
+          className="mt-1 max-h-72 divide-y divide-line overflow-y-auto rounded-md border border-line bg-base"
+        >
+          {/* «Quitar» existe solo cuando hay algo que quitar. Con el campo
+              vacío, el primer ítem es el primer producto. */}
+          {elegido && (
+            <li>
+              <button
+                type="button"
+                data-quitar-producto
+                onClick={() => {
+                  setTexto("");
+                  cerrar();
+                  alElegir(null);
+                }}
+                className={`${claseItem} text-ink-60`}
+              >
+                Quitar {nombreSinMarca(elegido)}
+              </button>
+            </li>
+          )}
           {filtrados.map((p) => (
             <li key={p.id}>
               <button
                 type="button"
-                onMouseDown={(e) => e.preventDefault()}
+                data-producto={p.id}
                 onClick={() => {
-                  setTexto(p.nombre);
-                  setAbierto(false);
+                  setTexto(elegidoAfuera ? "" : p.nombre);
+                  cerrar();
                   alElegir(p);
                 }}
-                className="flex min-h-11 w-full flex-wrap items-center gap-x-2 px-3.5 py-1.5 text-left text-ui text-ink hover:bg-surface"
+                className={`${claseItem} flex-wrap gap-x-2 py-1.5 text-ink`}
               >
                 <span className="min-w-0 flex-1 truncate">{p.nombre}</span>
                 <span className="shrink-0 text-label text-ink-60 tabular-nums">
@@ -461,18 +652,30 @@ export function SelectorProductoBuscable({
               </button>
             </li>
           ))}
-          {alPedirAlta && (
-            <li className="border-t border-line">
+          {sinCoincidencias && (
+            <li className={`${claseItem} text-ink-40 hover:bg-transparent`}>
+              Ningún producto coincide.
+            </li>
+          )}
+          {/* El alta no tira lo que ya se escribió: lo lleva como nombre. */}
+          {alPedirAlta && ofreceAlta && (
+            <li>
               <button
                 type="button"
-                onMouseDown={(e) => e.preventDefault()}
+                data-agregar-producto
                 onClick={() => {
+                  const escrito = texto.trim();
+                  if (elegidoAfuera) setTexto("");
                   setAbierto(false);
-                  alPedirAlta();
+                  alPedirAlta(escrito);
                 }}
-                className="flex min-h-11 w-full items-center px-3.5 text-left text-ui font-semibold text-brand hover:bg-surface"
+                className={`${claseItem} font-semibold text-brand`}
               >
-                + Agregar producto…
+                <span className="min-w-0 truncate">
+                  {texto.trim()
+                    ? `+ Agregar “${texto.trim()}” al catálogo`
+                    : "+ Agregar producto…"}
+                </span>
               </button>
             </li>
           )}

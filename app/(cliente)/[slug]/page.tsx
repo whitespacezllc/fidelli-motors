@@ -23,7 +23,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   if (!lubricentro) {
     return {
-      title: { absolute: "Lubricentro no encontrado" },
+      title: { absolute: "Taller no encontrado" },
       robots: { index: false, follow: false },
     };
   }
