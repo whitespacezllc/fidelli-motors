@@ -814,6 +814,7 @@ node --no-warnings scripts/regresion-cresium-orden.mjs
 node --no-warnings scripts/regresion-cobranza-emails.mjs
 node --no-warnings scripts/regresion-avisos-cobranza.mjs   # contra next dev + el doble de Resend
 node --no-warnings scripts/regresion-orden-de-trabajo.mjs  # contra next dev + el seed (Playwright)
+node --no-warnings scripts/regresion-aceite.mjs            # ídem; toca el demo local por psql y lo restaura
 ```
 
 El primero rompe la vista de retención de dos formas —le saca el filtro de
