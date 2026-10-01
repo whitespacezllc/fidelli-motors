@@ -15,6 +15,7 @@ import {
   GRUPOS,
   esViscosidadValida,
   normalizarViscosidad,
+  viscosidadDelNombre,
   formatearKm,
   VISCOSIDAD_FORMATO,
   SALTOS_FIJOS,
@@ -36,7 +37,9 @@ import {
   SelectorViscosidad,
   SelectorProductoBuscable,
   RenglonInterruptor,
+  nombreSinMarca,
 } from "@/components/services/campos-carton";
+import { chipsDeAceite } from "@/lib/aceite";
 import { RenglonesMecanica } from "@/components/services/renglones-mecanica";
 import { lineasDe } from "@/lib/renglones-mecanica";
 import {
@@ -90,6 +93,10 @@ export type DatosCarton = {
   /** El papel del cartón del tenant (config_experiencia). */
   colorPapel: string | null;
   productos: Producto[];
+  /** Los ids de los aceites que este taller más usó en sus services de
+   *  los últimos 90 días, del más usado al menos. Los calcula la página
+   *  (lib/aceite.ts): son los chips del bloque «Aceite de motor». */
+  aceitesMasUsados?: string[];
   ultimoService: { fecha: string; kilometros: number } | null;
   serviceDeHoy: { hora: string; sucursal: string; kilometros: number | null } | null;
   hoy: string;
@@ -343,6 +350,9 @@ export function Carton({
   const [altaProducto, setAltaProducto] = useState(false);
   const [nombreProducto, setNombreProducto] = useState("");
   const [marcaProducto, setMarcaProducto] = useState("");
+  // El alta puede abrir con el nombre ya escrito (lo que se tipeó en el
+  // buscador): ahí el foco va a Marca; si no, a Nombre.
+  const [altaConNombre, setAltaConNombre] = useState(false);
   const [errorProducto, setErrorProducto] = useState<string | null>(null);
 
   const kmNum = Number(km.replace(/\D/g, ""));
@@ -374,11 +384,30 @@ export function Carton({
   );
   const aceiteElegido =
     productos.find((p) => p.id === aceiteProductoId) ?? null;
+  // Los chips: los más usados del taller y, siempre, el elegido.
+  const aceitesEnChips = chipsDeAceite(
+    aceitesDelCatalogo,
+    datos.aceitesMasUsados ?? [],
+    aceiteProductoId || null,
+  );
+  const viscosidadDelAceite = aceiteElegido
+    ? viscosidadDelNombre(aceiteElegido.nombre)
+    : null;
 
-  // Elegir el producto precarga los litros EN EL EVENTO (nunca en un
-  // efecto): sugeridos si lleva stock en litros, vacío si no.
+  // ELEGIR EL ACEITE, LA ÚNICA PUERTA: el chip, el buscador y el alta
+  // rápida pasan por acá. Precarga los litros EN EL EVENTO (nunca en un
+  // efecto): sugeridos si lleva stock en litros, vacío si no. Y completa
+  // la viscosidad SI ESTABA VACÍA con la que trae el nombre ("Magnatec
+  // 5W30" ya lo dice: tocarlo y además tocar 5W30 era hacer lo mismo dos
+  // veces). Si ya había otra, no la pisa: avisa (SelectorViscosidad).
   function elegirAceite(
-    p: { id: string; stock?: number | null; unidad?: string; litrosSugeridos?: number | null } | null,
+    p: {
+      id: string;
+      nombre: string;
+      stock?: number | null;
+      unidad?: string;
+      litrosSugeridos?: number | null;
+    } | null,
   ) {
     setAceiteProductoId(p?.id ?? "");
     if (p && descuentaPorLitros(p)) {
@@ -386,6 +415,18 @@ export function Carton({
     } else {
       setLitros("");
     }
+    if (p && aceiteTipo.trim() === "") {
+      const delNombre = viscosidadDelNombre(p.nombre);
+      if (delNombre) setAceiteTipo(delNombre);
+    }
+  }
+
+  function abrirAltaAceite(nombre: string) {
+    setErrorProducto(null);
+    setNombreProducto(nombre);
+    setMarcaProducto("");
+    setAltaConNombre(nombre !== "");
+    setAltaProducto(true);
   }
   const nombreAceite =
     productos.find((p) => p.id === aceiteProductoId)?.nombre ?? null;
@@ -418,11 +459,18 @@ export function Carton({
     const resultado = await crearProductoRapido("aceite", nombreProducto, marcaProducto);
     if (resultado.error) return setErrorProducto(resultado.error);
     if (resultado.id && resultado.nombre) {
-      setProductos((p) => [
-        ...p,
-        { id: resultado.id!, nombre: resultado.nombre!, categoria: "aceite" },
-      ]);
-      setAceiteProductoId(resultado.id);
+      // Nace como lo crea la acción: aceite, medido en litros, sin stock.
+      const nuevo = {
+        id: resultado.id,
+        nombre: resultado.nombre,
+        marca: marcaProducto.trim() || null,
+        categoria: "aceite",
+        unidad: "litro",
+      };
+      setProductos((p) => [...p, nuevo]);
+      // Lo mismo que tocar un chip: queda elegido, y la viscosidad que
+      // trae el nombre completa la vacía.
+      elegirAceite(nuevo);
       setAltaProducto(false);
       setNombreProducto("");
       setMarcaProducto("");
@@ -1387,39 +1435,178 @@ export function Carton({
 
         {esService && (
           <>
-        {/* 4. Aceite de motor — bloque destacado, siempre en blanco */}
-        <div className="rounded-lg border border-line bg-surface/60 p-4">
+        {/* 4. Aceite de motor — bloque destacado, siempre en blanco.
+            De arriba hacia abajo, en el orden en que lo piensa el
+            mecánico: QUÉ ACEITE le puso (los que más usa, para tocar; el
+            resto, en el buscador; el que no está, se agrega sin perder lo
+            escrito), LA VISCOSIDAD (que el nombre del aceite ya completa)
+            y los litros si ese aceite se descuenta a granel. El aceite
+            es opcional; la viscosidad, no. */}
+        <div
+          data-bloque-aceite
+          className="rounded-lg border border-line bg-surface/60 p-4"
+        >
           <p className="mb-3 font-brand text-body font-bold text-ink">
             Aceite de motor
           </p>
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <div className="sm:flex-1">
-              <SelectorViscosidad valor={aceiteTipo} alCambiar={setAceiteTipo} />
-            </div>
-            <div className="sm:flex-[1.4]">
-              <SelectorProductoBuscable
-                id="aceite-producto"
-                productoId={aceiteProductoId}
-                alElegir={(p) => elegirAceite(p)}
-                productos={aceitesDelCatalogo.map((p) => ({
-                  id: p.id,
-                  nombre: p.nombre,
-                  precioVenta: p.precioVenta ?? null,
-                  stock: p.stock ?? null,
-                  unidad: p.unidad ?? "unidad",
-                  litrosSugeridos: p.litrosSugeridos ?? null,
-                }))}
-                alPedirAlta={() => setAltaProducto(true)}
-              />
-            </div>
 
-            {/* Los litros SOLO existen si el producto lleva stock EN
-                LITROS: el que no lo usa no ve el campo molestando, y con
-                un aceite envasado no hay nada que tipear — baja un bidón
-                por service y lo decide la base. Precargados: en el caso
-                normal, cero toques. */}
-            {aceiteElegido && descuentaPorLitros(aceiteElegido) && (
-              <div className="sm:w-28">
+          <div>
+            <span className={CLASE_LABEL}>
+              Aceite <span className="text-ink-40 normal-case">(opcional)</span>
+            </span>
+            {aceitesDelCatalogo.length === 0 ? (
+              // El taller sin aceites cargados: un buscador sobre una
+              // lista vacía no le dice nada. Se le dice qué pasa y cómo
+              // sigue; al crear el primero, el bloque toma su forma normal.
+              <p className="text-ui text-ink-60">
+                Todavía no cargaste aceites.{" "}
+                <button
+                  type="button"
+                  onClick={() => abrirAltaAceite("")}
+                  className="inline-flex min-h-11 items-center font-semibold text-brand"
+                >
+                  + Agregar el primero
+                </button>
+              </p>
+            ) : (
+              <>
+                {/* Los más usados, de un toque. Un solo prendido; tocar el
+                    prendido lo apaga. Un nombre largo ocupa su fila y se
+                    trunca: nunca rompe la línea ni la pantalla. */}
+                <div className="flex flex-wrap gap-1.5">
+                  {aceitesEnChips.map((p) => {
+                    const prendido = p.id === aceiteProductoId;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        data-aceite={p.id}
+                        aria-pressed={prendido}
+                        onClick={() => elegirAceite(prendido ? null : p)}
+                        className={`flex min-h-11 max-w-full items-center rounded-md border px-3 text-ui font-semibold transition-colors ${
+                          prendido
+                            ? "border-ink bg-ink text-white"
+                            : "border-line bg-base text-ink hover:bg-surface"
+                        }`}
+                      >
+                        <span className="truncate">{p.nombre}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {aceitesDelCatalogo.length > aceitesEnChips.length && (
+                  <p className="mt-2 text-ui text-ink-60">
+                    Los que más usás. El resto, abajo.
+                  </p>
+                )}
+                <div className="mt-2">
+                  <SelectorProductoBuscable
+                    id="aceite-producto"
+                    etiqueta={null}
+                    ariaLabel="Buscar otro aceite por nombre o marca"
+                    elegidoAfuera
+                    productoId={aceiteProductoId}
+                    alElegir={(p) => elegirAceite(p)}
+                    productos={aceitesDelCatalogo.map((p) => ({
+                      id: p.id,
+                      nombre: p.nombre,
+                      marca: p.marca ?? null,
+                      precioVenta: p.precioVenta ?? null,
+                      stock: p.stock ?? null,
+                      unidad: p.unidad ?? "unidad",
+                      litrosSugeridos: p.litrosSugeridos ?? null,
+                    }))}
+                    alPedirAlta={abrirAltaAceite}
+                  />
+                </div>
+              </>
+            )}
+
+            {altaProducto && (
+              <div
+                data-alta-aceite
+                className="mt-3 rounded-md border border-line bg-base p-3"
+              >
+                <p className="mb-2 text-label font-semibold tracking-[0.06em] text-ink-60 uppercase">
+                  Producto nuevo
+                </p>
+                <div className="grid gap-2 sm:grid-cols-[1fr_10rem]">
+                  <div>
+                    <label htmlFor="alta-aceite-nombre" className={CLASE_LABEL}>
+                      Nombre
+                    </label>
+                    <input
+                      id="alta-aceite-nombre"
+                      value={nombreProducto}
+                      onChange={(e) => setNombreProducto(e.target.value)}
+                      autoFocus={!altaConNombre}
+                      autoComplete="off"
+                      placeholder="Magnatec 5W30"
+                      className={CLASE_CAMPO}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="alta-aceite-marca" className={CLASE_LABEL}>
+                      Marca
+                    </label>
+                    <input
+                      id="alta-aceite-marca"
+                      value={marcaProducto}
+                      onChange={(e) => setMarcaProducto(e.target.value)}
+                      autoFocus={altaConNombre}
+                      autoComplete="off"
+                      placeholder="Castrol"
+                      className={CLASE_CAMPO}
+                    />
+                  </div>
+                </div>
+                {errorProducto && (
+                  <p className="mt-2 text-ui text-overdue">{errorProducto}</p>
+                )}
+                <div className="mt-2 flex gap-2">
+                  <Boton onClick={agregarProducto} className="flex-1">
+                    Agregar al catálogo
+                  </Boton>
+                  <Boton
+                    variante="secundario"
+                    onClick={() => setAltaProducto(false)}
+                  >
+                    Cancelar
+                  </Boton>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4">
+            <SelectorViscosidad
+              valor={aceiteTipo}
+              alCambiar={setAceiteTipo}
+              delProducto={
+                aceiteElegido && viscosidadDelAceite
+                  ? {
+                      nombre: nombreSinMarca(aceiteElegido),
+                      viscosidad: viscosidadDelAceite,
+                    }
+                  : null
+              }
+            />
+            {viscosidadRara && (
+              <p className="mt-2 text-ui text-urgente">{VISCOSIDAD_FORMATO}</p>
+            )}
+          </div>
+
+          {/* Los litros SOLO existen si el producto lleva stock EN
+              LITROS: el que no lo usa no ve el campo molestando, y con
+              un aceite envasado no hay nada que tipear — baja un bidón
+              por service y lo decide la base. Precargados: en el caso
+              normal, cero toques. */}
+          {aceiteElegido && descuentaPorLitros(aceiteElegido) && (
+            <div className="mt-4 flex items-end justify-between gap-3">
+              <p className="min-w-0 pb-3 text-ui text-ink-60">
+                El stock de {nombreSinMarca(aceiteElegido)} baja por litros.
+              </p>
+              <div className="w-28 shrink-0">
                 <label htmlFor="aceite-litros" className={CLASE_LABEL}>
                   Litros
                 </label>
@@ -1430,44 +1617,6 @@ export function Carton({
                   onChange={(e) => setLitros(e.target.value)}
                   className={`${CLASE_CAMPO} text-center tabular-nums`}
                 />
-              </div>
-            )}
-          </div>
-
-          {viscosidadRara && (
-            <p className="mt-2 text-ui text-urgente">{VISCOSIDAD_FORMATO}</p>
-          )}
-
-          {altaProducto && (
-            <div className="mt-3 rounded-md border border-line bg-base p-3">
-              <p className="mb-2 text-label font-semibold tracking-[0.06em] text-ink-60 uppercase">
-                Producto nuevo
-              </p>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <input
-                  value={nombreProducto}
-                  onChange={(e) => setNombreProducto(e.target.value)}
-                  className={`${CLASE_CAMPO} sm:flex-1`}
-                />
-                <input
-                  value={marcaProducto}
-                  onChange={(e) => setMarcaProducto(e.target.value)}
-                  className={`${CLASE_CAMPO} sm:w-32`}
-                />
-              </div>
-              {errorProducto && (
-                <p className="mt-2 text-ui text-overdue">{errorProducto}</p>
-              )}
-              <div className="mt-2 flex gap-2">
-                <Boton onClick={agregarProducto} className="flex-1">
-                  Agregar al catálogo
-                </Boton>
-                <Boton
-                  variante="secundario"
-                  onClick={() => setAltaProducto(false)}
-                >
-                  Cancelar
-                </Boton>
               </div>
             </div>
           )}
