@@ -37,6 +37,8 @@ import {
   SelectorProductoBuscable,
   RenglonInterruptor,
 } from "@/components/services/campos-carton";
+import { RenglonesMecanica } from "@/components/services/renglones-mecanica";
+import { lineasDe } from "@/lib/renglones-mecanica";
 import {
   RuedasCarton,
   ruedasVacias,
@@ -640,7 +642,7 @@ export function Carton({
       kmCargado && aceiteTipo.trim().length >= 2 && proxKm === 0
         ? "Falta indicar cada cuántos km es el próximo service."
         : "Faltan los kilómetros y la viscosidad del aceite.",
-    mecanica: "Falta contar qué trabajo se hizo.",
+    mecanica: "Tocá un renglón o contá qué trabajo se hizo.",
     neumaticos: rotadaSinOrigen
       ? "Marcá de qué posición venía cada cubierta rotada."
       : !kmCargado
@@ -775,10 +777,15 @@ export function Carton({
             <p className="font-brand text-ui font-bold text-ink">
               Se registra además una mecánica
             </p>
-            <p className="mt-0.5 text-ui text-ink-60">
-              {descripcion.trim()}. Queda como otro trabajo de la misma
-              visita, con la misma fecha y los mismos kilómetros. Para el
-              premio, la visita cuenta una sola vez.
+            {/* Son líneas y se leen como líneas: un renglón tocado, una
+                línea. */}
+            <p className="mt-0.5 text-ui whitespace-pre-line text-ink">
+              {descripcion.trim()}
+            </p>
+            <p className="mt-1.5 text-ui text-ink-60">
+              Queda como otro trabajo de la misma visita, con la misma
+              fecha y los mismos kilómetros. Para el premio, la visita
+              cuenta una sola vez.
             </p>
           </div>
         )}
@@ -998,23 +1005,48 @@ export function Carton({
   // mismo y se guardan igual. La MISMA velocidad que un service: un
   // textarea y renglones a botón, con el catálogo sugiriendo. SIN IMPORTES,
   // ni acá ni en ningún campo: la plata vive en presupuestos (bloque 4).
+  //
+  // LA ORDEN DE TRABAJO (01/10/2026): arriba del textarea van los
+  // renglones de lib/renglones-mecanica.ts, que son un TECLADO — cada uno
+  // escribe o borra su línea en `descripcion`, y `descripcion` sigue
+  // siendo lo único que se guarda. No crean filas ni estado propio: si
+  // esto pide «guardar qué renglón se tocó», la respuesta es no.
   function camposMecanica() {
     return (
       <>
-        <label htmlFor="trabajo" className={CLASE_LABEL}>
-          Qué trabajo se hizo
+        {/* En la adjunta no va el encabezado: el tilde «¿Se le hizo algo
+            de mecánica?» ya lo es. */}
+        {!mecanicaAdjunta && <p className={CLASE_LABEL}>Qué se hizo</p>}
+        <p className="mb-3 text-ui text-ink-60">
+          Tocá los renglones que correspondan. Se escriben solos abajo.
+        </p>
+        <RenglonesMecanica
+          descripcion={descripcion}
+          alCambiar={setDescripcion}
+          tieneGomeria={Boolean(datos.puedeNeumaticos)}
+          adjunta={mecanicaAdjunta}
+        />
+
+        <label htmlFor="trabajo" className={`${CLASE_LABEL} mt-4`}>
+          Descripción del trabajo
         </label>
+        {/* Crece con las líneas (entre 3 y 8) y hacia abajo: los renglones
+            están arriba y no se corren al tocar. 16px (text-body): en iOS,
+            menos que eso hace zoom al enfocar. */}
         <textarea
           id="trabajo"
           value={descripcion}
           onChange={(e) => setDescripcion(e.target.value)}
-          rows={2}
-          placeholder="Cambio de pastillas de freno delanteras"
-          className="w-full rounded-md border border-line bg-base px-3.5 py-3 text-body text-ink placeholder:text-ink-40"
+          rows={Math.min(8, Math.max(3, lineasDe(descripcion).length + 1))}
+          placeholder="Qué se le hizo al auto. Podés escribir o corregir lo que se armó arriba."
+          className="block w-full rounded-md border border-line bg-base px-3.5 py-3 text-body text-ink placeholder:text-ink-40"
         />
+        <p className="mt-1.5 text-label text-ink-40">
+          Un renglón queda prendido mientras su línea esté tal cual.
+        </p>
 
-        <div className="mt-3">
-          <span className={CLASE_LABEL}>Repuestos y tareas</span>
+        <div className="mt-4">
+          <span className={CLASE_LABEL}>Repuestos</span>
           {libres.length > 0 && (
             <div className="flex flex-col gap-2">
               {libres.map((valor, i) => (
@@ -1028,7 +1060,7 @@ export function Carton({
                         )
                       }
                       opciones={nombresProductos}
-                      ariaLabel={`Repuesto o tarea ${i + 1}`}
+                      ariaLabel={`Repuesto ${i + 1}`}
                     />
                   </div>
                   <input
@@ -1048,7 +1080,7 @@ export function Carton({
                     onClick={() =>
                       setLibres((prev) => prev.filter((_, j) => j !== i))
                     }
-                    aria-label={`Quitar el renglón ${i + 1}`}
+                    aria-label={`Quitar el repuesto ${i + 1}`}
                     className="flex size-11 shrink-0 items-center justify-center rounded-md border border-line text-ink-60 hover:bg-surface"
                   >
                     ✕
@@ -1057,12 +1089,14 @@ export function Carton({
               ))}
             </div>
           )}
+          {/* Las tareas ahora viven arriba, en los renglones: acá quedan
+              los repuestos (producto, cantidad, stock), como siempre. */}
           <button
             type="button"
             onClick={() => setLibres((prev) => [...prev, ""])}
             className="mt-1.5 min-h-11 text-ui font-semibold text-brand"
           >
-            + Repuesto o tarea
+            + Repuesto
           </button>
         </div>
       </>
