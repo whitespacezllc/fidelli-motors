@@ -118,6 +118,15 @@ la resuelve.
   service los copia a la mecánica (`actualizar_service`; un plan sin la
   feature no bloquea la edición). Nunca como segunda llamada desde la
   acción: ver la regla 22.
+- **La orden de trabajo (01/10/2026).** Los 42 renglones de
+  `lib/renglones-mecanica.ts` son un teclado: escriben líneas en
+  `trabajo_descripcion` y nada más. No crean filas en `service_items` ni
+  tocan `item_tipo`. Un renglón está prendido mientras su línea esté tal
+  cual (`tieneFrase`, comparación con `normalizar()`). Los lectores que
+  resumen en una línea usan `descripcionEnUnaLinea`; el papel y la
+  previsualización respetan los saltos. Alineación y rotación solo sin
+  gomería; batería, líquido de frenos, refrigerante y aceite de caja no se
+  repiten en la mecánica adjunta.
 - **`vista_proximos_service`** devuelve el estado (`vencido` / `urgente` /
   `proximo`), el km/día real del vehículo, la fecha estimada y si ya se contactó
   en ese estado. Toda la pantalla de retención sale de ahí.
@@ -804,6 +813,7 @@ Además, fuera del reset, **las roturas a mano** (regla 13):
 node --no-warnings scripts/regresion-cresium-orden.mjs
 node --no-warnings scripts/regresion-cobranza-emails.mjs
 node --no-warnings scripts/regresion-avisos-cobranza.mjs   # contra next dev + el doble de Resend
+node --no-warnings scripts/regresion-orden-de-trabajo.mjs  # contra next dev + el seed (Playwright)
 ```
 
 El primero rompe la vista de retención de dos formas —le saca el filtro de

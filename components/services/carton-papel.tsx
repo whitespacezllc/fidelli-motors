@@ -355,7 +355,7 @@ export type MecanicaDatos = {
   /** Opcional en mecánica: se muestra solo si el mecánico lo anotó. */
   kilometros: number | null;
   descripcion: string;
-  /** Repuestos y tareas, texto libre. */
+  /** Los repuestos, texto libre. */
   renglones: string[];
 };
 
@@ -411,14 +411,18 @@ export function CartonPapelMecanica({
           </div>
         ))}
 
-        {/* La descripción: qué se le hizo al auto, a lo ancho. */}
+        {/* La descripción: qué se le hizo al auto, a lo ancho. Con la
+            orden de trabajo trae una línea por renglón tocado: se lee
+            como la libretita del taller, un trabajo debajo del otro. */}
         <div className={`border-b border-ink ${e.celda} py-2.5`}>
           <p
             className={`${e.claveCabecera} font-semibold tracking-[0.03em] uppercase`}
           >
             Trabajo realizado
           </p>
-          <p className={`mt-1 ${e.renglon} text-ink`}>{datos.descripcion}</p>
+          <p className={`mt-1 ${e.renglon} whitespace-pre-line text-ink`}>
+            {datos.descripcion}
+          </p>
         </div>
 
         {/* Los repuestos y tareas, con la etiqueta vertical del cartón. */}

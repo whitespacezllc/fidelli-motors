@@ -192,7 +192,7 @@ guardado no se reescribe).
 | Descripción del trabajo | no existe | **obligatoria**, ≥5 caracteres |
 | Kilómetros | **obligatorios** | opcionales |
 | Aceite (viscosidad, producto, litros) | obligatorio | **no existe** |
-| Los 11 renglones | sí | **no** — en su lugar, renglones libres "Repuestos y tareas" |
+| Los 11 renglones | sí | **no** — en su lugar, la **orden de trabajo**: 42 renglones en 6 grupos que escriben la descripción (tocar uno escribe su línea; tocarlo de nuevo la borra), más los renglones libres de "Repuestos" |
 | Próximo service | sí | **no existe** |
 | Premio | sí | **solo si el premio cuenta "todos los trabajos"** |
 | Papel que se dibuja | cartón de 11 renglones | orden de trabajo |

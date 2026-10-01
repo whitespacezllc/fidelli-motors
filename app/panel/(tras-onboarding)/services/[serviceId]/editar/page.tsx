@@ -2,7 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { obtenerSesion, panelSuspendido } from "@/lib/auth/session";
+import {
+  featureHabilitada,
+  obtenerSesion,
+  panelSuspendido,
+} from "@/lib/auth/session";
 import { BloqueoSuspension } from "@/components/panel/bloqueo-suspension";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { clasesBoton } from "@/components/ui/boton";
@@ -274,6 +278,10 @@ export default async function PaginaEditarService({ params }: Props) {
           // Editar no toca el canje: si el service se guardó con premio,
           // el canje ya está registrado y atado a él.
           premioDisponible: null,
+          // La orden de trabajo de una mecánica oculta alineación y
+          // rotación cuando el taller tiene gomería (se cargan como
+          // Neumáticos): la misma señal que en el alta.
+          puedeNeumaticos: featureHabilitada(sesion, "neumaticos"),
         }}
         edicion={{
           serviceId: service.id,
