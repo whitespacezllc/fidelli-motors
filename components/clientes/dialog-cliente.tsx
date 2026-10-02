@@ -13,6 +13,7 @@ import {
   normalizarCuit,
   verificadorCuitCierra,
 } from "@/lib/cuit";
+import { CLIENTE_SIN_DATOS, sinNombre, sinTelefono } from "@/lib/clientes";
 
 type Cliente = {
   id: string;
@@ -46,6 +47,13 @@ function FormularioCliente({
   // Advierte, nunca bloquea: 11 dígitos con verificador que no cierra es
   // casi seguro un número mal copiado — mejor enterarse ahora que en la
   // factura. Menos dígitos ni se evalúa: puede estar a mitad de tipeo.
+  // El cliente de una importación llega con «Sin nombre» y «-». En el
+  // formulario no se muestran como datos: el campo aparece vacío, listo
+  // para escribir, y si se guarda sin tocarlo queda como estaba (la acción
+  // repone el sentinela). Un hueco no es una respuesta.
+  const nombreVacio = sinNombre(cliente?.nombre);
+  const telefonoVacio = Boolean(cliente) && sinTelefono(cliente?.telefono);
+
   const cuitDigitos = normalizarCuit(cuit);
   const cuitDudoso =
     cuitDigitos.length === 11 && !verificadorCuitCierra(cuitDigitos);
@@ -81,6 +89,8 @@ function FormularioCliente({
       )}
 
       {cliente && <input type="hidden" name="id" value={cliente.id} />}
+      {nombreVacio && <input type="hidden" name="nombre_vacio" value="1" />}
+      {telefonoVacio && <input type="hidden" name="telefono_vacio" value="1" />}
 
       <div>
         <label htmlFor="nombre" className={CLASE_LABEL}>
@@ -89,9 +99,10 @@ function FormularioCliente({
         <input
           id="nombre"
           name="nombre"
-          required
+          required={!nombreVacio}
           minLength={2}
-          defaultValue={cliente?.nombre}
+          defaultValue={nombreVacio ? "" : cliente?.nombre}
+          placeholder={nombreVacio ? CLIENTE_SIN_DATOS.nombre : undefined}
           className={CLASE_CAMPO}
         />
       </div>
@@ -104,9 +115,11 @@ function FormularioCliente({
           id="telefono"
           name="telefono"
           type="tel"
-          required
+          required={!telefonoVacio}
           inputMode="tel"
-          defaultValue={cliente?.telefono}
+          defaultValue={telefonoVacio ? "" : cliente?.telefono}
+          placeholder={telefonoVacio ? "Sin teléfono" : undefined}
+          autoFocus={telefonoVacio}
           className={CLASE_CAMPO}
         />
       </div>
@@ -160,12 +173,15 @@ export function DialogCliente({
   cliente,
   etiquetaTrigger,
   variante = "primario",
+  abiertoAlInicio = false,
 }: {
   cliente?: Cliente;
   etiquetaTrigger?: string;
   variante?: "primario" | "secundario";
+  /** La ficha llega desde «Cargar teléfono»: el dialog ya abierto. */
+  abiertoAlInicio?: boolean;
 }) {
-  const [abierto, setAbierto] = useState(false);
+  const [abierto, setAbierto] = useState(abiertoAlInicio);
 
   return (
     <Dialog open={abierto} onOpenChange={setAbierto}>

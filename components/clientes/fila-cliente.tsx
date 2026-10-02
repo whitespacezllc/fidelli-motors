@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { FilaListado } from "@/components/ui/fila-listado";
 import { formatearFecha } from "@/lib/fechas";
-import { clienteSuprimido } from "@/lib/clientes";
+import { clienteSuprimido, sinNombre, sinTelefono } from "@/lib/clientes";
 
 type ClienteListado = {
   id: string;
@@ -27,11 +27,21 @@ export function FilaCliente({ cliente }: { cliente: ClienteListado }) {
         className="-mx-2 flex min-h-11 w-full flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-md px-2 py-1 transition-colors hover:bg-surface"
       >
         <span className="min-w-0">
-          <span className="block truncate font-brand text-body font-bold text-ink">
+          {/* «Sin nombre» (una importación) es un hueco, no un nombre:
+              se muestra tal cual, apagado y sin negrita. */}
+          <span
+            className={`block truncate font-brand text-body ${
+              sinNombre(cliente.nombre) ? "text-ink-60" : "font-bold text-ink"
+            }`}
+          >
             {cliente.nombre}
           </span>
           <span className="block truncate text-ui text-ink-60">
-            {clienteSuprimido(cliente) ? "Datos personales eliminados" : cliente.telefono}
+            {clienteSuprimido(cliente)
+              ? "Datos personales eliminados"
+              : sinTelefono(cliente.telefono)
+                ? "Sin teléfono"
+                : cliente.telefono}
           </span>
         </span>
 

@@ -7,6 +7,7 @@ import { NotaPostGuardado } from "@/components/notas/nota-post-guardado";
 import { formatearKm } from "@/lib/renglones";
 import { descripcionEnUnaLinea } from "@/lib/renglones-mecanica";
 import { resumenRuedas } from "@/lib/ruedas";
+import { nombreParaMensaje } from "@/lib/clientes";
 
 export const metadata: Metadata = { title: "Trabajo guardado" };
 
@@ -79,7 +80,7 @@ export default async function PaginaGuardado({
 
   const vehiculo = service.vehiculos;
   const clienteNombre = vehiculo?.clientes?.nombre ?? "";
-  const primerNombre = clienteNombre.split(" ")[0] || "tu cliente";
+  const primerNombre = nombreParaMensaje(clienteNombre) || "tu cliente";
   const nombreVehiculo =
     [vehiculo?.marca, vehiculo?.modelo].filter(Boolean).join(" ") || "el vehículo";
 

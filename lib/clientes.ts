@@ -43,5 +43,35 @@ export function clienteSuprimido(cliente: { nombre: string; telefono: string }):
   );
 }
 
+// ============================================================
+// El cliente que llegó sin datos — una importación de planilla (20261002120000)
+//
+// La planilla de un taller casi nunca trae nombre ni teléfono: el auto entra
+// igual, con un cliente `'Sin nombre'` / `'-'`, y el taller lo completa en el
+// mostrador cuando el auto vuelve. Es un sentinela DISTINTO al de la
+// supresión a propósito: uno dice «faltan datos», el otro «se borraron».
+// Los dos comparten el teléfono `'-'`, que no tiene dígitos, así que
+// telefonoWhatsapp() devuelve null y nunca se arma un wa.me/null.
+//
+// «Sin nombre» se muestra tal cual, pero en ink-60 y sin negrita: es un
+// hueco, no un nombre. Y nunca viaja a un mensaje: «Hola Sin» no es un saludo.
+// ============================================================
+
+export const CLIENTE_SIN_DATOS = { nombre: "Sin nombre", telefono: "-" } as const;
+
+export function sinNombre(nombre: string | null | undefined): boolean {
+  return (nombre ?? "").trim() === CLIENTE_SIN_DATOS.nombre;
+}
+
+/** Sin un solo dígito: el sentinela `'-'` o el vacío de una importación vieja. */
+export function sinTelefono(telefono: string | null | undefined): boolean {
+  return !/\d/.test(telefono ?? "");
+}
+
+/** El nombre para un mensaje: el de pila, o nada si el cliente no tiene. */
+export function nombreParaMensaje(nombre: string | null | undefined): string {
+  return sinNombre(nombre) ? "" : (nombre ?? "").trim().split(" ")[0];
+}
+
 /** Lo que devuelven las dos acciones de supresión (panel y /fidelli). */
 export type EstadoSupresion = { error?: string; ok?: boolean };

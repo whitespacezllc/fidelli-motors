@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { sesionParaEscribir } from "@/lib/auth/session";
 import { CUIT_FORMATO, normalizarCuit } from "@/lib/cuit";
-import type { EstadoSupresion } from "@/lib/clientes";
+import { CLIENTE_SIN_DATOS, type EstadoSupresion } from "@/lib/clientes";
 
 export type EstadoCliente = { error?: string; ok?: boolean };
 
@@ -28,8 +28,16 @@ type Campos =
   | { ok: false; error: string };
 
 function leerCampos(formData: FormData): Campos {
-  const nombre = String(formData.get("nombre") ?? "").trim();
-  const telefono = String(formData.get("telefono") ?? "").trim();
+  // El cliente de una importación tiene «Sin nombre» y «-», y el formulario
+  // le muestra esos dos campos vacíos. Si vuelve vacío el que ya era un
+  // hueco, queda el hueco: completar el teléfono no obliga a inventar un
+  // nombre, ni al revés. Solo repone el sentinela; no deja vaciar un dato.
+  const nombre =
+    String(formData.get("nombre") ?? "").trim() ||
+    (formData.get("nombre_vacio") === "1" ? CLIENTE_SIN_DATOS.nombre : "");
+  const telefono =
+    String(formData.get("telefono") ?? "").trim() ||
+    (formData.get("telefono_vacio") === "1" ? CLIENTE_SIN_DATOS.telefono : "");
   const email = String(formData.get("email") ?? "").trim() || null;
   const cuit = normalizarCuit(String(formData.get("cuit") ?? "")) || null;
 
