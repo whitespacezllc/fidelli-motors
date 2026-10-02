@@ -10,7 +10,7 @@ import { FilaVehiculoFidelli } from "./fila-vehiculo-fidelli";
 import { HistorialCorrecciones } from "./historial-correcciones";
 import { DialogSuprimirCliente } from "@/components/clientes/dialog-suprimir-cliente";
 import { anonimizarClienteFidelli } from "@/app/fidelli/[id]/actions";
-import { clienteSuprimido } from "@/lib/clientes";
+import { clienteSuprimido, sinNombre, sinTelefono } from "@/lib/clientes";
 import { descripcionEnUnaLinea } from "@/lib/renglones-mecanica";
 import { VISTAS_DATOS, esVistaDatos, type Tenant, type VistaDatos } from "./tipos";
 import type { ParamsFicha } from "@/app/fidelli/[id]/page";
@@ -226,7 +226,9 @@ async function ListaClientes({
               {clientes.map((c) => (
                 <tr key={c.id} className="border-b border-line last:border-b-0">
                   <td className={TD}>
-                    <span className="font-semibold text-ink">{c.nombre}</span>
+                    <span className={sinNombre(c.nombre) ? "text-ink-60" : "font-semibold text-ink"}>
+                      {c.nombre}
+                    </span>
                     {c.patentes_lista && (
                       <span className="block text-label text-ink-40">
                         {c.patentes_lista}
@@ -234,7 +236,11 @@ async function ListaClientes({
                     )}
                   </td>
                   <td className={`${TD} whitespace-nowrap text-ink-60`}>
-                    {c.telefono}
+                    {sinTelefono(c.telefono) ? (
+                      <span className="text-ink-40">sin teléfono</span>
+                    ) : (
+                      c.telefono
+                    )}
                   </td>
                   <td className={`${TD} text-ink-60`}>{c.cantidad_vehiculos}</td>
                   <td className={`${TD} whitespace-nowrap text-ink-60`}>

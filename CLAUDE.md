@@ -130,6 +130,20 @@ la resuelve.
 - **`vista_proximos_service`** devuelve el estado (`vencido` / `urgente` /
   `proximo`), el km/día real del vehículo, la fecha estimada y si ya se contactó
   en ese estado. Toda la pantalla de retención sale de ahí.
+- **Lo importado lleva `importado_de`** (desde `20261002120000`; null =
+  cargado en el panel) en `services`, `clientes`, `vehiculos` y `productos`.
+  **Las métricas de plataforma y el premio lo excluyen** —todo lo que se lee
+  desde `/fidelli` o escribe el cierre diario, y `premio_disponible` /
+  `ciclos_fidelizacion`—; lo que el tenant ve de sí mismo (`resumen_inicio`,
+  la ficha, `get_carton`) lo incluye: es su historia. **El horizonte de
+  retención es 18 meses**: un auto cuyo último service es más viejo no entra
+  en `vista_proximos_service`, para ningún tenant. Una función nueva que
+  lea `services` para medir a la plataforma lleva `and importado_de is
+  null`. La planilla entra por `scripts/importar-planilla.mjs`, que genera
+  SQL y no se conecta a nada; `/importaciones` está en `.gitignore` (datos
+  personales). El cliente sin datos es `'Sin nombre'` / `'-'`
+  (`CLIENTE_SIN_DATOS` en `lib/clientes.ts`), distinto del suprimido. Lo
+  vigila `scripts/regresion-importacion.sh`, que necesita la planilla.
 - **`get_carton(slug, patente)`** es la única puerta pública. Devuelve el cartón
   completo en un JSON, respeta `campos_visibles` del tenant y registra la búsqueda.
   `anon` no tiene permiso sobre ninguna tabla: solo puede ejecutar esa función.
@@ -810,6 +824,7 @@ Además, fuera del reset, **las roturas a mano** (regla 13):
 ./scripts/regresion-cobranza-suspension.sh
 ./scripts/regresion-cobranza-emails.sh
 ./scripts/regresion-visita.sh
+./scripts/regresion-importacion.sh   # necesita importaciones/falco/falco-limpio.json (no está en el repo)
 node --no-warnings scripts/regresion-cresium-orden.mjs
 node --no-warnings scripts/regresion-cobranza-emails.mjs
 node --no-warnings scripts/regresion-avisos-cobranza.mjs   # contra next dev + el doble de Resend

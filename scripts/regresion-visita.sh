@@ -46,6 +46,9 @@ cd "$(dirname "$0")/.."
 DB="docker exec -i supabase_db_fidelli-motors psql -U postgres -d postgres -X"
 V=supabase/verificaciones.sql
 M=supabase/migrations/20260929100000_service_con_mecanica.sql
+# premio_disponible y ciclos_fidelizacion se redefinieron para no contar lo
+# importado: la versión vigente vive acá y es la que hay que romper.
+M_IM=supabase/migrations/20261002120000_importado_de.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
 
@@ -85,9 +88,9 @@ correr_marcada() { # $1 = nombre · $2 = marcador · $3 = migración · $4 = sed
 
 echo "── R38 · service + mecánica en una carga, y el premio por visitas ──"
 # El conteo: la rotura más probable es que alguien «arregle» el distinct.
-correr_marcada "premio_disponible de vuelta a contar filas" premio_disponible "$M" \
+correr_marcada "premio_disponible de vuelta a contar filas" premio_disponible "$M_IM" \
   "/@visitas/s/count(distinct s.fecha)/count(*)/" R38 "R38e"
-correr_marcada "ciclos_fidelizacion de vuelta a contar filas (la copia que se olvida)" ciclos_fidelizacion "$M" \
+correr_marcada "ciclos_fidelizacion de vuelta a contar filas (la copia que se olvida)" ciclos_fidelizacion "$M_IM" \
   "/@visitas-flota/s/count(distinct s.fecha)/count(s.id)/" R38 "R38e"
 # La pareja: misma fecha, vínculo y renglones.
 correr_marcada "la mecánica adjunta con la fecha de hoy y no la del service" guardar_service "$M" \
@@ -105,7 +108,7 @@ correr_marcada "los pendientes reenviados a la mecánica adjunta" guardar_servic
   "/@adjunta-llamada/s/p_trabajo_descripcion => p_mecanica->>'descripcion'/p_trabajo_descripcion => p_mecanica->>'descripcion', p_pendientes => p_pendientes/" R38 "R38a"
 # El corte del ciclo por fecha en vez de created_at: el trabajo cargado
 # después del canje con fecha vieja deja de contar.
-correr_marcada "el corte del ciclo por fecha en vez de created_at" premio_disponible "$M" \
+correr_marcada "el corte del ciclo por fecha en vez de created_at" premio_disponible "$M_IM" \
   "/@corte-ciclo/s/s.created_at > uc.fecha/s.fecha > uc.fecha::date/" R38 "R38f"
 # La propagación al editar: sin ella la visita se parte en dos.
 correr_marcada "actualizar_service sin propagar a la mecánica adjunta" actualizar_service "$M" \

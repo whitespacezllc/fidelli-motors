@@ -32,6 +32,9 @@ DB="docker exec -i supabase_db_fidelli-motors psql -U postgres -d postgres -X"
 V=supabase/verificaciones.sql
 M_AT=supabase/migrations/20260917100000_atencion_con_descuento.sql
 M_EV=supabase/migrations/20260917110000_candado_evidencia_cresium.sql
+# listado_lubricentros() se redefinió después (performance, y la que deja
+# afuera lo importado): la versión vigente vive acá y es la que hay que romper.
+M_LL=supabase/migrations/20261002120000_importado_de.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
 
@@ -98,7 +101,7 @@ correr_marcada "la exención achicada a los estados de cobranza (el trial bonifi
   "/@exento_atencion/s/coalesce(p_descuento_pct, 0) >= 100/coalesce(p_descuento_pct, 0) >= 100 and p_estado <> 'trial'/" R24 "R24a"
 
 echo "── R24b · el listado que se olvidó de pasar el descuento ──"
-correr_funcion "listado_lubricentros llamando con 0" listado_lubricentros "$M_AT" \
+correr_funcion "listado_lubricentros llamando con 0" listado_lubricentros "$M_LL" \
   "s/estado_atencion(v.estado, v.vencimiento, coalesce(v.descuento_pct, 0))/estado_atencion(v.estado, v.vencimiento, 0)/" R24 "R24b"
 
 echo "── R24c · la ficha que dice otra cosa que el listado ──"

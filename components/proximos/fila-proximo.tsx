@@ -4,6 +4,7 @@ import { CheckContactado } from "@/components/proximos/check-contactado";
 import { BotonWhatsapp } from "@/components/proximos/boton-whatsapp";
 import { formatearKm } from "@/lib/renglones";
 import { formatearFecha } from "@/lib/fechas";
+import { clienteSuprimido, sinNombre, sinTelefono } from "@/lib/clientes";
 import {
   etiquetaMotivo,
   type EstadoContacto,
@@ -70,6 +71,13 @@ export function FilaProximo({
     neumaticos: "neumaticos",
   };
   const motivo = MOTIVO_POR_FUENTE[fila.fuente ?? "service"];
+  // El cliente de una planilla importada: «Sin nombre» y teléfono «-». El
+  // nombre se muestra tal cual pero apagado (es un hueco, no un nombre), y
+  // donde iba el WhatsApp va la única acción que destraba la fila.
+  const nombreVacio = sinNombre(fila.clienteNombre);
+  const faltaTelefono =
+    sinTelefono(fila.clienteTelefono) &&
+    !clienteSuprimido({ nombre: fila.clienteNombre, telefono: fila.clienteTelefono });
   // "Rotación y balanceo · Cubiertas de 2019": la línea secundaria de la
   // fila de gomería, con todos los motivos dados.
   const motivosTexto = esNeumaticos
@@ -92,12 +100,14 @@ export function FilaProximo({
       <div className="min-w-0">
         <Link
           href={`/panel/clientes/${fila.clienteId}`}
-          className="block truncate font-brand text-body font-bold text-ink hover:underline lg:text-ui"
+          className={`block truncate font-brand text-body hover:underline lg:text-ui ${
+            nombreVacio ? "text-ink-60" : "font-bold text-ink"
+          }`}
         >
           {fila.clienteNombre}
         </Link>
         <span className={`block truncate ${CLASE_DATO} text-label lg:text-label`}>
-          {fila.clienteTelefono}
+          {sinTelefono(fila.clienteTelefono) ? "Sin teléfono" : fila.clienteTelefono}
         </span>
       </div>
 
@@ -256,6 +266,17 @@ export function FilaProximo({
             cliente={fila.clienteNombre}
             suspendido={suspendido}
           />
+        ) : faltaTelefono && !suspendido ? (
+          // Sin teléfono no hay a quién escribirle: la acción de la fila
+          // pasa a ser cargarlo. Lleva a la ficha con «Editar datos» ya
+          // abierto. Va antes que el template: con o sin plantilla, lo
+          // primero que le falta a esta fila es el número.
+          <Link
+            href={`/panel/clientes/${fila.clienteId}?editar=telefono`}
+            className="inline-flex min-h-11 items-center rounded-md border border-line bg-base px-3.5 text-ui font-semibold text-ink transition-colors hover:bg-surface"
+          >
+            Cargar teléfono
+          </Link>
         ) : !fila.telefonoValido ? (
           // El único caso que es culpa del dato de esta fila. Cuando falta
           // el template activo, el aviso de arriba ya lo explica y acá no

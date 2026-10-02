@@ -205,13 +205,34 @@ export function variablesDesconocidas(
 // Las cuatro variables del template. Lo que no reconoce queda tal cual:
 // si el lubri escribió {telefono} por error, se ve el error y lo corrige,
 // que es mejor que un hueco silencioso en el mensaje.
+//
+// Una variable que viene VACÍA se lleva el espacio que tenía adelante, y si
+// el mensaje queda arrancando con puntuación, se le saca y se pone la
+// mayúscula. Es el caso del cliente «Sin nombre» de una importación:
+// "Hola {nombre}!" queda "Hola!", "Estimado/a {nombre}:" queda
+// "Estimado/a:" y "{nombre}, tu Gol…" queda "Tu Gol…". Sin esto el cliente
+// recibía "Hola Sin!".
 export function resolverTemplate(
   contenido: string,
   variables: Record<string, string>,
 ): string {
-  return contenido.replace(/\{(\w+)\}/g, (original, clave: string) =>
-    clave in variables ? variables[clave] : original,
+  let huboVacia = false;
+  const resuelto = contenido.replace(
+    /(\s*)\{(\w+)\}/g,
+    (original, espacio: string, clave: string) => {
+      if (!(clave in variables)) return original;
+      if (variables[clave] === "") {
+        huboVacia = true;
+        return "";
+      }
+      return `${espacio}${variables[clave]}`;
+    },
   );
+  if (!huboVacia) return resuelto;
+  const limpio = resuelto.replace(/^[\s,;:.!]+/, "");
+  return limpio === resuelto
+    ? resuelto
+    : limpio.charAt(0).toUpperCase() + limpio.slice(1);
 }
 
 export function linkWhatsapp(telefono: string, mensaje: string): string | null {

@@ -42,3 +42,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 supabase/config.toml.bak
+
+# importaciones de planillas de clientes: datos personales, nunca al repo
+/importaciones
