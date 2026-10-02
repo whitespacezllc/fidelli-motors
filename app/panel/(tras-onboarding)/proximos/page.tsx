@@ -18,6 +18,7 @@ import {
   type EstadoContacto,
 } from "@/lib/contacto";
 import { formatearKm } from "@/lib/renglones";
+import { nombreParaMensaje } from "@/lib/clientes";
 
 export const metadata: Metadata = { title: "A quién llamar" };
 
@@ -156,7 +157,7 @@ export default async function PaginaProximos({
     // template no hay link: el aviso de arriba lleva a configurarlo.
     const mensaje = template
       ? resolverTemplate(template, {
-          nombre: (f.cliente_nombre ?? "").split(" ")[0],
+          nombre: nombreParaMensaje(f.cliente_nombre),
           vehiculo,
           patente,
           proximo_km: formatearKm(f.prox_service_km ?? 0),
@@ -199,7 +200,7 @@ export default async function PaginaProximos({
 
       const mensaje = templatePendiente
         ? resolverTemplate(templatePendiente, {
-            nombre: (f.cliente_nombre ?? "").split(" ")[0],
+            nombre: nombreParaMensaje(f.cliente_nombre),
             vehiculo,
             patente,
             pendiente: f.descripcion ?? "",
@@ -252,7 +253,7 @@ export default async function PaginaProximos({
 
       const mensaje = templateNeumaticos
         ? resolverTemplate(templateNeumaticos, {
-            nombre: (f.cliente_nombre ?? "").split(" ")[0],
+            nombre: nombreParaMensaje(f.cliente_nombre),
             vehiculo,
             patente,
             motivo: fraseMotivos(motivos),

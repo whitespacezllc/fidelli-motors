@@ -6,7 +6,7 @@ import { clasesBoton } from "@/components/ui/boton";
 import { DialogCliente } from "@/components/clientes/dialog-cliente";
 import { DialogSuprimirCliente } from "@/components/clientes/dialog-suprimir-cliente";
 import { anonimizarCliente } from "@/app/panel/(tras-onboarding)/clientes/actions";
-import { clienteSuprimido } from "@/lib/clientes";
+import { clienteSuprimido, sinNombre, sinTelefono } from "@/lib/clientes";
 import { SeccionVehiculos } from "@/components/vehiculos/seccion-vehiculos";
 import { estadoService } from "@/lib/servicios";
 import { obtenerSesion, featureHabilitada } from "@/lib/auth/session";
@@ -44,10 +44,15 @@ export const metadata: Metadata = { title: "Cliente" };
 
 export default async function FichaCliente({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ editar?: string }>;
 }) {
   const { id } = await params;
+  // «Cargar teléfono» de A quién llamar llega con ?editar=telefono: la
+  // ficha abre «Editar datos» sola, que es a lo que vino.
+  const { editar } = await searchParams;
   const supabase = await createClient();
   const sesion = await obtenerSesion();
   const puedePendientes = featureHabilitada(sesion, "pendientes");
@@ -225,7 +230,11 @@ export default async function FichaCliente({
   });
 
   const contacto = [
-    suprimido ? "Datos personales eliminados a pedido del titular" : cliente.telefono,
+    suprimido
+      ? "Datos personales eliminados a pedido del titular"
+      : sinTelefono(cliente.telefono)
+        ? "Sin teléfono"
+        : cliente.telefono,
     cliente.email,
     // Con guiones, como se lee en una factura.
     cliente.cuit ? `CUIT ${formatearCuit(cliente.cuit)}` : null,
@@ -246,7 +255,12 @@ export default async function FichaCliente({
 
       <header className="surface-card mb-5 flex flex-wrap items-start justify-between gap-4 p-5">
         <div className="min-w-0">
-          <h1 className="font-brand text-h2 font-bold text-ink">
+          {/* «Sin nombre» (una importación) es un hueco, no un nombre. */}
+          <h1
+            className={`font-brand text-h2 ${
+              sinNombre(cliente.nombre) ? "text-ink-60" : "font-bold text-ink"
+            }`}
+          >
             {cliente.nombre}
           </h1>
           <p className="mt-1 text-ui text-ink-60">{contacto.join(" · ")}</p>
@@ -277,6 +291,7 @@ export default async function FichaCliente({
             )}
             <DialogCliente
               variante="secundario"
+              abiertoAlInicio={Boolean(editar) && !sesion?.suspendido}
               cliente={{
                 id: cliente.id,
                 nombre: cliente.nombre,

@@ -272,6 +272,7 @@ export type Database = {
           cuit: string | null
           email: string | null
           id: string
+          importado_de: string | null
           lubricentro_id: string
           nombre: string
           telefono: string
@@ -281,6 +282,7 @@ export type Database = {
           cuit?: string | null
           email?: string | null
           id?: string
+          importado_de?: string | null
           lubricentro_id: string
           nombre: string
           telefono: string
@@ -290,6 +292,7 @@ export type Database = {
           cuit?: string | null
           email?: string | null
           id?: string
+          importado_de?: string | null
           lubricentro_id?: string
           nombre?: string
           telefono?: string
@@ -1427,6 +1430,7 @@ export type Database = {
           categoria: string
           created_at: string
           id: string
+          importado_de: string | null
           litros_sugeridos: number | null
           lubricentro_id: string
           marca: string | null
@@ -1441,6 +1445,7 @@ export type Database = {
           categoria: string
           created_at?: string
           id?: string
+          importado_de?: string | null
           litros_sugeridos?: number | null
           lubricentro_id: string
           marca?: string | null
@@ -1455,6 +1460,7 @@ export type Database = {
           categoria?: string
           created_at?: string
           id?: string
+          importado_de?: string | null
           litros_sugeridos?: number | null
           lubricentro_id?: string
           marca?: string | null
@@ -1722,6 +1728,7 @@ export type Database = {
           desbloqueado_por: string | null
           fecha: string
           id: string
+          importado_de: string | null
           kilometros: number | null
           lubricentro_id: string
           observaciones: string | null
@@ -1748,6 +1755,7 @@ export type Database = {
           desbloqueado_por?: string | null
           fecha?: string
           id?: string
+          importado_de?: string | null
           kilometros?: number | null
           lubricentro_id: string
           observaciones?: string | null
@@ -1774,6 +1782,7 @@ export type Database = {
           desbloqueado_por?: string | null
           fecha?: string
           id?: string
+          importado_de?: string | null
           kilometros?: number | null
           lubricentro_id?: string
           observaciones?: string | null
@@ -2376,6 +2385,7 @@ export type Database = {
           cliente_id: string
           created_at: string
           id: string
+          importado_de: string | null
           lubricentro_id: string
           marca: string | null
           modelo: string | null
@@ -2388,6 +2398,7 @@ export type Database = {
           cliente_id: string
           created_at?: string
           id?: string
+          importado_de?: string | null
           lubricentro_id: string
           marca?: string | null
           modelo?: string | null
@@ -2400,6 +2411,7 @@ export type Database = {
           cliente_id?: string
           created_at?: string
           id?: string
+          importado_de?: string | null
           lubricentro_id?: string
           marca?: string | null
           modelo?: string | null
