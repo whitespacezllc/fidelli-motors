@@ -118,6 +118,11 @@ M_PC=supabase/migrations/20260924103000_pedidos_calcos.sql
 M_CR=supabase/migrations/20260925100000_crecimiento.sql
 M_PF=supabase/migrations/20260925101000_performance.sql
 M_CC=supabase/migrations/20260925102000_calcos_candado.sql
+# Las que leen `services` para medir a la plataforma se redefinieron para no
+# contar lo importado (salud_tenants, trabajos_semanales, indicadores_tenants,
+# metricas_plataforma, resumen_admin, activacion_tenant, listado_lubricentros):
+# la versión vigente vive acá y es la que hay que romper.
+M_IM=supabase/migrations/20261002120000_importado_de.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
 
@@ -194,35 +199,35 @@ correr_marcada "el evento de módulo sin el motivo del override" tenant_evento_t
   "s/new.motivo, origen_evento_de_sesion(), new.created_at, new.cambiado_por/null, origen_evento_de_sesion(), new.created_at, new.cambiado_por/" R31 "R31g"
 
 echo "── R32a · la guarda de la salud ──"
-correr_marcada "salud_tenants() sin la guarda (un owner lee la salud de todos)" salud_tenants "$M_RS" \
+correr_marcada "salud_tenants() sin la guarda (un owner lee la salud de todos)" salud_tenants "$M_IM" \
   "/@guarda_salud/s/if not soy_superadmin() then/if false then/" R32 "R32a"
 
 echo "── R32b · la exención vive en estado_atencion(), no en una copia ──"
-correr_marcada "la salud que decide «cobro vencido» por la fecha (el bonificado vencido vuelve al ámbar)" salud_tenants "$M_RS" \
+correr_marcada "la salud que decide «cobro vencido» por la fecha (el bonificado vencido vuelve al ámbar)" salud_tenants "$M_IM" \
   "/@cobro_por_atencion/s/when b.atencion in ('trial_vencido', 'cobranza_vencida') then/when b.vencimiento < current_date then/" R32 "R32b"
 
 echo "── R32c · los cortes de actividad ──"
-correr_marcada "el corte de «al día» corrido a 30 días" salud_tenants "$M_RS" \
+correr_marcada "el corte de «al día» corrido a 30 días" salud_tenants "$M_IM" \
   "/@corte_al_dia/s/<= 3 then/<= 30 then/" R32 "R32c"
-correr_marcada "el corte de «actividad baja» corrido a 70 días" salud_tenants "$M_RS" \
+correr_marcada "el corte de «actividad baja» corrido a 70 días" salud_tenants "$M_IM" \
   "/@corte_baja/s/<= 7 then/<= 70 then/" R32 "R32c"
 
 echo "── R32d · el sparkline cuenta todos los tipos ──"
-correr_marcada "trabajos_semanales() contando solo service" trabajos_semanales "$M_RS" \
+correr_marcada "trabajos_semanales() contando solo service" trabajos_semanales "$M_IM" \
   "/@semana_todos/s/where not sv.anulado/where not sv.anulado and sv.tipo = 'service'/" R32 "R32d"
 
 echo "── R32e · los indicadores de la fila ──"
-correr_marcada "indicadores_tenants() con el MRR en cero" indicadores_tenants "$M_AU" \
+correr_marcada "indicadores_tenants() con el MRR en cero" indicadores_tenants "$M_IM" \
   "/@mrr_indicador/s/mrr_de_tenant(l.id),/0::numeric,/" R32 "R32e"
-correr_marcada "indicadores_tenants() con la ventana de 30 días achicada a 7" indicadores_tenants "$M_AU" \
+correr_marcada "indicadores_tenants() con la ventana de 30 días achicada a 7" indicadores_tenants "$M_IM" \
   "/@trabajos_30/s/current_date - 29/current_date - 6/" R32 "R32e"
 
 echo "── R32f · el pulso cuenta todos los tipos ──"
-correr_marcada "metricas_plataforma() de vuelta con el filtro tipo = 'service'" metricas_plataforma "$M_PF" \
+correr_marcada "metricas_plataforma() de vuelta con el filtro tipo = 'service'" metricas_plataforma "$M_IM" \
   "/@trabajos_mes/s/where not anulado/where not anulado and tipo = 'service'/" R32 "R32f"
 
 echo "── R32g · el resumen cuenta todos los tipos ──"
-correr_marcada "resumen_admin() contando solo service en trabajos del mes" resumen_admin "$M_RS" \
+correr_marcada "resumen_admin() contando solo service en trabajos del mes" resumen_admin "$M_IM" \
   "/@resumen_trabajos/s/where not anulado/where not anulado and tipo = 'service'/" R32 "R32g"
 
 echo "── R33b · cierre y pérdida excluyentes ──"
@@ -256,9 +261,9 @@ correr_marcada "registrar_pedido_calcos() con el máximo en vez de la suma" regi
   "/@suma_calcos/s/coalesce(sum(pc.cantidad), 0)/coalesce(max(pc.cantidad), 0)/" R33 "R33g"
 
 echo "── R33i · la ventana y el umbral de activación ──"
-correr_marcada "la ventana de activación corrida a 8 días" activacion_tenant "$M_AU" \
+correr_marcada "la ventana de activación corrida a 8 días" activacion_tenant "$M_IM" \
   "/@ventana_activacion/s/interval '7 days'/interval '8 days'/" R33 "R33i"
-correr_marcada "el umbral de activación bajado a 19" activacion_tenant "$M_AU" \
+correr_marcada "el umbral de activación bajado a 19" activacion_tenant "$M_IM" \
   "/@umbral_activacion/s/v_n >= 20,/v_n >= 19,/" R33 "R33i"
 
 echo "── R34a · la identidad por construcción ──"
@@ -298,17 +303,17 @@ correr_marcada "suspension_reloj contada como voluntaria" churn_por_mes "$M_CR" 
   "/@involuntario/s/then true/then false/" R34 "R34e"
 
 echo "── R34g · el estado y el nombre del owner en el listado ──"
-correr_marcada "listado_lubricentros() con el estado del owner invertido (pendiente ↔ activo)" listado_lubricentros "$M_PF" \
+correr_marcada "listado_lubricentros() con el estado del owner invertido (pendiente ↔ activo)" listado_lubricentros "$M_IM" \
   "/@owner_estado_listado/s/coalesce(o.estado, 'sin_owner')/case o.estado when 'pendiente' then 'activo' when 'activo' then 'pendiente' else 'sin_owner' end/" R34 "R34g"
-correr_marcada "listado_lubricentros() con owner_nombre del owner más nuevo (con dos owners)" listado_lubricentros "$M_PF" \
+correr_marcada "listado_lubricentros() con owner_nombre del owner más nuevo (con dos owners)" listado_lubricentros "$M_IM" \
   "/@owner_mas_viejo/s/u.created_at, u.id/u.created_at desc, u.id desc/" R34 "R34g CON DOS OWNERS EL LISTADO NO ELIGIÓ AL MÁS VIEJO"
-correr_marcada "listado_lubricentros() sin el escalón del plan para el módulo de gomería" listado_lubricentros "$M_PF" \
+correr_marcada "listado_lubricentros() sin el escalón del plan para el módulo de gomería" listado_lubricentros "$M_IM" \
   "/@modulo_plan/s/when jsonb_typeof(p.features -> 'neumaticos') = 'boolean'/when false/" R34 "R34g"
 
 echo "── R34h · la serie del pulso cuenta todos los tipos, y sin trabajos está vacía ──"
-correr_marcada "metricas_plataforma() con la serie contando solo service" metricas_plataforma "$M_PF" \
+correr_marcada "metricas_plataforma() con la serie contando solo service" metricas_plataforma "$M_IM" \
   "/@serie_todos/s/where not s.anulado/where not s.anulado and s.tipo = 'service'/" R34 "R34h"
-correr_marcada "metricas_plataforma() sin la rama «cero trabajos» (30 puntos en cero en una base vacía)" metricas_plataforma "$M_PF" \
+correr_marcada "metricas_plataforma() sin la rama «cero trabajos» (30 puntos en cero en una base vacía)" metricas_plataforma "$M_IM" \
   "/@sin_trabajos/s/where r.primero is not null/where true/" R34 "R34h SIN NINGÚN TRABAJO"
 
 echo "── R34i · la suscripción vigente y la regla del owner ──"
