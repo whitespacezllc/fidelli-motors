@@ -140,7 +140,9 @@ export async function TabCalcos({
                   data-actual={d.actual ? "si" : "no"}
                   className="flex w-36 flex-col gap-1.5"
                 >
-                  {/* 5 × 8 cm: la proporción del calco. */}
+                  {/* 5 × 8 cm: la proporción del calco. El diseño va entero
+                      adentro (object-contain): un archivo de otra proporción
+                      no se recorta. */}
                   <a
                     href={url}
                     target="_blank"
@@ -162,7 +164,7 @@ export async function TabCalcos({
                       <img
                         src={url}
                         alt={`Diseño versión ${d.version}`}
-                        className="h-full w-full object-cover"
+                        className="h-full w-full object-contain"
                       />
                     )}
                   </a>

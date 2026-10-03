@@ -366,9 +366,13 @@ for (const [n, id] of [["aviso", AVISO], ["vence", VENCE]]) {
   }
 }
 
-// Un PNG de verdad, de 1000 × 1600: más ancho que la miniatura (400), para
-// que se note cuál de los dos se cargó.
-function pngLiso(ancho, alto, [r, g, b]) {
+// Un PNG de verdad, de 1000 × 1250 (4:5): MÁS ancho que la miniatura (400),
+// para que se note cuál de los dos se cargó, y de OTRA proporción que la caja
+// de 5 × 8 cm donde se muestra —como el archivo de un lubricentro de verdad,
+// que no siempre viene en 5:8—. Con un marco oscuro de 60 px en los cuatro
+// lados: si la pantalla lo recorta, el marco desaparece.
+const MARCO = [0x1f, 0x4e, 0x79];
+function pngConMarco(ancho, alto, grosor, marco, fondo) {
   const crc = (buf) => {
     let c = ~0;
     for (const x of buf) { c ^= x; for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1; }
@@ -382,18 +386,28 @@ function pngLiso(ancho, alto, [r, g, b]) {
   };
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(ancho, 0); ihdr.writeUInt32BE(alto, 4); ihdr.set([8, 2, 0, 0, 0], 8);
-  const fila = Buffer.concat([Buffer.from([0]), Buffer.alloc(ancho * 3).map((_, i) => [r, g, b][i % 3])]);
+  const fila = (enElMarco) => {
+    const f = Buffer.alloc(1 + ancho * 3);
+    for (let x = 0; x < ancho; x++) {
+      const color = enElMarco || x < grosor || x >= ancho - grosor ? marco : fondo;
+      f.set(color, 1 + x * 3);
+    }
+    return f;
+  };
+  const deMarco = fila(true);
+  const deAdentro = fila(false);
+  const filas = Array.from({ length: alto }, (_, y) => (y < grosor || y >= alto - grosor ? deMarco : deAdentro));
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     trozo("IHDR", ihdr),
-    trozo("IDAT", zlib.deflateSync(Buffer.concat(Array.from({ length: alto }, () => fila)))),
+    trozo("IDAT", zlib.deflateSync(Buffer.concat(filas))),
     trozo("IEND", Buffer.alloc(0)),
   ]);
 }
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "fm-calcos-stock-"));
 const ARCHIVO_PNG = path.join(TMP, "calco.png");
 const ANCHO_DEL_ARCHIVO = 1000;
-fs.writeFileSync(ARCHIVO_PNG, pngLiso(ANCHO_DEL_ARCHIVO, 1600, [0x1f, 0x4e, 0x79]));
+fs.writeFileSync(ARCHIVO_PNG, pngConMarco(ANCHO_DEL_ARCHIVO, 1250, 60, MARCO, [0xe8, 0xee, 0xf5]));
 
 const navegador = await chromium.launch({ args: ["--lang=es-AR"] });
 if (DIR_CAPTURAS) fs.mkdirSync(DIR_CAPTURAS, { recursive: true });
@@ -448,6 +462,36 @@ async function capturar(page, nombre) {
 }
 
 const sinM2 = async (page) => !/m²|\bm2\b/i.test(await page.locator("body").innerText());
+
+// ¿El diseño se ve ENTERO? Se le saca una foto al <img> tal como quedó en
+// pantalla y se cuentan los tramos del color del marco en la fila y en la
+// columna del medio: enteros son dos y dos (izquierda y derecha, arriba y
+// abajo). Recortado a los costados, la fila no cruza ningún marco. La foto
+// se lee en una pestaña en blanco, que no tiene nada de la app.
+async function marcoALaVista(contexto, locator) {
+  const foto = await locator.screenshot();
+  const lienzo = await contexto.newPage();
+  const tramos = await lienzo.evaluate(async ([b64, marco]) => {
+    const img = new Image();
+    img.src = `data:image/png;base64,${b64}`;
+    await img.decode();
+    const c = document.createElement("canvas");
+    c.width = img.width; c.height = img.height;
+    const g = c.getContext("2d");
+    g.drawImage(img, 0, 0);
+    const esMarco = (x, y) => {
+      const d = g.getImageData(x, y, 1, 1).data;
+      return [0, 1, 2].every((k) => Math.abs(d[k] - marco[k]) < 45);
+    };
+    const contar = (n, en) => { let t = 0, dentro = false; for (let i = 0; i < n; i++) { const m = en(i); if (m && !dentro) t++; dentro = m; } return t; };
+    return {
+      fila: contar(img.width, (x) => esMarco(x, Math.floor(img.height / 2))),
+      columna: contar(img.height, (y) => esMarco(Math.floor(img.width / 2), y)),
+    };
+  }, [foto.toString("base64"), MARCO]);
+  await lienzo.close();
+  return tramos;
+}
 const limpio = (s) => s.replace(/\s+/g, " ").trim();
 
 const { page, tocar, ctx } = await abrir({ width: 390, height: 844 }, SESION_OWNER);
@@ -475,6 +519,16 @@ await paso("el diseño, para la miniatura", async () => {
   await dialogo.getByRole("button", { name: "Subir diseño" }).click();
   await dialogo.waitFor({ state: "hidden", timeout: 60_000 });
   check("el diseño quedó subido", sql(`select count(*) from disenos_calco where lubricentro_id = '${DEMO}' and actual;`) === "1");
+
+  // El archivo es 4:5 y la miniatura de la ficha es una caja de 5:8.
+  const mini = f.locator("[data-diseno] img").first();
+  await mini.waitFor({ timeout: 10_000 });
+  await f.waitForFunction(() => {
+    const i = document.querySelector("[data-diseno] img");
+    return i && i.complete && i.naturalWidth > 0;
+  }, null, { timeout: 15_000 });
+  const tramos = await marcoALaVista(fidelli.ctx, mini);
+  check("en la ficha, un diseño que no es 5:8 se ve entero, con su marco de los cuatro lados", tramos.fila === 2 && tramos.columna === 2, JSON.stringify(tramos));
 });
 
 await paso("el stock, con los números de la base", async () => {
@@ -514,6 +568,25 @@ await paso("la miniatura sale por la transformación de Storage", async () => {
   check(`la imagen que se cargó mide 400 de ancho, no los ${ANCHO_DEL_ARCHIVO} del archivo`, medida.ancho === 400, `${medida.ancho}px · ${medida.src.slice(0, 90)}`);
   const enlace = await page.locator("[data-calco] a[href]").first().getAttribute("href");
   check("tocarla abre el archivo original", /\/storage\/v1\/object\/sign\/calcos\//.test(enlace ?? ""), enlace ?? "");
+});
+
+await paso("un diseño que no es 5:8 se ve entero adentro de la caja", async () => {
+  const img = page.locator("[data-calco] img");
+  const alto = await img.evaluate((i) => i.naturalHeight);
+  check("la miniatura conserva la proporción del archivo (400 × 500)", alto === 500, `400 × ${alto}`);
+  const caja = await page.locator("[data-calco] a").first().boundingBox();
+  // 5 × 8 cm en CSS son 189 × 302 px.
+  check("la caja sigue midiendo 5 × 8 cm", Math.abs(caja.width - 189) <= 2 && Math.abs(caja.height - 302) <= 2, `${Math.round(caja.width)} × ${Math.round(caja.height)}`);
+  const tramos = await marcoALaVista(ctx, img);
+  check("el diseño se ve ENTERO: el marco de los cuatro lados está a la vista, sin recortar",
+    tramos.fila === 2 && tramos.columna === 2, `marcos que cruza la fila del medio: ${tramos.fila} (2) · la columna: ${tramos.columna} (2)`);
+  const forma = await img.evaluate((i) => {
+    const r = i.getBoundingClientRect();
+    const ajuste = getComputedStyle(i).objectFit;
+    // Con «fill» el archivo se estira hasta la proporción de la caja.
+    return { ajuste, caja: r.width / r.height, archivo: i.naturalWidth / i.naturalHeight };
+  });
+  check("y sin deformar", forma.ajuste === "contain", JSON.stringify(forma));
 });
 
 await paso("si la transformación falla, se ve el archivo entero (no un hueco)", async () => {
