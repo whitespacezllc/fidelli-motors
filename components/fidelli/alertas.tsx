@@ -6,9 +6,12 @@ import type { ResumenAdmin, TenantAlerta } from "@/lib/fidelli/resumen";
 // urgencia. Sin semáforos ni íconos: lo que hay que hacer se lee, no se
 // interpreta. Si no hay nada, se dice «Nada que atender.» en gris y ya.
 //
-// Orden: primero lo que rompe la medición (el cierre), después la plata
-// (Cresium, vencimientos), después la operación (tenants que no cargan,
-// owners que no entran) y al final el dato que falta (el origen).
+// Orden: primero el trabajo que entró (los pedidos de calcos pagados que
+// esperan producción: no es «algo está mal», es lo que hay que hacer hoy,
+// y por eso es la única que va en verde), después lo que rompe la medición
+// (el cierre), después la plata (Cresium, vencimientos), después la
+// operación (tenants que no cargan, owners que no entran) y al final el
+// dato que falta (el origen).
 // ============================================================
 
 // El § 4 de docs/METRICAS.md, donde está escrito cómo corre el cierre y
@@ -27,6 +30,8 @@ type Alerta = {
   href: string;
   accion: string;
   externo?: boolean;
+  /** Trabajo que entró, no un problema: se lee en verde. */
+  positivo?: boolean;
 };
 
 function plural(n: number, uno: string, varios: string): string {
@@ -40,6 +45,34 @@ function diasDe(t: TenantAlerta): string {
 
 export function armarAlertas(r: ResumenAdmin): Alerta[] {
   const alertas: Alerta[] = [];
+
+  // Los pedidos de calcos, primeros. Sin pedidos no hay alerta.
+  const { esperando_produccion: esperando, atrasados, por_vencer: porVencer } = r.calcos;
+  if (esperando > 0) {
+    alertas.push({
+      clave: "calcos-esperando",
+      texto: `${esperando} ${plural(esperando, "pedido de calcos pagado espera", "pedidos de calcos pagados esperan")} producción.`,
+      href: "/fidelli/calcos",
+      accion: "Ver la cola",
+      positivo: true,
+    });
+  }
+  if (atrasados > 0) {
+    alertas.push({
+      clave: "calcos-atrasados",
+      texto: `${atrasados} en producción hace más de 5 días hábiles.`,
+      href: "/fidelli/calcos?estado=en_produccion",
+      accion: "Ver cuáles",
+    });
+  }
+  if (porVencer > 0) {
+    alertas.push({
+      clave: "calcos-por-vencer",
+      texto: `${porVencer} sin pagar ${plural(porVencer, "vence", "vencen")} mañana.`,
+      href: "/fidelli/calcos?estado=pendiente_pago",
+      accion: "Ver cuáles",
+    });
+  }
 
   if (!r.cierre_ayer) {
     alertas.push({
@@ -137,7 +170,7 @@ export function Alertas({ r }: { r: ResumenAdmin }) {
               key={a.clave}
               className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4.5 py-2.5"
             >
-              <span className="text-ui text-ink">{a.texto}</span>
+              <span className={`text-ui ${a.positivo ? "text-success" : "text-ink"}`}>{a.texto}</span>
               {a.externo ? (
                 <a
                   href={a.href}

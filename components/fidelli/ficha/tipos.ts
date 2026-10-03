@@ -33,6 +33,7 @@ export type Owner = {
 export const PESTANAS = [
   { clave: "resumen", nombre: "Resumen" },
   { clave: "suscripcion", nombre: "Suscripción" },
+  { clave: "calcos", nombre: "Calcos" },
   { clave: "historial", nombre: "Historial" },
   { clave: "datos", nombre: "Datos" },
   { clave: "configuracion", nombre: "Configuración" },

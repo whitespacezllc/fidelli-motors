@@ -1,5 +1,6 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { formatearFecha, formatearFechaHora, hoyISO } from "@/lib/fechas";
+import { formatearFecha, formatearFechaHora } from "@/lib/fechas";
 import {
   CONDICION_FOUNDING,
   abonoMensual,
@@ -9,7 +10,6 @@ import {
   porcentaje,
 } from "@/lib/fidelli/plan";
 import { PanelFicha, Dato, SinDato, Metrica } from "./panel-dato";
-import { DialogPedidoCalcos } from "./dialog-pedido-calcos";
 import type { SuscripcionVigente, Tenant } from "./tipos";
 import type { EstadoOwner } from "@/components/fidelli/tipos";
 
@@ -340,12 +340,20 @@ export async function TabResumen({
         </PanelFicha>
       </div>
 
-      {/* ============ Calcos (bloque MÉTRICAS 3) ============
-          El contador es la suma de los pedidos. Cada pedido queda para
-          siempre; el slug se cierra en cuanto el total pasa de cero. */}
+      {/* ============ Calcos ============
+          El contador es la suma del libro de entregas. Acá va el número;
+          el diseño, los pedidos y el libro entero viven en la solapa Calcos
+          (desde 20261003120000). */}
       <PanelFicha
         titulo="Calcos"
-        acciones={<DialogPedidoCalcos lubricentroId={tenant.id} nombre={tenant.nombre} hoy={hoyISO()} />}
+        acciones={
+          <Link
+            href={`/fidelli/${tenant.id}?tab=calcos`}
+            className="flex h-11 items-center text-ui font-semibold text-ink underline underline-offset-2"
+          >
+            Ver pedidos y diseño
+          </Link>
+        }
       >
         <dl>
           <Dato etiqueta="Entregadas">
@@ -362,7 +370,7 @@ export async function TabResumen({
               <SinDato>ninguna todavía · el slug se puede cambiar</SinDato>
             )}
           </Dato>
-          <Dato etiqueta="Último pedido">
+          <Dato etiqueta="Última entrega">
             {pedidos[0] ? (
               <span className="tabular-nums">
                 {formatearFecha(pedidos[0].fecha)} · {ENTERO.format(pedidos[0].cantidad)}{" "}
@@ -373,21 +381,6 @@ export async function TabResumen({
             )}
           </Dato>
         </dl>
-
-        {pedidos.length > 0 && (
-          <ul className="mt-1 divide-y divide-line border-t border-line">
-            {pedidos.map((p) => (
-              <li key={p.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2 text-ui">
-                <span className="tabular-nums text-ink-60">{formatearFecha(p.fecha)}</span>
-                <span className="font-semibold tabular-nums text-ink">{ENTERO.format(p.cantidad)} calcos</span>
-                <span className="text-ink-60">
-                  {p.incluidas ? "incluidas" : `cobradas${p.monto_ars != null ? ` · ${pesos(p.monto_ars)}` : ""}`}
-                </span>
-                {p.nota && <span className="text-label text-ink-40">{p.nota}</span>}
-              </li>
-            ))}
-          </ul>
-        )}
       </PanelFicha>
     </div>
   );

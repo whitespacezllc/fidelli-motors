@@ -18,13 +18,17 @@ export function Chip({
   tono = "neutro",
   title,
   children,
+  ...resto
 }: {
   tono?: TonoChip;
   title?: string;
   children: React.ReactNode;
+  /** Atributos data-*: el estado del pedido viaja en el chip. */
+  [dato: `data-${string}`]: string | undefined;
 }) {
   return (
     <span
+      {...resto}
       title={title}
       className={`inline-flex items-center rounded-sm border px-1.5 py-px text-label font-semibold whitespace-nowrap ${TONOS[tono]}`}
     >
