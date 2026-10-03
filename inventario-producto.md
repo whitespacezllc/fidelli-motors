@@ -84,6 +84,21 @@ planes y precios de lista; fijar overrides de features por tenant; **desbloquear
 trabajo fijado** y **corregir una patente** (las dos únicas escrituras sobre datos del
 cliente, ambas con motivo y auditoría).
 
+**Pedidos de calcos (desde el 03/10/2026, PR 1).** La ficha gana la pestaña **Calcos**,
+con tres bloques: el **diseño** del calco del tenant (versiones como miniaturas, una
+marcada actual; PNG o PDF de hasta 10 MB en un bucket privado, a la vista por URL
+firmada), los **pedidos** (cada uno con su número, qué lleva, monto, estado y la acción
+que le toca: En producción → Enviado con transportista y seguimiento, o Listo para
+retirar → Entregado; «+ Pedido incluido en el plan» carga los 200/400 del alta, sin
+pago) y el **libro de entregas**, que ahora lo escribe «Entregado» y a mano solo como
+«Corrección del libro». La **ganancia por pedido y el m²** se ven solo ahí. La ruta nueva
+`/fidelli/calcos` es **la cola**: los pedidos de todos los tenants en el orden en que hay
+que atenderlos (pagados sin producir primero, los más viejos arriba), con filtro por
+estado y las mismas acciones. Y el hub abre sus alertas con *"N pedidos de calcos pagados
+esperan producción"*, en verde, seguida de los que llevan más de 5 días hábiles en
+producción y los que vencen mañana sin pagar. **El lado del tenant (pedir y pagar desde
+Mi cuenta → Calcos) todavía no existe: es el PR 2.**
+
 **Acá el RLS trabaja al revés que en `/panel`:** `soy_superadmin()` abre todos los
 tenants, así que cada consulta tiene que filtrar por el lubricentro de la ficha. Un
 filtro olvidado no da error: mezcla dos lubricentros en la misma pantalla.
