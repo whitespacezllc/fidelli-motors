@@ -13,6 +13,8 @@ import {
   type EntregaCalcos,
   type EstadoEncargo,
 } from "@/lib/calcos";
+import { telefonoWhatsapp } from "@/lib/contacto";
+import { cantidadDicha, semanasDichas } from "@/lib/stock-calcos";
 
 /** 1 m² de vinilo son 200 calcos de 5 × 8 cm. Es costo: solo en /fidelli. */
 export const CALCOS_POR_M2 = 200;
@@ -172,4 +174,72 @@ export function nombreDelCatalogo(f: { codigo: string; cantidad: number | null }
   if (f.codigo === "rediseno") return "Rediseño";
   if (f.codigo === "envio") return "Envío a domicilio";
   return f.codigo;
+}
+
+// ---------- Los que se quedan sin calcos (calcos_por_agotarse) ----------
+// La lista de arriba de /fidelli/calcos: menos de 3 semanas de cobertura y
+// sin un pedido abierto. La regla es de la base; acá se lee y se arma el
+// WhatsApp.
+
+export type PorAgotarse = {
+  lubricentro_id: string;
+  nombre: string;
+  slug: string;
+  stock: number;
+  /** Autos nuevos por semana. */
+  ritmo: number | null;
+  semanas: number | null;
+  /** Si la cuenta parte de un recuento del dueño, cuándo fue. */
+  baseRecuentoAt: string | null;
+  telefono: string | null;
+  ownerNombre: string | null;
+};
+
+function numeroONull(v: unknown): number | null {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function leerPorAgotarse(v: unknown): PorAgotarse[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((x) => x as Obj)
+    .filter((x) => typeof x.lubricentro_id === "string")
+    .map((x): PorAgotarse => ({
+      lubricentro_id: x.lubricentro_id as string,
+      nombre: String(x.nombre ?? ""),
+      slug: String(x.slug ?? ""),
+      stock: Number(x.stock_estimado ?? 0),
+      ritmo: numeroONull(x.ritmo_semanal),
+      semanas: numeroONull(x.semanas_cobertura),
+      baseRecuentoAt: texto(x.base_recuento_at),
+      telefono: texto(x.telefono),
+      ownerNombre: texto(x.owner_nombre),
+    }));
+}
+
+/**
+ * El WhatsApp al lubricentro, ya armado. Null cuando no hay a quién
+ * escribirle: la pantalla muestra «Sin teléfono cargado» en vez de un botón
+ * que abre wa.me/null.
+ *
+ * Se saluda al owner por su nombre; si no hay, la marca sirve igual. Y ni
+ * una palabra de costo: es un mensaje para el dueño.
+ */
+export function whatsappPorCalcos(f: PorAgotarse): string | null {
+  const numero = f.telefono ? telefonoWhatsapp(f.telefono) : null;
+  if (!numero) return null;
+
+  const nombre = f.ownerNombre?.trim() || f.nombre;
+  const quedan =
+    f.stock > 0
+      ? `según nuestra cuenta te quedan unas ${cantidadDicha(f.stock)} calcos` +
+        (f.semanas != null ? `, que alcanzan para ${semanasDichas(f.semanas)}` : "")
+      : "según nuestra cuenta ya no te quedan calcos";
+  const mensaje =
+    `Hola ${nombre}! Te escribo de Fidelli Motors: ${quedan}. ` +
+    "Producirlas y enviarlas tarda hasta 2 semanas, así que conviene pedirlas ahora. " +
+    "Las pedís desde Mi cuenta → Calcos en el panel, o si preferís lo vemos por acá.";
+  return `https://wa.me/${numero}?text=${encodeURIComponent(mensaje)}`;
 }

@@ -9,14 +9,16 @@ import { createClient } from "@/lib/supabase/server";
 // ============================================================
 // Mi cuenta → Calcos: pedir y pagar
 //
-// Dos acciones, y las dos pasan por `sesionParaEscribir()`: un lubricentro
-// suspendido lee su historial, pero no pide.
+// Tres acciones, y las tres pasan por `sesionParaEscribir()`: un lubricentro
+// suspendido lee su historial, pero no pide ni corrige.
 //
 //   · pedirCalcos()            — «Confirmar y pagar»: crea el pedido y le
 //                                genera la cuenta para transferir.
 //   · generarCuentaDelPedido() — «Reintentar»: el pedido ya existe y Cresium
 //                                falló al crearle la cuenta (o la que tenía
 //                                se cerró).
+//   · declararRecuento()       — «Contá y corregí»: cuántas calcos le quedan
+//                                (PR 3). Al final del archivo.
 //
 // ⚠ DEL FORMULARIO VIAJA QUÉ SE PIDE, NUNCA CUÁNTO SALE. El pack, el
 // rediseño y la entrega; los montos los congela `crear_encargo_calcos()` con
@@ -161,5 +163,50 @@ export async function generarCuentaDelPedido(): Promise<EstadoPedido> {
         "si sigue igual, escribinos y lo resolvemos por WhatsApp.",
     };
   }
+  return { ok: true };
+}
+
+// ============================================================
+// «Contá y corregí»: el recuento
+// ============================================================
+// El dueño cuenta las calcos que tiene y las declara: desde ese momento la
+// estimación parte de ahí (`stock_calcos()`). Del formulario viaja UN
+// número; el lubricentro lo pone la puerta de la base, de la sesión.
+
+export type EstadoRecuento = { ok?: boolean; error?: string };
+
+const MENSAJES_RECUENTO: Record<string, string> = {
+  cantidad_invalida: "Escribí cuántas calcos te quedan, en números. Ejemplo: 80.",
+  sin_entregas: "Todavía no te entregamos calcos: no hay nada que contar.",
+};
+
+export async function declararRecuento(
+  _prev: EstadoRecuento,
+  formData: FormData,
+): Promise<EstadoRecuento> {
+  await sesionParaEscribir();
+
+  const crudo = String(formData.get("cantidad") ?? "").trim();
+  if (!/^\d{1,6}$/.test(crudo)) return { error: MENSAJES_RECUENTO.cantidad_invalida };
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("declarar_recuento_calcos", { p_cantidad: Number(crudo) });
+  if (error) {
+    if (/fetch|network|conexión|ECONNREFUSED/i.test(error.message)) {
+      return {
+        error:
+          "Se cortó la conexión a internet. No cierres ni recargues esta pantalla. Cuando vuelva la señal, tocá Guardar de nuevo.",
+      };
+    }
+    for (const [clave, texto] of Object.entries(MENSAJES_RECUENTO)) {
+      if (error.message.includes(clave)) return { error: texto };
+    }
+    return { error: "No se pudo guardar el recuento. Probá de nuevo en un momento." };
+  }
+
+  // El número cambia en Mi cuenta → Calcos y puede prender (o apagar) el
+  // aviso del Inicio.
+  revalidatePath(RUTA);
+  revalidatePath("/panel");
   return { ok: true };
 }

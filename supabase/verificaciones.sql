@@ -11242,3 +11242,901 @@ begin
   end if;
 end $$;
 -- <<< R40
+
+
+-- ============================================================
+-- R41 · El stock de calcos y el aviso (20261003210000)
+--
+-- El PR 3 del sprint de calcos. Cuántas calcos le quedan a un lubricentro
+-- NO SE GUARDA: se calcula (`stock_calcos()`), con el mismo criterio que
+-- `estado_cobranza`. Y de esa cuenta cuelgan cuatro cosas que le hablan a
+-- gente distinta —Mi cuenta → Calcos y el aviso del Inicio (el dueño), dos
+-- mails (el cron de las 9:00) y la lista del hub (Grego)—. Lo que se rompe
+-- sin ruido acá:
+--
+--   a · LA CUENTA. El calco se gasta por AUTO NUEVO, no por trabajo: cuenta
+--       el vehículo cuyo primer trabajo no importado y no anulado
+--       (`created_at`) es posterior a la primera entrega del libro. 400
+--       entregadas y 285 autos nuevos → 115. No cuentan: el auto que ya
+--       venía de antes y volvió, el que solo tiene historia importada, el
+--       que solo tiene un trabajo anulado; sí cuenta, una vez, el auto
+--       importado que vuelve y el que tiene dos trabajos.
+--   b · EL RECUENTO pisa la base: 90 declaradas y 7 autos nuevos después →
+--       83; una entrega POSTERIOR al recuento suma, una corrección del
+--       libro con fecha anterior no; el recuento más nuevo gana; nunca da
+--       negativo. El dueño lo declara por `declarar_recuento_calcos()`, con
+--       el tenant de SU sesión.
+--   c · NULL EN TODO sin ninguna entrega en el libro, y con
+--       `calcos_propias` prendido.
+--   d · EL RITMO: autos nuevos por semana sobre las últimas 8 semanas (o
+--       sobre la historia que haya, si es menos); con menos de 2 semanas de
+--       historia es null; con ritmo cero, la cobertura es null.
+--   e · EL AVISO (`aviso_calcos()`): menos de 4 semanas → `calcos_4_semanas`;
+--       menos de 1 semana o 20 calcos o menos → `calcos_1_semana`; y NUNCA
+--       con un pedido abierto, estado por estado del enum.
+--   f · LOS MAILS (`avisos_calcos_pendientes()`): el más avanzado que
+--       corresponde, una vez por escalón por ciclo de entrega
+--       (`entrega_ref` = la última fila del libro); con el de 1 semana
+--       mandado no se cae al de 4; una entrega nueva habilita los dos; y
+--       nada para el que imprime por su cuenta, el suspendido, el demo o el
+--       que tiene un pedido abierto.
+--   g · LA LISTA DEL HUB (`calcos_por_agotarse()` y
+--       `resumen_admin().calcos.sin_stock`): menos de 3 semanas y sin
+--       pedido abierto; con el teléfono y el nombre del owner.
+--   h · `calcos_propias`: el owner no lo prende por tabla; nadie lo mueve
+--       con un UPDATE suelto; la puerta es del superadmin, exige nota y
+--       deja el evento con autor.
+--   i · Los dos libros nuevos (`recuentos_calcos`, `emails_calcos`) no se
+--       editan, no se borran y no se vacían, con los candados en ALWAYS; y
+--       `emails_calcos` rechaza el duplicado.
+--   k · Quién ejecuta qué: un owner no lee el stock del vecino, no ejecuta
+--       la decisión de los mails ni la lista del hub, y no escribe ninguno
+--       de los dos libros por tabla.
+--
+-- Todo dentro de una subtransacción que se deshace, como R36–R40.
+-- ============================================================
+-- >>> R41
+create or replace function r41_tenant(p_nombre text, p_slug text, p_alta timestamptz)
+returns table (lub uuid, suc uuid, cli uuid)
+language plpgsql
+as $$
+declare
+  v_lub uuid; v_suc uuid; v_cli uuid;
+begin
+  insert into lubricentros (nombre, slug, created_at) values (p_nombre, p_slug, p_alta) returning id into v_lub;
+  insert into sucursales (lubricentro_id, nombre, telefono) values (v_lub, 'Centro', '351 555 0141') returning id into v_suc;
+  insert into clientes (lubricentro_id, nombre, telefono) values (v_lub, 'Cliente R41', '3510000000') returning id into v_cli;
+  return query select v_lub, v_suc, v_cli;
+end;
+$$;
+
+create or replace function r41_owner(p_lub uuid, p_email text)
+returns uuid
+language plpgsql
+as $$
+declare
+  v_uid uuid := gen_random_uuid();
+begin
+  insert into auth.users (
+    id, instance_id, email, encrypted_password, email_confirmed_at,
+    created_at, updated_at, aud, role, raw_app_meta_data, raw_user_meta_data,
+    confirmation_token, recovery_token, email_change_token_new, email_change
+  ) values (
+    v_uid, '00000000-0000-0000-0000-000000000000',
+    p_email, extensions.crypt('r41', extensions.gen_salt('bf')), now(),
+    now(), now(), 'authenticated', 'authenticated',
+    '{"provider":"email","providers":["email"]}'::jsonb,
+    jsonb_build_object('rol', 'owner', 'nombre', 'Owner R41', 'lubricentro_id', p_lub),
+    '', '', '', ''
+  );
+  return v_uid;
+end;
+$$;
+
+-- N vehículos con patente <prefijo>001RA, <prefijo>002RA, …
+create or replace function r41_autos(p_lub uuid, p_cli uuid, p_n integer, p_prefijo text)
+returns void
+language plpgsql
+as $$
+declare
+  i integer; v_pat text;
+begin
+  for i in 1..p_n loop
+    v_pat := p_prefijo || lpad(i::text, 3, '0') || 'RA';
+    insert into vehiculos (lubricentro_id, cliente_id, patente, patente_normalizada, marca, modelo)
+    values (p_lub, p_cli, v_pat, v_pat, 'Ford', 'Ranger');
+  end loop;
+end;
+$$;
+
+-- Un trabajo, en ese instante, para cada vehículo del prefijo.
+create or replace function r41_trabajos(
+  p_lub uuid, p_suc uuid, p_usr uuid, p_prefijo text, p_at timestamptz,
+  p_importado text default null, p_anulado boolean default false)
+returns void
+language sql
+as $$
+  insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, created_at,
+                        kilometros, aceite_tipo, prox_service_km, importado_de, anulado)
+  select p_lub, p_suc, v.id, p_usr, 'service', p_at::date, p_at,
+         -- Los km crecen con el tiempo: el segundo trabajo de un auto no puede traer menos.
+         (extract(epoch from p_at) / 3600)::integer % 100000,
+         '10W40',
+         (extract(epoch from p_at) / 3600)::integer % 100000 + 10000,
+         p_importado, p_anulado
+  from vehiculos v
+  where v.lubricentro_id = p_lub and v.patente like p_prefijo || '%';
+$$;
+
+do $$
+declare
+  v_ahora   timestamptz := now();
+  v_hoy_ar  date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+  v_demo    uuid;
+  v_super   uuid;
+  v_a       uuid; v_suc_a uuid; v_cli_a uuid; v_own_a uuid;   -- la cuenta y el recuento
+  v_s       uuid; v_suc_s uuid; v_cli_s uuid; v_own_s uuid;   -- sin libro
+  v_n       uuid; v_suc_n uuid; v_cli_n uuid;                 -- consumió más de lo entregado
+  v_r       uuid; v_suc_r uuid; v_cli_r uuid;                 -- el ritmo de 8 semanas
+  v_j       uuid; v_suc_j uuid; v_cli_j uuid;                 -- 10 días de historia
+  v_m       uuid; v_suc_m uuid; v_cli_m uuid;                 -- 4 semanas de historia
+  v_q       uuid; v_suc_q uuid; v_cli_q uuid;                 -- sin autos nuevos hace 8 semanas
+  v_v       uuid; v_suc_v uuid; v_cli_v uuid; v_own_v uuid;   -- el del aviso
+  v_p       uuid; v_suc_p uuid; v_cli_p uuid;                 -- 30 autos nuevos por semana
+  v_suc_d   uuid; v_cli_d uuid;
+  s         record;
+  av        record;
+  r         record;
+  v_id      uuid;
+  v_enc     uuid;
+  v_ref     uuid;
+  v_ref2    uuid;
+  v_cnt     integer;
+  v_cnt2    integer;
+  v_base    integer;
+  v_txt     text;
+  v_ok      boolean;
+  v_estado  estado_encargo_calcos;
+  v_abierto boolean;
+  v_j1      jsonb;
+  k         integer;
+  -- Una sesión de nadie: un uid de Auth sin fila en `usuarios` (el alta de
+  -- un tenant son dos fases, y entre una y otra existe).
+  v_nadie   uuid := gen_random_uuid();
+begin
+  select id into v_demo  from lubricentros where slug = 'demo';
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  if v_demo is null or v_super is null then
+    raise exception 'R41 SIN PISO: falta el demo o el superadmin del seed.';
+  end if;
+  if (select calcos_entregadas from lubricentros where id = v_demo) <= 0 then
+    raise exception 'R41 SIN PISO: el demo no tiene entregas en el libro; la prueba del demo excluido de los mails no prueba nada.';
+  end if;
+
+  begin
+    -- ════════════════ los fixtures ════════════════
+    select lub, suc, cli into v_a, v_suc_a, v_cli_a from r41_tenant('Cuenta R41',   'r41-cuenta',   v_ahora - interval '120 days');
+    select lub, suc, cli into v_s, v_suc_s, v_cli_s from r41_tenant('Sin libro R41','r41-sin-libro',v_ahora - interval '60 days');
+    select lub, suc, cli into v_n, v_suc_n, v_cli_n from r41_tenant('Negativo R41', 'r41-negativo', v_ahora - interval '30 days');
+    select lub, suc, cli into v_r, v_suc_r, v_cli_r from r41_tenant('Ritmo R41',    'r41-ritmo',    v_ahora - interval '90 days');
+    select lub, suc, cli into v_j, v_suc_j, v_cli_j from r41_tenant('Joven R41',    'r41-joven',    v_ahora - interval '15 days');
+    select lub, suc, cli into v_m, v_suc_m, v_cli_m from r41_tenant('Mes R41',      'r41-mes',      v_ahora - interval '45 days');
+    select lub, suc, cli into v_q, v_suc_q, v_cli_q from r41_tenant('Quieto R41',   'r41-quieto',   v_ahora - interval '120 days');
+    select lub, suc, cli into v_v, v_suc_v, v_cli_v from r41_tenant('Aviso R41',    'r41-aviso',    v_ahora - interval '100 days');
+    select lub, suc, cli into v_p, v_suc_p, v_cli_p from r41_tenant('Rapido R41',   'r41-rapido',   v_ahora - interval '30 days');
+    v_own_a := r41_owner(v_a, 'owner-a-r41@fidellimotors.app');
+    v_own_s := r41_owner(v_s, 'owner-s-r41@fidellimotors.app');
+    v_own_v := r41_owner(v_v, 'owner-v-r41@fidellimotors.app');
+
+    -- ---------- Cuenta R41: 400 entregadas hace 100 días ----------
+    perform r41_autos(v_a, v_cli_a, 275, 'AA');   -- nuevos: 275
+    perform r41_trabajos(v_a, v_suc_a, v_super, 'AA', v_ahora - interval '60 days');
+    perform r41_autos(v_a, v_cli_a, 10, 'AB');    -- ya venían de antes, y volvieron: 0
+    perform r41_trabajos(v_a, v_suc_a, v_super, 'AB', v_ahora - interval '110 days');
+    perform r41_trabajos(v_a, v_suc_a, v_super, 'AB', v_ahora - interval '30 days');
+    perform r41_autos(v_a, v_cli_a, 6, 'AC');     -- solo historia importada: 0
+    perform r41_trabajos(v_a, v_suc_a, v_super, 'AC', v_ahora - interval '50 days', 'r41');
+    perform r41_autos(v_a, v_cli_a, 4, 'AD');     -- importados que VUELVEN: 4
+    perform r41_trabajos(v_a, v_suc_a, v_super, 'AD', v_ahora - interval '50 days', 'r41');
+    perform r41_trabajos(v_a, v_suc_a, v_super, 'AD', v_ahora - interval '20 days');
+    perform r41_autos(v_a, v_cli_a, 3, 'AE');     -- el de antes está anulado, el válido es de después: 3
+    perform r41_trabajos(v_a, v_suc_a, v_super, 'AE', v_ahora - interval '110 days', null, true);
+    perform r41_trabajos(v_a, v_suc_a, v_super, 'AE', v_ahora - interval '40 days');
+    perform r41_autos(v_a, v_cli_a, 3, 'AF');     -- dos trabajos: cuentan UNA vez: 3
+    perform r41_trabajos(v_a, v_suc_a, v_super, 'AF', v_ahora - interval '45 days');
+    perform r41_trabajos(v_a, v_suc_a, v_super, 'AF', v_ahora - interval '15 days');
+    perform r41_autos(v_a, v_cli_a, 5, 'AG');     -- solo un trabajo anulado: 0
+    perform r41_trabajos(v_a, v_suc_a, v_super, 'AG', v_ahora - interval '35 days', null, true);
+
+    -- ---------- Sin libro: trabajos y ninguna entrega ----------
+    perform r41_autos(v_s, v_cli_s, 5, 'SA');
+    perform r41_trabajos(v_s, v_suc_s, v_super, 'SA', v_ahora - interval '30 days');
+
+    -- ---------- Negativo: 10 entregadas, 15 autos nuevos ----------
+    perform r41_autos(v_n, v_cli_n, 15, 'NA');
+    perform r41_trabajos(v_n, v_suc_n, v_super, 'NA', v_ahora - interval '10 days');
+
+    -- ---------- Ritmo: 3 autos nuevos por semana, 8 semanas ----------
+    perform r41_autos(v_r, v_cli_r, 1, 'RA');
+    perform r41_trabajos(v_r, v_suc_r, v_super, 'RA', v_ahora - interval '70 days');
+    perform r41_autos(v_r, v_cli_r, 5, 'RB');
+    perform r41_trabajos(v_r, v_suc_r, v_super, 'RB', v_ahora - interval '65 days');
+    for k in 1..8 loop
+      perform r41_autos(v_r, v_cli_r, 3, 'T' || chr(64 + k));
+      perform r41_trabajos(v_r, v_suc_r, v_super, 'T' || chr(64 + k), v_ahora - make_interval(days => 7 * k - 3));
+    end loop;
+
+    -- ---------- Joven: 10 días de historia ----------
+    perform r41_autos(v_j, v_cli_j, 6, 'JA');
+    perform r41_trabajos(v_j, v_suc_j, v_super, 'JA', v_ahora - interval '10 days');
+
+    -- ---------- Mes: 4 semanas de historia, 8 autos ----------
+    perform r41_autos(v_m, v_cli_m, 1, 'MA');
+    perform r41_trabajos(v_m, v_suc_m, v_super, 'MA', v_ahora - interval '28 days');
+    perform r41_autos(v_m, v_cli_m, 7, 'MB');
+    perform r41_trabajos(v_m, v_suc_m, v_super, 'MB', v_ahora - interval '14 days');
+
+    -- ---------- Quieto: 5 autos hace 100 días y nada más ----------
+    perform r41_autos(v_q, v_cli_q, 5, 'QA');
+    perform r41_trabajos(v_q, v_suc_q, v_super, 'QA', v_ahora - interval '100 days');
+
+    -- ---------- Aviso: 10 autos nuevos por semana ----------
+    perform r41_autos(v_v, v_cli_v, 1, 'VA');
+    perform r41_trabajos(v_v, v_suc_v, v_super, 'VA', v_ahora - interval '60 days');
+    for k in 1..8 loop
+      perform r41_autos(v_v, v_cli_v, 10, 'W' || chr(64 + k));
+      perform r41_trabajos(v_v, v_suc_v, v_super, 'W' || chr(64 + k), v_ahora - make_interval(days => 7 * k - 3));
+    end loop;
+
+    -- ---------- Rápido: 60 autos nuevos en 2 semanas ----------
+    perform r41_autos(v_p, v_cli_p, 1, 'PA');
+    perform r41_trabajos(v_p, v_suc_p, v_super, 'PA', v_ahora - interval '14 days');
+    perform r41_autos(v_p, v_cli_p, 59, 'PB');
+    perform r41_trabajos(v_p, v_suc_p, v_super, 'PB', v_ahora - interval '7 days');
+
+    -- ---------- El libro, por su puerta, como superadmin ----------
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform registrar_pedido_calcos(v_n, current_date - 20,  10,  true,  null, 'r41');
+    perform registrar_pedido_calcos(v_r, current_date - 80,  100, true,  null, 'r41');
+    perform registrar_pedido_calcos(v_j, current_date - 12,  200, true,  null, 'r41');
+    perform registrar_pedido_calcos(v_m, current_date - 40,  100, true,  null, 'r41');
+    perform registrar_pedido_calcos(v_q, current_date - 110, 50,  true,  null, 'r41');
+    perform registrar_pedido_calcos(v_v, current_date - 90,  116, true,  null, 'r41');
+    perform registrar_pedido_calcos(v_p, current_date - 20,  85,  true,  null, 'r41');
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+
+    -- La entrega de Cuenta R41 se cargó EL DÍA QUE PASÓ, hace 100 días (es lo
+    -- que hace «Entregado»). Las demás se cargan hoy con fecha vieja, que es
+    -- la forma del backfill y de una corrección del libro. Va directo y no
+    -- por la puerta porque la puerta fecha la fila ahora; el contador lo
+    -- deja en la suma el candado de siempre.
+    insert into pedidos_calcos (lubricentro_id, fecha, cantidad, incluidas, nota, created_at)
+    values (v_a, ((v_ahora - interval '100 days') at time zone 'America/Argentina/Buenos_Aires')::date,
+            400, true, 'r41', v_ahora - interval '100 days');
+    update lubricentros set calcos_entregadas = 400 where id = v_a;
+
+    -- ════════════════ a · la cuenta ════════════════
+    select * into s from stock_calcos(v_a);
+    if s.entregadas is distinct from 400 or s.consumidas is distinct from 285 or s.stock_estimado is distinct from 115 then
+      raise exception 'R41a LA CUENTA NO DA: con 400 entregadas y 285 autos nuevos después de la entrega, stock_calcos() dice % entregadas, % consumidas, % en stock (400 / 285 / 115). El calco se gasta por AUTO NUEVO: cuenta el vehículo cuyo PRIMER trabajo no importado y no anulado es posterior a la primera entrega. No cuentan los 10 que ya venían de antes (aunque vuelvan), los 6 con historia solo importada ni los 5 con un único trabajo anulado; sí cuentan los 4 importados que vuelven, los 3 cuyo trabajo de antes está anulado y, una sola vez, los 3 con dos trabajos.',
+        s.entregadas, s.consumidas, s.stock_estimado;
+    end if;
+    if s.base_recuento_at is not null then
+      raise exception 'R41a sin ningún recuento, base_recuento_at tiene que ser null y es %.', s.base_recuento_at;
+    end if;
+
+    -- El dueño lee el de su lubricentro, con su sesión.
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own_a, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    select * into s from stock_calcos(v_a);
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    if s.stock_estimado is distinct from 115 then
+      raise exception 'R41a el OWNER no lee el stock de su propio lubricentro: le dio % (115). Es el número de Mi cuenta → Calcos.', s.stock_estimado;
+    end if;
+
+    -- Nunca negativo.
+    select * into s from stock_calcos(v_n);
+    if s.consumidas is distinct from 15 or s.stock_estimado is distinct from 0 then
+      raise exception 'R41a con 10 entregadas y 15 autos nuevos el stock tiene que ser 0, no negativo: dio % (consumidas %). A nadie le quedan «unas −5 calcos».', s.stock_estimado, s.consumidas;
+    end if;
+
+    -- ════════════════ c · null en todo ════════════════
+    select * into s from stock_calcos(v_s);
+    if s.entregadas is not null or s.consumidas is not null or s.stock_estimado is not null
+       or s.ritmo_semanal is not null or s.semanas_cobertura is not null or s.base_recuento_at is not null then
+      raise exception 'R41c SIN NINGUNA ENTREGA EN EL LIBRO stock_calcos() tiene que devolver null en todo y devolvió %. Sin entregas no hay nada que estimar ni que avisar.', row_to_json(s);
+    end if;
+    if exists (select 1 from aviso_calcos(v_s)) then
+      raise exception 'R41c sin ninguna entrega en el libro hay aviso de calcos: no hay nada que avisar.';
+    end if;
+
+    -- ════════════════ d · el ritmo ════════════════
+    select * into s from stock_calcos(v_r);
+    if s.ritmo_semanal is distinct from 3.0 or s.stock_estimado is distinct from 70 or s.semanas_cobertura is distinct from 23.3 then
+      raise exception 'R41d EL RITMO DE 8 SEMANAS NO DA: 24 autos nuevos en las últimas 8 semanas (3 por semana) y 6 más viejos, con 100 entregadas → ritmo 3,0, stock 70, cobertura 23,3; dio ritmo %, stock %, cobertura %. El ritmo es autos nuevos por semana, promedio de las ÚLTIMAS 8 semanas: los de hace 9 no entran.',
+        s.ritmo_semanal, s.stock_estimado, s.semanas_cobertura;
+    end if;
+    select * into s from stock_calcos(v_j);
+    if s.stock_estimado is distinct from 194 or s.ritmo_semanal is not null or s.semanas_cobertura is not null then
+      raise exception 'R41d CON MENOS DE 2 SEMANAS DE HISTORIA EL RITMO ES NULL: con 10 días de trabajos dio ritmo % y cobertura % (stock %, que sí tiene que ser 194). Diez días no alcanzan para decirle a nadie cuántas semanas le quedan.',
+        s.ritmo_semanal, s.semanas_cobertura, s.stock_estimado;
+    end if;
+    select * into s from stock_calcos(v_m);
+    if s.ritmo_semanal is distinct from 2.0 or s.semanas_cobertura is distinct from 46.0 then
+      raise exception 'R41d con 4 semanas de historia y 8 autos nuevos el ritmo es 2,0 por semana (8 ÷ 4, no 8 ÷ 8) y la cobertura 46,0: dio % y %. Un lubricentro con un mes de uso no tiene 8 semanas para promediar.',
+        s.ritmo_semanal, s.semanas_cobertura;
+    end if;
+    select * into s from stock_calcos(v_q);
+    if s.ritmo_semanal is distinct from 0 or s.semanas_cobertura is not null or s.stock_estimado is distinct from 45 then
+      raise exception 'R41d CON RITMO CERO LA COBERTURA ES NULL: sin autos nuevos en 8 semanas dio ritmo %, cobertura %, stock % (0 / null / 45). 45 ÷ 0 no son «infinitas semanas»: no hay nada que decir.',
+        s.ritmo_semanal, s.semanas_cobertura, s.stock_estimado;
+    end if;
+
+    -- ════════════════ b · el recuento ════════════════
+    -- Siete autos nuevos hace 5 días: sin recuento, restan de las 400.
+    perform r41_autos(v_a, v_cli_a, 7, 'AH');
+    perform r41_trabajos(v_a, v_suc_a, v_super, 'AH', v_ahora - interval '5 days');
+    select * into s from stock_calcos(v_a);
+    if s.consumidas is distinct from 292 or s.stock_estimado is distinct from 108 then
+      raise exception 'R41b siete autos nuevos más tenían que dejar 292 consumidas y 108 en stock: % y %.', s.consumidas, s.stock_estimado;
+    end if;
+
+    -- Hace 10 días el dueño contó 90. (Directo y con fecha: por la puerta
+    -- el recuento nace ahora, y un recuento no se edita.)
+    insert into recuentos_calcos (lubricentro_id, cantidad, declarado_por, created_at)
+    values (v_a, 90, v_own_a, v_ahora - interval '10 days');
+    select * into s from stock_calcos(v_a);
+    if s.stock_estimado is distinct from 83 or s.consumidas is distinct from 7
+       or s.base_recuento_at is distinct from v_ahora - interval '10 days' then
+      raise exception 'R41b EL RECUENTO NO PISA LA BASE: con 90 declaradas hace 10 días y 7 autos nuevos después, el stock es 83 (consumidas 7, base en la fecha del recuento); dio stock %, consumidas %, base %. Con un recuento la cuenta parte de ahí: lo de antes ya está contado en lo que el dueño contó.',
+        s.stock_estimado, s.consumidas, s.base_recuento_at;
+    end if;
+    if s.entregadas is distinct from 400 then
+      raise exception 'R41b con recuento, `entregadas` sigue siendo el contador del libro (400) y es %.', s.entregadas;
+    end if;
+
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    -- Una entrega POSTERIOR al recuento suma...
+    perform registrar_pedido_calcos(v_a, current_date - 3, 200, false, 80000, 'r41 comprado');
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    select * into s from stock_calcos(v_a);
+    if s.stock_estimado is distinct from 283 or s.entregadas is distinct from 600 then
+      raise exception 'R41b UNA ENTREGA POSTERIOR AL RECUENTO NO SUMA: 90 contadas, 7 gastadas y 200 que llegaron después son 283 (y 600 entregadas en total); dio % y %. Sin esto, al que recibe un pedido se le sigue avisando que se queda sin calcos.',
+        s.stock_estimado, s.entregadas;
+    end if;
+
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    -- ...y una corrección del libro cargada HOY con fecha de hace un mes, no:
+    -- esas calcos ya estaban en el local cuando el dueño contó.
+    perform registrar_pedido_calcos(v_a, current_date - 30, 50, true, null, 'r41 corrección del libro');
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    select * into s from stock_calcos(v_a);
+    if s.stock_estimado is distinct from 283 or s.entregadas is distinct from 650 then
+      raise exception 'R41b UNA CORRECCIÓN DEL LIBRO CON FECHA ANTERIOR AL RECUENTO SUMÓ AL STOCK: tenía que seguir en 283 (con 650 entregadas) y dio % (% entregadas). Lo que manda es la FECHA de la entrega, no cuándo se cargó la fila: esas 50 ya estaban contadas.',
+        s.stock_estimado, s.entregadas;
+    end if;
+
+    -- El recuento más nuevo gana.
+    insert into recuentos_calcos (lubricentro_id, cantidad, declarado_por, created_at)
+    values (v_a, 40, v_own_a, v_ahora - interval '1 day');
+    select * into s from stock_calcos(v_a);
+    if s.stock_estimado is distinct from 40 or s.consumidas is distinct from 0
+       or s.base_recuento_at is distinct from v_ahora - interval '1 day' then
+      raise exception 'R41b con dos recuentos manda EL MÁS NUEVO: 40 declaradas ayer y nada después son 40 (base ayer); dio stock %, consumidas %, base %.', s.stock_estimado, s.consumidas, s.base_recuento_at;
+    end if;
+
+    -- La puerta: el dueño declara, con el tenant de SU sesión.
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own_a, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    v_id := declarar_recuento_calcos(77);
+    select * into s from stock_calcos(v_a);
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    if not exists (select 1 from recuentos_calcos rc
+                    where rc.id = v_id and rc.lubricentro_id = v_a and rc.cantidad = 77 and rc.declarado_por = v_own_a) then
+      raise exception 'R41b declarar_recuento_calcos() no dejó la fila con el tenant y el usuario DE LA SESIÓN (lubricentro, 77, owner).';
+    end if;
+    if s.stock_estimado is distinct from 77 then
+      raise exception 'R41b «CONTÁ Y CORREGÍ» NO CAMBIA EL NÚMERO: el dueño declaró 77 y stock_calcos() dice %.', s.stock_estimado;
+    end if;
+
+    for r in select * from (values
+        (v_own_a, 'select declarar_recuento_calcos(-1)',   'cantidad_invalida'),
+        (v_own_a, 'select declarar_recuento_calcos(null)', 'cantidad_invalida'),
+        (v_own_s, 'select declarar_recuento_calcos(10)',   'sin_entregas')
+      ) t(quien, consulta, esperado)
+    loop
+      perform set_config('request.jwt.claims',
+        json_build_object('sub', r.quien, 'role', 'authenticated')::text, true);
+      execute 'set local role authenticated';
+      v_ok := false;
+      begin
+        execute r.consulta;
+        v_ok := true;
+      exception when others then
+        v_txt := sqlerrm;
+      end;
+      execute 'reset role';
+      perform set_config('request.jwt.claims', '{}', true);
+      if v_ok or v_txt is distinct from r.esperado then
+        raise exception 'R41b «%» tenía que fallar con «%» y %.', r.consulta, r.esperado,
+          case when v_ok then 'ENTRÓ' else 'falló con «' || v_txt || '»' end;
+      end if;
+    end loop;
+
+    -- ════════════════ c · el que imprime por su cuenta ════════════════
+    -- (y h: la puerta de calcos_propias)
+    select count(*) into v_cnt from tenant_eventos where lubricentro_id = v_a and despues ? 'calcos_propias';
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    v_ok := false;
+    begin
+      perform marcar_calcos_propias(v_a, true, 'corta');
+      v_ok := true;
+    exception when others then
+      v_txt := sqlerrm;
+    end;
+    if v_ok or v_txt is distinct from 'nota_corta' then
+      raise exception 'R41h marcar_calcos_propias() SIN NOTA %: el switch se prende con una nota que diga por qué (quién lo pidió, con qué gráfica imprime).',
+        case when v_ok then 'ENTRÓ' else 'falló con «' || v_txt || '» y no con nota_corta' end;
+    end if;
+    perform marcar_calcos_propias(v_a, true, 'imprime con la gráfica de su cuñado, lo pidió por WhatsApp');
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+
+    if not (select calcos_propias from lubricentros where id = v_a) then
+      raise exception 'R41h marcar_calcos_propias() no prendió el switch.';
+    end if;
+    select * into s from stock_calcos(v_a);
+    if s.entregadas is not null or s.consumidas is not null or s.stock_estimado is not null
+       or s.ritmo_semanal is not null or s.semanas_cobertura is not null or s.base_recuento_at is not null then
+      raise exception 'R41c CON `calcos_propias` PRENDIDO stock_calcos() tiene que devolver null en todo y devolvió %. Al que imprime por su cuenta no se le estima nada: no sabemos cuántas tiene.', row_to_json(s);
+    end if;
+    if not exists (select 1 from tenant_eventos e
+                    where e.lubricentro_id = v_a and e.tipo = 'edicion'
+                      and e.despues ->> 'calcos_propias' = 'true' and e.antes ->> 'calcos_propias' = 'false'
+                      and e.motivo like 'imprime con la gráfica%' and e.actor = v_super) then
+      raise exception 'R41h PRENDER `calcos_propias` NO DEJÓ RASTRO: tiene que quedar un evento del tenant con el antes, el después, la nota y quién lo hizo.';
+    end if;
+
+    -- Volver a marcar lo mismo no ensucia el historial.
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform marcar_calcos_propias(v_a, true, 'otra vez lo mismo, no cambia nada');
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    select count(*) into v_cnt2 from tenant_eventos where lubricentro_id = v_a and despues ? 'calcos_propias';
+    if v_cnt2 <> v_cnt + 1 then
+      raise exception 'R41h marcar dos veces lo mismo dejó % eventos nuevos (tenía que ser 1): un guardado que no cambia nada no se registra.', v_cnt2 - v_cnt;
+    end if;
+
+    -- Nadie lo mueve con un UPDATE suelto, ni justo después de la puerta.
+    v_ok := false;
+    begin
+      update lubricentros set calcos_propias = false where id = v_a;
+      v_ok := true;
+    exception when others then
+      v_txt := sqlerrm;
+    end;
+    if v_ok or v_txt is distinct from 'calcos_propias_solo_por_funcion' then
+      raise exception 'R41h UN UPDATE DIRECTO MOVIÓ `calcos_propias` (%): el switch se mueve SOLO por marcar_calcos_propias(), que exige nota y deja el evento. Si entró justo después de la puerta, la puerta dejó la bandera prendida.',
+        case when v_ok then 'entró' else 'falló con «' || v_txt || '»' end;
+    end if;
+    -- El candado no se pasa de rosca: lo demás del tenant se sigue editando.
+    update lubricentros set nombre = 'Cuenta R41 bis' where id = v_a;
+
+    -- El owner no lo prende por tabla (el RLS no le deja tocar la fila)...
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own_v, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+      update lubricentros set calcos_propias = true where id = v_v;
+    exception when others then
+      null;
+    end;
+    -- ...ni por la puerta.
+    v_ok := false;
+    begin
+      perform marcar_calcos_propias(v_v, true, 'me lo prendo yo, que imprimo por mi cuenta');
+      v_ok := true;
+    exception when others then
+      if sqlstate <> '42501' then
+        raise exception 'R41h la puerta de calcos_propias le falló a un owner con otro error que 42501: % (%)', sqlerrm, sqlstate;
+      end if;
+    end;
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    if v_ok or (select calcos_propias from lubricentros where id = v_v) then
+      raise exception 'R41h UN OWNER SE PRENDIÓ `calcos_propias`: no es una preferencia del tenant, se la prendemos nosotros desde la ficha cuando nos lo dice.';
+    end if;
+
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform marcar_calcos_propias(v_a, false, 'volvió a pedirnos las calcos a nosotros');
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    select * into s from stock_calcos(v_a);
+    if s.stock_estimado is distinct from 77 then
+      raise exception 'R41c al apagar `calcos_propias` la estimación tiene que volver (77): dio %.', s.stock_estimado;
+    end if;
+
+    -- ════════════════ e · el aviso ════════════════
+    -- Aviso R41: 116 entregadas, 81 autos nuevos, 10 por semana → 35 y 3,5 semanas.
+    select * into s from stock_calcos(v_v);
+    if s.stock_estimado is distinct from 35 or s.ritmo_semanal is distinct from 10.0 or s.semanas_cobertura is distinct from 3.5 then
+      raise exception 'R41e SIN PISO: el fixture del aviso tenía que dar 35 calcos, ritmo 10,0 y 3,5 semanas, y dio %, % y %.', s.stock_estimado, s.ritmo_semanal, s.semanas_cobertura;
+    end if;
+    select * into av from aviso_calcos(v_v);
+    if av.nivel is distinct from 'calcos_4_semanas' or av.stock_estimado is distinct from 35 or av.semanas_cobertura is distinct from 3.5 then
+      raise exception 'R41e CON MENOS DE 4 SEMANAS DE COBERTURA NO HAY AVISO: con 35 calcos para 3,5 semanas aviso_calcos() dio «%» (stock %, semanas %) y tenía que ser calcos_4_semanas. Producir y enviar tarda hasta 2 semanas: a las 4 es cuando hay que decirlo.',
+        av.nivel, av.stock_estimado, av.semanas_cobertura;
+    end if;
+    -- El dueño lo lee con su sesión: es la consulta del Inicio.
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own_v, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    select count(*) into v_cnt from aviso_calcos(v_v);
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    if v_cnt <> 1 then
+      raise exception 'R41e el owner no lee el aviso de su propio lubricentro (% filas): el Inicio no lo va a mostrar nunca.', v_cnt;
+    end if;
+
+    -- Con 4 semanas justas o más, y más de 20 calcos, no se avisa.
+    insert into recuentos_calcos (lubricentro_id, cantidad, declarado_por, created_at)
+    values (v_v, 40, v_own_v, v_ahora - interval '5 hours');
+    if exists (select 1 from aviso_calcos(v_v)) then
+      raise exception 'R41e con 40 calcos para 4,0 semanas hay aviso y no tenía que haber: el umbral es MENOS de 4.';
+    end if;
+    -- Menos de una semana.
+    insert into recuentos_calcos (lubricentro_id, cantidad, declarado_por, created_at)
+    values (v_v, 8, v_own_v, v_ahora - interval '4 hours');
+    select * into av from aviso_calcos(v_v);
+    if av.nivel is distinct from 'calcos_1_semana' then
+      raise exception 'R41e con 8 calcos para 0,8 semanas el aviso es «%» y tenía que ser calcos_1_semana.', av.nivel;
+    end if;
+    -- Menos de una semana con MÁS de 20 calcos: el escalón por semanas, solo.
+    -- (Rápido R41: 85 entregadas, 60 autos nuevos en 2 semanas → 25 calcos,
+    -- ritmo 30,0 y 0,8 semanas.)
+    select * into s from stock_calcos(v_p);
+    select * into av from aviso_calcos(v_p);
+    if s.stock_estimado is distinct from 25 or s.ritmo_semanal is distinct from 30.0 or s.semanas_cobertura is distinct from 0.8
+       or av.nivel is distinct from 'calcos_1_semana' then
+      raise exception 'R41e con 25 calcos para 0,8 semanas (ritmo 30,0) el aviso es «%» y tenía que ser calcos_1_semana: stock %, ritmo %, semanas %. El segundo escalón es «1 semana O 20 calcos»: con más de 20 también llega, por semanas.',
+        av.nivel, s.stock_estimado, s.ritmo_semanal, s.semanas_cobertura;
+    end if;
+    -- 20 calcos o menos, aunque el ritmo no diga nada (Quieto R41: ritmo 0).
+    insert into recuentos_calcos (lubricentro_id, cantidad, declarado_por, created_at)
+    values (v_q, 20, null, v_ahora - interval '4 hours');
+    select * into av from aviso_calcos(v_q);
+    if av.nivel is distinct from 'calcos_1_semana' then
+      raise exception 'R41e CON 20 CALCOS O MENOS SE AVISA AUNQUE NO HAYA RITMO: con 20 calcos y ritmo cero el aviso es «%» y tenía que ser calcos_1_semana. El segundo escalón es «1 semana O 20 calcos».', av.nivel;
+    end if;
+    insert into recuentos_calcos (lubricentro_id, cantidad, declarado_por, created_at)
+    values (v_q, 21, null, v_ahora - interval '3 hours');
+    if exists (select 1 from aviso_calcos(v_q)) then
+      raise exception 'R41e con 21 calcos y sin ritmo hay aviso y no tenía que haber.';
+    end if;
+
+    -- De vuelta a 25 calcos y 2,5 semanas: aviso, mail pendiente y lista del hub.
+    insert into recuentos_calcos (lubricentro_id, cantidad, declarado_por, created_at)
+    values (v_v, 25, v_own_v, v_ahora - interval '3 hours');
+    select pc.id into v_ref from pedidos_calcos pc where pc.lubricentro_id = v_v order by pc.created_at desc limit 1;
+
+    -- ════════════════ g · la lista del hub ════════════════
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    select * into r from calcos_por_agotarse() c where c.lubricentro_id = v_v;
+    v_j1 := resumen_admin() -> 'calcos';
+    select count(*) into v_cnt from calcos_por_agotarse();
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    if r.lubricentro_id is null then
+      raise exception 'R41g CON MENOS DE 3 SEMANAS EL TENANT NO ENTRA EN LA LISTA DEL HUB: 25 calcos para 2,5 semanas y sin pedido abierto, y calcos_por_agotarse() no lo trae. Es la lista que Grego llama.';
+    end if;
+    if r.stock_estimado is distinct from 25 or r.ritmo_semanal is distinct from 10.0 or r.semanas_cobertura is distinct from 2.5
+       or r.telefono is distinct from '351 555 0141' or r.owner_nombre is distinct from 'Owner R41' then
+      raise exception 'R41g la fila de la lista del hub no trae lo que Grego necesita para llamar: stock % (25), ritmo % (10,0), semanas % (2,5), teléfono «%», owner «%».',
+        r.stock_estimado, r.ritmo_semanal, r.semanas_cobertura, r.telefono, r.owner_nombre;
+    end if;
+    if (v_j1 ->> 'sin_stock')::integer is distinct from v_cnt then
+      raise exception 'R41g resumen_admin().calcos.sin_stock dice % y la lista tiene % filas: la alerta del hub y la lista tienen que contar lo mismo.', v_j1 ->> 'sin_stock', v_cnt;
+    end if;
+    if not (v_j1 ? 'esperando_produccion' and v_j1 ? 'atrasados' and v_j1 ? 'por_vencer') then
+      raise exception 'R41g resumen_admin().calcos perdió alguna de las tres claves de siempre: %.', v_j1;
+    end if;
+    v_base := v_cnt;
+
+    -- Con 3,5 semanas no entra (el umbral del hub es 3, no 4).
+    insert into recuentos_calcos (lubricentro_id, cantidad, declarado_por, created_at)
+    values (v_v, 35, v_own_v, v_ahora - interval '170 minutes');
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    select count(*) into v_cnt from calcos_por_agotarse() c where c.lubricentro_id = v_v;
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    if v_cnt <> 0 then
+      raise exception 'R41g con 3,5 semanas de cobertura el tenant está en la lista del hub: el umbral de la lista es MENOS de 3 semanas (el de 4 es el del aviso al dueño).';
+    end if;
+    insert into recuentos_calcos (lubricentro_id, cantidad, declarado_por, created_at)
+    values (v_v, 25, v_own_v, v_ahora - interval '160 minutes');
+
+    -- ════════════════ f · los mails ════════════════
+    select * into r from avisos_calcos_pendientes() a where a.lubricentro_id = v_v;
+    if r.tipo is distinct from 'calcos_4_semanas' or r.entrega_ref is distinct from v_ref
+       or r.destinatario is distinct from 'owner-v-r41@fidellimotors.app'
+       or r.stock_estimado is distinct from 25 or r.semanas_cobertura is distinct from 2.5 then
+      raise exception 'R41f LA DECISIÓN DEL MAIL NO DA: con 25 calcos para 2,5 semanas tenía que tocar calcos_4_semanas, del ciclo de la última entrega, al mail del owner; dio tipo «%», entrega %, destinatario «%», stock %, semanas %.',
+        r.tipo, r.entrega_ref, r.destinatario, r.stock_estimado, r.semanas_cobertura;
+    end if;
+
+    -- ---------- nunca con un pedido abierto: estado por estado ----------
+    insert into encargos_calcos (lubricentro_id, incluido, cantidad, entrega, monto_pack, monto_rediseno, monto_envio,
+                                 monto_total, costo_estimado, comision_estimada, estado, transportista, seguimiento, pedido_calcos_id)
+    values (v_v, true, 200, 'retiro', 0, 0, 0, 0, 0, 0, 'pagado', 'R41', 'R41', gen_random_uuid())
+    returning id into v_enc;
+    for v_estado in select unnest(enum_range(null::estado_encargo_calcos)) loop
+      update encargos_calcos set estado = v_estado where id = v_enc;
+      v_abierto := v_estado in ('pendiente_pago', 'pagado', 'en_produccion', 'enviado', 'listo_retiro');
+      perform set_config('request.jwt.claims',
+        json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+      execute 'set local role authenticated';
+      select count(*) into v_cnt2 from calcos_por_agotarse() c where c.lubricentro_id = v_v;
+      execute 'reset role';
+      perform set_config('request.jwt.claims', '{}', true);
+      select count(*) into v_cnt from aviso_calcos(v_v);
+      if (v_cnt = 0) is distinct from v_abierto then
+        raise exception 'R41e EL AVISO CON UN PEDIDO %: con el pedido en «%» aviso_calcos() devolvió % filas. Con un pedido abierto (sin pagar, pagado, en producción, enviado o listo para retirar) el dueño ya pidió: no se le avisa; con uno entregado, vencido o cancelado, sí.',
+          case when v_abierto then 'ABIERTO' else 'CERRADO' end, v_estado, v_cnt;
+      end if;
+      select count(*) into v_cnt from avisos_calcos_pendientes() a where a.lubricentro_id = v_v;
+      if (v_cnt = 0) is distinct from v_abierto then
+        raise exception 'R41f EL MAIL CON UN PEDIDO %: con el pedido en «%» avisos_calcos_pendientes() devolvió % filas. Con un pedido abierto no se manda.',
+          case when v_abierto then 'ABIERTO' else 'CERRADO' end, v_estado, v_cnt;
+      end if;
+      if (v_cnt2 = 0) is distinct from v_abierto then
+        raise exception 'R41g LA LISTA DEL HUB CON UN PEDIDO %: con el pedido en «%» calcos_por_agotarse() devolvió % filas. Al que ya pidió no hay que llamarlo.',
+          case when v_abierto then 'ABIERTO' else 'CERRADO' end, v_estado, v_cnt2;
+      end if;
+    end loop;
+    update encargos_calcos set estado = 'cancelado' where id = v_enc;
+
+    -- ---------- el que imprime por su cuenta: ni aviso, ni mail, ni lista ----------
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform marcar_calcos_propias(v_v, true, 'imprime por su cuenta desde siempre');
+    select count(*) into v_cnt2 from calcos_por_agotarse() c where c.lubricentro_id = v_v;
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    select count(*) into v_cnt from avisos_calcos_pendientes() a where a.lubricentro_id = v_v;
+    if v_cnt <> 0 or v_cnt2 <> 0 or exists (select 1 from aviso_calcos(v_v)) then
+      raise exception 'R41c AL QUE IMPRIME POR SU CUENTA SE LO SIGUE MOLESTANDO: con `calcos_propias` prendido hay % mails pendientes, % filas en la lista del hub y aviso en el Inicio: %. Con el switch prendido no hay estimación, ni aviso, ni mail, ni entra en la lista.',
+        v_cnt, v_cnt2, exists (select 1 from aviso_calcos(v_v));
+    end if;
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform marcar_calcos_propias(v_v, false, 'fue una prueba de la red');
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+
+    -- ---------- el suspendido: ni mail ni lista ----------
+    update lubricentros set activo = false where id = v_v;
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    select count(*) into v_cnt2 from calcos_por_agotarse() c where c.lubricentro_id = v_v;
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    select count(*) into v_cnt from avisos_calcos_pendientes() a where a.lubricentro_id = v_v;
+    if v_cnt <> 0 or v_cnt2 <> 0 then
+      raise exception 'R41f A UN SUSPENDIDO SE LE OFRECEN CALCOS: con el tenant apagado hay % mails pendientes y % filas en la lista del hub. Un suspendido no puede pedir: el mail le diría «pedí ahora» a alguien al que la pantalla le dice que no.', v_cnt, v_cnt2;
+    end if;
+    update lubricentros set activo = true where id = v_v;
+
+    -- ---------- el demo: nunca ----------
+    -- Se lo deja en cero, con ritmo: si no estuviera exento, entraría.
+    select id into v_suc_d from sucursales where lubricentro_id = v_demo and activa order by created_at limit 1;
+    select id into v_cli_d from clientes where lubricentro_id = v_demo limit 1;
+    perform r41_autos(v_demo, v_cli_d, 8, 'ZD');
+    perform r41_trabajos(v_demo, v_suc_d, v_super, 'ZD', v_ahora - interval '3 days');
+    -- El recuento es de AHORA y no de hace un rato: la única entrega del demo
+    -- es la del seed, de hace un momento, y una entrega posterior al recuento
+    -- le suma.
+    insert into recuentos_calcos (lubricentro_id, cantidad, declarado_por, created_at)
+    values (v_demo, 0, null, v_ahora);
+    select * into s from stock_calcos(v_demo);
+    if s.stock_estimado is distinct from 0 or s.semanas_cobertura is distinct from 0 then
+      raise exception 'R41f SIN PISO: el demo tenía que quedar en 0 calcos y 0 semanas para probar que está exento, y quedó en % y %.', s.stock_estimado, s.semanas_cobertura;
+    end if;
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    select count(*) into v_cnt2 from calcos_por_agotarse() c where c.lubricentro_id = v_demo;
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    select count(*) into v_cnt from avisos_calcos_pendientes() a where a.lubricentro_id = v_demo;
+    if v_cnt <> 0 or v_cnt2 <> 0 then
+      raise exception 'R41f EL DEMO ENTRA EN LOS MAILS O EN LA LISTA DEL HUB (% y %): el demo es nuestro, no se le manda un mail ni se lo llama.', v_cnt, v_cnt2;
+    end if;
+
+    -- ---------- el más avanzado, una vez por ciclo, sin caer al anterior ----------
+    insert into recuentos_calcos (lubricentro_id, cantidad, declarado_por, created_at)
+    values (v_v, 8, v_own_v, v_ahora - interval '2 hours');
+    select * into r from avisos_calcos_pendientes() a where a.lubricentro_id = v_v;
+    if r.tipo is distinct from 'calcos_1_semana' then
+      raise exception 'R41f con 8 calcos para 0,8 semanas y ningún mail mandado toca «%» y tenía que ser calcos_1_semana: el MÁS AVANZADO que corresponde, no los dos ni el primero.', r.tipo;
+    end if;
+    -- Como el cron: la fila, después de que Resend confirma.
+    insert into emails_calcos (lubricentro_id, tipo, entrega_ref, destinatario, resend_id, stock_estimado, semanas_cobertura)
+    values (v_v, r.tipo, r.entrega_ref, r.destinatario, 'r41-1', r.stock_estimado, r.semanas_cobertura);
+    if exists (select 1 from avisos_calcos_pendientes() a where a.lubricentro_id = v_v) then
+      raise exception 'R41f EL MAIL SE MANDA DOS VECES: con calcos_1_semana ya registrado para este ciclo, avisos_calcos_pendientes() lo sigue devolviendo. El cron corre todos los días.';
+    end if;
+    -- (Un minuto antes de ahora, y no una hora: la entrega que sigue se
+    -- carga hoy, y tiene que contar por su HORA —después de este recuento—
+    -- y no desde la medianoche.)
+    insert into recuentos_calcos (lubricentro_id, cantidad, declarado_por, created_at)
+    values (v_v, 25, v_own_v, v_ahora - interval '1 minute');
+    if exists (select 1 from avisos_calcos_pendientes() a where a.lubricentro_id = v_v) then
+      raise exception 'R41f DESPUÉS DE «TE QUEDA UNA SEMANA» SE MANDA «TE QUEDAN CUATRO»: con el de 1 semana mandado en este ciclo y el stock de vuelta en 2,5 semanas, la decisión cae al escalón anterior. No se cae: después del segundo no hay primero.';
+    end if;
+    if not exists (select 1 from aviso_calcos(v_v)) then
+      raise exception 'R41e el aviso del Inicio depende del registro de mails: con 2,5 semanas tiene que seguir habiendo aviso aunque el mail ya haya salido.';
+    end if;
+
+    -- Una entrega nueva abre un ciclo nuevo: los dos escalones vuelven.
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    v_ref2 := registrar_pedido_calcos(v_v, v_hoy_ar, 1, true, null, 'r41 ciclo nuevo');
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    select * into r from avisos_calcos_pendientes() a where a.lubricentro_id = v_v;
+    if r.tipo is distinct from 'calcos_4_semanas' or r.entrega_ref is distinct from v_ref2 or v_ref2 = v_ref
+       or r.stock_estimado is distinct from 26 then
+      raise exception 'R41f DESPUÉS DE UNA ENTREGA NUEVA LOS ESCALONES NO VUELVEN: con una entrega más, cargada hoy después del último recuento (26 calcos, 2,6 semanas), tenía que tocar calcos_4_semanas con la entrega nueva como ciclo; dio tipo «%», entrega % (nueva %, vieja %), stock %.',
+        r.tipo, r.entrega_ref, v_ref2, v_ref, r.stock_estimado;
+    end if;
+    insert into emails_calcos (lubricentro_id, tipo, entrega_ref, destinatario, resend_id, stock_estimado, semanas_cobertura)
+    values (v_v, r.tipo, r.entrega_ref, r.destinatario, 'r41-2', r.stock_estimado, r.semanas_cobertura);
+    if exists (select 1 from avisos_calcos_pendientes() a where a.lubricentro_id = v_v) then
+      raise exception 'R41f el mail de 4 semanas se repite al día siguiente: ya está registrado para este ciclo y sigue pendiente.';
+    end if;
+
+    -- ════════════════ i · los dos libros ════════════════
+    v_ok := false;
+    begin
+      insert into emails_calcos (lubricentro_id, tipo, entrega_ref, destinatario)
+      values (v_v, 'calcos_4_semanas', v_ref2, 'owner-v-r41@fidellimotors.app');
+      v_ok := true;
+    exception when unique_violation then
+      null;
+    end;
+    if v_ok then
+      raise exception 'R41i emails_calcos ACEPTÓ EL DUPLICADO: (lubricentro, tipo, entrega_ref) es único. Es la última defensa contra el mismo mail dos veces.';
+    end if;
+
+    for r in select * from (values
+        ('update emails_calcos set destinatario = ''otro@r41'' where lubricentro_id = ''' || v_v || '''', 'email_calcos_no_se_edita'),
+        ('delete from emails_calcos where lubricentro_id = ''' || v_v || '''',                           'email_calcos_no_se_borra'),
+        ('truncate emails_calcos',                                                                      'emails_calcos_no_se_vacian'),
+        ('update recuentos_calcos set cantidad = 1 where lubricentro_id = ''' || v_a || '''',           'recuento_no_se_edita'),
+        ('delete from recuentos_calcos where lubricentro_id = ''' || v_a || '''',                       'recuento_no_se_borra'),
+        ('truncate recuentos_calcos',                                                                   'recuentos_no_se_vacian')
+      ) t(consulta, esperado)
+    loop
+      v_ok := false;
+      begin
+        execute r.consulta;
+        v_ok := true;
+      exception when others then
+        v_txt := sqlerrm;
+      end;
+      if v_ok or v_txt is distinct from r.esperado then
+        raise exception 'R41i «%» tenía que fallar con «%» y %. Un recuento es lo que el dueño declaró ese día, y una fila de emails_calcos es lo que se le mandó: ninguna de las dos se corrige, se borra ni se vacía.',
+          r.consulta, r.esperado, case when v_ok then 'ENTRÓ' else 'falló con «' || v_txt || '»' end;
+      end if;
+    end loop;
+
+    select count(*) into v_cnt
+    from pg_trigger t
+    where t.tgrelid in ('emails_calcos'::regclass, 'recuentos_calcos'::regclass)
+      and not t.tgisinternal and t.tgenabled = 'A';
+    if v_cnt <> 6 then
+      raise exception 'R41i los seis candados de emails_calcos y recuentos_calcos tienen que estar en ENABLE ALWAYS y hay %: en ORIGIN, un `set session_replication_role = replica` los apaga a todos.', v_cnt;
+    end if;
+    if (select tgenabled from pg_trigger where tgrelid = 'lubricentros'::regclass and tgname = 'candado_calcos_propias') is distinct from 'A' then
+      raise exception 'R41h el candado de `calcos_propias` no está en ENABLE ALWAYS.';
+    end if;
+
+    -- ════════════════ k · quién ejecuta qué ════════════════
+    for r in select * from (values
+        (v_own_a, 'select * from stock_calcos(''' || v_v || ''')'),
+        (v_own_a, 'select * from aviso_calcos(''' || v_v || ''')'),
+        -- Sin lubricentro, la comparación con el tenant de la sesión da null:
+        -- tiene que rechazar igual, no dejar pasar.
+        (v_nadie, 'select * from stock_calcos(''' || v_v || ''')'),
+        (v_own_a, 'select * from avisos_calcos_pendientes()'),
+        (v_super, 'select * from avisos_calcos_pendientes()'),
+        (v_own_a, 'select * from calcos_por_agotarse()'),
+        (v_own_a, 'select tiene_encargo_calcos_abierto(''' || v_a || ''')'),
+        (v_own_a, 'select nivel_de_aviso_calcos(5, 0.5)'),
+        (v_super, 'select declarar_recuento_calcos(10)'),
+        (v_own_a, 'insert into recuentos_calcos (lubricentro_id, cantidad) values (''' || v_a || ''', 999)'),
+        (v_own_a, 'insert into emails_calcos (lubricentro_id, tipo, entrega_ref, destinatario) values (''' || v_a || ''', ''calcos_4_semanas'', gen_random_uuid(), ''yo@r41'')'),
+        (v_super, 'insert into emails_calcos (lubricentro_id, tipo, entrega_ref, destinatario) values (''' || v_a || ''', ''calcos_4_semanas'', gen_random_uuid(), ''yo@r41'')')
+      ) t(quien, consulta)
+    loop
+      perform set_config('request.jwt.claims',
+        json_build_object('sub', r.quien, 'role', 'authenticated')::text, true);
+      execute 'set local role authenticated';
+      v_ok := false;
+      begin
+        execute r.consulta;
+        v_ok := true;
+      exception when others then
+        if sqlstate <> '42501' then
+          execute 'reset role';
+          raise exception 'R41k «%» falló con otro error que 42501: % (%)', r.consulta, sqlerrm, sqlstate;
+        end if;
+      end;
+      execute 'reset role';
+      perform set_config('request.jwt.claims', '{}', true);
+      if v_ok then
+        raise exception 'R41k «%» SE EJECUTÓ CON UNA SESIÓN DE %. El stock de otro lubricentro no se lee; la decisión de los mails es del cron (clave de servicio); la lista del hub es de /fidelli; el recuento lo declara el dueño por su puerta; y ninguno de los dos libros se escribe por tabla.',
+          r.consulta, case when r.quien = v_super then 'SUPERADMIN' when r.quien = v_nadie then 'UN USUARIO SIN LUBRICENTRO' else 'OWNER' end;
+      end if;
+    end loop;
+
+    -- El owner lee SUS recuentos y ninguno ajeno; de emails_calcos, nada.
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own_a, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    select count(*) filter (where lubricentro_id = v_a), count(*) filter (where lubricentro_id <> v_a)
+      into v_cnt, v_cnt2 from recuentos_calcos;
+    select count(*) into k from emails_calcos;
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    if v_cnt < 3 or v_cnt2 <> 0 or k <> 0 then
+      raise exception 'R41k el owner ve % recuentos propios (3 o más), % ajenos (0) y % filas de emails_calcos (0).', v_cnt, v_cnt2, k;
+    end if;
+
+    -- Todo lo escrito en este bloque se deshace acá. Cualquier otra
+    -- excepción de arriba NO se atrapa: sube y pone el reset en rojo.
+    raise exception 'rollback_r41' using errcode = 'P0041';
+  exception
+    when sqlstate 'P0041' then
+      execute 'reset role';
+      perform set_config('request.jwt.claims', '{}', true);
+  end;
+
+  if exists (select 1 from lubricentros where slug like 'r41-%')
+     or exists (select 1 from vehiculos where patente like 'ZD%RA') then
+    raise exception 'R41 SIN PISO: la subtransacción no deshizo los fixtures.';
+  end if;
+end $$;
+
+drop function r41_tenant(text, text, timestamptz);
+drop function r41_owner(uuid, text);
+drop function r41_autos(uuid, uuid, integer, text);
+drop function r41_trabajos(uuid, uuid, uuid, text, timestamptz, text, boolean);
+-- <<< R41

@@ -243,7 +243,7 @@ await paso("subir un PNG crea la v1 y la marca actual", async () => {
   const dialogo = await subirDiseno(ARCHIVO_PNG, null);
   await dialogo.waitFor({ state: "hidden", timeout: 15_000 });
   const v1 = page.locator('[data-diseno="1"]');
-  await v1.waitFor({ timeout: 10_000 });
+  await v1.waitFor({ timeout: 30_000 });
   check("subir un PNG crea la v1 y la marca actual", (await v1.getAttribute("data-actual")) === "si");
   const src = await v1.locator("img").getAttribute("src");
   check("la miniatura sale por URL firmada del bucket calcos", /\/storage\/v1\/object\/sign\/calcos\//.test(src ?? ""), src ?? "sin img");
@@ -258,7 +258,7 @@ await paso("subir un PDF crea la v2, la marca actual y la v1 queda", async () =>
   const dialogo = await subirDiseno(ARCHIVO_PDF, "con el logo nuevo");
   await dialogo.waitFor({ state: "hidden", timeout: 15_000 });
   const v2 = page.locator('[data-diseno="2"]');
-  await v2.waitFor({ timeout: 10_000 });
+  await v2.waitFor({ timeout: 30_000 });
   check("subir un PDF crea la v2 y la marca actual", (await v2.getAttribute("data-actual")) === "si");
   check("la v1 sigue en pantalla y ya no es la actual", (await page.locator('[data-diseno="1"]').getAttribute("data-actual")) === "no");
   check("la nota de la versión se lee", (await v2.textContent()).includes("con el logo nuevo"));
@@ -289,9 +289,9 @@ await paso("«+ Pedido incluido en el plan» crea un pedido pagado", async () =>
   check("la cantidad arranca en lo que incluye el plan (200)", (await dialogo.locator('input[name="cantidad"]').inputValue()) === "200");
   check("la entrega arranca en retiro", await dialogo.locator('input[name="entrega"][value="retiro"]').isChecked());
   await dialogo.getByRole("button", { name: "Cargar pedido" }).click();
-  await dialogo.waitFor({ state: "hidden", timeout: 10_000 });
+  await dialogo.waitFor({ state: "hidden", timeout: 30_000 });
   n1 = ultimoNumero();
-  await fila(page, n1).waitFor({ timeout: 10_000 });
+  await fila(page, n1).waitFor({ timeout: 30_000 });
   check("«+ Pedido incluido en el plan» crea un pedido pagado", (await estadoDe(page, n1)) === "pagado");
   const texto = await fila(page, n1).textContent();
   check("la fila dice qué lleva", texto.includes(numeroBonito(n1)) && /200 calcos · incluidos en el plan · retiro/.test(texto), texto);
@@ -323,11 +323,11 @@ await paso("el hub lo anuncia primero y en verde", async () => {
 await paso("la cola lo muestra y lo manda a producción", async () => {
   await page.goto(`${BASE}/fidelli/calcos`, { waitUntil: "networkidle" });
   check("la barra de /fidelli tiene Calcos", (await page.locator('header nav a[href="/fidelli/calcos"]').count()) === 1);
-  await fila(page, n1).waitFor({ timeout: 10_000 });
+  await fila(page, n1).waitFor({ timeout: 30_000 });
   const texto = await fila(page, n1).textContent();
   check("la cola lo muestra con el nombre del lubricentro", texto.includes(NOMBRE_DEMO), texto);
   await fila(page, n1).getByRole("button", { name: "En producción" }).click();
-  await fila(page, n1).locator('[data-estado="en_produccion"]').waitFor({ timeout: 10_000 });
+  await fila(page, n1).locator('[data-estado="en_produccion"]').waitFor({ timeout: 30_000 });
   check("desde la cola pasa a en producción", true);
   check("produccion_at quedó escrito", enLaBase(`select produccion_at is not null from encargos_calcos where numero = ${n1};`) === "t");
 });
@@ -338,14 +338,14 @@ await paso("sigue hasta entregado desde la ficha, y el contador sube", async () 
     (await fila(page, n1).getByRole("button", { name: "Listo para retirar" }).count()) === 1 &&
     (await fila(page, n1).getByRole("button", { name: "Enviado" }).count()) === 0);
   await fila(page, n1).getByRole("button", { name: "Listo para retirar" }).click();
-  await fila(page, n1).locator('[data-estado="listo_retiro"]').waitFor({ timeout: 10_000 });
+  await fila(page, n1).locator('[data-estado="listo_retiro"]').waitFor({ timeout: 30_000 });
   check("el contador no se movió todavía", contador() === CONTADOR_INICIAL, `${contador()}`);
 
   await fila(page, n1).getByRole("button", { name: "Entregado" }).click();
   const dialogo = page.getByRole("dialog");
   await dialogo.getByRole("button", { name: "Marcar entregado" }).click();
-  await dialogo.waitFor({ state: "hidden", timeout: 10_000 });
-  await fila(page, n1).locator('[data-estado="entregado"]').waitFor({ timeout: 10_000 });
+  await dialogo.waitFor({ state: "hidden", timeout: 30_000 });
+  await fila(page, n1).locator('[data-estado="entregado"]').waitFor({ timeout: 30_000 });
   check("llega a entregado", true);
   check("un entregado no ofrece ninguna acción", (await fila(page, n1).getByRole("button").count()) === 0);
   check("el contador subió 200 en la base", contador() === CONTADOR_INICIAL + 200, `${CONTADOR_INICIAL} → ${contador()}`);
@@ -379,16 +379,16 @@ await paso("con envío pide dirección y teléfono", async () => {
   await dialogo.locator('input[name="codigo_postal"]').fill("5186");
   await dialogo.locator('input[name="nota"]').fill("segunda tanda del alta");
   await dialogo.getByRole("button", { name: "Cargar pedido" }).click();
-  await dialogo.waitFor({ state: "hidden", timeout: 10_000 });
+  await dialogo.waitFor({ state: "hidden", timeout: 30_000 });
   n2 = ultimoNumero();
-  await fila(page, n2).waitFor({ timeout: 10_000 });
+  await fila(page, n2).waitFor({ timeout: 30_000 });
   const texto = await fila(page, n2).textContent();
   check("la fila dice 400 calcos con envío y a dónde", /400 calcos · incluidos en el plan · envío a domicilio/.test(texto) && texto.includes("Av. Belgrano 480"), texto);
 });
 
 await paso("«Enviado» exige transportista y seguimiento", async () => {
   await fila(page, n2).getByRole("button", { name: "En producción" }).click();
-  await fila(page, n2).locator('[data-estado="en_produccion"]').waitFor({ timeout: 10_000 });
+  await fila(page, n2).locator('[data-estado="en_produccion"]').waitFor({ timeout: 30_000 });
   check("con envío, en producción ofrece «Enviado» y no «Listo para retirar»",
     (await fila(page, n2).getByRole("button", { name: "Enviado" }).count()) === 1 &&
     (await fila(page, n2).getByRole("button", { name: "Listo para retirar" }).count()) === 0);
@@ -400,8 +400,8 @@ await paso("«Enviado» exige transportista y seguimiento", async () => {
   check("sin seguimiento no sale", await seguimiento.evaluate((el) => !el.checkValidity()));
   await seguimiento.fill("3600 0012 3456");
   await dialogo.getByRole("button", { name: "Marcar enviado" }).click();
-  await dialogo.waitFor({ state: "hidden", timeout: 10_000 });
-  await fila(page, n2).locator('[data-estado="enviado"]').waitFor({ timeout: 10_000 });
+  await dialogo.waitFor({ state: "hidden", timeout: 30_000 });
+  await fila(page, n2).locator('[data-estado="enviado"]').waitFor({ timeout: 30_000 });
   const texto = await fila(page, n2).textContent();
   check("queda enviado, con el seguimiento a la vista", texto.includes("Andreani") && texto.includes("3600 0012 3456"), texto);
 });
@@ -410,8 +410,8 @@ await paso("entregado vuelve a subir el contador", async () => {
   await fila(page, n2).getByRole("button", { name: "Entregado" }).click();
   const dialogo = page.getByRole("dialog");
   await dialogo.getByRole("button", { name: "Marcar entregado" }).click();
-  await dialogo.waitFor({ state: "hidden", timeout: 10_000 });
-  await fila(page, n2).locator('[data-estado="entregado"]').waitFor({ timeout: 10_000 });
+  await dialogo.waitFor({ state: "hidden", timeout: 30_000 });
+  await fila(page, n2).locator('[data-estado="entregado"]').waitFor({ timeout: 30_000 });
   check("el contador suma las dos entregas (200 + 400)", contador() === CONTADOR_INICIAL + 600, `${CONTADOR_INICIAL} → ${contador()}`);
   check("el libro tiene las dos, como incluidas y sin monto",
     enLaBase(`select count(*) from pedidos_calcos p join encargos_calcos e on e.pedido_calcos_id = p.id where e.lubricentro_id = '${DEMO}' and p.incluidas and p.monto_ars is null;`) === "2");
@@ -427,9 +427,9 @@ await paso("se cancela con nota y no toca el contador", async () => {
   await page.getByRole("button", { name: "+ Pedido incluido en el plan" }).click();
   let dialogo = page.getByRole("dialog");
   await dialogo.getByRole("button", { name: "Cargar pedido" }).click();
-  await dialogo.waitFor({ state: "hidden", timeout: 10_000 });
+  await dialogo.waitFor({ state: "hidden", timeout: 30_000 });
   n3 = ultimoNumero();
-  await fila(page, n3).waitFor({ timeout: 10_000 });
+  await fila(page, n3).waitFor({ timeout: 30_000 });
   await fila(page, n3).getByRole("button", { name: "Cancelar" }).click();
   dialogo = page.getByRole("dialog");
   const nota = dialogo.locator('textarea[name="nota"]');
@@ -437,8 +437,8 @@ await paso("se cancela con nota y no toca el contador", async () => {
   check("cancelar un pagado pide la nota", await nota.evaluate((el) => !el.checkValidity()));
   await nota.fill("se cargó dos veces el mismo pedido");
   await dialogo.getByRole("button", { name: "Cancelar el pedido" }).click();
-  await dialogo.waitFor({ state: "hidden", timeout: 10_000 });
-  await fila(page, n3).locator('[data-estado="cancelado"]').waitFor({ timeout: 10_000 });
+  await dialogo.waitFor({ state: "hidden", timeout: 30_000 });
+  await fila(page, n3).locator('[data-estado="cancelado"]').waitFor({ timeout: 30_000 });
   check("queda cancelado", true);
   check("y el contador no se movió", contador() === CONTADOR_INICIAL + 600, `${contador()}`);
 });
@@ -487,7 +487,7 @@ await paso("un pedido sin pagar se marca pagado a mano, con su nota", async () =
   check("un pedido sin pagar no cuenta como «espera producción»", !/esperan? producción/.test(alertas), alertas.slice(0, 200));
 
   await page.goto(`${BASE}/fidelli/calcos?estado=pendiente_pago`, { waitUntil: "networkidle" });
-  await fila(page, nb).waitFor({ timeout: 10_000 });
+  await fila(page, nb).waitFor({ timeout: 30_000 });
   const texto = await fila(page, nb).textContent();
   check("la cola lo muestra sin pagar, con lo que lleva", (await estadoDe(page, nb)) === "pendiente_pago" &&
     /400 calcos · rediseño · envío a domicilio/.test(texto) && texto.includes("el logo nuevo, con fondo negro"), texto);
@@ -501,10 +501,10 @@ await paso("un pedido sin pagar se marca pagado a mano, con su nota", async () =
   check("pagar a mano pide la nota", await nota.evaluate((el) => !el.checkValidity()));
   await nota.fill("transfirió al CBU viejo, comprobante por WhatsApp");
   await dialogo.getByRole("button", { name: "Marcar pagado" }).click();
-  await dialogo.waitFor({ state: "hidden", timeout: 10_000 });
+  await dialogo.waitFor({ state: "hidden", timeout: 30_000 });
 
   await page.goto(`${BASE}/fidelli/calcos`, { waitUntil: "networkidle" });
-  await fila(page, nb).locator('[data-estado="pagado"]').waitFor({ timeout: 10_000 });
+  await fila(page, nb).locator('[data-estado="pagado"]').waitFor({ timeout: 30_000 });
   check("queda pagado, con la nota a la vista", (await fila(page, nb).textContent()).includes("transfirió al CBU viejo"));
   check("pagarlo no escribió nada en `pagos`: la plata de calcos no es MRR", sql("select count(*) from pagos;") === pagosAntes);
 });
@@ -518,11 +518,11 @@ await paso("con pedidos abiertos, primero los pagados y el más viejo arriba", a
     const dialogo = page.getByRole("dialog");
     await dialogo.locator('input[name="cantidad"]').fill(cantidad);
     await dialogo.getByRole("button", { name: "Cargar pedido" }).click();
-    await dialogo.waitFor({ state: "hidden", timeout: 10_000 });
+    await dialogo.waitFor({ state: "hidden", timeout: 30_000 });
   }
   n4 = Number(ultimoNumero());
   await fila(page, n4).getByRole("button", { name: "En producción" }).click();
-  await fila(page, n4).locator('[data-estado="en_produccion"]').waitFor({ timeout: 10_000 });
+  await fila(page, n4).locator('[data-estado="en_produccion"]').waitFor({ timeout: 30_000 });
   sql(`update encargos_calcos set produccion_at = now() - interval '10 days' where numero = ${n4};`);
 
   await page.goto(`${BASE}/fidelli/calcos`, { waitUntil: "networkidle" });

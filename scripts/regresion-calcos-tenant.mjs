@@ -111,7 +111,9 @@ if (env.RESEND_BASE_URL !== "http://localhost:4020" || !env.RESEND_API_KEY) {
 titulo("A · Sin navegador");
 
 // Los puntos de entrada del lado del tenant: su pantalla, sus acciones, la
-// pantalla de pago compartida, la navegación y lo que arma sus mails.
+// pantalla de pago compartida, la navegación y lo que arma sus mails. Y los
+// del PR 3: el aviso del Inicio, la frase que comparte con los mails del
+// stock, y el envío de esos mails.
 const ENTRADAS = [
   "app/panel/(tras-onboarding)/cuenta/calcos/page.tsx",
   "app/panel/(tras-onboarding)/cuenta/calcos/actions.ts",
@@ -121,6 +123,9 @@ const ENTRADAS = [
   "lib/email/calcos.ts",
   "lib/pedidos-calcos/avisos.ts",
   "lib/pedidos-calcos/orden.ts",
+  "components/panel/aviso-calcos-inicio.tsx",
+  "lib/stock-calcos.ts",
+  "lib/pedidos-calcos/stock.ts",
 ];
 
 function resolver(desde, especificador) {
@@ -153,7 +158,7 @@ function arrastrados(entradas) {
 
 {
   const faltan = ENTRADAS.filter((e) => !fs.existsSync(path.join(RAIZ, e)));
-  check("existen los ocho puntos de entrada del lado del tenant", faltan.length === 0, `faltan: ${faltan.join(", ")}`);
+  check(`existen los ${ENTRADAS.length} puntos de entrada del lado del tenant`, faltan.length === 0, `faltan: ${faltan.join(", ")}`);
 
   const modulos = arrastrados(ENTRADAS.filter((e) => fs.existsSync(path.join(RAIZ, e))));
   const relativo = (a) => path.relative(RAIZ, a);
@@ -375,7 +380,9 @@ await paso("con el diseño subido, el calco se ve a 5 × 8 cm por URL firmada", 
   const img = page.locator("[data-calco] img");
   await img.waitFor({ timeout: 10_000 });
   const src = await img.getAttribute("src");
-  check("el calco sale por URL firmada del bucket privado", /\/storage\/v1\/object\/sign\/calcos\//.test(src ?? ""), src ?? "");
+  // Firmada, del bucket privado: la miniatura por la transformación de
+  // Storage (PR 3) o, si esa no contesta, el archivo.
+  check("el calco sale por URL firmada del bucket privado", /\/storage\/v1\/(object|render\/image)\/sign\/calcos\//.test(src ?? ""), src ?? "");
   const caja = await page.locator("[data-calco] a").first().boundingBox();
   // 5 × 8 cm en CSS son 189 × 302 px.
   check("a tamaño 5 × 8 cm", Math.abs(caja.width - 189) <= 2 && Math.abs(caja.height - 302) <= 2, `${Math.round(caja.width)} × ${Math.round(caja.height)}`);

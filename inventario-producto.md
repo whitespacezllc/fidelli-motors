@@ -98,7 +98,14 @@ estado y las mismas acciones. Y el hub abre sus alertas con *"N pedidos de calco
 esperan producción"*, en verde, seguida de los que llevan más de 5 días hábiles en
 producción y los que vencen mañana sin pagar. Y «Plan y precios» tiene un bloque
 **Calcos** donde se edita el precio y el costo de cada pack y de los dos extras, con
-motivo y registro. El lado del tenant está en 2.14.
+motivo y registro. Desde el PR 3 del mismo sprint, `/fidelli/calcos` tiene **arriba de
+la cola la lista de los que se quedan sin calcos** (menos de 3 semanas de cobertura y
+sin pedido abierto): nombre, cuántas le quedan, autos nuevos por semana, para cuánto
+alcanza y el WhatsApp ya armado; el hub la anuncia con *"N tenants se quedan sin calcos
+en menos de 3 semanas"*. Y la solapa Calcos de la ficha gana el bloque **Stock**: la
+estimación que ve el dueño y el switch **«Imprime por su cuenta»** (con nota, queda en
+el historial), que saca al lubricentro de la estimación, del aviso, de los mails y de
+esa lista. El lado del tenant está en 2.14.
 
 **Acá el RLS trabaja al revés que en `/panel`:** `soy_superadmin()` abre todos los
 tenants, así que cada consulta tiene que filtrar por el lubricentro de la ficha. Un
@@ -143,6 +150,14 @@ cuenta suspendida deja de empujar: cada paso pendiente dice "En pausa".
 - **Tu página pública:** % de escaneo (autos de la flota cuya patente fue buscada en 12
   meses) + "N búsquedas de patentes que no son tuyas" (leads).
 - **Últimos 5 trabajos.**
+
+**Aviso de calcos (desde el 03/10/2026), en los dos modos:** una barra gris arriba de
+todo —no un modal— cuando al lubricentro le quedan calcos para menos de 4 semanas (o 20
+o menos) y no tiene un pedido abierto: *"Te quedan unas 80 calcos, para unas 3 semanas.
+Producir y enviar tarda hasta 2. Pedí ahora."*, con «Pedir calcos» a Mi cuenta → Calcos.
+Se cierra con la X y vuelve a los 7 días. **Nunca se apila con cobranza:** si está la
+barra de «por vencer» o la de gracia, ese día no se muestra. Y no existe para el que
+imprime sus calcos por su cuenta.
 
 **Acción principal:** 1 tap ("+ Nuevo trabajo"). **Sin gating por plan.**
 
@@ -424,6 +439,19 @@ el tick al entrar la plata—; con un pedido sin pagar esa pantalla reemplaza al
 (es uno a la vez), tiene 7 días y después vence. Llegan dos mails: al acreditarse el pago
 y cuando el pedido sale o está listo para retirar. Los tres planes pueden comprar. **El
 tenant ve packs y precios: nunca el costo ni el m².**
+
+**Cuántas te quedan (desde el 03/10/2026).** Arriba del historial, siempre que haya
+entregas: *"Te quedan unas 115 · alcanzan para unas 5 semanas al ritmo de 22 autos nuevos
+por semana."* Es una estimación y lo dice: **el calco se gasta por auto nuevo, no por
+trabajo** —se descuenta uno por cada vehículo cuyo primer trabajo cargado en el panel es
+posterior a la primera entrega; el auto que vuelve ya lo tiene—. Con menos de dos semanas
+de trabajos cargados se dice el número a secas. **«Contá y corregí»** abre un campo
+(*"¿Cuántas te quedan?"*): el dueño escribe lo que contó y desde ahí parte la cuenta. Al
+bajar de 4 semanas (y otra vez al bajar de 1 semana, o de 20 calcos) le llega un mail con
+la misma frase que el aviso del Inicio; uno por escalón por entrega, y ninguno si ya tiene
+un pedido abierto. El que **imprime por su cuenta** (lo marca Fidelli) no ve la estimación
+ni recibe avisos, y tiene un botón **«Descargar el archivo de impresión»** con el diseño
+original. La miniatura del diseño ya no carga el archivo entero: sale reducida a 400 px.
 
 ### 2.15 · Marcas y modelos de vehículos
 
