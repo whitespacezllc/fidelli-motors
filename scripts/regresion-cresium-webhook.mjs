@@ -97,6 +97,8 @@ const SLUG = "cresium-regresion";
 // dice ser. Si hace falta una base limpia, la puerta es `supabase db reset`.
 function limpiar() {
   sql(`delete from pagos where lubricentro_id in (select id from lubricentros where slug='${SLUG}');
+       delete from cresium_ordenes where lubricentro_id in (select id from lubricentros where slug='${SLUG}');
+       delete from encargos_calcos where lubricentro_id in (select id from lubricentros where slug='${SLUG}');
        delete from suscripciones where lubricentro_id in (select id from lubricentros where slug='${SLUG}');
        delete from lubricentros where slug='${SLUG}';`);
 }
@@ -278,6 +280,61 @@ try {
     );
     check("con el motivo escrito", /no trae el id de la transacci/.test(
       sql(`select coalesce(motivo,'') from cresium_eventos where transaccion_id is null order by recibido_at desc limit 1`)));
+  }
+
+  // ── 6 · Un pedido de calcos ───────────────────────────────────────
+  // La referencia de un pedido es `calcos:<uuid>`, no `<uuid>:<fecha>`. La
+  // función casteaba la primera parte a uuid sin mirar: con «calcos» eso
+  // revienta, la ruta contesta 500 y Cresium reintenta cinco veces. La rama
+  // de calcos va ANTES de ese cast. Y la plata de calcos no es MRR: ni una
+  // fila en `pagos`, ni un día en el vencimiento de la suscripción.
+  console.log("\n── Un pedido de calcos (calcos:<uuid>) ──");
+  {
+    sql(`insert into encargos_calcos (lubricentro_id, pack_codigo, cantidad, entrega, estado,
+                                      monto_pack, monto_rediseno, monto_envio, monto_total, costo_estimado, comision_estimada)
+         values ('${lub}', 'pack_400', 400, 'retiro', 'pendiente_pago', 84000, 0, 0, 84000, 60000, 813.12)`);
+    const enc = sql(`select id from encargos_calcos where lubricentro_id='${lub}'`);
+    const EXTC = `calcos:${enc}`;
+    const estado = () => sql(`select estado from encargos_calcos where id='${enc}'`);
+    const todosLosPagos = () => Number(sql(`select count(*) from pagos`));
+    const pagosAntes = todosLosPagos();
+    const vencAhora = venc();
+
+    {
+      const r = await enviar(deposito(90060, EXTC, "PARTIAL", 84000, 30000));
+      const j = await r.json().catch(() => ({}));
+      check("PARTIAL de calcos → 200 (no 500: «calcos» no es un uuid de suscripción)", r.status === 200, `dio ${r.status}`);
+      check("no paga el pedido", j.resultado === "sin_acreditar" && estado() === "pendiente_pago", `${JSON.stringify(j)} · ${estado()}`);
+    }
+    {
+      const r = await enviar(deposito(90061, EXTC, "PAID", 84000, 84000));
+      const j = await r.json().catch(() => ({}));
+      check("PAID de calcos → 200", r.status === 200, `dio ${r.status}`);
+      check("acredita el pedido", j.resultado === "acreditado" && estado() === "pagado", `${JSON.stringify(j)} · ${estado()}`);
+      check("sin una fila nueva en `pagos`", todosLosPagos() === pagosAntes, `${pagosAntes} → ${todosLosPagos()}`);
+      check("y sin mover el vencimiento de la suscripción", venc() === vencAhora, `quedó en ${venc()}`);
+    }
+    {
+      const respuestas = [];
+      for (let i = 2; i <= 5; i++) {
+        const r = await enviar(deposito(90061, EXTC, "PAID", 84000, 84000, i));
+        respuestas.push(`${r.status}/${(await r.json().catch(() => ({}))).resultado}`);
+      }
+      check("los cuatro reintentos responden 200 y ya_acreditado", respuestas.every((x) => x === "200/ya_acreditado"), respuestas.join(","));
+      check("el pedido sigue pagado, una sola vez",
+        sql(`select estado || '/' || cresium_transaccion_id from encargos_calcos where id='${enc}'`) === "pagado/90061");
+    }
+    {
+      const r = await enviar(deposito(90062, "calcos:00000000-0000-0000-0000-000000000000", "PAID", 1, 1));
+      const j = await r.json().catch(() => ({}));
+      check("un pedido que no existe → 200 sin acreditar", r.status === 200 && j.resultado === "sin_acreditar", `${r.status} ${JSON.stringify(j)}`);
+    }
+    {
+      const r = await enviar(deposito(90063, "calcos:no-es-un-uuid", "PAID", 1, 1));
+      const j = await r.json().catch(() => ({}));
+      check("una referencia de calcos que ni es un uuid → 200 sin acreditar", r.status === 200 && j.resultado === "sin_acreditar", `${r.status} ${JSON.stringify(j)}`);
+    }
+    check("ninguno de los cinco tocó `pagos`", todosLosPagos() === pagosAntes, `${pagosAntes} → ${todosLosPagos()}`);
   }
 } finally {
   limpiar();
