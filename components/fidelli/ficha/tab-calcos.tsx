@@ -2,10 +2,12 @@ import { createClient } from "@/lib/supabase/server";
 import { fechaCalendarioAR, formatearFecha, hoyISO } from "@/lib/fechas";
 import { pesos } from "@/lib/fidelli/plan";
 import { calcosIncluidosDelPlan, leerEncargos } from "@/lib/fidelli/calcos";
+import { cantidadDicha, leerStock, ritmoDicho, semanasDichas } from "@/lib/stock-calcos";
 import { Chip } from "@/components/fidelli/chip";
 import { TablaEncargos } from "@/components/fidelli/calcos/tabla-encargos";
 import { SubirDiseno } from "@/components/fidelli/calcos/subir-diseno";
 import { DialogPedidoIncluido } from "@/components/fidelli/calcos/dialog-pedido-incluido";
+import { DialogCalcosPropias } from "@/components/fidelli/calcos/dialog-calcos-propias";
 import { PanelFicha, Dato, SinDato } from "./panel-dato";
 import { DialogPedidoCalcos } from "./dialog-pedido-calcos";
 import type { Tenant } from "./tipos";
@@ -25,12 +27,15 @@ const ENTERO = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 });
 const UNA_HORA = 60 * 60;
 
 // ============================================================
-// La solapa Calcos de la ficha: el diseño, los pedidos y el libro.
+// La solapa Calcos de la ficha: el diseño, los pedidos, el stock y el libro.
 //
-// Son tres cosas distintas y conviene no mezclarlas:
+// Son cuatro cosas distintas y conviene no mezclarlas:
 //   · el DISEÑO es el archivo que se imprime, con sus versiones;
 //   · el PEDIDO (encargos_calcos) tiene ciclo de vida y lo movemos desde
 //     acá o desde la cola;
+//   · el STOCK es una cuenta, no un dato guardado (`stock_calcos()`):
+//     entregadas menos autos nuevos, o lo que el dueño contó. Acá también
+//     se marca al que imprime por su cuenta, al que no se le estima nada;
 //   · el LIBRO (pedidos_calcos) es la constancia de lo entregado: lo
 //     escribe «Entregado», y a mano solo como corrección.
 //
@@ -46,7 +51,7 @@ export async function TabCalcos({
 }) {
   const supabase = await createClient();
 
-  const [disenosRes, encargosRes, libroRes, sucursalRes] = await Promise.all([
+  const [disenosRes, encargosRes, libroRes, sucursalRes, stockRes, propiasRes] = await Promise.all([
     supabase
       .from("disenos_calco")
       .select("id, version, ruta, actual, nota, created_at")
@@ -70,8 +75,23 @@ export async function TabCalcos({
       .order("created_at")
       .limit(1)
       .maybeSingle(),
+    // Cuántas le quedan, según la cuenta. Null en todo sin entregas o si
+    // imprime por su cuenta.
+    supabase.rpc("stock_calcos", { p_lubricentro_id: tenant.id }),
+    // La última vez que se movió el switch: la nota y la fecha.
+    supabase
+      .from("tenant_eventos")
+      .select("motivo, ocurrido_at")
+      .eq("lubricentro_id", tenant.id)
+      .eq("tipo", "edicion")
+      .not("despues->>calcos_propias", "is", null)
+      .order("ocurrido_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
+  const stock = leerStock(stockRes.data);
+  const propias = propiasRes.data;
   const disenos = disenosRes.data ?? [];
   // En la ficha, el pedido más nuevo arriba (la cola tiene su propio orden).
   const encargos = leerEncargos(encargosRes.data).sort((a, b) => b.numero - a.numero);
@@ -192,6 +212,68 @@ export async function TabCalcos({
           «Entregado» registra la entrega en el libro con la cantidad y el monto, y el contador
           del lubricentro sube solo. Un pedido entregado no se edita.
         </p>
+      </PanelFicha>
+
+      {/* ============ El stock ============
+          La estimación que ve el dueño en Mi cuenta → Calcos, y el switch
+          del que imprime por su cuenta. */}
+      <PanelFicha
+        titulo="Stock"
+        acciones={
+          <DialogCalcosPropias
+            lubricentroId={tenant.id}
+            nombre={tenant.nombre}
+            propias={tenant.calcos_propias}
+          />
+        }
+      >
+        <dl>
+          <Dato etiqueta="Le quedan">
+            <span data-stock-ficha>
+              {stock ? (
+                <>
+                  <span className="font-semibold tabular-nums">
+                    unas {cantidadDicha(stock.stock)}
+                  </span>
+                  <span className="block text-label text-ink-60 tabular-nums">
+                    {stock.ritmo != null
+                      ? ritmoDicho(stock.ritmo)
+                      : "todavía sin ritmo: menos de 2 semanas de trabajos"}
+                    {stock.semanas != null && ` · alcanzan para ${semanasDichas(stock.semanas)}`}
+                  </span>
+                  <span className="block text-label text-ink-40 tabular-nums">
+                    {stock.baseRecuentoAt
+                      ? `según su recuento del ${formatearFecha(fechaCalendarioAR(new Date(stock.baseRecuentoAt)))}`
+                      : "entregadas menos autos nuevos desde la primera entrega"}
+                  </span>
+                </>
+              ) : tenant.calcos_propias ? (
+                <SinDato>sin estimación: imprime por su cuenta</SinDato>
+              ) : (
+                <SinDato>sin entregas en el libro: no hay nada que estimar</SinDato>
+              )}
+            </span>
+          </Dato>
+          <Dato etiqueta="Impresión">
+            <span data-calcos-propias={tenant.calcos_propias ? "si" : "no"}>
+              {tenant.calcos_propias ? (
+                <>
+                  <span className="font-semibold">Imprime sus calcos por su cuenta</span>
+                  <span className="block text-label text-ink-60">
+                    Sin aviso, sin mails y fuera de la lista de los que se quedan sin calcos.
+                  </span>
+                </>
+              ) : (
+                <>Se los imprimimos nosotros</>
+              )}
+              {propias?.motivo && (
+                <span className="block text-label text-ink-40 tabular-nums">
+                  {formatearFecha(fechaCalendarioAR(new Date(propias.ocurrido_at)))} · {propias.motivo}
+                </span>
+              )}
+            </span>
+          </Dato>
+        </dl>
       </PanelFicha>
 
       {/* ============ El libro de entregas ============

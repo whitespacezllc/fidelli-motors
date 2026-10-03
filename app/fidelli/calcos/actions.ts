@@ -46,6 +46,9 @@ const MENSAJES: Record<string, string> = {
   no_existe: "Ese lubricentro ya no existe.",
   // La puerta del libro, que llama «Entregado».
   fecha_futura: "La fecha de la entrega no puede ser posterior a hoy.",
+  // «Imprime sus calcos por su cuenta».
+  nota_corta:
+    "Escribí la nota con un poco más de detalle: 10 caracteres o más. Quién lo pidió, con qué gráfica imprime.",
 };
 
 const SIN_CONEXION =
@@ -259,5 +262,37 @@ export async function registrarDiseno(datos: {
   }
 
   revalidar(datos.lubricentroId);
+  return { ok: true };
+}
+
+// ============================================================
+// «Imprime sus calcos por su cuenta»
+// ============================================================
+// El switch de la ficha (PR 3 de calcos). No es una preferencia del tenant:
+// se la prendemos nosotros cuando nos lo dice. Con el switch prendido no hay
+// estimación de stock, ni aviso, ni mails, ni entra en la lista de los que
+// se quedan sin calcos; y su Mi cuenta → Calcos gana la descarga del
+// archivo de impresión. La nota es obligatoria y queda en el historial.
+export async function marcarCalcosPropias(
+  _prev: EstadoAccionCalcos,
+  formData: FormData,
+): Promise<EstadoAccionCalcos> {
+  await exigirSuperadmin();
+
+  const lubricentroId = String(formData.get("lubricentro_id") ?? "");
+  const propias = String(formData.get("propias") ?? "") === "si";
+  const nota = String(formData.get("nota") ?? "").trim();
+  if (!UUID.test(lubricentroId)) return { error: MENSAJES.no_existe };
+  if (nota.length < 10) return { error: MENSAJES.nota_corta };
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("marcar_calcos_propias", {
+    p_lubricentro_id: lubricentroId,
+    p_propias: propias,
+    p_nota: nota,
+  });
+  if (error) return { error: traducir(error.message) };
+
+  revalidar(lubricentroId);
   return { ok: true };
 }
