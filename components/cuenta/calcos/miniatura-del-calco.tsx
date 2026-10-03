@@ -15,6 +15,10 @@ import { useEffect, useRef, useState } from "react";
 // El `onError` no alcanza: la imagen llega dibujada desde el servidor y
 // puede fallar ANTES de que React enganche el manejador. Por eso al montar
 // se mira también si ya falló.
+//
+// SE VE ENTERA (`object-contain`), nunca recortada: la caja es de 5 × 8 cm
+// y el archivo puede tener otra proporción. Con `object-cover` un diseño
+// más ancho perdía los costados, y el dueño veía un calco que no es el suyo.
 // ============================================================
 export function MiniaturaDelCalco({
   miniatura,
@@ -50,7 +54,7 @@ export function MiniaturaDelCalco({
       onError={() => {
         if (src !== original) setSrc(original);
       }}
-      className="h-full w-full object-cover"
+      className="h-full w-full object-contain"
     />
   );
 }

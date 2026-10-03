@@ -451,7 +451,9 @@ bajar de 4 semanas (y otra vez al bajar de 1 semana, o de 20 calcos) le llega un
 la misma frase que el aviso del Inicio; uno por escalón por entrega, y ninguno si ya tiene
 un pedido abierto. El que **imprime por su cuenta** (lo marca Fidelli) no ve la estimación
 ni recibe avisos, y tiene un botón **«Descargar el archivo de impresión»** con el diseño
-original. La miniatura del diseño ya no carga el archivo entero: sale reducida a 400 px.
+original. La miniatura del diseño ya no carga el archivo entero: sale reducida a 400 px,
+y se muestra completa adentro de la caja de 5 × 8 cm aunque el archivo tenga otra
+proporción (con una franja gris arriba y abajo, o a los costados).
 
 ### 2.15 · Marcas y modelos de vehículos
 
