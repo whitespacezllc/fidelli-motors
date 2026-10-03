@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { obtenerSesion } from "@/lib/auth/session";
-import { DISENO_MAX_BYTES, DISENO_TIPOS, esEstadoEncargo } from "@/lib/calcos";
+import { esEstadoEncargo } from "@/lib/calcos";
+import { DISENO_MAX_BYTES, DISENO_TIPOS } from "@/lib/fidelli/calcos";
 
 // ============================================================
 // Las acciones de los pedidos de calcos, compartidas por la solapa Calcos

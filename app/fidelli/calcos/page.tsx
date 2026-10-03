@@ -2,12 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { TablaEncargos } from "@/components/fidelli/calcos/tabla-encargos";
-import {
-  ESTADOS_ABIERTOS,
-  leerEncargos,
-  type EncargoAdmin,
-  type EstadoEncargo,
-} from "@/lib/calcos";
+import type { EstadoEncargo } from "@/lib/calcos";
+import { ESTADOS_ABIERTOS, leerEncargos, type EncargoAdmin } from "@/lib/fidelli/calcos";
 
 export const metadata: Metadata = { title: "Calcos" };
 
