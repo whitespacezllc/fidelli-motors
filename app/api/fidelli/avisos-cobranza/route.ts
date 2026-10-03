@@ -4,6 +4,7 @@ import { rechazoDelCron } from "@/lib/cron/guarda";
 import { hoyISO } from "@/lib/fechas";
 import { claveDeEmail, emailDeCobranza, type DatosEmail } from "@/lib/email/cobranza";
 import { enviarEmail, motivoSinResend, remitente } from "@/lib/email/resend";
+import { mandarAvisosDeStock } from "@/lib/pedidos-calcos/stock";
 import { urlWhatsappSoporte } from "@/lib/config";
 import { SITIO_URL } from "@/lib/seo";
 
@@ -28,8 +29,16 @@ import { SITIO_URL } from "@/lib/seo";
 //   4 · Corre con la clave de servicio (crearClienteAdmin): no hay usuario
 //       detrás, y `avisos_pendientes()` solo está grantada a service_role.
 //
+//   5 · Y DESPUÉS, LOS DOS MAILS DEL STOCK DE CALCOS (PR 3 de calcos): «te
+//       quedan calcos para pocas semanas» y «te estás quedando sin calcos».
+//       Misma corrida, misma guarda, otra decisión de la base
+//       (`avisos_calcos_pendientes()`) y otro registro (`emails_calcos`).
+//       Van al final y no cortan nada: si esa mitad falla, los de cobranza
+//       ya salieron y la respuesta lo dice en `calcos.error`.
+//
 // `?simular=1` devuelve lo que se mandaría, sin mandar ni insertar: para
-// mirar la lista antes de la primera corrida real.
+// mirar la lista antes de la primera corrida real. Vale para las dos
+// mitades.
 // ============================================================
 
 export const dynamic = "force-dynamic";
@@ -132,8 +141,11 @@ export async function GET(request: Request) {
     }
   }
 
+  // Los mails del stock de calcos. No tira nunca.
+  const calcos = await mandarAvisosDeStock(admin, simular);
+
   console.log(
-    `[${RUTA}] ${hoy}${simular ? " (simulado)" : ""}: ${pendientes?.length ?? 0} pendientes · ${enviados.length} enviados · ${fallidos.length} fallidos · desde ${remitente()}`,
+    `[${RUTA}] ${hoy}${simular ? " (simulado)" : ""}: ${pendientes?.length ?? 0} pendientes · ${enviados.length} enviados · ${fallidos.length} fallidos · calcos: ${calcos.error ? `falló (${calcos.error})` : `${calcos.pendientes} pendientes, ${calcos.enviados.length} enviados, ${calcos.fallidos.length} fallidos`} · desde ${remitente()}`,
   );
 
   return NextResponse.json({
@@ -143,5 +155,6 @@ export async function GET(request: Request) {
     pendientes: pendientes?.length ?? 0,
     enviados,
     fallidos,
+    calcos,
   });
 }
