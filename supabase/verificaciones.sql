@@ -10766,3 +10766,479 @@ begin
   end if;
 end $$;
 -- <<< R39
+
+
+
+-- ============================================================
+-- R40 · Pedidos de calcos, el pago: la rama del webhook, el vencimiento y
+--       lo que NO tiene que enterarse (20261003200000)
+--
+-- El PR 2 mete los pedidos de calcos en la ruta caliente del cobro. Una
+-- orden de calcos vive en `cresium_ordenes` con `encargo_calcos_id` y su
+-- referencia es `calcos:<uuid del encargo>`; la acredita la misma puerta
+-- que las renovaciones, `acreditar_deposito_cresium()`. Lo que se rompe sin
+-- ruido acá:
+--
+--   a · La orden es de UNA sola cosa: o de una suscripción (con su
+--       período) o de un encargo de calcos (sin período). Los tres CHECK,
+--       cada uno por su nombre.
+--   b · PAID: el encargo pasa a pagado, con `pagado_at` y el id de la
+--       transacción; la orden queda en PAID; la evidencia dice «acreditado»;
+--       y NI UNA FILA EN `pagos` (la plata de calcos no es MRR).
+--   c · Los cinco reintentos de Cresium: `ya_acreditado`, y nada se mueve.
+--       La idempotencia es por `encargos_calcos.cresium_transaccion_id`.
+--   d · PARTIAL no paga: el encargo sigue sin pagar, la orden dice cuánto
+--       entró y la respuesta dice cuánto falta.
+--   e · Una referencia `calcos:` que no es de nadie —un uuid que no existe,
+--       algo que ni es un uuid, vacía— NO EXPLOTA: motivo, 2xx y a otra
+--       cosa. Es LA trampa: sin la rama antes del cast, la función revienta
+--       con «invalid input syntax for type uuid», la ruta contesta 500 y
+--       Cresium reintenta cinco veces un cobro que no vamos a acreditar.
+--   g · El vencimiento: `vencer_encargos_calcos()` pasa a vencido los sin
+--       pagar de más de 7 días y no toca los recientes; con uno vencido el
+--       tenant vuelve a pedir; `vencido → pagado` existe SOLO por el webhook
+--       (avanzar_encargo_calcos lo rechaza, también con nota).
+--   h · Un depósito no revive lo que no debe: un pedido cancelado sigue
+--       cancelado, y uno ya pagado no cambia de transacción.
+--   i · El mail no se duplica: `reclamar_mail_encargo_calcos()` contesta
+--       true UNA vez por tipo; soltarlo lo devuelve; `pago` y `envio` son
+--       independientes.
+--   j · Los lectores de `cresium_ordenes` que miran «la última orden del
+--       tenant» siguen mirando la de la SUSCRIPCIÓN: `cobranzas_pendientes()`
+--       y `resumen_admin().ordenes_cresium` no se confunden con una orden
+--       de calcos —ni la cuentan, ni se dejan tapar por ella—.
+--   k · Quién ejecuta qué: el owner no vence, no reclama mails ni lee el
+--       catálogo con costos; el vencimiento es solo de la clave de servicio.
+--   m · La referencia con número de intento (`calcos:<uuid>:2`) acredita al
+--       mismo pedido.
+--
+-- Todo dentro de una subtransacción que se deshace, como R36–R39: los
+-- eventos de prueba no quedan en `cresium_eventos`.
+-- ============================================================
+-- >>> R40
+do $$
+declare
+  v_demo    uuid;
+  v_own     uuid;
+  v_super   uuid;
+  v_plan    uuid;
+  v_lub_b   uuid;
+  v_sus_b   uuid;
+  v_e1      uuid;   -- del demo: PARTIAL, después PAID
+  v_e2      uuid;   -- del demo: se paga con la referencia del segundo intento
+  v_e3      uuid;   -- del demo: cancelado, y después le llega plata
+  v_e4      uuid;   -- del demo: vencido, y después lo paga el webhook
+  v_e5      uuid;   -- del demo: pedido nuevo con el anterior vencido
+  v_eb      uuid;   -- del tenant B: sin pagar, de hoy
+  v_fila    encargos_calcos%rowtype;
+  v_orden   cresium_ordenes%rowtype;
+  v_r       jsonb;
+  v_n       integer;
+  v_m       integer;
+  v_pagos   integer;
+  v_ord0    integer;
+  v_txt     text;
+  v_ok      boolean;
+  v_ts      timestamptz;
+  r         record;
+begin
+  select id into v_demo  from lubricentros where slug = 'demo';
+  select id into v_own   from usuarios where lubricentro_id = v_demo and rol = 'owner' limit 1;
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  select id into v_plan  from planes where nombre = 'Pro' and not heredado;
+  if v_demo is null or v_own is null or v_super is null or v_plan is null then
+    raise exception 'R40 SIN PISO: falta el demo, su owner, el superadmin o el plan Pro del seed.';
+  end if;
+
+  begin
+    -- ---------- los fixtures ----------
+    insert into lubricentros (nombre, slug) values ('Calcos R40', 'calcos-r40') returning id into v_lub_b;
+    insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, vencimiento)
+    values (v_lub_b, v_plan, 'activa', 'mensual', 0, current_date + 5) returning id into v_sus_b;
+
+    select count(*) into v_pagos from pagos;
+
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    v_ord0 := (resumen_admin() ->> 'ordenes_cresium')::integer;
+
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    v_e1 := crear_encargo_calcos(p_pack => 'pack_400', p_entrega => 'retiro');
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+
+    -- ---------- a · la orden es de una sola cosa ----------
+    for r in select * from (values
+        ('orden_de_una_sola_cosa', format(
+          -- Sin período a propósito: con las dos cosas Y un período saltaría
+          -- antes calcos_sin_periodo (Postgres evalúa los CHECK por nombre).
+          'insert into cresium_ordenes (lubricentro_id, suscripcion_id, encargo_calcos_id, external_id, monto, alias) values (%L, %L, %L, ''r40:las-dos'', 1, ''fm.r40.aaaaa1'')',
+          v_lub_b, v_sus_b, v_e1)),
+        ('orden_de_una_sola_cosa', format(
+          'insert into cresium_ordenes (lubricentro_id, external_id, monto, alias) values (%L, ''r40:ninguna'', 1, ''fm.r40.aaaaa2'')',
+          v_lub_b)),
+        ('renovacion_con_periodo', format(
+          'insert into cresium_ordenes (lubricentro_id, suscripcion_id, external_id, monto, alias) values (%L, %L, ''r40:sin-periodo'', 1, ''fm.r40.aaaaa3'')',
+          v_lub_b, v_sus_b)),
+        ('calcos_sin_periodo', format(
+          'insert into cresium_ordenes (lubricentro_id, encargo_calcos_id, external_id, periodo, periodo_hasta, monto, alias) values (%L, %L, ''r40:con-periodo'', ''mensual'', current_date + 30, 1, ''fm.r40.aaaaa4'')',
+          v_demo, v_e1))
+      ) t(restriccion, consulta)
+    loop
+      v_ok := false;
+      begin
+        execute r.consulta;
+        v_ok := true;
+      exception when check_violation then
+        get stacked diagnostics v_txt = constraint_name;
+        if v_txt <> r.restriccion then
+          raise exception 'R40a «%» lo frenó % y no %.', r.consulta, v_txt, r.restriccion;
+        end if;
+      end;
+      if v_ok then
+        raise exception 'R40a EL CHECK % NO ESTÁ: entró «%». Una orden de Cresium es de UNA sola cosa —una renovación con su período, o un pedido de calcos sin período—: con las dos, el depósito no sabe qué acreditar; con ninguna, es plata sin dueño.', r.restriccion, r.consulta;
+      end if;
+    end loop;
+
+    -- La orden del pedido, como la deja la acción «Confirmar y pagar».
+    insert into cresium_ordenes (lubricentro_id, encargo_calcos_id, external_id, monto, alias, cvu, orden_id)
+    values (v_demo, v_e1, 'calcos:' || v_e1, 84000, 'fm.r40.c0001a', '0000168400000000009401', 9401);
+
+    -- ---------- d · PARTIAL no paga ----------
+    v_r := acreditar_deposito_cresium(jsonb_build_object(
+      'type', 'DEPOSIT', 'data', jsonb_build_object('transaction', jsonb_build_object(
+        'id', 9940001, 'paymentOrder', jsonb_build_object(
+          'externalId', 'calcos:' || v_e1, 'status', 'PARTIAL', 'amount', 84000, 'amountPaid', 30000)))));
+    select * into v_fila from encargos_calcos where id = v_e1;
+    select * into v_orden from cresium_ordenes where external_id = 'calcos:' || v_e1;
+    if v_r ->> 'resultado' is distinct from 'sin_acreditar' or v_fila.estado <> 'pendiente_pago'
+       or v_fila.cresium_transaccion_id is not null or v_fila.pagado_at is not null then
+      raise exception 'R40d UN PARTIAL PAGÓ EL PEDIDO DE CALCOS: contestó «%» y el pedido quedó % con transacción %. Solo PAID paga: la mitad de la plata no manda nada a imprimir.',
+        v_r ->> 'resultado', v_fila.estado, v_fila.cresium_transaccion_id;
+    end if;
+    if (v_r ->> 'falta')::numeric is distinct from 54000 or v_orden.estado <> 'PARTIAL' or v_orden.monto_pagado <> 30000 then
+      raise exception 'R40d el PARTIAL no dejó a la vista cuánto entró y cuánto falta: falta % (54.000), la orden quedó % con % pagados. La pantalla del tenant muestra esos dos números.',
+        v_r ->> 'falta', v_orden.estado, v_orden.monto_pagado;
+    end if;
+
+    -- j · Una orden de calcos PARTIAL, que es la única orden del demo que
+    --     se movió, no es «una orden de Cresium vencida o parcial» del hub.
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    v_n := (resumen_admin() ->> 'ordenes_cresium')::integer;
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    if v_n <> v_ord0 then
+      raise exception 'R40j UNA ORDEN DE CALCOS CUENTA COMO DEUDA DE SUSCRIPCIÓN: resumen_admin().ordenes_cresium pasó de % a % con un pedido de calcos pagado a medias. Esa alerta manda a Cobranzas, donde el pedido no existe.', v_ord0, v_n;
+    end if;
+
+    -- ---------- b · PAID ----------
+    v_r := acreditar_deposito_cresium(jsonb_build_object(
+      'type', 'DEPOSIT', 'data', jsonb_build_object('transaction', jsonb_build_object(
+        'id', 9940002, 'paymentOrder', jsonb_build_object(
+          'externalId', 'calcos:' || v_e1, 'status', 'PAID', 'amount', 84000, 'amountPaid', 84000)))));
+    select * into v_fila from encargos_calcos where id = v_e1;
+    select * into v_orden from cresium_ordenes where external_id = 'calcos:' || v_e1;
+    if v_r ->> 'resultado' is distinct from 'acreditado' or v_r ->> 'concepto' is distinct from 'calcos'
+       or (v_r ->> 'encargo')::uuid is distinct from v_e1 then
+      raise exception 'R40b un DEPOSIT en PAID de un pedido de calcos no acreditó como calcos: %.', v_r;
+    end if;
+    if v_fila.estado <> 'pagado' or v_fila.pagado_at is null or v_fila.cresium_transaccion_id is distinct from 9940002 then
+      raise exception 'R40b EL PAGO NO DEJÓ EL PEDIDO PAGADO: estado %, pagado_at %, transacción % (9940002).', v_fila.estado, v_fila.pagado_at, v_fila.cresium_transaccion_id;
+    end if;
+    if v_orden.estado <> 'PAID' or v_orden.monto_pagado <> 84000 then
+      raise exception 'R40b la orden del pedido no quedó en PAID (% con % pagados): la pantalla del tenant no cambia sola.', v_orden.estado, v_orden.monto_pagado;
+    end if;
+    select count(*) into v_n from pagos;
+    if v_n <> v_pagos then
+      raise exception 'R40b EL PAGO DE UN PEDIDO DE CALCOS ESCRIBIÓ EN `pagos` (% → %). La plata de calcos no es MRR: una fila ahí mueve el vencimiento de la suscripción y entra en los snapshots.', v_pagos, v_n;
+    end if;
+    if not exists (select 1 from cresium_eventos where transaccion_id = 9940002 and motivo like 'acreditado%' and procesado_at is not null) then
+      raise exception 'R40b el depósito del pedido no quedó en la evidencia como acreditado.';
+    end if;
+
+    -- ---------- c · los reintentos ----------
+    v_ts := v_fila.pagado_at;
+    for v_m in 2..5 loop
+      v_r := acreditar_deposito_cresium(jsonb_build_object(
+        'type', 'DEPOSIT', 'retry', v_m, 'data', jsonb_build_object('transaction', jsonb_build_object(
+          'id', 9940002, 'paymentOrder', jsonb_build_object(
+            'externalId', 'calcos:' || v_e1, 'status', 'PAID', 'amount', 84000, 'amountPaid', 84000)))));
+      if v_r ->> 'resultado' is distinct from 'ya_acreditado' then
+        raise exception 'R40c el reintento % del depósito de un pedido de calcos contestó «%» en vez de ya_acreditado. La idempotencia de calcos es por encargos_calcos.cresium_transaccion_id: la de `pagos` acá no mira nada.', v_m, v_r ->> 'resultado';
+      end if;
+    end loop;
+    select * into v_fila from encargos_calcos where id = v_e1;
+    if v_fila.estado <> 'pagado' or v_fila.pagado_at is distinct from v_ts or v_fila.cresium_transaccion_id <> 9940002
+       or (select count(*) from pagos) <> v_pagos then
+      raise exception 'R40c los reintentos movieron algo: el pedido quedó %, pagado_at % (era %).', v_fila.estado, v_fila.pagado_at, v_ts;
+    end if;
+    select count(*) into v_n from cresium_eventos where external_id = 'calcos:' || v_e1;
+    if v_n <> 6 then
+      raise exception 'R40c la evidencia guardó % entregas del pedido y fueron 6 (el PARTIAL, el PAID y sus cuatro reintentos).', v_n;
+    end if;
+
+    -- ---------- e · una referencia de calcos que no es de nadie ----------
+    for r in select * from (values
+        (9940010, 'calcos:' || gen_random_uuid()),
+        (9940011, 'calcos:no-es-un-uuid'),
+        (9940012, 'calcos:'),
+        (9940013, 'calcos:' || v_e1 || 'x')
+      ) t(tx, externo)
+    loop
+      v_ok := false;
+      begin
+        v_r := acreditar_deposito_cresium(jsonb_build_object(
+          'type', 'DEPOSIT', 'data', jsonb_build_object('transaction', jsonb_build_object(
+            'id', r.tx, 'paymentOrder', jsonb_build_object(
+              'externalId', r.externo, 'status', 'PAID', 'amount', 1, 'amountPaid', 1)))));
+        v_ok := true;
+      exception when others then
+        raise exception 'R40e EL WEBHOOK EXPLOTA con la referencia «%»: %. La ruta contesta 500 y Cresium reintenta cinco veces un depósito que no vamos a acreditar nunca. La rama de calcos va ANTES del cast a uuid de la suscripción, y no castea lo que no es un uuid.', r.externo, sqlerrm;
+      end;
+      if v_r ->> 'resultado' is distinct from 'sin_acreditar' or v_r ->> 'motivo' not like '%ningún pedido%' then
+        raise exception 'R40e la referencia «%» contestó «%» (motivo «%») y tenía que quedar sin acreditar, con el motivo dicho.', r.externo, v_r ->> 'resultado', v_r ->> 'motivo';
+      end if;
+    end loop;
+
+    -- ---------- m · la referencia con número de intento ----------
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    v_e2 := crear_encargo_calcos(p_pack => 'pack_200', p_entrega => 'retiro');
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    v_r := acreditar_deposito_cresium(jsonb_build_object(
+      'type', 'DEPOSIT', 'data', jsonb_build_object('transaction', jsonb_build_object(
+        'id', 9940003, 'paymentOrder', jsonb_build_object(
+          'externalId', 'calcos:' || v_e2 || ':2', 'status', 'PAID', 'amount', 45000, 'amountPaid', 45000)))));
+    if v_r ->> 'resultado' is distinct from 'acreditado' or (select estado from encargos_calcos where id = v_e2) <> 'pagado' then
+      raise exception 'R40m la referencia del SEGUNDO intento (calcos:<uuid>:2) no acreditó al pedido (%). El sufijo existe porque el externalId es único en Cresium para siempre (regla 20): el parser lee las dos primeras partes.', v_r;
+    end if;
+
+    -- ---------- h · lo que un depósito no revive ----------
+    -- Otra transacción sobre un pedido ya pagado: no cambia nada.
+    v_r := acreditar_deposito_cresium(jsonb_build_object(
+      'type', 'DEPOSIT', 'data', jsonb_build_object('transaction', jsonb_build_object(
+        'id', 9940004, 'paymentOrder', jsonb_build_object(
+          'externalId', 'calcos:' || v_e2, 'status', 'PAID', 'amount', 45000, 'amountPaid', 90000)))));
+    select * into v_fila from encargos_calcos where id = v_e2;
+    if v_r ->> 'resultado' is distinct from 'sin_acreditar' or v_fila.cresium_transaccion_id <> 9940003 or v_fila.estado <> 'pagado' then
+      raise exception 'R40h un segundo depósito sobre un pedido ya pagado contestó «%» y dejó la transacción % (9940003).', v_r ->> 'resultado', v_fila.cresium_transaccion_id;
+    end if;
+    -- Y un pedido cancelado sigue cancelado.
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    v_e3 := crear_encargo_calcos(p_pack => 'pack_200', p_entrega => 'retiro');
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    perform avanzar_encargo_calcos(v_e3, 'cancelado', '{}');
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    v_r := acreditar_deposito_cresium(jsonb_build_object(
+      'type', 'DEPOSIT', 'data', jsonb_build_object('transaction', jsonb_build_object(
+        'id', 9940005, 'paymentOrder', jsonb_build_object(
+          'externalId', 'calcos:' || v_e3, 'status', 'PAID', 'amount', 45000, 'amountPaid', 45000)))));
+    if v_r ->> 'resultado' is distinct from 'sin_acreditar' or (select estado from encargos_calcos where id = v_e3) <> 'cancelado' then
+      raise exception 'R40h UN DEPÓSITO REVIVIÓ UN PEDIDO CANCELADO: contestó «%» y quedó %. El webhook paga lo que está sin pagar o vencido, y nada más; lo demás queda en la evidencia con su motivo.',
+        v_r ->> 'resultado', (select estado from encargos_calcos where id = v_e3);
+    end if;
+
+    -- ---------- g · el vencimiento ----------
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    v_e4 := crear_encargo_calcos(p_pack => 'pack_800', p_entrega => 'retiro');
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    update encargos_calcos set created_at = now() - interval '7 days 1 hour' where id = v_e4;
+    -- El del tenant B es de hace 6 días y 23 horas: todavía no vence.
+    insert into encargos_calcos (lubricentro_id, pack_codigo, cantidad, entrega, estado,
+                                 monto_pack, monto_rediseno, monto_envio, monto_total, costo_estimado, comision_estimada,
+                                 created_at)
+    values (v_lub_b, 'pack_200', 200, 'retiro', 'pendiente_pago', 45000, 0, 0, 45000, 30000, 435.60,
+            now() - interval '6 days 23 hours')
+    returning id into v_eb;
+
+    -- Y dos viejos que NO están sin pagar: uno pagado y uno cancelado.
+    update encargos_calcos set created_at = now() - interval '9 days' where id in (v_e2, v_e3);
+
+    v_n := vencer_encargos_calcos();
+    if (select estado from encargos_calcos where id = v_e2) <> 'pagado'
+       or (select estado from encargos_calcos where id = v_e3) <> 'cancelado' then
+      raise exception 'R40g VENCIÓ UN PEDIDO QUE NO ESTABA SIN PAGAR: el pagado de hace 9 días quedó % y el cancelado %. Vence lo que nadie pagó, no lo que ya está en la gráfica.',
+        (select estado from encargos_calcos where id = v_e2), (select estado from encargos_calcos where id = v_e3);
+    end if;
+    if v_n < 1 or (select estado from encargos_calcos where id = v_e4) <> 'vencido' then
+      raise exception 'R40g EL PEDIDO SIN PAGAR NO VENCE: vencer_encargos_calcos() contestó % y el pedido de hace 7 días y una hora quedó %. Sin el vencimiento, el tenant no puede volver a pedir nunca (es un pedido sin pagar por tenant).',
+        v_n, (select estado from encargos_calcos where id = v_e4);
+    end if;
+    if (select estado from encargos_calcos where id = v_eb) <> 'pendiente_pago' then
+      raise exception 'R40g VENCIÓ UN PEDIDO QUE TODAVÍA TENÍA PLAZO: el de hace 6 días y 23 horas quedó %. Son 7 días, los mismos que vive la cuenta en Cresium.', (select estado from encargos_calcos where id = v_eb);
+    end if;
+    if vencer_encargos_calcos() <> 0 then
+      raise exception 'R40g vencer_encargos_calcos() volvió a vencer algo en la segunda corrida: no es idempotente.';
+    end if;
+    update encargos_calcos set created_at = now() - interval '9 days' where id = v_eb;
+    if vencer_encargos_calcos(v_demo) <> 0 or (select estado from encargos_calcos where id = v_eb) <> 'pendiente_pago' then
+      raise exception 'R40g vencer_encargos_calcos(tenant) venció el pedido de OTRO tenant.';
+    end if;
+    update encargos_calcos set created_at = now() where id = v_eb;
+
+    -- vencido → pagado NO existe por la puerta de Fidelli, ni con nota…
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    for r in select unnest(enum_range(null::estado_encargo_calcos)) as a loop
+      v_ok := false;
+      begin
+        perform avanzar_encargo_calcos(v_e4, r.a, '{"nota": "R40 revivir un vencido a mano", "transportista": "Andreani", "seguimiento": "R40"}');
+        v_ok := true;
+      exception when others then
+        if sqlerrm not like '%transicion_invalida%' then
+          raise exception 'R40g vencido → % falló con otro error: %', r.a, sqlerrm;
+        end if;
+      end;
+      if v_ok then
+        raise exception 'R40g UN PEDIDO VENCIDO PASÓ A «%» POR avanzar_encargo_calcos(). Un vencido vuelve a pagado SOLO por el webhook, con la plata adentro: a mano se pide uno nuevo.', r.a;
+      end if;
+    end loop;
+
+    -- …con uno vencido, el tenant vuelve a pedir…
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    begin
+      v_e5 := crear_encargo_calcos(p_pack => 'pack_200', p_entrega => 'retiro');
+    exception when others then
+      raise exception 'R40g con el pedido anterior vencido, el tenant no pudo volver a pedir (%).', sqlerrm;
+    end;
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+
+    -- …y si igual paga el viejo, el webhook lo acredita.
+    v_r := acreditar_deposito_cresium(jsonb_build_object(
+      'type', 'DEPOSIT', 'data', jsonb_build_object('transaction', jsonb_build_object(
+        'id', 9940006, 'paymentOrder', jsonb_build_object(
+          'externalId', 'calcos:' || v_e4, 'status', 'PAID', 'amount', 160000, 'amountPaid', 160000)))));
+    select * into v_fila from encargos_calcos where id = v_e4;
+    if v_r ->> 'resultado' is distinct from 'acreditado' or v_fila.estado <> 'pagado' or v_fila.cresium_transaccion_id <> 9940006 then
+      raise exception 'R40g EL WEBHOOK NO ACREDITÓ UN PEDIDO VENCIDO: contestó «%» y quedó %. La cuenta de Cresium puede seguir viva cuando nuestro pedido ya venció: si el tenant paga igual, la plata entró y el pedido vuelve a pagado.', v_r ->> 'resultado', v_fila.estado;
+    end if;
+    if (select estado from encargos_calcos where id = v_e5) <> 'pendiente_pago' then
+      raise exception 'R40g pagar el pedido viejo movió el nuevo.';
+    end if;
+
+    -- ---------- i · el mail no se duplica ----------
+    if not reclamar_mail_encargo_calcos(v_e1, 'pago') then
+      raise exception 'R40i el primer reclamo del mail de pago contestó false: el mail no sale nunca.';
+    end if;
+    if reclamar_mail_encargo_calcos(v_e1, 'pago') then
+      raise exception 'R40i EL MAIL DE PAGO SE MANDA DOS VECES: el segundo reclamo contestó true. Cresium reintenta la misma entrega hasta cinco veces; el tenant recibiría cinco «recibimos tu pago».';
+    end if;
+    if (select mail_pago_at from encargos_calcos where id = v_e1) is null then
+      raise exception 'R40i el reclamo no dejó escrito mail_pago_at.';
+    end if;
+    if not reclamar_mail_encargo_calcos(v_e1, 'envio') then
+      raise exception 'R40i el mail de envío quedó tapado por el de pago: son dos avisos distintos.';
+    end if;
+    perform soltar_mail_encargo_calcos(v_e1, 'pago');
+    if (select mail_pago_at from encargos_calcos where id = v_e1) is not null
+       or (select mail_envio_at from encargos_calcos where id = v_e1) is null
+       or not reclamar_mail_encargo_calcos(v_e1, 'pago') then
+      raise exception 'R40i soltar el mail de pago (cuando el envío falló) no lo dejó disponible de nuevo, o se llevó puesto el de envío.';
+    end if;
+    v_ok := false;
+    begin
+      perform reclamar_mail_encargo_calcos(v_e1, 'otro');
+      v_ok := true;
+    exception when others then
+      if sqlerrm not like '%tipo_invalido%' then raise; end if;
+    end;
+    if v_ok then
+      raise exception 'R40i se reclamó un mail de un tipo que no existe.';
+    end if;
+
+    -- ---------- j · los lectores de la última orden del tenant ----------
+    -- El tenant B tiene su renovación pagada a medias y, DESPUÉS, un pedido
+    -- de calcos con su orden recién creada. «La última orden» sigue siendo
+    -- la de la renovación.
+    insert into cresium_ordenes (lubricentro_id, suscripcion_id, external_id, periodo, periodo_hasta, monto, alias, estado, monto_pagado, created_at)
+    values (v_lub_b, v_sus_b, cresium_external_id(v_sus_b, current_date + 35), 'mensual', current_date + 35,
+            74000, 'fm.r40.s0001a', 'PARTIAL', 20000, now() - interval '2 hours');
+    insert into cresium_ordenes (lubricentro_id, encargo_calcos_id, external_id, monto, alias, estado)
+    values (v_lub_b, v_eb, 'calcos:' || v_eb, 45000, 'fm.r40.c0002b', 'NOT_PAID');
+
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    select c.orden_estado, c.orden_pagado into v_txt, v_m
+    from cobranzas_pendientes(15) c where c.lubricentro_id = v_lub_b;
+    if v_txt is distinct from 'PARTIAL' or v_m is distinct from 20000 then
+      raise exception 'R40j cobranzas_pendientes() MIRA LA ORDEN DE CALCOS COMO SI FUERA LA RENOVACIÓN: para un tenant que transfirió $20.000 de su abono y después pidió calcos, dijo orden «%» con % pagados (PARTIAL, 20.000). La fila de Cobranzas dejaría de decir «Transfirió 20.000 de 74.000».', v_txt, v_m;
+    end if;
+    v_n := (resumen_admin() ->> 'ordenes_cresium')::integer;
+    if v_n <> v_ord0 + 1 then
+      raise exception 'R40j resumen_admin().ordenes_cresium pasó de % a % y tenía que sumar exactamente 1: la renovación a medias del tenant B, que una orden de calcos más nueva no puede tapar (ni las de calcos del demo contar).', v_ord0, v_n;
+    end if;
+
+    -- ---------- k · quién ejecuta qué ----------
+    select count(*) into v_n from catalogo_calcos_admin() c where c.costo_ars is not null;
+    if v_n <> 7 or (select c.costo_ars from catalogo_calcos_admin() c where c.codigo = 'pack_200') <> 30000 then
+      raise exception 'R40k catalogo_calcos_admin() no le trae al superadmin las siete filas con su costo: «Plan y precios» no puede mostrar ni editar el costo.';
+    end if;
+    for r in select * from (values
+        (v_super, 'select vencer_encargos_calcos()'),
+        (v_own,   'select vencer_encargos_calcos()'),
+        (v_own,   'select reclamar_mail_encargo_calcos(''' || v_e1 || ''', ''pago'')'),
+        (v_own,   'select soltar_mail_encargo_calcos(''' || v_e1 || ''', ''envio'')'),
+        (v_own,   'select count(*) from catalogo_calcos_admin()'),
+        (v_own,   'select acreditar_deposito_cresium(''{}'')'),
+        (v_own,   'insert into cresium_ordenes (lubricentro_id, encargo_calcos_id, external_id, monto, alias) values (''' || v_demo || ''', ''' || v_e5 || ''', ''r40:owner'', 1, ''fm.r40.owner1'')')
+      ) t(quien, consulta)
+    loop
+      perform set_config('request.jwt.claims',
+        json_build_object('sub', r.quien, 'role', 'authenticated')::text, true);
+      v_ok := false;
+      begin
+        execute r.consulta;
+        v_ok := true;
+      exception when others then
+        if sqlstate <> '42501' then
+          raise exception 'R40k «%» falló con otro error que 42501: % (%)', r.consulta, sqlerrm, sqlstate;
+        end if;
+      end;
+      if v_ok then
+        raise exception 'R40k «%» SE EJECUTÓ CON UNA SESIÓN DE %. El vencimiento es del cierre diario (clave de servicio); los mails, de Fidelli y del webhook; el costo, de /fidelli; y la orden la escribe el servidor.',
+          r.consulta, case when r.quien = v_own then 'OWNER' else 'SUPERADMIN' end;
+      end if;
+    end loop;
+    -- El owner ve la orden de SU pedido (la pantalla de pago la lee con su
+    -- sesión) y ninguna del tenant de al lado.
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    select count(*) filter (where lubricentro_id = v_demo), count(*) filter (where lubricentro_id = v_lub_b)
+      into v_n, v_m from cresium_ordenes;
+    if v_n < 1 or v_m <> 0 then
+      raise exception 'R40k el owner ve % órdenes propias y % del tenant de al lado (tenía que ver la suya y cero ajenas).', v_n, v_m;
+    end if;
+
+    -- Todo lo escrito en este bloque se deshace acá. Cualquier otra
+    -- excepción de arriba NO se atrapa: sube y pone el reset en rojo.
+    raise exception 'rollback_r40' using errcode = 'P0040';
+  exception
+    when sqlstate 'P0040' then
+      execute 'reset role';
+      perform set_config('request.jwt.claims', '{}', true);
+  end;
+
+  if exists (select 1 from lubricentros where slug = 'calcos-r40')
+     or exists (select 1 from cresium_eventos where transaccion_id between 9940001 and 9940013)
+     or exists (select 1 from cresium_ordenes where alias like 'fm.r40.%') then
+    raise exception 'R40 SIN PISO: la subtransacción no deshizo los fixtures.';
+  end if;
+end $$;
+-- <<< R40

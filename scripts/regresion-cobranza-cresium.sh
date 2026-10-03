@@ -6,9 +6,15 @@
 # corresponde a ninguna suscripción», con el panel vencido. R22e tiene que
 # ponerse en ROJO.
 #
-# La migración no lleva `-- @marca` en esa línea porque ya está mergeada y
-# no se edita: el sed muerde el texto literal del split_part. Si alguien
-# reescribe esa línea, el guard de abajo lo dice en vez de dar verde.
+# La línea no lleva `-- @marca`: el sed muerde el texto literal del
+# split_part. Si alguien la reescribe, el guard de abajo lo dice en vez de
+# dar verde.
+#
+# ⚠ LA FUNCIÓN SE SACA DE SU ÚLTIMA DEFINICIÓN. Hasta el PR 2 de calcos este
+# script la extraía de 20260917000000, que ya no era la vigente desde
+# 20260917130000 (el primer pago define el ciclo): reinstalaba, adentro de
+# su transacción, un cuerpo dos versiones viejo. Desde 20261003200000 la
+# vigente es la que tiene la rama de calcos, y es la que hay que romper.
 #
 # Corre en una transacción con rollback: no deja rastro. Requiere el stack
 # local levantado (supabase start) con el schema al día (supabase db reset).
@@ -18,7 +24,7 @@ set -u
 cd "$(dirname "$0")/.."
 DB="docker exec -i supabase_db_fidelli-motors psql -U postgres -d postgres -X"
 V=supabase/verificaciones.sql
-M=supabase/migrations/20260917000000_webhook_forma_real.sql
+M=supabase/migrations/20261003200000_calcos_pago.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
 # La función entera: del `create or replace function nombre(` a su `$$;`.
