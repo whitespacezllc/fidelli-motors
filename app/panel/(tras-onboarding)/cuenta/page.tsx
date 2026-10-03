@@ -78,7 +78,7 @@ export default async function PaginaCuenta() {
   const [lubriRes, suscripcionRes, pagosRes, origen] = await Promise.all([
     supabase
       .from("lubricentros")
-      .select("nombre, slug")
+      .select("nombre, slug, calcos_entregadas")
       .eq("id", sesion.lubricentroId)
       .maybeSingle(),
     supabase
@@ -163,6 +163,29 @@ export default async function PaginaCuenta() {
               </p>
             </Dato>
           )}
+        </div>
+      </Bloque>
+
+      {/* La puerta a Mi cuenta → Calcos: el calco, pedir más y el historial.
+          Va acá y no en el sidebar por lo mismo que «Pagar o renovar»: pedir
+          calcos no es una tarea de todos los días. */}
+      <Bloque titulo="Tus calcos">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+          <p className="text-body text-ink tabular-nums">
+            {Number(lubricentro?.calcos_entregadas ?? 0) > 0 ? (
+              <>
+                <span className="font-semibold">
+                  {new Intl.NumberFormat("es-AR").format(Number(lubricentro?.calcos_entregadas))}
+                </span>{" "}
+                calcos entregados hasta hoy
+              </>
+            ) : (
+              "Todavía no te entregamos calcos."
+            )}
+          </p>
+          <Link href="/panel/cuenta/calcos" className={clasesBoton("secundario")}>
+            Ver y pedir calcos
+          </Link>
         </div>
       </Bloque>
 

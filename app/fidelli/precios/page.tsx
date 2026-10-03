@@ -5,7 +5,10 @@ import {
   TarjetaModulo,
   type ModuloCatalogo,
 } from "@/components/fidelli/tarjeta-modulo";
+import { TarjetaCalcos, type CambioDePrecioCalcos } from "@/components/fidelli/tarjeta-calcos";
 import type { PlanCompleto } from "@/components/fidelli/tipos";
+import { leerCatalogoCalcos } from "@/lib/fidelli/calcos";
+import { fechaCalendarioAR } from "@/lib/fechas";
 import { leerMotivoModulo } from "@/lib/modulos";
 import { MODULOS_PAGOS, type ModuloPago } from "@/lib/planes";
 
@@ -48,8 +51,14 @@ export default async function PaginaPrecios() {
   // ⚠ Un superadmin ve todos los tenants: el RLS deja de recortar, así que
   // acá no hay filtro por lubricentro a propósito — es la pantalla de la
   // plataforma entera, no la de un tenant.
-  const [{ data: planes }, { data: suscriptos }, { data: modulos }, { data: cambios }] =
-    await Promise.all([
+  const [
+    { data: planes },
+    { data: suscriptos },
+    { data: modulos },
+    { data: cambios },
+    { data: calcos },
+    { data: cambiosCalcos },
+  ] = await Promise.all([
       supabase
         .from("planes")
         .select(
@@ -68,11 +77,33 @@ export default async function PaginaPrecios() {
         .from("lubricentros")
         .select("id, nombre, plan_overrides, cambios_override_plan(motivo, created_at)")
         .or(FILTRO_CON_MODULO_PAGO),
+      // El catálogo de calcos CON su costo: la tabla no se lo da a
+      // `authenticated`, lo trae la función con guarda de superadmin.
+      supabase.rpc("catalogo_calcos_admin"),
+      // Y los últimos movimientos, para leer por qué vale lo que vale.
+      supabase
+        .from("cambios_precio_calcos")
+        .select("id, codigo, antes, despues, motivo, created_at")
+        .order("created_at", { ascending: false })
+        .limit(5),
     ]);
 
   const catalogo = (planes ?? []) as unknown as PlanCompleto[];
   const porPlan = suscriptos ?? [];
   const catalogoModulos = (modulos ?? []) as unknown as ModuloCatalogo[];
+  const catalogoCalcos = leerCatalogoCalcos(calcos);
+  const numero = (v: unknown, clave: string) =>
+    Number((v as Record<string, unknown> | null)?.[clave] ?? 0);
+  const ultimosCambiosCalcos: CambioDePrecioCalcos[] = (cambiosCalcos ?? []).map((c) => ({
+    id: c.id,
+    codigo: c.codigo,
+    dia: fechaCalendarioAR(new Date(c.created_at)),
+    motivo: c.motivo,
+    precioAntes: numero(c.antes, "precio_ars"),
+    precioDespues: numero(c.despues, "precio_ars"),
+    costoAntes: numero(c.antes, "costo_ars"),
+    costoDespues: numero(c.despues, "costo_ars"),
+  }));
 
   // Quién tiene cada módulo, y si lo paga.
   //
@@ -171,6 +202,22 @@ export default async function PaginaPrecios() {
                 />
               ))}
           </div>
+        </>
+      )}
+
+      {/* ---------- Los calcos ----------
+          Catálogo también: los packs y los extras que el lubricentro compra
+          desde Mi cuenta → Calcos. El precio se toca acá; a quién se le
+          manda qué vive en su ficha y en la cola. */}
+      {catalogoCalcos.length > 0 && (
+        <>
+          <h2 className="mt-10 mb-1.5 font-brand text-h3 font-bold text-ink">Calcos</h2>
+          <p className="mb-6 max-w-2xl text-ui text-ink-60">
+            Lo que el lubricentro pide desde su panel: packs cerrados, el rediseño y el envío
+            a domicilio. Ve el pack y su precio; el costo, el m² y el margen son nuestros y no
+            salen de acá.
+          </p>
+          <TarjetaCalcos catalogo={catalogoCalcos} cambios={ultimosCambiosCalcos} />
         </>
       )}
     </div>

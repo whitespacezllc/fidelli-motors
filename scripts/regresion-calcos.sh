@@ -46,6 +46,33 @@
 #   R39k · los cuatro CHECK del encargo, borrados de a uno.
 #   R39l · la puerta del owner sin mirar si el tenant está suspendido.
 #
+# Y LA ROTURA DE R40 (el pago, PR 2):
+#
+#   R40a · los tres CHECK de `cresium_ordenes`, borrados de a uno.
+#   R40b · el pago que no guarda la transacción; y la rama de calcos
+#          «unificada» con la renovación, escribiendo una fila en `pagos`.
+#   R40c · la idempotencia de calcos sacada.
+#   R40d · un PARTIAL que paga.
+#   R40e · LA TRAMPA: la rama de calcos sacada —el cast a uuid de la
+#          suscripción explota con «calcos»— y el uuid del encargo casteado
+#          sin mirarle la forma.
+#   R40g · el pedido que no vence nunca, el que vence un día antes, el
+#          vencimiento que se lleva lo que no está sin pagar, el de un
+#          tenant que vence el de todos; el webhook que no acredita un
+#          vencido; y `vencido → pagado` agregado a la tabla de
+#          avanzar_encargo_calcos (existe SOLO por el webhook).
+#   R40h · el webhook reviviendo cualquier estado.
+#   R40i · el mail que se reclama siempre y el soltar que no suelta.
+#   R40j · cobranzas_pendientes() y resumen_admin() mirando cualquier orden.
+#   R40k · la guarda del mail y la del catálogo sacadas, y la orden
+#          escribible por el owner.
+#
+# DOS QUE NO ESTÁN: grantarle acreditar_deposito_cresium() o
+# vencer_encargos_calcos() a `authenticated` no rompe nada. Las dos son
+# invoker, y una sesión no puede escribir ni `cresium_eventos` ni
+# `encargos_calcos`: el 42501 sale igual, de la tabla en vez de la función.
+# Se probó (la segunda se escapaba) y por eso no se escriben.
+#
 # DOS ROTURAS QUE NO ESTÁN, y por qué: borrar SOLO el índice de «una actual»
 # o SOLO el unique de la versión no rompe nada —la puerta ya desmarca la
 # anterior y calcula la siguiente—, así que no se escriben: una rotura que
@@ -63,6 +90,10 @@ cd "$(dirname "$0")/.."
 DB="docker exec -i ${DB_CONTAINER:-supabase_db_fidelli-motors} psql -U postgres -d postgres -X"
 V=supabase/verificaciones.sql
 M=supabase/migrations/20261003120000_encargos_calcos.sql
+# El pago (PR 2). `resumen_admin()` se redefinió ahí para que la alerta de
+# órdenes de Cresium no mire las de calcos: las roturas de R39f que la
+# muerden la sacan de este archivo.
+M_PAGO=supabase/migrations/20261003200000_calcos_pago.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
 
@@ -225,15 +256,15 @@ correr "un trigger que «sincroniza» los pedidos abiertos con el catálogo" \
      execute function r39_sincronizar();" R39 "R39e MOVER EL CATÁLOGO MOVIÓ"
 
 echo "── R39f · lo que cuenta la alerta y lo que ordena la cola ──"
-correr_marcada "esperando producción cuenta también lo que ya se produce" resumen_admin "$M" \
+correr_marcada "esperando producción cuenta también lo que ya se produce" resumen_admin "$M_PAGO" \
   "/@calcos_esperando/s/estado = 'pagado'/estado in ('pagado', 'en_produccion')/" R39 "R39f"
-correr_marcada "atrasados en días corridos en vez de hábiles" resumen_admin "$M" \
+correr_marcada "atrasados en días corridos en vez de hábiles" resumen_admin "$M_PAGO" \
   "/@calcos_atrasados/s/dias_habiles_entre(produccion_at::date, current_date) > 5/(current_date - produccion_at::date) > 5/" R39 "R39f"
-correr_marcada "atrasados con el corte corrido a 50 días hábiles" resumen_admin "$M" \
+correr_marcada "atrasados con el corte corrido a 50 días hábiles" resumen_admin "$M_PAGO" \
   "/@calcos_atrasados/s/> 5)/> 50)/" R39 "R39f"
-correr_marcada "por vencer que recién avisa el día que vence" resumen_admin "$M" \
+correr_marcada "por vencer que recién avisa el día que vence" resumen_admin "$M_PAGO" \
   "/@calcos_por_vencer/s/interval '6 days'/interval '7 days'/" R39 "R39f un pendiente de pago de hace 6 días"
-correr_marcada "por vencer que cuenta cualquier pendiente" resumen_admin "$M" \
+correr_marcada "por vencer que cuenta cualquier pendiente" resumen_admin "$M_PAGO" \
   "/@calcos_por_vencer/s/interval '6 days'/interval '0 days'/" R39 "R39f resumen_admin().calcos CUENTA MAL"
 correr_marcada "la cola con los pagados al fondo" encargos_calcos_admin "$M" \
   "/@cola_pagados_primero/s/then 1/then 4/" R39 "R39f LA COLA"
@@ -299,9 +330,78 @@ echo "── R39l · quién puede pedir ──"
 correr_marcada "un tenant suspendido pide calcos" crear_encargo_calcos "$M" \
   "/@solo_activos/s/if not es_activo(v_l) then/if false then/" R39 "R39l UN TENANT SUSPENDIDO"
 
+echo "── El bloque R40 sano, antes de romper nada ──"
+sano=$( { echo "begin;"; bloque R40 "$V"; echo "rollback;"; } | $DB -v ON_ERROR_STOP=1 -f - 2>&1 )
+if echo "$sano" | grep -q "ERROR"; then
+  echo "  ✗ R40 está en ROJO sin ninguna rotura: lo que sigue no prueba nada."
+  echo "$sano" | grep -E "ERROR" | tail -2 | sed 's/^/      /'
+  exit 1
+fi
+echo "  ✓ R40 pasa en verde sobre la base actual"
+
+echo "── R40a · la orden es de una sola cosa ──"
+for restriccion in orden_de_una_sola_cosa renovacion_con_periodo calcos_sin_periodo; do
+  correr "el CHECK $restriccion borrado" \
+    "alter table cresium_ordenes drop constraint $restriccion;" R40 "R40a"
+done
+
+echo "── R40e · la trampa: la rama de calcos antes del cast ──"
+# Sin la rama, la referencia `calcos:<uuid>` llega al cast de la renovación:
+# el error es el de Postgres, crudo, que es exactamente el 500 del webhook.
+correr_marcada "la rama de calcos sacada: el cast a uuid explota con «calcos»" acreditar_deposito_cresium "$M_PAGO" \
+  "/@rama_calcos/s/if v_external like 'calcos:%' then/if false then/" R40 "invalid input syntax for type uuid"
+correr_marcada "el uuid del encargo casteado sin mirarle la forma" acreditar_deposito_cresium "$M_PAGO" \
+  "/@uuid_de_calcos/s/if v_ref ~\* '[^']*' then/if true then/" R40 "R40e EL WEBHOOK EXPLOTA"
+
+echo "── R40b · c · d · h · lo que el webhook hace con un pedido ──"
+correr_marcada "el pago que no guarda la transacción" acreditar_deposito_cresium "$M_PAGO" \
+  "/@paga_calcos/s/, cresium_transaccion_id = v_tx//" R40 "R40b EL PAGO NO DEJÓ"
+correr_marcada "la rama de calcos «unificada»: escribe una fila en pagos" acreditar_deposito_cresium "$M_PAGO" \
+  "s/update cresium_eventos set procesado_at = now(), motivo = 'acreditado (pedido de calcos)'/insert into pagos (lubricentro_id, suscripcion_id, registrado_por, origen, cresium_transaccion_id, periodo_desde, periodo_hasta, monto, fecha_pago) select v_enc.lubricentro_id, su.id, null, 'cresium', v_tx, current_date, current_date + 30, v_pagado, current_date from suscripciones su where su.lubricentro_id = v_enc.lubricentro_id limit 1; update cresium_eventos set procesado_at = now(), motivo = 'acreditado (pedido de calcos)'/" R40 "R40b EL PAGO DE UN PEDIDO DE CALCOS ESCRIBIÓ"
+correr_marcada "la idempotencia de calcos sacada" acreditar_deposito_cresium "$M_PAGO" \
+  "/@idempotencia_calcos/s/elsif v_enc.cresium_transaccion_id = v_tx then/elsif false then/" R40 "R40c"
+correr_marcada "un PARTIAL paga el pedido" acreditar_deposito_cresium "$M_PAGO" \
+  "/@parcial_calcos/s/elsif v_estado is distinct from 'PAID' then/elsif false then/" R40 "R40d"
+correr_marcada "el webhook revive cualquier estado" acreditar_deposito_cresium "$M_PAGO" \
+  "/@estados_que_paga/s/elsif v_enc.estado not in ('pendiente_pago', 'vencido') then/elsif false then/" R40 "R40h"
+
+echo "── R40g · el vencimiento ──"
+correr_marcada "el pedido sin pagar que no vence nunca" vencer_encargos_calcos "$M_PAGO" \
+  "/@vence_a_los_7/s/interval '7 days'/interval '700 days'/" R40 "R40g EL PEDIDO SIN PAGAR NO VENCE"
+correr_marcada "el pedido que vence un día antes" vencer_encargos_calcos "$M_PAGO" \
+  "/@vence_a_los_7/s/interval '7 days'/interval '6 days'/" R40 "R40g VENCIÓ UN PEDIDO QUE TODAVÍA TENÍA PLAZO"
+correr_marcada "el vencimiento que se lleva lo que no está sin pagar" vencer_encargos_calcos "$M_PAGO" \
+  "/@vence_solo_sin_pagar/s/where estado = 'pendiente_pago'/where estado <> 'entregado'/" R40 "R40g VENCIÓ UN PEDIDO QUE NO ESTABA SIN PAGAR"
+correr_marcada "el vencimiento de un tenant que vence el de todos" vencer_encargos_calcos "$M_PAGO" \
+  "/@vence_del_tenant/s/and (p_lubricentro_id is null or lubricentro_id = p_lubricentro_id);/;/" R40 "R40g vencer_encargos_calcos(tenant)"
+correr_marcada "el webhook que no acredita un pedido vencido" acreditar_deposito_cresium "$M_PAGO" \
+  "/@estados_que_paga/s/not in ('pendiente_pago', 'vencido')/not in ('pendiente_pago')/" R40 "R40g EL WEBHOOK NO ACREDITÓ"
+correr_marcada "vencido → pagado agregado a la tabla de avanzar_encargo_calcos" avanzar_encargo_calcos "$M" \
+  "/@t_pagado/s/('pagado',         'en_produccion', false),/('pagado', 'en_produccion', false), ('vencido', 'pagado', false),/" R40 "R40g UN PEDIDO VENCIDO PASÓ"
+
+echo "── R40i · el mail no se duplica ──"
+correr_marcada "el mail de pago que se reclama siempre" reclamar_mail_encargo_calcos "$M_PAGO" \
+  "/@reclamo_pago/s/ and mail_pago_at is null;/;/" R40 "R40i EL MAIL DE PAGO SE MANDA DOS VECES"
+correr_marcada "soltar que no suelta" soltar_mail_encargo_calcos "$M_PAGO" \
+  "/@suelta_pago/s/set mail_pago_at = null where id = p_id;/set mail_pago_at = mail_pago_at where id = p_id;/" R40 "R40i soltar"
+
+echo "── R40j · los lectores de la última orden del tenant ──"
+correr_marcada "cobranzas_pendientes() mirando cualquier orden" cobranzas_pendientes "$M_PAGO" \
+  "/@orden_de_la_suscripcion/s/where o.suscripcion_id is not null/where true/" R40 "R40j cobranzas_pendientes"
+correr_marcada "resumen_admin() contando las órdenes de calcos" resumen_admin "$M_PAGO" \
+  "/@ordenes_de_suscripcion/s/where o.suscripcion_id is not null/where true/" R40 "R40j"
+
+echo "── R40k · quién ejecuta qué ──"
+correr_marcada "la guarda del mail sacada" reclamar_mail_encargo_calcos "$M_PAGO" \
+  "/@guarda_mail/s/if not (soy_superadmin() or auth.uid() is null) then/if false then/" R40 "R40k"
+correr_marcada "catalogo_calcos_admin sin la guarda" catalogo_calcos_admin "$M_PAGO" \
+  "/@guarda_catalogo/s/if not soy_superadmin() then/if false then/" R40 "R40k"
+correr "la orden de Cresium escribible por el owner" \
+  "grant insert on cresium_ordenes to authenticated; create policy rota on cresium_ordenes for insert to authenticated with check (true);" R40 "R40k"
+
 echo
 if [ "$fallas" -eq 0 ]; then
-  echo "La red atrapó las $total roturas."
+  echo "La red atrapó las $total roturas (R39 y R40)."
 else
   echo "ALGUNA ROTURA SE ESCAPÓ: la prueba que dice cubrirla no la cubre."
 fi
