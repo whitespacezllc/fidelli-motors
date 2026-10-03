@@ -123,6 +123,9 @@ M_CC=supabase/migrations/20260925102000_calcos_candado.sql
 # metricas_plataforma, resumen_admin, activacion_tenant, listado_lubricentros):
 # la versión vigente vive acá y es la que hay que romper.
 M_IM=supabase/migrations/20261002120000_importado_de.sql
+# resumen_admin() se redefinió otra vez para ganar la clave `calcos` (pedidos
+# de calcos, PR 1): desde ahí vive en ese archivo y es el que hay que romper.
+M_CA=supabase/migrations/20261003120000_encargos_calcos.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
 
@@ -227,7 +230,7 @@ correr_marcada "metricas_plataforma() de vuelta con el filtro tipo = 'service'" 
   "/@trabajos_mes/s/where not anulado/where not anulado and tipo = 'service'/" R32 "R32f"
 
 echo "── R32g · el resumen cuenta todos los tipos ──"
-correr_marcada "resumen_admin() contando solo service en trabajos del mes" resumen_admin "$M_IM" \
+correr_marcada "resumen_admin() contando solo service en trabajos del mes" resumen_admin "$M_CA" \
   "/@resumen_trabajos/s/where not anulado/where not anulado and tipo = 'service'/" R32 "R32g"
 
 echo "── R33b · cierre y pérdida excluyentes ──"

@@ -118,6 +118,51 @@ export type Database = {
           },
         ]
       }
+      cambios_precio_calcos: {
+        Row: {
+          antes: Json
+          cambiado_por: string
+          codigo: string
+          created_at: string
+          despues: Json
+          id: string
+          motivo: string
+        }
+        Insert: {
+          antes: Json
+          cambiado_por: string
+          codigo: string
+          created_at?: string
+          despues: Json
+          id?: string
+          motivo: string
+        }
+        Update: {
+          antes?: Json
+          cambiado_por?: string
+          codigo?: string
+          created_at?: string
+          despues?: Json
+          id?: string
+          motivo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cambios_precio_calcos_cambiado_por_fkey"
+            columns: ["cambiado_por"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cambios_precio_calcos_codigo_fkey"
+            columns: ["codigo"]
+            isOneToOne: false
+            referencedRelation: "catalogo_calcos"
+            referencedColumns: ["codigo"]
+          },
+        ]
+      }
       cambios_precio_catalogo: {
         Row: {
           antes: Json
@@ -238,6 +283,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      catalogo_calcos: {
+        Row: {
+          activo: boolean
+          cantidad: number | null
+          codigo: string
+          costo_ars: number
+          orden: number
+          precio_ars: number
+          tipo: string
+        }
+        Insert: {
+          activo?: boolean
+          cantidad?: number | null
+          codigo: string
+          costo_ars: number
+          orden: number
+          precio_ars: number
+          tipo: string
+        }
+        Update: {
+          activo?: boolean
+          cantidad?: number | null
+          codigo?: string
+          costo_ars?: number
+          orden?: number
+          precio_ars?: number
+          tipo?: string
+        }
+        Relationships: []
       }
       categorias_producto: {
         Row: {
@@ -738,6 +813,54 @@ export type Database = {
           },
         ]
       }
+      disenos_calco: {
+        Row: {
+          actual: boolean
+          created_at: string
+          id: string
+          lubricentro_id: string
+          nota: string | null
+          ruta: string
+          subido_por: string | null
+          version: number
+        }
+        Insert: {
+          actual?: boolean
+          created_at?: string
+          id?: string
+          lubricentro_id: string
+          nota?: string | null
+          ruta: string
+          subido_por?: string | null
+          version: number
+        }
+        Update: {
+          actual?: boolean
+          created_at?: string
+          id?: string
+          lubricentro_id?: string
+          nota?: string | null
+          ruta?: string
+          subido_por?: string | null
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "disenos_calco_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "disenos_calco_subido_por_fkey"
+            columns: ["subido_por"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       emails_cobranza: {
         Row: {
           destinatario: string
@@ -776,6 +899,146 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "lubricentros"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      encargos_calcos: {
+        Row: {
+          cantidad: number
+          codigo_postal: string | null
+          comision_estimada: number
+          costo_estimado: number
+          creado_por: string | null
+          created_at: string
+          cresium_transaccion_id: number | null
+          direccion: string | null
+          diseno_id: string | null
+          entrega: string
+          entregado_at: string | null
+          enviado_at: string | null
+          estado: Database["public"]["Enums"]["estado_encargo_calcos"]
+          id: string
+          incluido: boolean
+          localidad: string | null
+          lubricentro_id: string
+          mail_envio_at: string | null
+          mail_pago_at: string | null
+          monto_envio: number
+          monto_pack: number
+          monto_rediseno: number
+          monto_total: number
+          nota: string | null
+          numero: number
+          pack_codigo: string | null
+          pagado_at: string | null
+          pedido_calcos_id: string | null
+          produccion_at: string | null
+          rediseno: boolean
+          rediseno_pedido: string | null
+          seguimiento: string | null
+          telefono_contacto: string | null
+          transportista: string | null
+        }
+        Insert: {
+          cantidad: number
+          codigo_postal?: string | null
+          comision_estimada: number
+          costo_estimado: number
+          creado_por?: string | null
+          created_at?: string
+          cresium_transaccion_id?: number | null
+          direccion?: string | null
+          diseno_id?: string | null
+          entrega: string
+          entregado_at?: string | null
+          enviado_at?: string | null
+          estado: Database["public"]["Enums"]["estado_encargo_calcos"]
+          id?: string
+          incluido?: boolean
+          localidad?: string | null
+          lubricentro_id: string
+          mail_envio_at?: string | null
+          mail_pago_at?: string | null
+          monto_envio: number
+          monto_pack: number
+          monto_rediseno: number
+          monto_total: number
+          nota?: string | null
+          numero?: number
+          pack_codigo?: string | null
+          pagado_at?: string | null
+          pedido_calcos_id?: string | null
+          produccion_at?: string | null
+          rediseno?: boolean
+          rediseno_pedido?: string | null
+          seguimiento?: string | null
+          telefono_contacto?: string | null
+          transportista?: string | null
+        }
+        Update: {
+          cantidad?: number
+          codigo_postal?: string | null
+          comision_estimada?: number
+          costo_estimado?: number
+          creado_por?: string | null
+          created_at?: string
+          cresium_transaccion_id?: number | null
+          direccion?: string | null
+          diseno_id?: string | null
+          entrega?: string
+          entregado_at?: string | null
+          enviado_at?: string | null
+          estado?: Database["public"]["Enums"]["estado_encargo_calcos"]
+          id?: string
+          incluido?: boolean
+          localidad?: string | null
+          lubricentro_id?: string
+          mail_envio_at?: string | null
+          mail_pago_at?: string | null
+          monto_envio?: number
+          monto_pack?: number
+          monto_rediseno?: number
+          monto_total?: number
+          nota?: string | null
+          numero?: number
+          pack_codigo?: string | null
+          pagado_at?: string | null
+          pedido_calcos_id?: string | null
+          produccion_at?: string | null
+          rediseno?: boolean
+          rediseno_pedido?: string | null
+          seguimiento?: string | null
+          telefono_contacto?: string | null
+          transportista?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "encargos_calcos_creado_por_fkey"
+            columns: ["creado_por"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "encargos_calcos_diseno_id_fkey"
+            columns: ["diseno_id"]
+            isOneToOne: false
+            referencedRelation: "disenos_calco"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "encargos_calcos_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "encargos_calcos_pack_codigo_fkey"
+            columns: ["pack_codigo"]
+            isOneToOne: false
+            referencedRelation: "catalogo_calcos"
+            referencedColumns: ["codigo"]
           },
         ]
       }
@@ -2897,6 +3160,14 @@ export type Database = {
         Args: { p_desde: string; p_hasta: string }
         Returns: number
       }
+      avanzar_encargo_calcos: {
+        Args: {
+          p_datos?: Json
+          p_estado: Database["public"]["Enums"]["estado_encargo_calcos"]
+          p_id: string
+        }
+        Returns: undefined
+      }
       avisos_pendientes: {
         Args: never
         Returns: {
@@ -3050,6 +3321,7 @@ export type Database = {
           tamano: number
         }[]
       }
+      comision_cresium: { Args: never; Returns: number }
       completar_onboarding: { Args: never; Returns: Json }
       completar_templates_neumaticos: { Args: never; Returns: number }
       confirmar_diseno: { Args: never; Returns: Json }
@@ -3077,6 +3349,32 @@ export type Database = {
           p_nombre: string
           p_patente: string
           p_telefono: string
+        }
+        Returns: string
+      }
+      crear_encargo_calcos: {
+        Args: {
+          p_codigo_postal?: string
+          p_direccion?: string
+          p_entrega?: string
+          p_localidad?: string
+          p_pack: string
+          p_rediseno?: boolean
+          p_rediseno_pedido?: string
+          p_telefono?: string
+        }
+        Returns: string
+      }
+      crear_encargo_calcos_incluido: {
+        Args: {
+          p_cantidad: number
+          p_codigo_postal?: string
+          p_direccion?: string
+          p_entrega: string
+          p_localidad?: string
+          p_lubricentro_id: string
+          p_nota?: string
+          p_telefono?: string
         }
         Returns: string
       }
@@ -3110,6 +3408,10 @@ export type Database = {
       dias_de_gracia: { Args: never; Returns: number }
       dias_de_gracia_restantes: {
         Args: { p_vencimiento: string }
+        Returns: number
+      }
+      dias_habiles_entre: {
+        Args: { p_desde: string; p_hasta: string }
         Returns: number
       }
       dot_a_fecha: { Args: { p_dot: string }; Returns: string }
@@ -3149,6 +3451,42 @@ export type Database = {
           p_tipo: Database["public"]["Enums"]["tipo_evento_tenant"]
         }
         Returns: string
+      }
+      encargos_calcos_admin: {
+        Args: { p_lubricentro_id?: string }
+        Returns: {
+          atrasado: boolean
+          cantidad: number
+          codigo_postal: string
+          comision_estimada: number
+          costo_estimado: number
+          created_at: string
+          dias_habiles: number
+          direccion: string
+          diseno_version: number
+          entrega: string
+          entregado_at: string
+          enviado_at: string
+          estado: Database["public"]["Enums"]["estado_encargo_calcos"]
+          ganancia: number
+          id: string
+          incluido: boolean
+          localidad: string
+          lubricentro_id: string
+          lubricentro_nombre: string
+          monto_total: number
+          nota: string
+          numero: number
+          orden: number
+          pack_codigo: string
+          pagado_at: string
+          produccion_at: string
+          rediseno: boolean
+          rediseno_pedido: string
+          seguimiento: string
+          telefono_contacto: string
+          transportista: string
+        }[]
       }
       es_activo: {
         Args: { l: Database["public"]["Tables"]["lubricentros"]["Row"] }
@@ -3210,6 +3548,15 @@ export type Database = {
       }
       fijar_override_plan: {
         Args: { p_lubricentro: string; p_motivo: string; p_overrides: Json }
+        Returns: undefined
+      }
+      fijar_precio_calcos: {
+        Args: {
+          p_codigo: string
+          p_costo: number
+          p_motivo: string
+          p_precio: number
+        }
         Returns: undefined
       }
       fijar_precio_modulo: {
@@ -3495,6 +3842,10 @@ export type Database = {
         }
         Returns: string
       }
+      registrar_diseno_calco: {
+        Args: { p_lubricentro_id: string; p_nota?: string; p_ruta: string }
+        Returns: string
+      }
       registrar_pago: {
         Args: {
           p_fecha_pago: string
@@ -3640,6 +3991,15 @@ export type Database = {
         | "vencido"
         | "pendiente"
         | "neumaticos"
+      estado_encargo_calcos:
+        | "pendiente_pago"
+        | "pagado"
+        | "en_produccion"
+        | "enviado"
+        | "listo_retiro"
+        | "entregado"
+        | "vencido"
+        | "cancelado"
       estado_pendiente: "pendiente" | "resuelto" | "descartado"
       estado_suscripcion: "trial" | "activa" | "vencida" | "cancelada"
       item_tipo:
@@ -3851,6 +4211,16 @@ export const Constants = {
         "vencido",
         "pendiente",
         "neumaticos",
+      ],
+      estado_encargo_calcos: [
+        "pendiente_pago",
+        "pagado",
+        "en_produccion",
+        "enviado",
+        "listo_retiro",
+        "entregado",
+        "vencido",
+        "cancelado",
       ],
       estado_pendiente: ["pendiente", "resuelto", "descartado"],
       estado_suscripcion: ["trial", "activa", "vencida", "cancelada"],

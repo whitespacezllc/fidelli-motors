@@ -9977,3 +9977,792 @@ begin
   end if;
 end $$;
 -- <<< R38
+
+
+
+-- ============================================================
+-- R39 · Pedidos de calcos: el encargo con ciclo de vida, el catálogo y
+--       lo que lee la cola de /fidelli (20261003120000)
+--
+-- `pedidos_calcos` sigue siendo el libro de entregas (append-only, R33 y
+-- R34j). Lo nuevo es `encargos_calcos`, el pedido que va de «pagado» a
+-- «entregado» pasando por la gráfica, y que escribe en el libro UNA sola
+-- vez, al entregarse. Lo que se rompe sin ruido acá:
+--
+--   a · Las transiciones. La tabla de transiciones vive adentro de
+--       avanzar_encargo_calcos(): `pagado → entregado` no existe (se
+--       saltearía la producción y el envío), y `entregado` es terminal
+--       —un entregado que se mueve deja una fila del libro sin su pedido—.
+--       Cada paso escribe su `*_at`, enviado exige seguimiento y entrega a
+--       domicilio, listo para retirar exige retiro, y pagar a mano exige la
+--       nota. Cancelar un pagado es solo para los incluidos.
+--   b · Entregado escribe en el libro con la cantidad, incluidas o
+--       cobradas y el monto, guarda el id de esa fila, y el contador del
+--       tenant sube exactamente esa cantidad.
+--   c · Un pedido sin pagar por tenant: la puerta contesta
+--       `ya_hay_pendiente` y el índice único parcial frena también al
+--       insert directo. Con el primero pagado, el segundo entra.
+--   d · El owner no escribe por tabla (ni encargos, ni diseños, ni
+--       catálogo), no ejecuta ninguna puerta de Fidelli, no lee los
+--       encargos ni los diseños de otro tenant, y NO LEE EL COSTO: ni
+--       `catalogo_calcos.costo_ars` ni `costo_estimado` /
+--       `comision_estimada` de sus propios encargos. El costo es el dato
+--       con el que iría a cotizar a una gráfica.
+--   e · El precio de lista: el UPDATE directo es rechazado (también como
+--       postgres), el candado no se pasa de rosca (`orden` y `activo` se
+--       mueven), la puerta exige motivo, audita antes y después con autor,
+--       y un guardado que no cambia nada no ensucia la auditoría. Y los
+--       montos del encargo quedan CONGELADOS: mover el catálogo no mueve
+--       un pedido que ya existe.
+--   f · resumen_admin().calcos cuenta: pagados sin producir, en producción
+--       hace más de 5 días hábiles y pendientes que vencen en 24 horas.
+--   g · Los montos al crear salen del catálogo: pack + rediseño + envío,
+--       el costo estimado y la comisión de Cresium; un incluido vale 0 y
+--       su costo es el de imprimirlo.
+--   h · Los días hábiles: de lunes a viernes, sin feriados, sin contar el
+--       día de partida.
+--   i · Los diseños: versiones 1, 2, … por tenant, UNA sola actual, la
+--       ruta adentro de la carpeta del tenant, y el bucket `calcos` es
+--       privado: el owner ve su carpeta y ninguna otra, y no sube.
+--   j · El catálogo local es el de la decisión 2 del sprint (siete filas)
+--       y la comisión es 0,968 %.
+--   k · Los cuatro CHECK del encargo, cada uno por su nombre.
+--   l · Un tenant suspendido no crea encargos; un superadmin tampoco (no
+--       tiene tenant).
+--
+-- Fixtures propios y TODO dentro de una subtransacción que se deshace al
+-- final, como R36, R37 y R38: el tenant de prueba, los encargos, los
+-- pedidos del libro y los precios movidos no quedan. (Lo único que no
+-- vuelve es la secuencia de `numero`: en local, el primer pedido de
+-- verdad no es el #0001.)
+-- ============================================================
+-- >>> R39
+do $$
+declare
+  v_demo    uuid;
+  v_own     uuid;
+  v_super   uuid;
+  v_lub_b   uuid;
+  v_e1      uuid;   -- comprado por el owner del demo: 400 + rediseño + envío
+  v_e2      uuid;   -- incluido del tenant B: 400, retiro
+  v_e3      uuid;   -- segundo comprado del demo, tras pagar el primero
+  v_e4      uuid;   -- incluido del tenant B con envío, para cancelar
+  v_f1      uuid;
+  v_f2      uuid;
+  v_f3      uuid;
+  v_f4      uuid;
+  v_dis1    uuid;
+  v_dis2    uuid;
+  v_dis3    uuid;
+  v_fila    encargos_calcos%rowtype;
+  v_libro   pedidos_calcos%rowtype;
+  v_cambio  cambios_precio_calcos%rowtype;
+  v_r0      jsonb;
+  v_r1      jsonb;
+  v_n       integer;
+  v_m       integer;
+  v_cont    integer;
+  v_num     numeric;
+  v_ids     uuid[];
+  v_txt     text;
+  v_ok      boolean;
+  r         record;
+begin
+  select id into v_demo  from lubricentros where slug = 'demo';
+  select id into v_own   from usuarios where lubricentro_id = v_demo and rol = 'owner' limit 1;
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  if v_demo is null or v_own is null or v_super is null then
+    raise exception 'R39 SIN PISO: falta el demo, su owner o el superadmin del seed.';
+  end if;
+
+  -- ---------- j · el catálogo y la comisión, antes de tocar nada ----------
+  select count(*) into v_n from catalogo_calcos;
+  select string_agg(e.codigo, ', ' order by e.codigo) into v_txt
+  from (values
+    ('pack_200',  'pack',  200,          45000,  30000),
+    ('pack_400',  'pack',  400,          84000,  60000),
+    ('pack_800',  'pack',  800,         160000, 120000),
+    ('pack_1000', 'pack',  1000,        190000, 150000),
+    ('pack_2000', 'pack',  2000,        360000, 300000),
+    ('rediseno',  'extra', null::integer, 30000,      0),
+    ('envio',     'extra', null::integer, 10000,  10000)
+  ) e(codigo, tipo, cantidad, precio, costo)
+  left join catalogo_calcos c
+    on c.codigo = e.codigo and c.tipo = e.tipo and c.cantidad is not distinct from e.cantidad
+   and c.precio_ars = e.precio and c.costo_ars = e.costo and c.activo
+  where c.codigo is null;
+  if v_n <> 7 or v_txt is not null then
+    raise exception 'R39j EL CATÁLOGO DE CALCOS NO ES EL DE LA DECISIÓN 2: hay % filas (tenían que ser 7) y no coinciden: %. Packs 200/400/800/1.000/2.000 a $45.000/$84.000/$160.000/$190.000/$360.000 con costo $30.000 cada 200; rediseño $30.000 (costo 0); envío $10.000 (costo 10.000).', v_n, coalesce(v_txt, '—');
+  end if;
+  if comision_cresium() <> 0.00968 then
+    raise exception 'R39j la comisión de Cresium es % y tenía que ser 0.00968 (0,8 %% + IVA). lib/calcos.ts repite el número: cambian juntos.', comision_cresium();
+  end if;
+  select public, file_size_limit into v_ok, v_n from storage.buckets where id = 'calcos';
+  if v_ok is null or v_ok or v_n is distinct from 10485760 then
+    raise exception 'R39i EL BUCKET calcos NO ES PRIVADO O NO TIENE EL TOPE DE 10 MB (public = %, tope = %). El diseño se ve por URL firmada: con el bucket público, el calco de cualquier tenant se baja adivinando la ruta.', v_ok, v_n;
+  end if;
+
+  -- ---------- h · los días hábiles ----------
+  -- 02/10/2026 es viernes. No se cuenta el día de partida.
+  if dias_habiles_entre(date '2026-10-02', date '2026-10-09') <> 5
+     or dias_habiles_entre(date '2026-10-02', date '2026-10-12') <> 6
+     or dias_habiles_entre(date '2026-10-03', date '2026-10-05') <> 1
+     or dias_habiles_entre(date '2026-10-05', date '2026-10-05') <> 0
+     or dias_habiles_entre(date '2026-10-09', date '2026-10-02') <> 0 then
+    raise exception 'R39h LOS DÍAS HÁBILES CUENTAN MAL: de viernes a viernes dio % (5), de viernes al lunes siguiente al otro % (6), de sábado a lunes % (1). Son lunes a viernes, sin feriados y sin contar el día de partida: con días corridos, un pedido que entró a producción el viernes ya está «atrasado» el jueves.',
+      dias_habiles_entre(date '2026-10-02', date '2026-10-09'),
+      dias_habiles_entre(date '2026-10-02', date '2026-10-12'),
+      dias_habiles_entre(date '2026-10-03', date '2026-10-05');
+  end if;
+
+  begin
+    -- ---------- los fixtures, como postgres ----------
+    insert into lubricentros (nombre, slug) values ('Calcos R39', 'calcos-r39') returning id into v_lub_b;
+
+    -- De acá en adelante, el superadmin.
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+
+    v_r0 := resumen_admin() -> 'calcos';
+    if v_r0 is null or not (v_r0 ?& array['esperando_produccion', 'atrasados', 'por_vencer']) then
+      raise exception 'R39f resumen_admin() no trae la clave calcos con sus tres conteos (trajo %). Sin ella, la alerta del hub no existe.', coalesce(v_r0::text, 'null');
+    end if;
+
+    -- ---------- i · los diseños ----------
+    v_dis1 := registrar_diseno_calco(v_lub_b, v_lub_b || '/r39-v1.png', null);
+    v_dis2 := registrar_diseno_calco(v_lub_b, v_lub_b || '/r39-v2.pdf', '  R39 con el logo nuevo ');
+    select count(*) filter (where actual), count(*) into v_n, v_m from disenos_calco where lubricentro_id = v_lub_b;
+    if v_m <> 2 or v_n <> 1 then
+      raise exception 'R39i tras subir dos versiones hay % diseños y % actuales (tenían que ser 2 y 1): subir una versión nueva no borra la anterior y deja UNA sola actual.', v_m, v_n;
+    end if;
+    select string_agg(d.version || case when d.actual then '*' else '' end, ',' order by d.version) into v_txt
+    from disenos_calco d where d.lubricentro_id = v_lub_b;
+    if v_txt <> '1,2*' then
+      raise exception 'R39i las versiones quedaron «%» y tenían que ser «1,2*» (1, 2, … por tenant, y la actual es la última subida).', v_txt;
+    end if;
+    select nota into v_txt from disenos_calco where id = v_dis2;
+    if v_txt <> 'R39 con el logo nuevo' then
+      raise exception 'R39i la nota del diseño quedó «%» (tenía que guardarse sin los espacios de alrededor).', v_txt;
+    end if;
+    v_ok := false;
+    begin
+      perform registrar_diseno_calco(v_lub_b, v_demo || '/r39-ajeno.png', null);
+      v_ok := true;
+    exception when others then
+      if sqlerrm not like '%ruta_invalida%' then raise; end if;
+    end;
+    if v_ok then
+      raise exception 'R39i UN DISEÑO QUEDÓ REGISTRADO CON LA RUTA EN LA CARPETA DE OTRO TENANT. La policy del bucket le muestra a cada owner SU carpeta: un diseño fuera de ella es un calco que su dueño no puede ver, o que ve otro.';
+    end if;
+
+    -- El bucket: el superadmin sube a cualquier carpeta.
+    insert into storage.objects (bucket_id, name) values ('calcos', v_demo  || '/r39-demo.png');
+    insert into storage.objects (bucket_id, name) values ('calcos', v_lub_b || '/r39-b.png');
+
+    -- ---------- g · el incluido del alta ----------
+    v_e2 := crear_encargo_calcos_incluido(v_lub_b, 400, 'retiro', null, null, null, null, 'R39 alta');
+    execute 'reset role';
+    select * into v_fila from encargos_calcos where id = v_e2;
+    if v_fila.estado <> 'pagado' or not v_fila.incluido or v_fila.pagado_at is null
+       or v_fila.monto_total <> 0 or v_fila.monto_pack <> 0 or v_fila.comision_estimada <> 0
+       or v_fila.costo_estimado <> 60000 or v_fila.cantidad <> 400
+       or v_fila.diseno_id is distinct from v_dis2 or v_fila.creado_por is distinct from v_super then
+      raise exception 'R39g EL PEDIDO INCLUIDO NACIÓ MAL: estado %, incluido %, total %, costo % (60.000: es lo que cuesta imprimir 400), comisión %, diseño % (tenía que ser la versión actual). Los incluidos del alta arrancan en pagado, valen 0 y pasan por el mismo camino.',
+        v_fila.estado, v_fila.incluido, v_fila.monto_total, v_fila.costo_estimado, v_fila.comision_estimada, v_fila.diseno_id;
+    end if;
+
+    -- ---------- g · c · el pedido del owner ----------
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    v_e1 := crear_encargo_calcos(
+      p_pack => 'pack_400', p_rediseno => true, p_rediseno_pedido => 'R39 logo nuevo',
+      p_entrega => 'envio', p_direccion => 'Av. R39 123', p_localidad => 'Alta Gracia',
+      p_codigo_postal => '5186', p_telefono => '351 555 0390');
+    execute 'reset role';
+    select * into v_fila from encargos_calcos where id = v_e1;
+    if v_fila.lubricentro_id <> v_demo or v_fila.estado <> 'pendiente_pago' or v_fila.incluido
+       or v_fila.cantidad <> 400 or v_fila.pack_codigo <> 'pack_400' or v_fila.creado_por is distinct from v_own then
+      raise exception 'R39g el pedido del owner nació mal: tenant %, estado %, incluido %, cantidad %, pack %.',
+        v_fila.lubricentro_id, v_fila.estado, v_fila.incluido, v_fila.cantidad, v_fila.pack_codigo;
+    end if;
+    if v_fila.monto_pack <> 84000 or v_fila.monto_rediseno <> 30000 or v_fila.monto_envio <> 10000
+       or v_fila.monto_total <> 124000 or v_fila.costo_estimado <> 70000
+       or v_fila.comision_estimada <> 1200.32 then
+      raise exception 'R39g LOS MONTOS DEL PEDIDO NO SALEN DEL CATÁLOGO: pack % (84.000), rediseño % (30.000), envío % (10.000), total % (124.000), costo % (70.000: imprimir 400 + el envío), comisión % (1.200,32: 0,968 %% del total).',
+        v_fila.monto_pack, v_fila.monto_rediseno, v_fila.monto_envio, v_fila.monto_total, v_fila.costo_estimado, v_fila.comision_estimada;
+    end if;
+
+    -- c · El segundo sin pagar choca: por la puerta…
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    v_ok := false;
+    begin
+      perform crear_encargo_calcos(p_pack => 'pack_200', p_entrega => 'retiro');
+      v_ok := true;
+    exception when others then
+      if sqlerrm not like '%ya_hay_pendiente%' then
+        raise exception 'R39c el segundo pedido sin pagar falló con otro error que el front no traduce: %', sqlerrm;
+      end if;
+    end;
+    if v_ok then
+      raise exception 'R39c UN TENANT QUEDÓ CON DOS PEDIDOS SIN PAGAR. Es uno abierto por vez: Mi cuenta muestra ESE con su alias en vez del formulario, y con dos no sabe cuál.';
+    end if;
+    execute 'reset role';
+    -- …y por el índice, que es el que frena la carrera y el insert directo.
+    v_ok := false;
+    begin
+      insert into encargos_calcos (lubricentro_id, pack_codigo, cantidad, entrega, estado,
+                                   monto_pack, monto_rediseno, monto_envio, monto_total, costo_estimado, comision_estimada)
+      values (v_demo, 'pack_200', 200, 'retiro', 'pendiente_pago', 45000, 0, 0, 45000, 30000, 435.60);
+      v_ok := true;
+    exception when unique_violation then null;
+    end;
+    if v_ok then
+      raise exception 'R39c EL ÍNDICE ÚNICO DE «UN PENDIENTE POR TENANT» NO ESTÁ: un insert directo dejó dos pedidos sin pagar del mismo tenant. La puerta sola no alcanza: dos clics a la vez pasan los dos.';
+    end if;
+
+    -- ---------- d · el owner: ni escribe, ni lee de más ----------
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+
+    select count(id) into v_n from encargos_calcos where lubricentro_id = v_demo;
+    select count(id) into v_m from encargos_calcos where lubricentro_id = v_lub_b;
+    if v_n < 1 or v_m <> 0 then
+      raise exception 'R39d EL OWNER LEE % PEDIDOS PROPIOS Y % DEL TENANT DE AL LADO (tenía que ver el suyo y cero ajenos).', v_n, v_m;
+    end if;
+    select count(id) into v_m from disenos_calco where lubricentro_id = v_lub_b;
+    if v_m <> 0 then
+      raise exception 'R39d EL OWNER LEE % DISEÑOS DE OTRO TENANT.', v_m;
+    end if;
+    select count(*) filter (where name = v_demo || '/r39-demo.png'),
+           count(*) filter (where name = v_lub_b || '/r39-b.png')
+      into v_n, v_m
+    from storage.objects where bucket_id = 'calcos';
+    if v_n <> 1 or v_m <> 0 then
+      raise exception 'R39i EN EL BUCKET calcos EL OWNER VE % ARCHIVO(S) DE SU CARPETA Y % DE LA AJENA (tenían que ser 1 y 0). La URL firmada del diseño la genera la página con la sesión del owner: sin la lectura de su carpeta no ve su calco, y con la de otra ve el de la competencia.', v_n, v_m;
+    end if;
+
+    for r in select unnest(array[
+        -- escribir por tabla
+        'insert into encargos_calcos (lubricentro_id, cantidad, entrega, estado, monto_pack, monto_rediseno, monto_envio, monto_total, costo_estimado, comision_estimada) values (''' || v_demo || ''', 200, ''retiro'', ''pagado'', 0, 0, 0, 0, 0, 0)',
+        'insert into disenos_calco (lubricentro_id, version, ruta) values (''' || v_demo || ''', 99, ''' || v_demo || '/r39-owner.png'')',
+        'insert into storage.objects (bucket_id, name) values (''calcos'', ''' || v_demo || '/r39-owner.png'')',
+        'insert into catalogo_calcos (codigo, tipo, cantidad, precio_ars, costo_ars, orden) values (''pack_r39'', ''pack'', 1, 1, 1, 99)',
+        -- leer el costo
+        'select costo_ars from catalogo_calcos limit 1',
+        'select costo_estimado from encargos_calcos limit 1',
+        'select comision_estimada from encargos_calcos limit 1',
+        -- las puertas de Fidelli
+        'select avanzar_encargo_calcos(''' || v_e1 || ''', ''pagado'', ''{"nota": "R39 el owner se paga solo"}'')',
+        'select crear_encargo_calcos_incluido(''' || v_demo || ''', 200, ''retiro'', null, null, null, null, null)',
+        'select fijar_precio_calcos(''pack_200'', 1, 1, ''R39 el owner se baja el precio'')',
+        'select registrar_diseno_calco(''' || v_demo || ''', ''' || v_demo || '/r39-owner.png'', null)',
+        'select count(*) from encargos_calcos_admin()']) as consulta
+    loop
+      v_ok := false;
+      begin
+        execute r.consulta;
+        v_ok := true;
+      exception when others then
+        if sqlstate <> '42501' then
+          raise exception 'R39d «%» falló con otro error que 42501: % (%)', r.consulta, sqlerrm, sqlstate;
+        end if;
+      end;
+      if v_ok then
+        raise exception 'R39d UN OWNER PUDO EJECUTAR «%». El owner crea su pedido por crear_encargo_calcos() y nada más: no escribe por tabla, no mueve estados, no toca precios ni diseños, y el costo (el dato con el que iría a cotizar a una gráfica) no lo lee ni de su propio pedido.', r.consulta;
+      end if;
+    end loop;
+
+    -- Los UPDATE y DELETE por tabla: 42501, o cero filas tocadas.
+    for r in select unnest(array[
+        'update encargos_calcos set cantidad = 1 where id = ''' || v_e1 || '''',
+        'update encargos_calcos set estado = ''pagado'' where id = ''' || v_e1 || '''',
+        'delete from encargos_calcos where id = ''' || v_e1 || '''',
+        'update catalogo_calcos set orden = 99 where codigo = ''pack_200''']) as consulta
+    loop
+      begin
+        execute r.consulta;
+      exception when others then
+        if sqlstate <> '42501' then
+          raise exception 'R39d «%» falló con otro error que 42501: % (%)', r.consulta, sqlerrm, sqlstate;
+        end if;
+      end;
+    end loop;
+    execute 'reset role';
+    select * into v_fila from encargos_calcos where id = v_e1;
+    if not found or v_fila.cantidad <> 400 or v_fila.estado <> 'pendiente_pago' then
+      raise exception 'R39d EL OWNER MOVIÓ SU PEDIDO POR TABLA: quedó con cantidad % y estado % (o lo borró). Un pedido lo crea la puerta y lo mueve Fidelli; con UPDATE por tabla el owner se marca pagado solo.', v_fila.cantidad, v_fila.estado;
+    end if;
+    if (select orden from catalogo_calcos where codigo = 'pack_200') = 99 then
+      raise exception 'R39d EL OWNER EDITÓ EL CATÁLOGO DE CALCOS por tabla.';
+    end if;
+
+    -- ---------- a · las transiciones del comprado, con envío ----------
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+
+    for r in select * from (values
+        (v_e1, 'en_produccion', '{}',                               'transicion_invalida',    'sin pagar → en producción'),
+        (v_e1, 'entregado',     '{}',                               'transicion_invalida',    'sin pagar → entregado'),
+        (v_e1, 'pagado',        '{}',                               'nota_obligatoria',       'pagado a mano sin nota'),
+        (v_e1, 'pagado',        '{"nota": "  corta "}',             'nota_obligatoria',       'pagado a mano con una nota de 5 letras'),
+        (v_e2, 'entregado',     '{}',                               'transicion_invalida',    'pagado → entregado'),
+        (v_e2, 'enviado',       '{"transportista": "Andreani", "seguimiento": "R39"}', 'transicion_invalida', 'pagado → enviado'),
+        (v_e2, 'pendiente_pago','{}',                               'transicion_invalida',    'pagado → sin pagar'),
+        (v_e2, 'vencido',       '{}',                               'transicion_invalida',    'pagado → vencido')
+      ) t(id, a, datos, error, nombre)
+    loop
+      v_ok := false;
+      begin
+        perform avanzar_encargo_calcos(r.id, r.a::estado_encargo_calcos, r.datos::jsonb);
+        v_ok := true;
+      exception when others then
+        if sqlerrm not like '%' || r.error || '%' then
+          raise exception 'R39a «%» falló con otro error que %: %', r.nombre, r.error, sqlerrm;
+        end if;
+      end;
+      if v_ok then
+        raise exception 'R39a LA TRANSICIÓN «%» PASÓ y tenía que rechazarse con %. La tabla de transiciones de avanzar_encargo_calcos() es lo único que impide un pedido entregado sin producir, o pagado sin que nadie diga por qué.', r.nombre, r.error;
+      end if;
+    end loop;
+
+    -- Pagado a mano, con su nota.
+    perform avanzar_encargo_calcos(v_e1, 'pagado', '{"nota": "R39 transfirió al CBU viejo, comprobante por WhatsApp"}');
+    execute 'reset role';
+    select * into v_fila from encargos_calcos where id = v_e1;
+    if v_fila.estado <> 'pagado' or v_fila.pagado_at is null or v_fila.nota not like '%R39 transfirió al CBU viejo%' then
+      raise exception 'R39a pagar a mano dejó estado %, pagado_at % y nota «%».', v_fila.estado, v_fila.pagado_at, v_fila.nota;
+    end if;
+
+    -- ---------- e · el precio de lista ----------
+    -- El UPDATE directo, como postgres: el candado no mira quién.
+    for r in select unnest(array['precio_ars', 'costo_ars']) as columna loop
+      v_ok := false;
+      begin
+        execute format('update catalogo_calcos set %I = %I + 1 where codigo = ''pack_400''', r.columna, r.columna);
+        v_ok := true;
+      exception when others then
+        if sqlerrm not like '%precio_solo_por_funcion%' then raise; end if;
+      end;
+      if v_ok then
+        raise exception 'R39e UN UPDATE DIRECTO MOVIÓ % DEL CATÁLOGO DE CALCOS. El precio y el costo se mueven por fijar_precio_calcos(), que exige motivo y deja registro (regla 16).', r.columna;
+      end if;
+    end loop;
+    -- El candado no se pasa de rosca: lo que no es plata se mueve.
+    begin
+      update catalogo_calcos set orden = orden, activo = activo where codigo = 'pack_400';
+      update catalogo_calcos set orden = 50 where codigo = 'envio';
+      update catalogo_calcos set orden = 7  where codigo = 'envio';
+    exception when others then
+      raise exception 'R39e EL CANDADO DE PRECIOS SE PASÓ DE ROSCA: rechazó un update que no toca ni el precio ni el costo (%).', sqlerrm;
+    end;
+
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    v_ok := false;
+    begin
+      perform fijar_precio_calcos('pack_400', 90000, 62000, 'corto');
+      v_ok := true;
+    exception when others then
+      if sqlerrm not like '%motivo_corto%' then raise; end if;
+    end;
+    if v_ok then
+      raise exception 'R39e UN PRECIO DE CALCOS SE MOVIÓ SIN MOTIVO. Todo cambio de plata deja rastro con autor, fecha y motivo (regla 16).';
+    end if;
+
+    select count(*) into v_n from cambios_precio_calcos;
+    perform fijar_precio_calcos('pack_400', 90000, 62000, 'R39 sube la lista de octubre');
+    select count(*) into v_m from cambios_precio_calcos;
+    select * into v_cambio from cambios_precio_calcos order by created_at desc, id desc limit 1;
+    execute 'reset role';
+    if (select precio_ars from catalogo_calcos where codigo = 'pack_400') <> 90000
+       or (select costo_ars from catalogo_calcos where codigo = 'pack_400') <> 62000 then
+      raise exception 'R39e la puerta no movió el precio: pack_400 quedó en % / %.',
+        (select precio_ars from catalogo_calcos where codigo = 'pack_400'),
+        (select costo_ars from catalogo_calcos where codigo = 'pack_400');
+    end if;
+    if v_m <> v_n + 1 or v_cambio.codigo <> 'pack_400'
+       or (v_cambio.antes ->> 'precio_ars')::numeric <> 84000 or (v_cambio.antes ->> 'costo_ars')::numeric <> 60000
+       or (v_cambio.despues ->> 'precio_ars')::numeric <> 90000 or (v_cambio.despues ->> 'costo_ars')::numeric <> 62000
+       or v_cambio.cambiado_por is distinct from v_super or v_cambio.motivo <> 'R39 sube la lista de octubre' then
+      raise exception 'R39e LA PUERTA NO AUDITÓ EL CAMBIO DE PRECIO: % fila(s) nuevas en cambios_precio_calcos (1), código %, antes %, después %, autor %. Dentro de un año, con un cliente preguntando por qué pagó lo que pagó, esa fila es la única respuesta.',
+        v_m - v_n, v_cambio.codigo, v_cambio.antes, v_cambio.despues, v_cambio.cambiado_por;
+    end if;
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform fijar_precio_calcos('pack_400', 90000, 62000, 'R39 el mismo precio otra vez');
+    select count(*) into v_n from cambios_precio_calcos;
+    if v_n <> v_m then
+      raise exception 'R39e un guardado que no cambia ningún número dejó una fila en la auditoría: se llena de filas idénticas y deja de leerse.';
+    end if;
+    -- Y la bandera de la puerta no queda prendida para el update que sigue.
+    execute 'reset role';
+    v_ok := false;
+    begin
+      update catalogo_calcos set precio_ars = precio_ars + 1 where codigo = 'pack_400';
+      v_ok := true;
+    exception when others then
+      if sqlerrm not like '%precio_solo_por_funcion%' then raise; end if;
+    end;
+    if v_ok then
+      raise exception 'R39e LA PUERTA DEJÓ EL CANDADO ABIERTO: después de fijar_precio_calcos(), un UPDATE directo en la misma transacción movió el precio sin motivo ni registro.';
+    end if;
+
+    -- La auditoría tiene el costo adentro: el owner no lee ni una fila.
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    select count(*) into v_n from cambios_precio_calcos;
+    if v_n <> 0 then
+      raise exception 'R39d UN OWNER LEE % FILA(S) DE LA AUDITORÍA DE PRECIOS DE CALCOS: ahí está el costo, antes y después.', v_n;
+    end if;
+
+    -- Los montos del pedido que ya existía, CONGELADOS…
+    execute 'reset role';
+    select * into v_fila from encargos_calcos where id = v_e1;
+    if v_fila.monto_pack <> 84000 or v_fila.monto_total <> 124000 or v_fila.costo_estimado <> 70000 then
+      raise exception 'R39e MOVER EL CATÁLOGO MOVIÓ UN PEDIDO QUE YA EXISTÍA: pack %, total %, costo %. La plata del encargo se congela al crearlo: el tenant ya tiene un alias con ese monto.',
+        v_fila.monto_pack, v_fila.monto_total, v_fila.costo_estimado;
+    end if;
+    -- …y el pedido nuevo con el precio nuevo. Con el primero pagado, entra (c).
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+      v_e3 := crear_encargo_calcos(p_pack => 'pack_400', p_entrega => 'retiro');
+    exception when others then
+      raise exception 'R39c con el primer pedido ya pagado, el segundo fue rechazado (%). El tope es UN pedido SIN PAGAR, no un pedido.', sqlerrm;
+    end;
+    execute 'reset role';
+    select * into v_fila from encargos_calcos where id = v_e3;
+    if v_fila.monto_total <> 90000 or v_fila.costo_estimado <> 62000 or v_fila.monto_envio <> 0 or v_fila.monto_rediseno <> 0
+       or v_fila.direccion is not null then
+      raise exception 'R39e el pedido nuevo no tomó el precio nuevo del catálogo: total % (90.000), costo % (62.000).', v_fila.monto_total, v_fila.costo_estimado;
+    end if;
+
+    -- ---------- a · b · el comprado sigue hasta entregado ----------
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+
+    for r in select * from (values
+        (v_e1, 'cancelado',     '{"nota": "R39 cancelar un pagado que se cobró"}', 'transicion_invalida', 'cancelar un pagado que NO es incluido'),
+        (v_e3, 'cancelado',     '{}',                               '',                       ''),
+        (v_e3, 'pagado',        '{"nota": "R39 revivir un cancelado"}',  'transicion_invalida', 'cancelado → pagado'),
+        (v_e1, 'en_produccion', '{}',                               '',                       ''),
+        (v_e1, 'listo_retiro',  '{}',                               'entrega_no_es_retiro',   'listo para retirar un pedido con envío'),
+        (v_e1, 'enviado',       '{}',                               'seguimiento_obligatorio','enviado sin seguimiento'),
+        (v_e1, 'enviado',       '{"transportista": "Andreani", "seguimiento": "   "}', 'seguimiento_obligatorio', 'enviado con el seguimiento en blanco'),
+        (v_e1, 'entregado',     '{}',                               'transicion_invalida',    'en producción → entregado'),
+        (v_e1, 'enviado',       '{"transportista": "Andreani", "seguimiento": " 1234 5678 "}', '', '')
+      ) t(id, a, datos, error, nombre)
+    loop
+      v_ok := false;
+      begin
+        perform avanzar_encargo_calcos(r.id, r.a::estado_encargo_calcos, r.datos::jsonb);
+        v_ok := true;
+      exception when others then
+        if r.error = '' then
+          raise exception 'R39a UNA TRANSICIÓN VÁLIDA FUE RECHAZADA (→ % con %): %', r.a, r.datos, sqlerrm;
+        end if;
+        if sqlerrm not like '%' || r.error || '%' then
+          raise exception 'R39a «%» falló con otro error que %: %', r.nombre, r.error, sqlerrm;
+        end if;
+      end;
+      if v_ok and r.error <> '' then
+        raise exception 'R39a LA TRANSICIÓN «%» PASÓ y tenía que rechazarse con %.', r.nombre, r.error;
+      end if;
+    end loop;
+
+    execute 'reset role';
+    select * into v_fila from encargos_calcos where id = v_e1;
+    if v_fila.estado <> 'enviado' or v_fila.produccion_at is null or v_fila.enviado_at is null
+       or v_fila.seguimiento <> '1234 5678' or v_fila.transportista <> 'Andreani' then
+      raise exception 'R39a el comprado no llegó a enviado como corresponde: estado %, produccion_at %, enviado_at %, transportista «%», seguimiento «%».',
+        v_fila.estado, v_fila.produccion_at, v_fila.enviado_at, v_fila.transportista, v_fila.seguimiento;
+    end if;
+    if (select estado from encargos_calcos where id = v_e3) <> 'cancelado' then
+      raise exception 'R39a cancelar un pedido sin pagar no lo dejó en cancelado.';
+    end if;
+
+    -- b · Entregado escribe en el libro y el contador sube.
+    select calcos_entregadas into v_cont from lubricentros where id = v_demo;
+    select count(*) into v_n from pedidos_calcos where lubricentro_id = v_demo;
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform avanzar_encargo_calcos(v_e1, 'entregado', '{}');
+    execute 'reset role';
+    select * into v_fila from encargos_calcos where id = v_e1;
+    select count(*) into v_m from pedidos_calcos where lubricentro_id = v_demo;
+    select * into v_libro from pedidos_calcos where id = v_fila.pedido_calcos_id;
+    if v_fila.estado <> 'entregado' or v_fila.entregado_at is null or v_fila.pedido_calcos_id is null then
+      raise exception 'R39b entregar dejó estado %, entregado_at % y pedido_calcos_id %.', v_fila.estado, v_fila.entregado_at, v_fila.pedido_calcos_id;
+    end if;
+    if v_m <> v_n + 1 or v_libro.lubricentro_id is distinct from v_demo or v_libro.cantidad <> 400
+       or v_libro.incluidas or v_libro.monto_ars is distinct from 124000
+       or v_libro.fecha <> (now() at time zone 'America/Argentina/Buenos_Aires')::date
+       or v_libro.nota is distinct from 'Encargo #' || lpad(v_fila.numero::text, 4, '0') then
+      raise exception 'R39b «ENTREGADO» NO ESCRIBIÓ BIEN EN EL LIBRO: % fila(s) nuevas (1), cantidad % (400), incluidas % (false), monto % (124.000), fecha % (el día de hoy en Argentina), nota «%». El libro de entregas es la constancia de qué se entregó y qué se cobró: lo escribe registrar_pedido_calcos(), una vez, al entregar.',
+        v_m - v_n, v_libro.cantidad, v_libro.incluidas, v_libro.monto_ars, v_libro.fecha, v_libro.nota;
+    end if;
+    select calcos_entregadas into v_n from lubricentros where id = v_demo;
+    if v_n <> v_cont + 400 then
+      raise exception 'R39b EL CONTADOR NO SUBIÓ CON LA ENTREGA: calcos_entregadas pasó de % a % (tenía que sumar 400).', v_cont, v_n;
+    end if;
+
+    -- ---------- a · b · el incluido, por el camino del retiro ----------
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    -- Mientras está pagado se sube una versión nueva: la que se imprime es
+    -- la que esté vigente al entrar a producción.
+    v_dis3 := registrar_diseno_calco(v_lub_b, v_lub_b || '/r39-v3.png', null);
+    perform avanzar_encargo_calcos(v_e2, 'en_produccion', '{}');
+    v_ok := false;
+    begin
+      perform avanzar_encargo_calcos(v_e2, 'enviado', '{"transportista": "Andreani", "seguimiento": "R39 9999"}');
+      v_ok := true;
+    exception when others then
+      if sqlerrm not like '%entrega_no_es_envio%' then
+        raise exception 'R39a enviar un pedido con retiro falló con otro error: %', sqlerrm;
+      end if;
+    end;
+    if v_ok then
+      raise exception 'R39a UN PEDIDO CON RETIRO QUEDÓ «ENVIADO»: el tenant ve «En camino» con un seguimiento de un paquete que no salió.';
+    end if;
+    perform avanzar_encargo_calcos(v_e2, 'listo_retiro', '{}');
+    perform avanzar_encargo_calcos(v_e2, 'entregado', '{}');
+    execute 'reset role';
+    select * into v_fila from encargos_calcos where id = v_e2;
+    select * into v_libro from pedidos_calcos where id = v_fila.pedido_calcos_id;
+    if v_fila.estado <> 'entregado' or v_fila.diseno_id is distinct from v_dis3 then
+      raise exception 'R39a el incluido no llegó a entregado con el diseño vigente al entrar a producción: estado %, diseño % (tenía que ser la versión 3).', v_fila.estado, v_fila.diseno_id;
+    end if;
+    if v_libro.cantidad is distinct from 400 or not v_libro.incluidas or v_libro.monto_ars is not null
+       or (select calcos_entregadas from lubricentros where id = v_lub_b) <> 400 then
+      raise exception 'R39b la entrega del incluido no quedó en el libro como incluida: cantidad %, incluidas %, monto %, contador %.',
+        v_libro.cantidad, v_libro.incluidas, v_libro.monto_ars, (select calcos_entregadas from lubricentros where id = v_lub_b);
+    end if;
+
+    -- Entregado es terminal: no va a NINGÚN estado.
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    for r in select unnest(enum_range(null::estado_encargo_calcos)) as a loop
+      v_ok := false;
+      begin
+        perform avanzar_encargo_calcos(v_e2, r.a, '{"nota": "R39 mover un entregado", "transportista": "Andreani", "seguimiento": "R39"}');
+        v_ok := true;
+      exception when others then
+        if sqlerrm not like '%transicion_invalida%' then
+          raise exception 'R39a entregado → % falló con otro error: %', r.a, sqlerrm;
+        end if;
+      end;
+      if v_ok then
+        raise exception 'R39a UN PEDIDO ENTREGADO PASÓ A «%». Entregado ya escribió en el libro, que no se edita: si el pedido se mueve, queda una entrega registrada de un pedido que dice otra cosa.', r.a;
+      end if;
+    end loop;
+
+    -- El incluido cargado por error se cancela (con nota), sin pasar por el libro.
+    v_e4 := crear_encargo_calcos_incluido(v_lub_b, 200, 'envio', 'Ruta 5 km 23', 'Anisacate', '5189', '351 555 0391', null);
+    v_ok := false;
+    begin
+      perform crear_encargo_calcos_incluido(v_lub_b, 200, 'envio', null, null, null, '351 555 0391', null);
+      v_ok := true;
+    exception when others then
+      if sqlerrm not like '%envio_sin_direccion%' then raise; end if;
+    end;
+    if v_ok then
+      raise exception 'R39g un incluido con envío entró sin dirección.';
+    end if;
+    v_ok := false;
+    begin
+      perform avanzar_encargo_calcos(v_e4, 'cancelado', '{}');
+      v_ok := true;
+    exception when others then
+      if sqlerrm not like '%nota_obligatoria%' then raise; end if;
+    end;
+    if v_ok then
+      raise exception 'R39a un incluido ya pagado se canceló sin nota.';
+    end if;
+    perform avanzar_encargo_calcos(v_e4, 'cancelado', '{"nota": "R39 se cargó en el tenant equivocado"}');
+    execute 'reset role';
+    select * into v_fila from encargos_calcos where id = v_e4;
+    if v_fila.estado <> 'cancelado' or v_fila.pedido_calcos_id is not null or v_fila.monto_total <> 0
+       or v_fila.costo_estimado <> 40000 or v_fila.pack_codigo is distinct from 'pack_200' then
+      raise exception 'R39g el incluido con envío quedó mal: estado %, total %, costo % (40.000: imprimir 200 + el envío), pack %.',
+        v_fila.estado, v_fila.monto_total, v_fila.costo_estimado, v_fila.pack_codigo;
+    end if;
+
+    -- ---------- k · los cuatro CHECK, cada uno por su nombre ----------
+    for r in select * from (values
+        ('incluido_sin_monto',       format('update encargos_calcos set monto_pack = 5, monto_total = 5 where id = %L', v_e4)),
+        ('envio_con_direccion',      format('update encargos_calcos set telefono_contacto = null where id = %L', v_e4)),
+        ('envio_con_direccion',      format('update encargos_calcos set direccion = null where id = %L', v_e4)),
+        ('enviado_con_seguimiento',  format('update encargos_calcos set estado = ''enviado'' where id = %L', v_e3)),
+        ('entregado_con_pedido',     format('update encargos_calcos set estado = ''entregado'' where id = %L', v_e3))
+      ) t(restriccion, consulta)
+    loop
+      v_ok := false;
+      begin
+        execute r.consulta;
+        v_ok := true;
+      exception when check_violation then
+        get stacked diagnostics v_txt = constraint_name;
+        if v_txt <> r.restriccion then
+          raise exception 'R39k «%» lo frenó % y no %: el CHECK que dice cubrirlo no está.', r.consulta, v_txt, r.restriccion;
+        end if;
+      end;
+      if v_ok then
+        raise exception 'R39k EL CHECK % NO ESTÁ: pasó «%». Son los cuatro invariantes del encargo: un incluido vale 0, un envío tiene a dónde y a quién, un enviado tiene seguimiento y un entregado tiene su fila del libro.', r.restriccion, r.consulta;
+      end if;
+    end loop;
+
+    -- ---------- f · lo que cuenta la alerta del hub ----------
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    -- A esta altura los cuatro de arriba están entregados o cancelados: no cuentan.
+    v_r1 := resumen_admin() -> 'calcos';
+    if v_r1 <> v_r0 then
+      raise exception 'R39f LOS PEDIDOS ENTREGADOS O CANCELADOS CUENTAN EN LA ALERTA: antes % y después %.', v_r0, v_r1;
+    end if;
+    v_f1 := crear_encargo_calcos_incluido(v_lub_b, 200, 'retiro', null, null, null, null, 'R39 espera');
+    v_f2 := crear_encargo_calcos_incluido(v_lub_b, 200, 'retiro', null, null, null, null, 'R39 atrasado');
+    v_f3 := crear_encargo_calcos_incluido(v_lub_b, 200, 'retiro', null, null, null, null, 'R39 en fecha');
+    perform avanzar_encargo_calcos(v_f2, 'en_produccion', '{}');
+    perform avanzar_encargo_calcos(v_f3, 'en_produccion', '{}');
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    v_f4 := crear_encargo_calcos(p_pack => 'pack_200', p_entrega => 'retiro');
+    execute 'reset role';
+    -- Diez días corridos son seis hábiles o más, caiga donde caiga el fin de
+    -- semana; siete corridos son SIEMPRE cinco hábiles: ese no está atrasado
+    -- (y con días corridos en vez de hábiles, sí lo estaría).
+    update encargos_calcos set produccion_at = now() - interval '10 days' where id = v_f2;
+    update encargos_calcos set produccion_at = now() - interval '7 days'  where id = v_f3;
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    v_r1 := resumen_admin() -> 'calcos';
+    if (v_r1 ->> 'esperando_produccion')::integer - (v_r0 ->> 'esperando_produccion')::integer <> 1
+       or (v_r1 ->> 'atrasados')::integer - (v_r0 ->> 'atrasados')::integer <> 1
+       or (v_r1 ->> 'por_vencer')::integer - (v_r0 ->> 'por_vencer')::integer <> 0 then
+      raise exception 'R39f resumen_admin().calcos CUENTA MAL: con un pagado sin producir, uno en producción hace 10 días, otro hace 7 (cinco hábiles justos) y un pendiente de hoy, pasó de % a % (tenía que sumar 1 esperando, 1 atrasado y 0 por vencer). La alerta del hub es lo que Grego mira a la mañana.', v_r0, v_r1;
+    end if;
+    execute 'reset role';
+    -- El pendiente de hace seis días y medio vence en menos de 24 horas.
+    update encargos_calcos set created_at = now() - interval '6 days 12 hours' where id = v_f4;
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    v_r1 := resumen_admin() -> 'calcos';
+    if (v_r1 ->> 'por_vencer')::integer - (v_r0 ->> 'por_vencer')::integer <> 1 then
+      raise exception 'R39f un pendiente de pago de hace 6 días y medio no cuenta como «vence mañana» (por_vencer pasó de % a %).', v_r0 ->> 'por_vencer', v_r1 ->> 'por_vencer';
+    end if;
+
+    -- La cola: lo que nos toca hacer primero, y lo más viejo arriba.
+    select array_agg(e.id order by e.orden) into v_ids
+    from encargos_calcos_admin() e where e.id in (v_f1, v_f2, v_f3, v_f4, v_e1);
+    if v_ids is distinct from array[v_f1, v_f2, v_f3, v_f4, v_e1] then
+      raise exception 'R39f LA COLA NO ESTÁ ORDENADA POR LO QUE HAY QUE HACER: tenía que salir el pagado sin producir, el que está en producción hace 10 días, el de hace 7, el que no pagó y al final el entregado.';
+    end if;
+    if (select count(*) from encargos_calcos_admin() e where e.atrasado and e.id in (v_f1, v_f2, v_f3, v_f4)) <> 1
+       or not (select e.atrasado from encargos_calcos_admin() e where e.id = v_f2) then
+      raise exception 'R39f la cola no marca como atrasado al mismo pedido que cuenta la alerta (el de 10 días, y solo ese).';
+    end if;
+    select e.ganancia into v_num from encargos_calcos_admin(v_demo) e where e.id = v_e1;
+    if v_num is distinct from 52799.68 then
+      raise exception 'R39f la ganancia del pedido no es monto − costo − comisión: dio % (124.000 − 70.000 − 1.200,32 = 52.799,68).', v_num;
+    end if;
+    if exists (select 1 from encargos_calcos_admin(v_demo) e where e.lubricentro_id <> v_demo) then
+      raise exception 'R39f encargos_calcos_admin(tenant) trae pedidos de OTRO tenant: en /fidelli el RLS no recorta, el filtro es el argumento.';
+    end if;
+
+    -- ---------- l · quién puede pedir ----------
+    v_ok := false;
+    begin
+      perform crear_encargo_calcos(p_pack => 'pack_200', p_entrega => 'retiro');
+      v_ok := true;
+    exception when others then
+      if sqlstate <> '42501' then raise; end if;
+    end;
+    if v_ok then
+      raise exception 'R39l un superadmin (sin tenant) creó un pedido por la puerta del owner.';
+    end if;
+    execute 'reset role';
+    update encargos_calcos set estado = 'cancelado' where id = v_f4;
+    perform set_config('app.motivo_evento', 'otro · prueba R39', true);
+    update lubricentros set activo = false where id = v_demo;
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    v_ok := false;
+    begin
+      perform crear_encargo_calcos(p_pack => 'pack_200', p_entrega => 'retiro');
+      v_ok := true;
+    exception when others then
+      if sqlerrm not like '%tenant_suspendido%' then
+        raise exception 'R39l el pedido de un tenant suspendido falló con otro error: %', sqlerrm;
+      end if;
+    end;
+    if v_ok then
+      raise exception 'R39l UN TENANT SUSPENDIDO CREÓ UN PEDIDO DE CALCOS. Suspendido lee, no escribe: la acción lo frena con sesionParaEscribir(), y la puerta lo repite porque la suspensión no vive en el RLS.';
+    end if;
+    execute 'reset role';
+    update lubricentros set activo = true where id = v_demo;
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    for r in select unnest(array['pack_inexistente', 'rediseno', 'envio']) as pack loop
+      v_ok := false;
+      begin
+        perform crear_encargo_calcos(p_pack => r.pack, p_entrega => 'retiro');
+        v_ok := true;
+      exception when others then
+        if sqlerrm not like '%pack_invalido%' then
+          raise exception 'R39g «%» como pack falló con otro error que pack_invalido: %', r.pack, sqlerrm;
+        end if;
+      end;
+      if v_ok then
+        raise exception 'R39g se creó un pedido con «%» como pack: un extra o un código que no existe no es un pack.', r.pack;
+      end if;
+    end loop;
+    v_ok := false;
+    begin
+      perform crear_encargo_calcos(p_pack => 'pack_200', p_entrega => 'envio', p_direccion => '  ', p_telefono => '351 555 0390');
+      v_ok := true;
+    exception when others then
+      if sqlerrm not like '%envio_sin_direccion%' then
+        raise exception 'R39g el envío con la dirección en blanco falló con otro error que envio_sin_direccion: %', sqlerrm;
+      end if;
+    end;
+    if v_ok then
+      raise exception 'R39g un pedido con envío entró con la dirección en blanco.';
+    end if;
+
+    -- Todo lo escrito en este bloque se deshace acá. Cualquier otra
+    -- excepción de arriba NO se atrapa: sube y pone el reset en rojo.
+    raise exception 'rollback_r39' using errcode = 'P0039';
+  exception
+    when sqlstate 'P0039' then
+      execute 'reset role';
+      perform set_config('request.jwt.claims', '{}', true);
+  end;
+
+  if exists (select 1 from lubricentros where slug = 'calcos-r39')
+     or exists (select 1 from encargos_calcos where nota like 'R39%' or rediseno_pedido like 'R39%')
+     or exists (select 1 from disenos_calco where ruta like '%/r39-%')
+     or (select precio_ars from catalogo_calcos where codigo = 'pack_400') <> 84000 then
+    raise exception 'R39 SIN PISO: la subtransacción no deshizo los fixtures.';
+  end if;
+end $$;
+-- <<< R39
