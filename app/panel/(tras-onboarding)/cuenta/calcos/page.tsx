@@ -39,7 +39,14 @@ const UNA_HORA = 60 * 60;
 
 // La miniatura se ve a 5 cm de ancho: 400 px alcanzan para una pantalla de
 // densidad doble. El archivo entero pesa hasta 10 MB.
-const ANCHO_MINIATURA = 400;
+//
+// ⚠ `resize: "contain"` NO ES OPCIONAL. Con el modo por defecto (`cover`) y
+// solo el ancho, Storage no achica la imagen: la RECORTA —devuelve una
+// franja de 400 px del centro, con el alto original—. Estuvo así un día en
+// producción (04/10/2026) y todos los calcos se veían «con zoom», cortados.
+// Con `contain` devuelve el diseño entero, a 400 de ancho y con su
+// proporción.
+const MINIATURA = { width: 400, resize: "contain" } as const;
 
 // El color dice el momento, nunca con el rojo de marca: verde lo que llegó,
 // ámbar lo que espera plata, gris lo que está en marcha, apagado lo que no
@@ -195,7 +202,7 @@ export default async function PaginaCalcos() {
       : null,
     diseno ? calcos.createSignedUrl(diseno.ruta, UNA_HORA) : null,
     diseno && !disenoEsPdf
-      ? calcos.createSignedUrl(diseno.ruta, UNA_HORA, { transform: { width: ANCHO_MINIATURA } })
+      ? calcos.createSignedUrl(diseno.ruta, UNA_HORA, { transform: MINIATURA })
       : null,
     diseno && imprimePorSuCuenta
       ? calcos.createSignedUrl(diseno.ruta, UNA_HORA, {
@@ -249,14 +256,16 @@ export default async function PaginaCalcos() {
       {/* ============ 1 · Tu calco ============ */}
       <section className="surface-card p-5" data-calco>
         <div className="flex flex-wrap items-center gap-5">
-          {/* A tamaño real: 5 × 8 cm. */}
+          {/* A tamaño real: 5 × 8 cm. El diseño va ENTERO adentro de la caja
+              (el fondo es el paspartú): el archivo de un lubricentro no
+              siempre viene en 5:8, y recortarlo es mostrarle otro calco. */}
           {urlDiseno && !disenoEsPdf ? (
             <a
               href={urlDiseno}
               target="_blank"
               rel="noreferrer"
               aria-label="Abrir el diseño de tu calco"
-              className="block shrink-0 overflow-hidden rounded-md border border-line"
+              className="block shrink-0 overflow-hidden rounded-md border border-line bg-surface"
               style={{ width: "5cm", height: "8cm" }}
             >
               <MiniaturaDelCalco
