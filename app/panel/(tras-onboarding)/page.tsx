@@ -3,6 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { featureHabilitada, obtenerSesion, panelSuspendido } from "@/lib/auth/session";
 import { Bienvenida } from "@/components/onboarding/bienvenida";
+import { AvisoCalcosInicio } from "@/components/panel/aviso-calcos-inicio";
 import { AvisoCobranzaInicio } from "@/components/panel/aviso-cobranza-inicio";
 import { ModalGracia } from "@/components/panel/modal-gracia";
 import { pesos } from "@/lib/fidelli/plan";
@@ -16,6 +17,7 @@ import {
 import { Dashboard, type DatosInicio } from "@/components/inicio/dashboard";
 import { FiltroSucursal } from "@/components/inicio/filtro-sucursal";
 import { formatearDiaLargo, hoyISO } from "@/lib/fechas";
+import { fraseDelAviso, leerAviso, puedeAvisarDeCalcos } from "@/lib/stock-calcos";
 import {
   esVistaPanel,
   type PuntoSerie,
@@ -48,7 +50,7 @@ export default async function PaginaInicio({
   // retención y últimos services— más la lista de sucursales del filtro,
   // que es chica y va en paralelo. El resumen se arma en Postgres: ocho
   // agregados en ocho viajes sería el error a evitar.
-  const [resumenRes, sucursalesRes, stockBajoRes, onboardingRes, montoRes] = await Promise.all([
+  const [resumenRes, sucursalesRes, stockBajoRes, onboardingRes, montoRes, avisoCalcosRes] = await Promise.all([
     supabase.rpc("resumen_inicio", { p_sucursal_id: sucursal || undefined }),
     supabase
       .from("sucursales")
@@ -82,6 +84,19 @@ export default async function PaginaInicio({
       sesion.cobranza?.estado === "gracia" ||
       (sesion.cobranza?.estado === "suspendido" && !sesion.suspensionManual))
       ? supabase.rpc("monto_de_renovacion", { p_lubricentro: sesion.lubricentroId })
+      : Promise.resolve({ data: null }),
+    // ¿Se está quedando sin calcos? Lo decide la base (`aviso_calcos()`:
+    // menos de 4 semanas de cobertura, o 20 calcos o menos, y sin un pedido
+    // abierto). Se pregunta SOLO si el aviso se puede mostrar: con uno de
+    // cobranza en pantalla el de calcos no se apila, y entonces la consulta
+    // no existe. Va aparte de resumen_inicio por la misma razón que
+    // stock_bajo.
+    sesion?.lubricentroId &&
+    puedeAvisarDeCalcos({
+      estadoCobranza: sesion.cobranza?.estado ?? null,
+      suspendido: sesion.suspendido,
+    })
+      ? supabase.rpc("aviso_calcos", { p_lubricentro_id: sesion.lubricentroId })
       : Promise.resolve({ data: null }),
   ]);
 
@@ -154,6 +169,11 @@ export default async function PaginaInicio({
     </>
   ) : null;
 
+  // El aviso de calcos, debajo del lugar de la escalera y nunca junto con
+  // ella: si hay barra de cobranza o de gracia, `avisoCalcosRes` es null.
+  const avisoCalcos = leerAviso(avisoCalcosRes?.data);
+  const calcos = avisoCalcos ? <AvisoCalcosInicio frase={fraseDelAviso(avisoCalcos)} /> : null;
+
   if (!resumen) {
     return (
       <div>
@@ -174,6 +194,7 @@ export default async function PaginaInicio({
       <>
         {bienvenida}
         {escalera}
+        {calcos}
         <Checklist
           estado={resumen.checklist}
           opciones={opcionesChecklist}
@@ -189,6 +210,7 @@ export default async function PaginaInicio({
     <div>
       {bienvenida}
       {escalera}
+      {calcos}
       <CabeceraSeccion titulo="Inicio">
         <div className="flex items-center gap-2.5">
           <FiltroSucursal sucursales={sucursales} actual={sucursal} />

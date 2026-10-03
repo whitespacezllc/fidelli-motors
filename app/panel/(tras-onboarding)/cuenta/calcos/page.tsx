@@ -4,6 +4,9 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { obtenerSesion } from "@/lib/auth/session";
 import { CabeceraSeccion } from "@/components/panel/cabecera-seccion";
+import { clasesBoton } from "@/components/ui/boton";
+import { MiniaturaDelCalco } from "@/components/cuenta/calcos/miniatura-del-calco";
+import { StockDeCalcos } from "@/components/cuenta/calcos/stock-de-calcos";
 import {
   PedidoDeCalcos,
   type CatalogoParaPedir,
@@ -23,6 +26,7 @@ import {
 import { estadoEfectivo } from "@/lib/cresium/orden";
 import { fechaCalendarioAR, formatearFecha } from "@/lib/fechas";
 import { pesos } from "@/lib/fidelli/plan";
+import { leerStock } from "@/lib/stock-calcos";
 
 export const metadata: Metadata = { title: "Calcos" };
 
@@ -32,6 +36,10 @@ export const dynamic = "force-dynamic";
 
 // La URL firmada del diseño dura una hora: el bucket `calcos` es privado.
 const UNA_HORA = 60 * 60;
+
+// La miniatura se ve a 5 cm de ancho: 400 px alcanzan para una pantalla de
+// densidad doble. El archivo entero pesa hasta 10 MB.
+const ANCHO_MINIATURA = 400;
 
 // El color dice el momento, nunca con el rojo de marca: verde lo que llegó,
 // ámbar lo que espera plata, gris lo que está en marcha, apagado lo que no
@@ -58,7 +66,13 @@ function Pill({ estado, children }: { estado: EstadoEncargo; children: React.Rea
 // Mi cuenta → Calcos
 //
 // De arriba a abajo: tu calco y cuántos te entregamos; pedir más (o, con un
-// pedido sin pagar, la pantalla de pago de ESE pedido); y tu historial.
+// pedido sin pagar, la pantalla de pago de ESE pedido); cuántas te quedan
+// (PR 3: la estimación de `stock_calcos()` y «Contá y corregí»); y tu
+// historial.
+//
+// El que imprime por su cuenta (`calcos_propias`, que prende Fidelli) no ve
+// la estimación —no sabemos cuántas tiene— y gana «Descargar el archivo de
+// impresión». Lo demás es igual: no se le esconde nada.
 //
 // Las consultas no llevan filtro por lubricentro: en /panel el RLS ya
 // recorta al tenant de la sesión. Y sobre `encargos_calcos` y
@@ -72,10 +86,10 @@ export default async function PaginaCalcos() {
 
   const supabase = await createClient();
 
-  const [lubricentroRes, disenoRes, catalogoRes, encargosRes, sucursalRes] = await Promise.all([
+  const [lubricentroRes, disenoRes, catalogoRes, encargosRes, sucursalRes, stockRes] = await Promise.all([
     supabase
       .from("lubricentros")
-      .select("calcos_entregadas")
+      .select("calcos_entregadas, calcos_propias")
       .eq("id", sesion.lubricentroId)
       .maybeSingle(),
     supabase.from("disenos_calco").select("version, ruta").eq("actual", true).maybeSingle(),
@@ -100,10 +114,15 @@ export default async function PaginaCalcos() {
       .order("created_at")
       .limit(1)
       .maybeSingle(),
+    // Cuántas le quedan: la cuenta es de la base. Null en todo si no hay
+    // entregas o si imprime por su cuenta.
+    supabase.rpc("stock_calcos", { p_lubricentro_id: sesion.lubricentroId }),
   ]);
 
   const entregadas = Number(lubricentroRes.data?.calcos_entregadas ?? 0);
+  const imprimePorSuCuenta = lubricentroRes.data?.calcos_propias === true;
   const diseno = disenoRes.data;
+  const stock = leerStock(stockRes.data);
 
   const filas = catalogoRes.data ?? [];
   const precioDe = (codigo: string) => {
@@ -154,9 +173,17 @@ export default async function PaginaCalcos() {
       ? enPantalla(ultimoComprado)
       : null;
 
-  // La cuenta viva del pedido sin pagar, y la URL del diseño. Una orden
+  const disenoEsPdf = diseno?.ruta.endsWith(".pdf") ?? false;
+  const calcos = supabase.storage.from("calcos");
+
+  // La cuenta viva del pedido sin pagar, y las URLs del diseño. Una orden
   // vencida o cerrada no es una orden abierta: no se pinta su alias.
-  const [ordenRes, firma] = await Promise.all([
+  //
+  // El diseño se firma hasta tres veces, y ninguna es el archivo entero
+  // puesto en un <img>: el original (para abrirlo, y de respaldo), la
+  // miniatura por la transformación de Storage, y —solo para el que imprime
+  // por su cuenta— la descarga.
+  const [ordenRes, firma, firmaMiniatura, firmaDescarga] = await Promise.all([
     sinPagar
       ? supabase
           .from("cresium_ordenes")
@@ -166,7 +193,15 @@ export default async function PaginaCalcos() {
           .limit(1)
           .maybeSingle()
       : null,
-    diseno ? supabase.storage.from("calcos").createSignedUrl(diseno.ruta, UNA_HORA) : null,
+    diseno ? calcos.createSignedUrl(diseno.ruta, UNA_HORA) : null,
+    diseno && !disenoEsPdf
+      ? calcos.createSignedUrl(diseno.ruta, UNA_HORA, { transform: { width: ANCHO_MINIATURA } })
+      : null,
+    diseno && imprimePorSuCuenta
+      ? calcos.createSignedUrl(diseno.ruta, UNA_HORA, {
+          download: `calco-v${diseno.version}${disenoEsPdf ? ".pdf" : ".png"}`,
+        })
+      : null,
   ]);
 
   const filaOrden = ordenRes?.data ?? null;
@@ -183,7 +218,11 @@ export default async function PaginaCalcos() {
       : null;
 
   const urlDiseno = firma?.data?.signedUrl ?? null;
-  const disenoEsPdf = diseno?.ruta.endsWith(".pdf") ?? false;
+  const urlMiniatura = firmaMiniatura?.data?.signedUrl ?? null;
+  const urlDescarga = firmaDescarga?.data?.signedUrl ?? null;
+  const recuentoEl = stock?.baseRecuentoAt
+    ? formatearFecha(fechaCalendarioAR(new Date(stock.baseRecuentoAt)))
+    : null;
 
   const enCamino = pedidos
     .filter((e) => ESTADOS_EN_CAMINO.includes(e.estado))
@@ -220,11 +259,11 @@ export default async function PaginaCalcos() {
               className="block shrink-0 overflow-hidden rounded-md border border-line"
               style={{ width: "5cm", height: "8cm" }}
             >
-              {/* <img> y no next/image: la URL es firmada, de un bucket
-                  privado y vence en una hora. El optimizador de Next la
-                  bajaría y la volvería a servir desde su propia caché. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={urlDiseno} alt="El diseño de tu calco" className="h-full w-full object-cover" />
+              <MiniaturaDelCalco
+                miniatura={urlMiniatura}
+                original={urlDiseno}
+                alt="El diseño de tu calco"
+              />
             </a>
           ) : (
             <div
@@ -257,6 +296,17 @@ export default async function PaginaCalcos() {
               {cantidadDeCalcos(entregadas)}
             </p>
             <p className="text-ui text-ink-60">calcos entregados hasta hoy</p>
+            {/* Solo para el que imprime por su cuenta: el archivo original,
+                el que hasta hoy mandábamos por WhatsApp cada vez. */}
+            {urlDescarga && (
+              <a
+                href={urlDescarga}
+                data-descarga
+                className={`${clasesBoton("secundario")} mt-4`}
+              >
+                Descargar el archivo de impresión
+              </a>
+            )}
           </div>
         </div>
       </section>
@@ -288,7 +338,14 @@ export default async function PaginaCalcos() {
         />
       )}
 
-      {/* ============ 3 · Tu historial ============ */}
+      {/* ============ 3 · Cuántas te quedan ============
+          Siempre que haya entregas y no imprima por su cuenta: en los dos
+          casos la base devuelve null y acá no se dibuja nada. */}
+      {stock && (
+        <StockDeCalcos stock={stock} recuentoEl={recuentoEl} suspendido={sesion.suspendido} />
+      )}
+
+      {/* ============ 4 · Tu historial ============ */}
       <section className="surface-card p-5" data-historial>
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <h2 className="font-brand text-lead font-bold text-ink">Tu historial de calcos</h2>
