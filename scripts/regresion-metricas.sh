@@ -124,9 +124,10 @@ M_CC=supabase/migrations/20260925102000_calcos_candado.sql
 # la versión vigente vive acá y es la que hay que romper.
 M_IM=supabase/migrations/20261002120000_importado_de.sql
 # resumen_admin() se redefinió para ganar la clave `calcos` (pedidos de
-# calcos, PR 1) y otra vez para que la alerta de órdenes de Cresium no mire
-# las de calcos (PR 2): vive en este archivo y es el que hay que romper.
-M_CA=supabase/migrations/20261003200000_calcos_pago.sql
+# calcos, PR 1), otra vez para que la alerta de órdenes de Cresium no mire
+# las de calcos (PR 2) y otra para ganar `calcos.sin_stock` (PR 3): vive en
+# este archivo y es el que hay que romper.
+M_CA=supabase/migrations/20261003210000_calcos_stock.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
 

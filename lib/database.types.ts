@@ -871,6 +871,50 @@ export type Database = {
           },
         ]
       }
+      emails_calcos: {
+        Row: {
+          destinatario: string
+          entrega_ref: string
+          enviado_at: string
+          id: string
+          lubricentro_id: string
+          resend_id: string | null
+          semanas_cobertura: number | null
+          stock_estimado: number | null
+          tipo: string
+        }
+        Insert: {
+          destinatario: string
+          entrega_ref: string
+          enviado_at?: string
+          id?: string
+          lubricentro_id: string
+          resend_id?: string | null
+          semanas_cobertura?: number | null
+          stock_estimado?: number | null
+          tipo: string
+        }
+        Update: {
+          destinatario?: string
+          entrega_ref?: string
+          enviado_at?: string
+          id?: string
+          lubricentro_id?: string
+          resend_id?: string | null
+          semanas_cobertura?: number | null
+          stock_estimado?: number | null
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "emails_calcos_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       emails_cobranza: {
         Row: {
           destinatario: string
@@ -1127,6 +1171,7 @@ export type Database = {
           activo: boolean
           bienvenida_vista_at: string | null
           calcos_entregadas: number
+          calcos_propias: boolean
           cobranza_desde: string | null
           created_at: string
           cresium_alias: string | null
@@ -1148,6 +1193,7 @@ export type Database = {
           activo?: boolean
           bienvenida_vista_at?: string | null
           calcos_entregadas?: number
+          calcos_propias?: boolean
           cobranza_desde?: string | null
           created_at?: string
           cresium_alias?: string | null
@@ -1169,6 +1215,7 @@ export type Database = {
           activo?: boolean
           bienvenida_vista_at?: string | null
           calcos_entregadas?: number
+          calcos_propias?: boolean
           cobranza_desde?: string | null
           created_at?: string
           cresium_alias?: string | null
@@ -1804,6 +1851,45 @@ export type Database = {
           },
           {
             foreignKeyName: "purgas_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      recuentos_calcos: {
+        Row: {
+          cantidad: number
+          created_at: string
+          declarado_por: string | null
+          id: string
+          lubricentro_id: string
+        }
+        Insert: {
+          cantidad: number
+          created_at?: string
+          declarado_por?: string | null
+          id?: string
+          lubricentro_id: string
+        }
+        Update: {
+          cantidad?: number
+          created_at?: string
+          declarado_por?: string | null
+          id?: string
+          lubricentro_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recuentos_calcos_declarado_por_fkey"
+            columns: ["declarado_por"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recuentos_calcos_lubricentro_id_fkey"
             columns: ["lubricentro_id"]
             isOneToOne: false
             referencedRelation: "lubricentros"
@@ -3178,6 +3264,28 @@ export type Database = {
         }
         Returns: undefined
       }
+      aviso_calcos: {
+        Args: { p_lubricentro_id: string }
+        Returns: {
+          nivel: string
+          semanas_cobertura: number
+          stock_estimado: number
+        }[]
+      }
+      avisos_calcos_pendientes: {
+        Args: never
+        Returns: {
+          destinatario: string
+          entrega_ref: string
+          lubricentro_id: string
+          nombre: string
+          ritmo_semanal: number
+          semanas_cobertura: number
+          slug: string
+          stock_estimado: number
+          tipo: string
+        }[]
+      }
       avisos_pendientes: {
         Args: never
         Returns: {
@@ -3217,6 +3325,20 @@ export type Database = {
           ultimo_service_km: number
           ultimo_service_sucursal: string
           vehiculo_id: string
+        }[]
+      }
+      calcos_por_agotarse: {
+        Args: never
+        Returns: {
+          base_recuento_at: string
+          lubricentro_id: string
+          nombre: string
+          owner_nombre: string
+          ritmo_semanal: number
+          semanas_cobertura: number
+          slug: string
+          stock_estimado: number
+          telefono: string
         }[]
       }
       calcular_beneficio_neumaticos: {
@@ -3425,6 +3547,10 @@ export type Database = {
         Returns: string
       }
       cresium_reprocesar_evento: { Args: { p_evento: string }; Returns: Json }
+      declarar_recuento_calcos: {
+        Args: { p_cantidad: number }
+        Returns: string
+      }
       desbloquear_service: { Args: { p_service_id: string }; Returns: string }
       dias_de_aviso: { Args: never; Returns: number }
       dias_de_gracia: { Args: never; Returns: number }
@@ -3712,6 +3838,10 @@ export type Database = {
       }
       marca_canonica: { Args: { p_texto: string }; Returns: string }
       marcar_bienvenida_vista: { Args: never; Returns: undefined }
+      marcar_calcos_propias: {
+        Args: { p_lubricentro_id: string; p_nota: string; p_propias: boolean }
+        Returns: undefined
+      }
       marcar_cierre: {
         Args: { p_fecha?: string; p_id: string; p_lubricentro_id?: string }
         Returns: undefined
@@ -3747,6 +3877,10 @@ export type Database = {
         Args: { p_codigo: string; p_lubricentro: string }
         Returns: boolean
       }
+      momento_de_entrega_calcos: {
+        Args: { p_created_at: string; p_fecha: string }
+        Returns: string
+      }
       monto_de_renovacion: { Args: { p_lubricentro: string }; Returns: Json }
       monto_de_renovacion_en: {
         Args: {
@@ -3777,6 +3911,10 @@ export type Database = {
       }
       mrr_de_tenant: { Args: { p_id: string }; Returns: number }
       mrr_plataforma: { Args: never; Returns: number }
+      nivel_de_aviso_calcos: {
+        Args: { p_semanas: number; p_stock: number }
+        Returns: string
+      }
       normalizar_patente: { Args: { entrada: string }; Returns: string }
       normalizar_texto_vehiculo: { Args: { p: string }; Returns: string }
       omitir_premio: { Args: never; Returns: Json }
@@ -3939,6 +4077,17 @@ export type Database = {
           unidad: string
         }[]
       }
+      stock_calcos: {
+        Args: { p_lubricentro_id: string }
+        Returns: {
+          base_recuento_at: string
+          consumidas: number
+          entregadas: number
+          ritmo_semanal: number
+          semanas_cobertura: number
+          stock_estimado: number
+        }[]
+      }
       sucursales_dentro_del_limite: {
         Args: { p_lubricentro: string; p_sucursal: string }
         Returns: boolean
@@ -3973,6 +4122,10 @@ export type Database = {
       telefono_de_contacto: {
         Args: { p_lubricentro_id: string }
         Returns: string
+      }
+      tiene_encargo_calcos_abierto: {
+        Args: { p_lubricentro_id: string }
+        Returns: boolean
       }
       trabajos_por_mes: {
         Args: { p_desde: string; p_hasta: string }
