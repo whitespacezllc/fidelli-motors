@@ -123,9 +123,10 @@ M_CC=supabase/migrations/20260925102000_calcos_candado.sql
 # metricas_plataforma, resumen_admin, activacion_tenant, listado_lubricentros):
 # la versión vigente vive acá y es la que hay que romper.
 M_IM=supabase/migrations/20261002120000_importado_de.sql
-# resumen_admin() se redefinió otra vez para ganar la clave `calcos` (pedidos
-# de calcos, PR 1): desde ahí vive en ese archivo y es el que hay que romper.
-M_CA=supabase/migrations/20261003120000_encargos_calcos.sql
+# resumen_admin() se redefinió para ganar la clave `calcos` (pedidos de
+# calcos, PR 1) y otra vez para que la alerta de órdenes de Cresium no mire
+# las de calcos (PR 2): vive en este archivo y es el que hay que romper.
+M_CA=supabase/migrations/20261003200000_calcos_pago.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
 

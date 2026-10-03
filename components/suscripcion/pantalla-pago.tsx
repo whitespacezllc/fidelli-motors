@@ -13,16 +13,68 @@ const INICIAL: EstadoOrden = {};
 
 export type Renglon = { clave: string; valor: string; descuento?: boolean; total?: boolean };
 
-export type OrdenAbierta = {
+/** Lo que cualquier orden de Cresium tiene, sea de lo que sea. */
+export type OrdenDePago = {
   alias: string;
   cvu: string | null;
   estado: string;
   montoPagado: number;
   monto: number;
+};
+
+export type OrdenAbierta = OrdenDePago & {
   periodoHasta: string;
   /** El período que el dueño YA eligió al generar la orden. Manda sobre el
    *  selector: una vez emitido el CVU, el monto está fijado. */
   periodo: Periodo;
+};
+
+// ============================================================
+// EL CONCEPTO · la misma pantalla, para algo que no es la suscripción
+//
+// Desde los pedidos de calcos (PR 2) esta pantalla cobra dos cosas. Lo que
+// es DEL COBRO —el alias y el CVU copiables, el titular, el polling de 8
+// segundos, el aviso del pago parcial («se acumula sobre lo que ya
+// mandaste») y el tick— es uno solo y vive acá. Lo que es DE LO QUE SE
+// COBRA entra por este prop: el título, el desglose, cuánto tiempo tiene y
+// qué se le dice cuando entró la plata.
+//
+// Sin `concepto`, la pantalla es la de la suscripción, IDÉNTICA a la que
+// era: mismo árbol, mismas clases, mismos textos. Con `concepto` no hay ni
+// plan, ni período, ni selector.
+//
+// ⚠ Este componente lo importa el panel del tenant: el concepto trae
+// textos ya armados y montos; nada de costos.
+// ============================================================
+export type ConceptoPago = {
+  /** La cabecera: «Tu pedido #0012». */
+  titulo: string;
+  /** El desglose, ya armado: pack, rediseño, envío y el total. */
+  renglones: Renglon[];
+  /** Cuánto tiempo tiene: «Tenés 7 días para pagar.» */
+  vigencia: string;
+  /** Qué completa la diferencia de un pago parcial: «el pedido». */
+  queSeCompleta: string;
+  /** La orden abierta, o null si todavía no se pudo generar la cuenta. */
+  orden: OrdenDePago | null;
+  /** El webhook ya acreditó: se muestra el éxito. */
+  pagado: boolean;
+  /** Lo que entró, para decirlo en el éxito. */
+  montoCobrado: number | null;
+  /** El éxito: «Tu pedido de 400 calcos está pagado.» y lo que sigue. */
+  exito: {
+    titulo: string;
+    texto: string;
+    salida: { texto: string; onClick: () => void };
+  };
+  /** Sin orden abierta: la acción que genera la cuenta, y cómo se ofrece. */
+  generar: {
+    accion: (previo: EstadoOrden, formData: FormData) => Promise<EstadoOrden>;
+    /** Por qué no hay cuenta todavía, dicho antes del botón. */
+    aviso: string;
+    boton: string;
+    generando: string;
+  };
 };
 
 export type DatosPago = {
@@ -108,7 +160,11 @@ function Dato({ k, v, copiable }: { k: string; v: string; copiable?: boolean }) 
   );
 }
 
-export function PantallaPago({ datos }: { datos: DatosPago }) {
+type Props =
+  | { datos: DatosPago; concepto?: undefined }
+  | { concepto: ConceptoPago; datos?: undefined };
+
+export function PantallaPago({ datos, concepto }: Props) {
   const router = useRouter();
 
   // Anual por defecto MIENTRAS SE ELIGE. Sin tarjeta no hay débito
@@ -123,12 +179,18 @@ export function PantallaPago({ datos }: { datos: DatosPago }) {
   // esperaba otro, que es la peor cosa que puede hacer una pantalla de
   // pago.
   const [periodo, setPeriodo] = useState<Periodo>(
-    datos.orden?.periodo ?? (datos.opciones.anual ? "anual" : "mensual"),
+    datos?.orden?.periodo ?? (datos?.opciones.anual ? "anual" : "mensual"),
   );
-  const [estado, accion, enviando] = useActionState(crearOrden, INICIAL);
+  // La acción que genera la cuenta: la de la renovación, o la del concepto.
+  // Las dos son Server Actions importadas por quien arma la pantalla, así
+  // que la referencia es estable entre renders.
+  const [estado, accion, enviando] = useActionState(
+    concepto ? concepto.generar.accion : crearOrden,
+    INICIAL,
+  );
 
-  const orden = datos.orden;
-  const pagado = datos.alDiaHasta !== null;
+  const ordenEnEspera: OrdenDePago | null = concepto ? concepto.orden : datos.orden;
+  const pagado = concepto ? concepto.pagado : datos.alDiaHasta !== null;
 
   // ---------- El success es esta misma pantalla cambiando sola ----------
   // Con una orden abierta y sin pagar, se pregunta cada 8 segundos si ya
@@ -138,14 +200,29 @@ export function PantallaPago({ datos }: { datos: DatosPago }) {
   // resuelve. Se apaga solo al pagar y cuando la pestaña no se ve, para no
   // castigar la batería del celular que quedó en el mostrador.
   useEffect(() => {
-    if (!orden || pagado) return;
-    if (orden.estado === "PAID" || orden.estado === "EXPIRED") return;
+    if (!ordenEnEspera || pagado) return;
+    if (ordenEnEspera.estado === "PAID" || ordenEnEspera.estado === "EXPIRED") return;
 
     const tic = setInterval(() => {
       if (document.visibilityState === "visible") router.refresh();
     }, 8000);
     return () => clearInterval(tic);
-  }, [orden, pagado, router]);
+  }, [ordenEnEspera, pagado, router]);
+
+  // ---------- UN CONCEPTO QUE NO ES LA SUSCRIPCIÓN ----------
+  // Después de los hooks, que son los mismos para las dos formas.
+  if (concepto) {
+    return (
+      <PagoDeUnConcepto
+        concepto={concepto}
+        error={estado.error}
+        accion={accion}
+        enviando={enviando}
+      />
+    );
+  }
+
+  const orden = datos.orden;
 
   // ---------- PAGADO ----------
   if (pagado) {
@@ -263,33 +340,7 @@ export function PantallaPago({ datos }: { datos: DatosPago }) {
         {/* ---------- El desglose, línea por línea ----------
             Para que el número sea VERIFICABLE. El dueño tiene que poder
             seguir la cuenta con el dedo antes de transferir. */}
-        {opcion && (
-          <div className="overflow-hidden rounded-lg border border-line">
-            {opcion.renglones.map((r) => (
-              <div
-                key={r.clave}
-                className={`flex items-baseline justify-between gap-3.5 border-t border-line px-3.5 py-2.5 text-ui first:border-t-0 ${
-                  r.total ? "bg-surface" : ""
-                }`}
-              >
-                <span className={r.total ? "font-brand font-bold text-ink" : "text-ink-60"}>
-                  {r.clave}
-                </span>
-                <span
-                  className={`whitespace-nowrap tabular-nums ${
-                    r.total
-                      ? "font-brand text-lead font-bold"
-                      : r.descuento
-                        ? "font-semibold text-success"
-                        : "font-semibold"
-                  }`}
-                >
-                  {r.valor}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
+        {opcion && <Desglose renglones={opcion.renglones} />}
 
         {estado.error && (
           <p role="alert" className="mt-4 text-ui text-overdue">
@@ -362,6 +413,143 @@ export function PantallaPago({ datos }: { datos: DatosPago }) {
 }
 
 // ============================================================
+// El desglose
+//
+// Línea por línea, con el total al pie. Es el mismo para la renovación y
+// para un pedido: lo que cambia es qué renglones trae.
+// ============================================================
+function Desglose({ renglones }: { renglones: Renglon[] }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-line">
+      {renglones.map((r) => (
+        <div
+          key={r.clave}
+          className={`flex items-baseline justify-between gap-3.5 border-t border-line px-3.5 py-2.5 text-ui first:border-t-0 ${
+            r.total ? "bg-surface" : ""
+          }`}
+        >
+          <span className={r.total ? "font-brand font-bold text-ink" : "text-ink-60"}>
+            {r.clave}
+          </span>
+          <span
+            className={`whitespace-nowrap tabular-nums ${
+              r.total
+                ? "font-brand text-lead font-bold"
+                : r.descuento
+                  ? "font-semibold text-success"
+                  : "font-semibold"
+            }`}
+          >
+            {r.valor}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================
+// El pago de un concepto (un pedido de calcos)
+//
+// La misma caja de transferencia, el mismo estado de la orden y el mismo
+// tick que la renovación. Sin plan, sin período y sin selector: el monto ya
+// está fijado cuando esta pantalla aparece.
+// ============================================================
+function PagoDeUnConcepto({
+  concepto,
+  error,
+  accion,
+  enviando,
+}: {
+  concepto: ConceptoPago;
+  error: string | undefined;
+  accion: (formData: FormData) => void;
+  enviando: boolean;
+}) {
+  const orden = concepto.orden;
+
+  if (concepto.pagado) {
+    return (
+      <div className="surface-card overflow-hidden" data-pago="pagado">
+        <div className="flex items-center justify-between gap-3 border-b border-line bg-surface px-4 py-3">
+          <span className="font-brand text-ui font-bold">{concepto.titulo}</span>
+          <span className="text-ui text-success">Pagado</span>
+        </div>
+        <div className="exito-cobranza px-5 py-8 text-center">
+          <Tick />
+          <p className="sube font-brand text-h3 font-bold text-ink">{concepto.exito.titulo}</p>
+          <p className="sube mx-auto mt-1.5 max-w-[42ch] text-ui text-ink-60 tabular-nums">
+            {concepto.montoCobrado ? `Recibimos ${pesos(concepto.montoCobrado)}. ` : ""}
+            {concepto.exito.texto}
+          </p>
+          <div className="sube mt-5 flex flex-wrap justify-center gap-2.5">
+            <button
+              type="button"
+              onClick={concepto.exito.salida.onClick}
+              className={clasesBoton("secundario")}
+            >
+              {concepto.exito.salida.texto}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="surface-card overflow-hidden" data-pago={orden ? "esperando" : "sin-cuenta"}>
+      <div className="flex items-center justify-between gap-3 border-b border-line bg-surface px-4 py-3">
+        <span className="font-brand text-ui font-bold">{concepto.titulo}</span>
+        <span className="text-ui text-ink-60">
+          {orden ? "Esperando la transferencia" : "Falta la cuenta para transferir"}
+        </span>
+      </div>
+
+      <div className="p-5">
+        <Desglose renglones={concepto.renglones} />
+        <p className="mt-3 text-ui text-ink-60">{concepto.vigencia}</p>
+
+        {error && (
+          <p role="alert" className="mt-4 text-ui text-overdue">
+            {error}
+          </p>
+        )}
+
+        {!orden ? (
+          <form action={accion} className="mt-5">
+            <p className="mb-4 rounded-lg border border-line bg-surface px-4 py-3 text-ui text-ink-60">
+              {concepto.generar.aviso}
+            </p>
+            <Boton type="submit" tam="lg" disabled={enviando} className="w-full sm:w-auto">
+              {enviando ? concepto.generar.generando : concepto.generar.boton}
+            </Boton>
+            <NotaDelTitular />
+          </form>
+        ) : (
+          <>
+            <div className="mt-5 rounded-lg border border-line p-4">
+              <h3 className="font-brand text-body font-bold">
+                Transferí desde tu home banking
+              </h3>
+              <p className="mt-0.5 mb-1 text-ui text-ink-60">
+                La cuenta es de este pago y de nada más: lo identifica sin que tengas que
+                avisarnos.
+              </p>
+              <Dato k="Alias" v={orden.alias} copiable />
+              {orden.cvu && <Dato k="CVU" v={orden.cvu} copiable />}
+              <Dato k="Titular" v={TITULAR_CVU} />
+              <NotaDelTitular />
+            </div>
+
+            <EstadoDeLaOrden orden={orden} queSeCompleta={concepto.queSeCompleta} />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // El titular
 //
 // La cuenta está a nombre de una persona y no de una sociedad, y eso el
@@ -381,9 +569,19 @@ function NotaDelTitular() {
 // ============================================================
 // El estado de la transferencia
 // ============================================================
-function EstadoDeLaOrden({ orden }: { orden: OrdenAbierta }) {
+function EstadoDeLaOrden({
+  orden,
+  queSeCompleta = "el período",
+}: {
+  orden: OrdenDePago;
+  /** Lo que la diferencia termina de pagar: el período, o el pedido. */
+  queSeCompleta?: string;
+}) {
   if (orden.estado === "PARTIAL") {
     const falta = orden.monto - orden.montoPagado;
+    // Una sola cadena, y no `{queSeCompleta}` suelto en medio de la frase:
+    // así el HTML de la renovación queda byte a byte como era.
+    const resto = ` para completar ${queSeCompleta}. Transferí la diferencia al mismo alias: se acumula sobre lo que ya mandaste.`;
     return (
       <div className="mt-4 flex items-start gap-3 rounded-lg border border-urgente bg-urgente-soft px-4 py-3.5">
         <span
@@ -397,8 +595,8 @@ function EstadoDeLaOrden({ orden }: { orden: OrdenAbierta }) {
             Recibimos {pesos(orden.montoPagado)}
           </p>
           <p className="mt-0.5 text-ui text-ink-60 tabular-nums">
-            Faltan {pesos(falta)} para completar el período. Transferí la diferencia al
-            mismo alias: se acumula sobre lo que ya mandaste.
+            Faltan {pesos(falta)}
+            {resto}
           </p>
         </div>
       </div>
@@ -435,14 +633,20 @@ function EstadoDeLaOrden({ orden }: { orden: OrdenAbierta }) {
 // `prefers-reduced-motion` la apaga entera — está en globals.css junto al
 // resto de la animación.
 // ============================================================
+function Tick() {
+  return (
+    <svg className="tick mx-auto mb-4 block size-14 overflow-visible" viewBox="0 0 56 56" aria-hidden>
+      <circle className="anillo" cx="28" cy="28" r="26" />
+      <circle className="disco" cx="28" cy="28" r="26" />
+      <path className="marca" d="M17 28.5 L24.5 36 L39 21" />
+    </svg>
+  );
+}
+
 function Exito({ hasta, monto }: { hasta: string; monto: number | null }) {
   return (
     <div className="exito-cobranza px-5 py-8 text-center">
-      <svg className="tick mx-auto mb-4 block size-14 overflow-visible" viewBox="0 0 56 56" aria-hidden>
-        <circle className="anillo" cx="28" cy="28" r="26" />
-        <circle className="disco" cx="28" cy="28" r="26" />
-        <path className="marca" d="M17 28.5 L24.5 36 L39 21" />
-      </svg>
+      <Tick />
       <p className="sube font-brand text-label font-bold tracking-[0.08em] text-ink-40 uppercase">
         Tu suscripción está al día hasta el
       </p>

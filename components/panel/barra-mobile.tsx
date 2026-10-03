@@ -31,6 +31,9 @@ const SECCIONES_MAS: { href: string; nombre: string; feature?: FeaturePlan }[] =
   { href: "/panel/mensajes", nombre: "Mensajes" },
   { href: "/panel/sucursales", nombre: "Sucursales" },
   { href: "/panel/cuenta", nombre: "Mi cuenta" },
+  // Pedir calcos vive adentro de Mi cuenta; en el celular tiene su entrada
+  // propia para no obligar a dos toques y un scroll.
+  { href: "/panel/cuenta/calcos", nombre: "Calcos" },
   { href: "/panel/ayuda", nombre: "Ayuda" },
 ];
 

@@ -125,3 +125,49 @@ export async function guardarModulo(
   revalidatePath("/fidelli/lubricentros");
   return { ok: true };
 }
+
+// El precio y el costo de un pack o un extra de calcos. Mismo contrato que
+// los otros dos: superadmin, motivo obligatorio y rastro —acá en
+// `cambios_precio_calcos`, por `fijar_precio_calcos()`—. Los pedidos que ya
+// existen no se mueven: cada uno congeló sus montos al crearse.
+export async function guardarPrecioCalcos(
+  _prev: EstadoPlan,
+  formData: FormData,
+): Promise<EstadoPlan> {
+  const sesion = await obtenerSesion();
+  if (!sesion) redirect("/login");
+  if (sesion.rol !== "superadmin") redirect("/panel");
+
+  const codigo = String(formData.get("codigo") ?? "");
+  const precio = Number(formData.get("precio"));
+  const costo = Number(formData.get("costo"));
+  const motivo = String(formData.get("motivo") ?? "").trim();
+
+  if (!Number.isFinite(precio) || precio < 0) {
+    return { error: "El precio tiene que ser un número de 0 para arriba." };
+  }
+  if (!Number.isFinite(costo) || costo < 0) {
+    return { error: "El costo tiene que ser un número de 0 para arriba." };
+  }
+  if (motivo.length < MOTIVO_MINIMO) return { error: AYUDA_MOTIVO };
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("fijar_precio_calcos", {
+    p_codigo: codigo,
+    p_precio: precio,
+    p_costo: costo,
+    p_motivo: motivo,
+  });
+
+  if (error) {
+    if (error.message.includes("codigo_no_existe")) {
+      return { error: "Ese pack ya no está en el catálogo. Recargá la pantalla." };
+    }
+    return { error: mensajeDeError(error) };
+  }
+
+  revalidatePath("/fidelli/precios");
+  // Lo que ve el tenant al armar su pedido.
+  revalidatePath("/panel/cuenta/calcos");
+  return { ok: true };
+}

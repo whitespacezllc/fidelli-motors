@@ -753,6 +753,7 @@ export type Database = {
           alias: string
           created_at: string
           cvu: string | null
+          encargo_calcos_id: string | null
           estado: string
           external_id: string
           id: string
@@ -760,15 +761,16 @@ export type Database = {
           monto: number
           monto_pagado: number
           orden_id: number | null
-          periodo: Database["public"]["Enums"]["periodo_suscripcion"]
-          periodo_hasta: string
-          suscripcion_id: string
+          periodo: Database["public"]["Enums"]["periodo_suscripcion"] | null
+          periodo_hasta: string | null
+          suscripcion_id: string | null
         }
         Insert: {
           actualizado_at?: string
           alias: string
           created_at?: string
           cvu?: string | null
+          encargo_calcos_id?: string | null
           estado?: string
           external_id: string
           id?: string
@@ -776,15 +778,16 @@ export type Database = {
           monto: number
           monto_pagado?: number
           orden_id?: number | null
-          periodo: Database["public"]["Enums"]["periodo_suscripcion"]
-          periodo_hasta: string
-          suscripcion_id: string
+          periodo?: Database["public"]["Enums"]["periodo_suscripcion"] | null
+          periodo_hasta?: string | null
+          suscripcion_id?: string | null
         }
         Update: {
           actualizado_at?: string
           alias?: string
           created_at?: string
           cvu?: string | null
+          encargo_calcos_id?: string | null
           estado?: string
           external_id?: string
           id?: string
@@ -792,11 +795,18 @@ export type Database = {
           monto?: number
           monto_pagado?: number
           orden_id?: number | null
-          periodo?: Database["public"]["Enums"]["periodo_suscripcion"]
-          periodo_hasta?: string
-          suscripcion_id?: string
+          periodo?: Database["public"]["Enums"]["periodo_suscripcion"] | null
+          periodo_hasta?: string | null
+          suscripcion_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "cresium_ordenes_encargo_calcos_id_fkey"
+            columns: ["encargo_calcos_id"]
+            isOneToOne: false
+            referencedRelation: "encargos_calcos"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "cresium_ordenes_lubricentro_id_fkey"
             columns: ["lubricentro_id"]
@@ -3222,6 +3232,18 @@ export type Database = {
         }
         Returns: undefined
       }
+      catalogo_calcos_admin: {
+        Args: never
+        Returns: {
+          activo: boolean
+          cantidad: number
+          codigo: string
+          costo_ars: number
+          orden: number
+          precio_ars: number
+          tipo: string
+        }[]
+      }
       catalogo_features_plan: { Args: never; Returns: string[] }
       catalogo_limites_plan: { Args: never; Returns: string[] }
       cerrar_dia: {
@@ -3821,6 +3843,10 @@ export type Database = {
         }
       }
       reabrir_contacto_pauta: { Args: { p_id: string }; Returns: undefined }
+      reclamar_mail_encargo_calcos: {
+        Args: { p_id: string; p_tipo: string }
+        Returns: boolean
+      }
       reconstruir_snapshots: {
         Args: { p_desde: string; p_hasta: string }
         Returns: number
@@ -3897,6 +3923,10 @@ export type Database = {
           slug: string
         }[]
       }
+      soltar_mail_encargo_calcos: {
+        Args: { p_id: string; p_tipo: string }
+        Returns: undefined
+      }
       soy_superadmin: { Args: never; Returns: boolean }
       stock_bajo: {
         Args: { p_limite?: number }
@@ -3970,6 +4000,10 @@ export type Database = {
       uso_tenant: {
         Args: { p_dias?: number; p_lubricentro_id: string }
         Returns: Json
+      }
+      vencer_encargos_calcos: {
+        Args: { p_lubricentro_id?: string }
+        Returns: number
       }
       verificar_seguridad_vistas: {
         Args: never

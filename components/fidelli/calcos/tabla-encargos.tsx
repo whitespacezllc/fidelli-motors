@@ -2,14 +2,8 @@ import Link from "next/link";
 import { Chip, type TonoChip } from "@/components/fidelli/chip";
 import { fechaCalendarioAR, formatearFecha } from "@/lib/fechas";
 import { pesos } from "@/lib/fidelli/plan";
-import {
-  ETIQUETA_ESTADO,
-  metrosCuadrados,
-  numeroDeEncargo,
-  queLleva,
-  type EncargoAdmin,
-  type EstadoEncargo,
-} from "@/lib/calcos";
+import { numeroDeEncargo, queLleva, type EstadoEncargo } from "@/lib/calcos";
+import { ETIQUETA_ESTADO, metrosCuadrados, type EncargoAdmin } from "@/lib/fidelli/calcos";
 import { AccionesEncargo } from "./acciones-encargo";
 
 // Lo normal va callado (gris), lo que espera plata se ve (ámbar) y lo

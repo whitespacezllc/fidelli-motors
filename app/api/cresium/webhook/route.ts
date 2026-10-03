@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { crearClienteAdmin } from "@/lib/supabase/admin";
+import { avisarPorMail } from "@/lib/pedidos-calcos/avisos";
 import {
   firmar,
   firmaCoincide,
@@ -225,7 +226,29 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "internal" }, { status: 500 });
   }
 
-  const resultado = (data as { resultado?: string } | null)?.resultado ?? "desconocido";
+  const respuesta = data as { resultado?: string; concepto?: string; encargo?: string } | null;
+  const resultado = respuesta?.resultado ?? "desconocido";
+
+  // ---------- EL MAIL DE UN PEDIDO DE CALCOS, DESPUÉS DE CONTESTAR ----------
+  // Cuando lo acreditado es un pedido de calcos (PR 2), al owner le llega
+  // «recibimos tu pago». Va con `after()`: se manda DESPUÉS de que la
+  // respuesta salió, porque Cresium espera un 2xx y un proveedor de mail
+  // lento no puede convertir un cobro acreditado en un reintento.
+  //
+  // También con `ya_acreditado`: si el mail de la primera entrega falló, el
+  // aviso quedó suelto y esta lo manda. Y si ya salió, la base contesta que
+  // el aviso está tomado y no se manda dos veces (R40i): cinco reintentos
+  // de Cresium son un mail.
+  if (
+    respuesta?.concepto === "calcos" &&
+    respuesta.encargo &&
+    (resultado === "acreditado" || resultado === "ya_acreditado")
+  ) {
+    const encargoId = respuesta.encargo;
+    after(async () => {
+      await avisarPorMail(supabase, encargoId, "pago");
+    });
+  }
 
   if (resultado === "sin_transaccion") {
     // El ping de prueba de Cresium llega sin `data.id`. Se guardó como

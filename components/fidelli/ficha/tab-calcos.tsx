@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { fechaCalendarioAR, formatearFecha, hoyISO } from "@/lib/fechas";
 import { pesos } from "@/lib/fidelli/plan";
-import { calcosIncluidosDelPlan, leerEncargos } from "@/lib/calcos";
+import { calcosIncluidosDelPlan, leerEncargos } from "@/lib/fidelli/calcos";
 import { Chip } from "@/components/fidelli/chip";
 import { TablaEncargos } from "@/components/fidelli/calcos/tabla-encargos";
 import { SubirDiseno } from "@/components/fidelli/calcos/subir-diseno";

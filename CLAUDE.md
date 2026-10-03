@@ -181,7 +181,7 @@ la resuelve.
   `p_lubricentro_id` y motivo, auditado; exige la suscripción cancelada; el
   demo nunca. Lo vigila R29.
 
-- **Pedidos de calcos (03/10/2026, PR 1 de dos).** Hay DOS entidades y no se
+- **Pedidos de calcos (03/10/2026).** Hay DOS entidades y no se
   mezclan. `pedidos_calcos` es **el libro de entregas**: append-only, con sus
   tres candados, y `calcos_entregadas` es su suma (R33, R34j); no se tocó.
   `encargos_calcos` es **el pedido**, con ciclo de vida: `pendiente_pago ·
@@ -194,8 +194,8 @@ la resuelve.
   200/400 del alta: sin pago, nacen `pagado`); todos los cambios de estado son
   del superadmin por `avanzar_encargo_calcos()`, que valida contra **una tabla
   de transiciones escrita adentro de la función** —lo que no está en la lista
-  no pasa; `vencido` no tiene entrada ni salida desde ahí: es del cierre
-  diario y del webhook, en el PR 2—. **Las cuatro tablas no se escriben por
+  no pasa; `vencido` no tiene entrada ni salida desde ahí: lo vence el cierre
+  diario y lo revive el webhook, nunca una persona—. **Las cuatro tablas no se escriben por
   API**: `authenticated` no tiene INSERT/UPDATE/DELETE ni policy que lo
   permita, y las puertas son `security definer` con guarda. **El costo no
   sale de `/fidelli`**: `catalogo_calcos.costo_ars` y `costo_estimado` /
@@ -216,9 +216,41 @@ la resuelve.
   un request a Vercel, que corta en 4,5 MB): el servidor entrega una URL
   firmada de subida, el navegador manda el archivo directo al bucket y el
   servidor valida los bytes de lo que llegó antes de registrar la versión
-  (`app/fidelli/calcos/actions.ts`). Las pantallas: la solapa Calcos de la
-  ficha, la cola `/fidelli/calcos` y la primera alerta del hub
-  (`resumen_admin().calcos`). Lo vigila R39.
+  (`app/fidelli/calcos/actions.ts`). Las pantallas de `/fidelli`: la solapa
+  Calcos de la ficha, la cola `/fidelli/calcos`, la primera alerta del hub
+  (`resumen_admin().calcos`) y el bloque Calcos de «Plan y precios», que es
+  donde se edita el catálogo. Lo vigila R39.
+- **El pago de un pedido de calcos (03/10/2026).** El tenant pide desde **Mi
+  cuenta → Calcos** (`/panel/cuenta/calcos`): elige un pack, el rediseño y la
+  entrega, y «Confirmar y pagar» hace DOS cosas en orden —el pedido
+  (`crear_encargo_calcos()`, una transacción) y después la orden de Cresium
+  (`lib/pedidos-calcos/orden.ts`, una llamada HTTP)—; si la segunda falla, el
+  pedido queda sin pagar y sin cuenta y la pantalla ofrece **Reintentar**. La
+  orden vive en `cresium_ordenes` con **`encargo_calcos_id`** (un CHECK exige
+  exactamente uno de los dos lados: renovación o pedido) y su **`external_id`
+  es `calcos:<uuid del encargo>`**, con `:2`, `:3`… en los reintentos (regla
+  20); el alias es siempre el derivado (`aliasDeOrden`), nunca el fijo del
+  tenant. La acredita la misma puerta que las renovaciones,
+  `acreditar_deposito_cresium()`, con **una rama que va ANTES del cast a uuid
+  de la suscripción** (regla 23): `PAID` deja el pedido `pagado` desde
+  `pendiente_pago` o `vencido`, idempotente por
+  `encargos_calcos.cresium_transaccion_id`; `PARTIAL` no paga; **ni una fila
+  en `pagos`**. El pedido sin pagar **vence a los 7 días**
+  (`vencer_encargos_calcos()`, desde el cierre diario; la pantalla ya lo
+  trata como vencido desde el día 7 con `estadoDelPedido()`), y `vencido →
+  pagado` existe SOLO por el webhook. Dos mails con el marco de siempre
+  (`lib/email/calcos.ts`): «recibimos tu pago», que sale de la ruta del
+  webhook con `after()` —después de contestar 200—, y «salió / está listo»,
+  desde la acción de `/fidelli`; cada uno una vez por pedido
+  (`reclamar_mail_encargo_calcos()`: el que se lleva el `true` manda, y si el
+  envío falla lo suelta). **La pantalla de pago es `PantallaPago` con el prop
+  `concepto`**, no una copia: el polling de 8 segundos, el alias y el CVU
+  copiables, el aviso del pago parcial y el tick son los mismos; sin
+  `concepto` es la de la suscripción, byte a byte la de antes. **`lib/calcos.ts`
+  es lo que comparten las dos superficies y no tiene nada de costo;
+  `lib/fidelli/calcos.ts` tiene el m², el costo y la ganancia, y ninguna
+  pantalla del tenant lo importa** (lo vigila `scripts/regresion-calcos-tenant.mjs`,
+  recorriendo los imports). Lo vigila R40.
 
 **Los datos históricos no se borran.** Todo es `on delete restrict`. Para dar de
 baja se usa `activo` o `anulado`, nunca `DELETE`. Las dos excepciones escritas
@@ -792,6 +824,29 @@ volverla definer «para simplificar» deja a un Basic colando mecánicas por
 `clock_timestamp()` en la mecánica adjunta para «ordenarla»: es el mismo
 bug que la segunda llamada. Lo vigila R38.
 
+Y la del sprint de pedidos de calcos (octubre de 2026):
+
+**23 · `cresium_ordenes` guarda DOS cosas, y la referencia de una orden ya
+no es siempre un uuid.** Desde `20261003200000` la tabla tiene las órdenes
+de las renovaciones (`suscripcion_id`) y las de los pedidos de calcos
+(`encargo_calcos_id`), y eso rompe dos supuestos viejos sin dar un error.
+**El primero: «la última orden del tenant».** Tres lectores la miraban dando
+por hecho que era la de su renovación —`cobranzas_pendientes()`,
+`resumen_admin().ordenes_cresium` y la pantalla de pago de la suscripción
+(`lib/suscripcion/datos-pago.ts`)—: con un pedido de calcos más nuevo, la fila
+de Cobranzas decía «ya generó la cuenta» mirando los calcos, la alerta del
+hub contaba un pedido a medio pagar como deuda (y un pedido nuevo TAPABA la
+renovación a medias), y al dueño se le mostraba el alias de sus calcos bajo
+el título «Tu suscripción». Los tres filtran ahora `suscripcion_id is not
+null`; **un lector nuevo de esa tabla tiene que decir de cuál de los dos
+lados es**. **El segundo: el `externalId`.** `acreditar_deposito_cresium()`
+castea la primera parte de la referencia a uuid; con `calcos:<uuid>` ese cast
+explota, la ruta contesta 500 y Cresium reintenta cinco veces un depósito
+que ya entró. La rama de calcos va ANTES del cast, y tampoco castea lo que no
+tiene forma de uuid. Un tercer concepto de cobro entra igual: su prefijo, su
+rama antes del cast, y su caso en `scripts/regresion-cresium-webhook.mjs`.
+Lo vigila R40 (e y j).
+
 ---
 
 ## La red de regresión — qué protege cada cosa
@@ -844,6 +899,7 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R35** | El plazo de edición por tipo: `plazo_edicion()` existe y contesta por CADA valor del enum (7 días para mecánica, 24 horas para service y neumáticos); como owner del demo, una mecánica de hace 3 días se edita y un service, un trabajo de neumáticos de hace 3 días y una mecánica de hace 8 no (cero filas, sin error); los renglones heredan el plazo de la cabecera; `get_carton` le muestra al dueño del auto el sello `fijado` con el mismo cálculo; y la ventana de desbloqueo sigue siendo de 24 horas fijas sobre cualquier tipo, y con ella abierta la mecánica fijada vuelve a editarse; y la ventana rige también en el `WITH CHECK`: como owner, un INSERT directo de un renglón en un service de hace 3 días falla con 42501 y en una mecánica de hace 3 días entra, e ídem una rueda con el módulo de gomería prendido por la puerta real | La mecánica volvió a fijarse a las 24 horas (la ficha queda a medias y el taller llama a Fidelli), un service quedó editable una semana (el cartón del cliente deja de ser confiable), el panel dice «editable» y la base dice que no, un tipo nuevo nació sin plazo, o un renglón vuelve a entrar en un trabajo fijado por la API directa |
 | **R38** | Service + mecánica en UNA carga, y el premio por visitas (`20260929100000`): `guardar_service` tiene UNA sola firma y sigue siendo security invoker; con `p_mecanica` nacen las dos filas juntas (misma fecha, km, sucursal y `created_at`; la mecánica vinculada por `cargado_con_id`, con sus renglones libres, las observaciones solo en el service) y la función devuelve el service; los pendientes nuevos y tildados cuelgan del service y la mecánica no los duplica; con la descripción corta o colgando de una mecánica no queda NADA; como owner de un Basic la carga doble falla con 42501 sin dejar ni el service, y el service común sigue entrando; la pareja vale UNA visita con los dos alcances, dos services del mismo día valen 1, una mecánica sola cuenta solo con `'todos'`, y `ciclos_fidelizacion()` dice lo mismo que `premio_disponible` en los dos alcances; corregir fecha, km y sucursal del service los copia a la mecánica adjunta, y con el plan en Basic el service se corrige igual y la mecánica queda como estaba; con «Aplicar premio» en la carga doble, con alcance `'todos'`, queda UN canje atado al service y el ciclo vuelve a 0 (ninguna de las dos filas cuenta), y un trabajo cargado DESPUÉS del canje con fecha anterior vale 1 (el corte sigue siendo `created_at`); el CHECK rechaza el vínculo en un service y el trigger lo rechaza hacia otro vehículo o hacia una mecánica, y acepta el bien formado | La carga doble dejó media visita guardada, un Basic metió una mecánica por la puerta nueva, el premio volvió a contar filas (la visita doble suma 2), la tarjeta del cliente y la pantalla Fidelización cuentan distinto, un typo corregido en el service partió la visita en dos fechas, el canje se ató a la mecánica y el guardado no lo encuentra, la mecánica del día del canje abrió el ciclo nuevo, o una mecánica de otro auto quedó «cargada con» un service |
 | **R39** | Los pedidos de calcos (`20261003120000`): la tabla de transiciones de `avanzar_encargo_calcos()` (`pagado → entregado` no existe, `entregado` es terminal, cancelar un pagado es solo para incluidos y con nota, pagar a mano exige nota, enviado exige envío + transportista + seguimiento y listo para retirar exige retiro, y la versión del diseño se fija al entrar a producción); «Entregado» escribe UNA fila en el libro con la cantidad, incluidas o cobradas y el monto, guarda su id y el contador sube esa cantidad; un pedido sin pagar por tenant (la puerta contesta `ya_hay_pendiente` y el índice parcial frena el insert directo; con el primero pagado, el segundo entra); el owner no escribe por tabla (encargos, diseños, catálogo, bucket), no ejecuta ninguna puerta de Fidelli, no lee pedidos ni diseños ajenos **ni el costo de los propios**; el precio y el costo del catálogo no se mueven por UPDATE directo (ni como postgres), el candado no se pasa de rosca, la puerta exige motivo, audita antes/después con autor, no registra lo que no cambió y no deja la bandera prendida; los montos del pedido quedan congelados aunque el catálogo cambie; `resumen_admin().calcos` cuenta pagados sin producir, en producción hace más de 5 días HÁBILES y sin pagar que vencen en 24 h, y la cola sale en el orden de trabajo; los días hábiles (lunes a viernes, sin el día de partida); los diseños (versiones correlativas, una sola actual, la ruta en la carpeta del tenant) y el bucket `calcos` privado, donde el owner ve solo su carpeta; el catálogo local es el de la decisión del sprint y la comisión 0,968 %; los cuatro CHECK del encargo por su nombre; y un tenant suspendido no pide | Un pedido llega a entregado sin producirse o un entregado se mueve y el libro queda sin su pedido, la entrega no suma al contador (o suma otra cosa), un tenant tiene dos alias vivos y no sabe cuál pagar, un owner se marca pagado solo o lee lo que nos cuesta imprimir sus calcos, un precio se movió sin dejar rastro o un pedido ya emitido cambió de monto, la alerta del hub cuenta mal lo que Grego tiene que hacer hoy, o el diseño de un tenant se baja adivinando la ruta |
+| **R40** | El pago de un pedido de calcos (`20261003200000`): los tres CHECK de `cresium_ordenes` por su nombre (una orden es de una renovación con su período, o de un pedido sin período; nunca de las dos ni de ninguna); un `DEPOSIT` en `PAID` con referencia `calcos:<uuid>` deja el pedido `pagado` con `pagado_at` y el id de la transacción, la orden en `PAID`, la evidencia en «acreditado» y **ni una fila nueva en `pagos`**; los cuatro reintentos contestan `ya_acreditado` sin mover nada (idempotencia por `encargos_calcos.cresium_transaccion_id`); `PARTIAL` no paga y deja a la vista cuánto entró y cuánto falta; una referencia de calcos que no es de nadie —un uuid que no existe, algo que ni es un uuid, vacía— **no explota** y queda sin acreditar con su motivo; `calcos:<uuid>:2` acredita al mismo pedido; un depósito no revive un cancelado ni le cambia la transacción a uno ya pagado; `vencer_encargos_calcos()` vence los sin pagar de más de 7 días (ni los de 6 días y 23 horas, ni los que no están sin pagar, ni los de otro tenant si se le pasa uno) y es idempotente; con uno vencido el tenant vuelve a pedir; **`vencido → pagado` pasa por el webhook y por ningún estado de `avanzar_encargo_calcos()`**; el mail se reclama una vez por tipo y se puede soltar; `cobranzas_pendientes()` y `resumen_admin().ordenes_cresium` miran la orden de la RENOVACIÓN —ni cuentan una de calcos, ni se dejan tapar por una más nueva—; y un owner no vence, no reclama mails, no lee el catálogo con costos ni escribe una orden, pero sí lee la de su pedido | El webhook contesta 500 a cada depósito de calcos y Cresium lo reintenta cinco veces (la plata entró y el pedido sigue sin pagar), un pedido se paga dos veces o con la mitad, la plata de calcos entra al MRR y mueve el vencimiento de la suscripción, un pedido sin pagar le bloquea al tenant volver a pedir para siempre, el tenant recibe cinco «recibimos tu pago», o Cobranzas y la alerta del hub leen un pedido de calcos como si fuera el abono |
 
 Además, fuera del reset, **las roturas a mano** (regla 13):
 
@@ -872,6 +928,8 @@ node --no-warnings scripts/regresion-avisos-cobranza.mjs   # contra next dev + e
 node --no-warnings scripts/regresion-orden-de-trabajo.mjs  # contra next dev + el seed (Playwright)
 node --no-warnings scripts/regresion-aceite.mjs            # ídem; toca el demo local por psql y lo restaura
 node --no-warnings scripts/regresion-calcos.mjs            # contra next dev + la base RECIÉN reseteada (Playwright)
+node --no-warnings scripts/regresion-calcos-tenant.mjs     # ídem; levanta los dobles de Cresium y de Resend
+node --no-warnings scripts/regresion-cresium-webhook.mjs   # contra next dev: la puerta del webhook, renovación y calcos
 ```
 
 El primero rompe la vista de retención de dos formas —le saca el filtro de
@@ -982,6 +1040,8 @@ El decimoquinto rompe R37 (quince roturas), y dos de ellas se vieron en verde po
 El decimosexto rompe R38 (dieciséis roturas), y dos de ellas enseñaron algo al escribirse. **La policy de inserción sin el gate por tipo NO rompía nada**, porque el vínculo de la mecánica adjunta se escribe con un UPDATE sobre la fila recién creada y el `WITH CHECK` de `services_edicion`, solo, ya frenaba al Basic — la rotura tuvo que sacar las dos policies a la vez, o el verde mentía. Y **la mecánica del día del canje solo puede contar con alcance `'todos'`**: con `'services'`, la sub-prueba del canje estaba en verde por el alcance y no por el `created_at`, así que R38f corre con `'todos'` y la rotura que la acusa es la del `clock_timestamp()` que nombra la regla 22. Las demás: `premio_disponible` de vuelta a `count(*)` (la más probable: alguien «arregla» el distinct) y `ciclos_fidelizacion` ídem (la copia que se olvida); el corte del ciclo pasado a la fecha; la mecánica adjunta con la fecha de hoy en vez de la del service, sin el vínculo, con sus renglones ignorados y con los pendientes reenviados a la recursiva (cada uno entra dos veces); la descripción mínima bajada a cero (el CHECK de la tabla frena igual, pero con otro error que el front no traduce); la adjunta colgando de una mecánica; `guardar_service` como `security definer`, que R38j ve en el catálogo antes de que R38d lo descubra por las malas; `actualizar_service` sin propagar a la adjunta (la visita se parte en dos al corregir un typo); y el vínculo por tres lados: el CHECK borrado, el trigger sin comparar el vehículo y el trigger sin exigir un service como destino.
 
 El decimoséptimo rompe R39 (sesenta y ocho roturas) y tiene un compañero con navegador. Tres cosas enseñó al escribirse. **Una FK hacia `pedidos_calcos` rompía una prueba ajena**: con la referencia, `truncate pedidos_calcos` falla por la FK antes de que dispare su candado de purga, y R33f —que prueba ESE candado— dejó de ver su error; por eso `encargos_calcos.pedido_calcos_id` no tiene FK y la integridad la sostiene la puerta (R39b). **Varias reglas tienen dos defensas y la rotura saca las dos o no rompe nada**: el motivo del precio (el chequeo de la puerta y el CHECK de la auditoría), «una sola actual» y la versión correlativa del diseño (la puerta y su índice); borrar SOLO el índice no cambia nada, así que esa rotura no está y está el comentario. **Y otras las frena una segunda defensa con OTRO error**: enviado sin seguimiento (el CHECK), un extra aceptado como pack (el not null de la cantidad), el envío sin dirección (el CHECK): el bloque las acusa porque el error que llega es uno que el front no traduce. Las demás: la tabla de transiciones abierta por cuatro lados; el libro sin escribir, con otra cantidad y con monto cero; el índice de «un pendiente» borrado y sin el `where`; INSERT/UPDATE abiertos al owner, el costo grantado (encargo y catálogo), las cuatro lecturas sin el tenant, la subida al bucket abierta y la guarda de cada una de las cinco puertas; el candado de precios apagado, cojo (mira el precio y no el costo), deshabilitado y pasado de rosca, la auditoría que no se escribe y la que se escribe siempre, la bandera que queda prendida y un trigger que «sincroniza» los pedidos abiertos con el catálogo; los tres conteos de la alerta (los atrasados, en días corridos y con el corte corrido: un fixture a 7 días corridos, que son siempre 5 hábiles, es el que acusa los días corridos); la cola desordenada, sin filtro y con la ganancia sin comisión; los días hábiles contando el sábado, todo y el día de partida; y los cuatro CHECK. **`resumen_admin()` se redefinió en `20261003120000` para ganar la clave `calcos`: la rotura de R32g la muerde ahora de ese archivo (`M_CA` en `regresion-metricas.sh`).** El compañero, `scripts/regresion-calcos.mjs`, corre las pantallas con Playwright contra `next dev` y la base recién reseteada: sube un PNG y un PDF de verdad y un falso PNG (que se rechaza y no deja archivo), comprueba que la miniatura sale por URL firmada y que sin la firma no se baja, carga un incluido con retiro y otro con envío, los lleva hasta entregado desde la cola y desde la ficha, mira el contador y el libro, cancela uno cargado por error, y compara la comisión de `lib/calcos.ts` con la de la base. Se vio en rojo antes de que existiera una sola pantalla (21 fallas). **El libro no se borra ni por la prueba**: deja dos entregas en el demo local, y `supabase db reset` es la única limpieza.
+
+Y el mismo script rompe R40 (veintitrés roturas más: noventa y una en total), con otro compañero con navegador. Lo que enseñó: **la trampa se prueba con el error crudo**. La rotura central es sacar la rama de calcos de `acreditar_deposito_cresium()`: la referencia `calcos:<uuid>` llega al cast de la renovación y el bloque se pone en rojo con «invalid input syntax for type uuid», que es textualmente el 500 del webhook; el script espera ESE patrón y no «R40». **Postgres evalúa los CHECK por orden alfabético de nombre**: una orden con las dos cosas y un período la frenaba `calcos_sin_periodo` antes que `orden_de_una_sola_cosa`, así que el caso de R40a va sin período. **Y dos roturas no están porque no rompen nada**: grantarle `acreditar_deposito_cresium()` o `vencer_encargos_calcos()` a `authenticated` deja el 42501 igual, porque las dos son invoker y una sesión no puede escribir ni `cresium_eventos` ni `encargos_calcos` (la segunda se escribió, se escapó, y se cambió por el comentario). Las demás: los tres CHECK de la orden; el uuid del encargo casteado sin mirarle la forma; el pago que no guarda la transacción y la rama «unificada» que escribe en `pagos`; la idempotencia sacada; el `PARTIAL` que paga; el webhook reviviendo cualquier estado y el que no acredita un vencido; el vencimiento que no vence nunca, que vence un día antes, que se lleva lo que no está sin pagar y que con un tenant vence el de todos; **`vencido → pagado` agregado a la tabla de `avanzar_encargo_calcos()`**; el mail que se reclama siempre y el soltar que no suelta; los dos lectores sin el filtro; y las guardas del mail y del catálogo. **`acreditar_deposito_cresium()` y `resumen_admin()` viven desde este sprint en `20261003200000`**: `regresion-cobranza-cresium.sh` (R22e) y `regresion-metricas.sh` (R32g, `M_CA`) las muerden de ahí —el primero, además, sacaba la función de `20260917000000`, que ya no era la vigente desde `20260917130000`—. El compañero es `scripts/regresion-calcos-tenant.mjs`: recorre los imports de Mi cuenta → Calcos y de sus mails buscando el m², compila los dos mails con `tsc`, y con los dobles de Cresium y de Resend levantados adentro del propio script hace el camino entero en 390 táctil —armar el pedido, la pantalla de pago con su alias, copiar, un depósito parcial, el completo que cambia la pantalla sola al éxito en menos de 10 s, el mail que sale una vez aunque Cresium reintente, el despacho desde `/fidelli` con su mail, «En camino» en el historial, entregado y el contador—; edita un precio en «Plan y precios»; vence un pedido y lo paga igual; fuerza el Reintentar, que sale con la referencia `:2`; y llama a la ruta del cierre diario de verdad, que vence el pedido que nadie volvió a mirar (sin el secreto del cron no toca nada). Se vio en rojo sin la pantalla (26 fallas), y la parte del cierre con la ruta sin la llamada que vence. Y `scripts/regresion-cresium-webhook.mjs` ganó el caso de calcos: sobre `develop`, sus cinco depósitos contestaban 500.
 
 ⚠ Y DOS DE ESTOS SCRIPTS APUNTAN A MÁS DE UNA MIGRACIÓN, porque
 `estado_cobranza`, `reloj_cobranza` y `crear_lubricentro` se redefinieron en

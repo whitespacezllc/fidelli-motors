@@ -109,10 +109,16 @@ export async function armarPagoDelTenant(
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // ⚠ LA ÚLTIMA ORDEN DE LA RENOVACIÓN, no la última orden a secas. Desde
+    // los pedidos de calcos (20261003200000) la tabla guarda también sus
+    // órdenes, con `suscripcion_id` en null. Sin este filtro, al tenant que
+    // acaba de pedir calcos esta pantalla le mostraba el alias y el monto
+    // de los CALCOS bajo el título «Tu suscripción».
     supabase
       .from("cresium_ordenes")
       .select("alias, cvu, estado, monto, monto_pagado, periodo_hasta, periodo, created_at")
       .eq("lubricentro_id", lubricentroId)
+      .not("suscripcion_id", "is", null)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
@@ -209,7 +215,10 @@ export async function armarPagoDelTenant(
               estado: estadoOrden!,
               montoPagado: Number(orden.monto_pagado),
               monto: Number(orden.monto),
-              periodoHasta: orden.periodo_hasta,
+              // Una orden de renovación siempre los tiene (CHECK
+              // renovacion_con_periodo); el tipo los da como anulables
+              // porque la columna lo es para las órdenes de calcos.
+              periodoHasta: orden.periodo_hasta ?? "",
               periodo: orden.periodo as Periodo,
             }
           : null,
