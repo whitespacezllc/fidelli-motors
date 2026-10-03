@@ -96,8 +96,9 @@ pago) y el **libro de entregas**, que ahora lo escribe «Entregado» y a mano so
 que atenderlos (pagados sin producir primero, los más viejos arriba), con filtro por
 estado y las mismas acciones. Y el hub abre sus alertas con *"N pedidos de calcos pagados
 esperan producción"*, en verde, seguida de los que llevan más de 5 días hábiles en
-producción y los que vencen mañana sin pagar. **El lado del tenant (pedir y pagar desde
-Mi cuenta → Calcos) todavía no existe: es el PR 2.**
+producción y los que vencen mañana sin pagar. Y «Plan y precios» tiene un bloque
+**Calcos** donde se edita el precio y el costo de cada pack y de los dos extras, con
+motivo y registro. El lado del tenant está en 2.14.
 
 **Acá el RLS trabaja al revés que en `/panel`:** `soy_superadmin()` abre todos los
 tenants, así que cada consulta tiene que filtrar por el lubricentro de la ficha. Un
@@ -409,6 +410,20 @@ con tilde verde o cruz gris** — lo apagado se muestra, no se esconde — más 
 pagos).
 
 Es la superficie natural de upsell del producto.
+
+**Mi cuenta → Calcos — `/panel/cuenta/calcos` (desde el 03/10/2026).** Se entra desde el
+bloque «Tus calcos» de Mi cuenta y desde la hoja «Más» del celular. Tres bloques: **tu
+calco** (el diseño vigente a tamaño real, 5 × 8 cm, o «Estamos diseñando tu calco», con
+los calcos entregados hasta hoy); **pedir más calcos** (cinco packs cerrados con su precio
+y el precio por calco, el rediseño como extra con un texto de «qué querés cambiar», retiro
+sin cargo o envío a domicilio con dirección y teléfono, los plazos que se prometen y el
+total siempre a la vista); y **tu historial** (todos los pedidos, incluidos y comprados,
+con su estado: «En camino» trae el seguimiento). «Confirmar y pagar» abre **la misma
+pantalla de pago que la renovación** —alias y CVU propios del pedido, se acredita sola,
+el tick al entrar la plata—; con un pedido sin pagar esa pantalla reemplaza al formulario
+(es uno a la vez), tiene 7 días y después vence. Llegan dos mails: al acreditarse el pago
+y cuando el pedido sale o está listo para retirar. Los tres planes pueden comprar. **El
+tenant ve packs y precios: nunca el costo ni el m².**
 
 ### 2.15 · Marcas y modelos de vehículos
 
