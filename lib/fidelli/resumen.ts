@@ -1,6 +1,6 @@
 // ============================================================
 // El contrato de resumen_admin() (migración 20260923100000; la clave
-// `calcos` es de 20261003120000), leído con
+// `calcos` es de 20261003120000 y su `sin_stock` de 20261003210000), leído con
 // tolerancia: PostgREST devuelve numeric como string y jsonb como lo que
 // sea, así que cada campo pasa por su coerción antes de llegar a una
 // pantalla. Un número que no está es 0; una fecha que no está es null.
@@ -16,6 +16,9 @@ export type CalcosAlerta = {
   atrasados: number;
   /** Sin pagar que vencen en las próximas 24 horas. */
   por_vencer: number;
+  /** Tenants que se quedan sin calcos en menos de 3 semanas y no tienen un
+   *  pedido abierto (20261003210000): la lista de arriba de /fidelli/calcos. */
+  sin_stock: number;
 };
 
 export type ResumenAdmin = {
@@ -81,6 +84,7 @@ function calcos(v: unknown): CalcosAlerta {
     esperando_produccion: entero(c.esperando_produccion),
     atrasados: entero(c.atrasados),
     por_vencer: entero(c.por_vencer),
+    sin_stock: entero(c.sin_stock),
   };
 }
 

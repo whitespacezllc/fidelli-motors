@@ -1,5 +1,5 @@
 #!/bin/bash
-# La rotura a mano de R39 (regla 13): los pedidos de calcos. Cada afirmación
+# La rotura a mano de R39, R40 y R41 (regla 13): los pedidos de calcos. Cada afirmación
 # se corre con SU rotura —la regla exacta que dice cubrir— y tiene que
 # ponerse en ROJO. Una prueba que nunca se vio fallar es una prueba que no
 # existe.
@@ -67,6 +67,49 @@
 #   R40k · la guarda del mail y la del catálogo sacadas, y la orden
 #          escribible por el owner.
 #
+# Y las de R41 (PR 3: el stock de calcos y el aviso):
+#
+#   R41a · la cuenta: trabajos en vez de autos; los importados y los
+#          anulados contando; los autos de antes de la entrega; la entrega
+#          contada por cuándo se cargó y no por su fecha; el stock negativo.
+#   R41b · el recuento que no pisa la base; los autos de antes del recuento
+#          que siguen descontando; la entrega posterior que no suma y la
+#          corrección del libro con fecha vieja que sí; el recuento más
+#          viejo ganando; y la puerta: sin validar la cantidad (frena el
+#          CHECK, con otro error), sin exigir entregas, escribiendo en el
+#          tenant de otro.
+#   R41c · null en todo: sin entregas devolviendo ceros, y `calcos_propias`
+#          ignorado.
+#   R41d · el ritmo sobre toda la historia; con menos de 2 semanas; siempre
+#          dividido por 8; y la cobertura con ritmo cero.
+#   R41e · los umbrales del aviso corridos de a uno y en las dos direcciones
+#          (4 semanas, 1 semana, 20 calcos); el aviso con un pedido abierto;
+#          un estado abierto que se cae de la lista y uno cerrado que entra.
+#   R41f · los mails: el que se repite al día siguiente; el que cae al
+#          escalón anterior; el ciclo que no mira la entrega; «la última
+#          entrega» que es la primera; con un pedido abierto; al suspendido;
+#          al demo; y la entrega del día contada desde la medianoche.
+#   R41g · la lista del hub con el umbral corrido en las dos direcciones,
+#          con un pedido abierto, con el suspendido y con el demo; y
+#          `sin_stock` que no cuenta la lista.
+#   R41h · `calcos_propias`: el candado apagado, deshabilitado y bajado a
+#          ORIGIN; la bandera que queda prendida; la puerta sin nota, sin
+#          guarda, sin evento y registrando lo que no cambió.
+#   R41i · los seis candados de los dos libros bajados a `notice` de a uno y
+#          a ORIGIN de a tres; y el unique de emails_calcos borrado.
+#   R41k · la guarda del stock sacada, y la misma guarda sin el coalesce (un
+#          usuario sin lubricentro la pasa); la decisión de los mails
+#          grantada a `authenticated`; las dos funciones de adentro
+#          grantadas; la guarda del recuento; y los dos libros con INSERT o
+#          con la lectura abiertos al owner.
+#
+# DOS DE R41 QUE NO ESTÁN, y por qué. Sacarle SOLO la guarda a
+# calcos_por_agotarse() no rompe nada: adentro llama a stock_calcos() por
+# cada tenant, y esa rechaza al owner en el primero que no es suyo. Y
+# abrirle SOLO el UPDATE de `lubricentros` al owner tampoco: el candado de
+# `calcos_propias` lo frena igual. Las dos reglas tienen dos defensas; la
+# rotura que saca la otra sí está (la guarda del stock, el candado).
+#
 # DOS QUE NO ESTÁN: grantarle acreditar_deposito_cresium() o
 # vencer_encargos_calcos() a `authenticated` no rompe nada. Las dos son
 # invoker, y una sesión no puede escribir ni `cresium_eventos` ni
@@ -90,10 +133,13 @@ cd "$(dirname "$0")/.."
 DB="docker exec -i ${DB_CONTAINER:-supabase_db_fidelli-motors} psql -U postgres -d postgres -X"
 V=supabase/verificaciones.sql
 M=supabase/migrations/20261003120000_encargos_calcos.sql
-# El pago (PR 2). `resumen_admin()` se redefinió ahí para que la alerta de
-# órdenes de Cresium no mire las de calcos: las roturas de R39f que la
-# muerden la sacan de este archivo.
+# El pago (PR 2).
 M_PAGO=supabase/migrations/20261003200000_calcos_pago.sql
+# El stock (PR 3). `resumen_admin()` se redefinió ahí para ganar
+# `calcos.sin_stock`: TODAS las roturas que la muerden (R39f, R40j, R41g) la
+# sacan de este archivo. Sacada del anterior, reinstalaría una versión sin
+# la clave nueva.
+M_STOCK=supabase/migrations/20261003210000_calcos_stock.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
 
@@ -256,15 +302,15 @@ correr "un trigger que «sincroniza» los pedidos abiertos con el catálogo" \
      execute function r39_sincronizar();" R39 "R39e MOVER EL CATÁLOGO MOVIÓ"
 
 echo "── R39f · lo que cuenta la alerta y lo que ordena la cola ──"
-correr_marcada "esperando producción cuenta también lo que ya se produce" resumen_admin "$M_PAGO" \
+correr_marcada "esperando producción cuenta también lo que ya se produce" resumen_admin "$M_STOCK" \
   "/@calcos_esperando/s/estado = 'pagado'/estado in ('pagado', 'en_produccion')/" R39 "R39f"
-correr_marcada "atrasados en días corridos en vez de hábiles" resumen_admin "$M_PAGO" \
+correr_marcada "atrasados en días corridos en vez de hábiles" resumen_admin "$M_STOCK" \
   "/@calcos_atrasados/s/dias_habiles_entre(produccion_at::date, current_date) > 5/(current_date - produccion_at::date) > 5/" R39 "R39f"
-correr_marcada "atrasados con el corte corrido a 50 días hábiles" resumen_admin "$M_PAGO" \
+correr_marcada "atrasados con el corte corrido a 50 días hábiles" resumen_admin "$M_STOCK" \
   "/@calcos_atrasados/s/> 5)/> 50)/" R39 "R39f"
-correr_marcada "por vencer que recién avisa el día que vence" resumen_admin "$M_PAGO" \
+correr_marcada "por vencer que recién avisa el día que vence" resumen_admin "$M_STOCK" \
   "/@calcos_por_vencer/s/interval '6 days'/interval '7 days'/" R39 "R39f un pendiente de pago de hace 6 días"
-correr_marcada "por vencer que cuenta cualquier pendiente" resumen_admin "$M_PAGO" \
+correr_marcada "por vencer que cuenta cualquier pendiente" resumen_admin "$M_STOCK" \
   "/@calcos_por_vencer/s/interval '6 days'/interval '0 days'/" R39 "R39f resumen_admin().calcos CUENTA MAL"
 correr_marcada "la cola con los pagados al fondo" encargos_calcos_admin "$M" \
   "/@cola_pagados_primero/s/then 1/then 4/" R39 "R39f LA COLA"
@@ -388,7 +434,7 @@ correr_marcada "soltar que no suelta" soltar_mail_encargo_calcos "$M_PAGO" \
 echo "── R40j · los lectores de la última orden del tenant ──"
 correr_marcada "cobranzas_pendientes() mirando cualquier orden" cobranzas_pendientes "$M_PAGO" \
   "/@orden_de_la_suscripcion/s/where o.suscripcion_id is not null/where true/" R40 "R40j cobranzas_pendientes"
-correr_marcada "resumen_admin() contando las órdenes de calcos" resumen_admin "$M_PAGO" \
+correr_marcada "resumen_admin() contando las órdenes de calcos" resumen_admin "$M_STOCK" \
   "/@ordenes_de_suscripcion/s/where o.suscripcion_id is not null/where true/" R40 "R40j"
 
 echo "── R40k · quién ejecuta qué ──"
@@ -399,9 +445,184 @@ correr_marcada "catalogo_calcos_admin sin la guarda" catalogo_calcos_admin "$M_P
 correr "la orden de Cresium escribible por el owner" \
   "grant insert on cresium_ordenes to authenticated; create policy rota on cresium_ordenes for insert to authenticated with check (true);" R40 "R40k"
 
+echo "── El bloque R41 sano, antes de romper nada ──"
+sano=$( { echo "begin;"; bloque R41 "$V"; echo "rollback;"; } | $DB -v ON_ERROR_STOP=1 -f - 2>&1 )
+if echo "$sano" | grep -q "ERROR"; then
+  echo "  ✗ R41 está en ROJO sin ninguna rotura: lo que sigue no prueba nada."
+  echo "$sano" | grep -E "ERROR" | tail -2 | sed 's/^/      /'
+  exit 1
+fi
+echo "  ✓ R41 pasa en verde sobre la base actual"
+
+echo "── R41a · la cuenta ──"
+correr_marcada "cuenta trabajos en vez de autos" stock_calcos "$M_STOCK" \
+  "/@por_auto/s/group by s.vehiculo_id/group by s.id/" R41 "R41a LA CUENTA NO DA"
+correr_marcada "los trabajos importados cuentan como consumo" stock_calcos "$M_STOCK" \
+  "/@sin_importados/s/and s.importado_de is null/and true/" R41 "R41a LA CUENTA NO DA"
+correr_marcada "los trabajos anulados cuentan" stock_calcos "$M_STOCK" \
+  "/@sin_anulados/s/and not s.anulado/and true/" R41 "R41a LA CUENTA NO DA"
+correr_marcada "cuentan también los autos de antes de la primera entrega" stock_calcos "$M_STOCK" \
+  "/@desde_la_entrega/s/else p.primero >= v_primera end/else true end/" R41 "R41a LA CUENTA NO DA"
+correr_marcada "la entrega cuenta por cuándo se cargó la fila, no por su fecha" momento_de_entrega_calcos "$M_STOCK" \
+  "/@entrega_por_fecha/s/else p_fecha::timestamp at time zone 'America\/Argentina\/Buenos_Aires'/else p_created_at/" R41 "R41a con 10 entregadas"
+correr_marcada "el stock negativo" stock_calcos "$M_STOCK" \
+  "/@nunca_negativo/s/greatest(v_stock, 0)/v_stock/" R41 "R41a con 10 entregadas"
+
+echo "── R41c · null en todo ──"
+correr_marcada "sin entregas devuelve ceros en vez de null" stock_calcos "$M_STOCK" \
+  "/@sin_entregas/s/if v_primera is null/if false/" R41 "R41c SIN NINGUNA ENTREGA"
+correr_marcada "calcos_propias ignorado en la cuenta" stock_calcos "$M_STOCK" \
+  "/@propias_sin_estimacion/s/or coalesce(v_propias, false) then/or false then/" R41 "PRENDIDO stock_calcos"
+
+echo "── R41d · el ritmo ──"
+correr_marcada "el ritmo sobre toda la historia en vez de 8 semanas" stock_calcos "$M_STOCK" \
+  "/@ocho_semanas/s/interval '56 days'/interval '5600 days'/" R41 "R41d EL RITMO DE 8 SEMANAS"
+correr_marcada "el ritmo con menos de 2 semanas de historia" stock_calcos "$M_STOCK" \
+  "/@dos_semanas/s/if v_dias >= 14 then/if v_dias >= 0 then/" R41 "R41d CON MENOS DE 2 SEMANAS"
+correr_marcada "el ritmo siempre dividido por 8, aunque haya un mes de historia" stock_calcos "$M_STOCK" \
+  "/@ventana_real/s/least(v_dias, 56) \/ 7.0/8.0/" R41 "R41d con 4 semanas de historia"
+correr_marcada "la cobertura con ritmo cero" stock_calcos "$M_STOCK" \
+  "/@cobertura/s/case when v_ritmo > 0 then round(v_stock \/ v_ritmo, 1) end/case when v_ritmo >= 0 then round(v_stock \/ greatest(v_ritmo, 0.1), 1) end/" R41 "R41d CON RITMO CERO"
+
+echo "── R41b · el recuento ──"
+correr_marcada "el recuento que no pisa la base" stock_calcos "$M_STOCK" \
+  "/@base_recuento/s/v_stock := v_rec_cant/v_stock := v_entregadas/" R41 "R41b EL RECUENTO NO PISA LA BASE"
+correr_marcada "los autos de antes del recuento siguen descontando" stock_calcos "$M_STOCK" \
+  "/@desde_el_recuento/s/then p.primero > v_rec_at/then p.primero >= v_primera/" R41 "R41b EL RECUENTO NO PISA LA BASE"
+correr_marcada "una entrega posterior al recuento no suma" stock_calcos "$M_STOCK" \
+  "/@entregas_tras_recuento/s/> v_rec_at), 0)/> v_rec_at and false), 0)/" R41 "R41b UNA ENTREGA POSTERIOR AL RECUENTO NO SUMA"
+correr_marcada "una corrección del libro con fecha vieja suma al stock" stock_calcos "$M_STOCK" \
+  "/@entregas_tras_recuento/s/momento_de_entrega_calcos(pc.fecha, pc.created_at) > v_rec_at/pc.created_at > v_rec_at/" R41 "R41b UNA CORRECCIÓN DEL LIBRO"
+correr_marcada "con dos recuentos gana el más viejo" stock_calcos "$M_STOCK" \
+  "/@recuento_mas_nuevo/s/order by rc.created_at desc/order by rc.created_at asc/" R41 "R41b con dos recuentos manda"
+# La segunda defensa (el CHECK de la tabla) frena igual, con otro error.
+correr_marcada "la puerta del recuento sin validar la cantidad" declarar_recuento_calcos "$M_STOCK" \
+  "/@cantidad_recuento/s/if p_cantidad is null or p_cantidad < 0 or p_cantidad > 100000 then/if false then/" R41 "cantidad_invalida"
+correr_marcada "un recuento sin ninguna entrega" declarar_recuento_calcos "$M_STOCK" \
+  "/@recuento_sin_entregas/s/if not exists (select 1 from pedidos_calcos pc where pc.lubricentro_id = v_lub) then/if false then/" R41 "sin_entregas"
+correr_marcada "el recuento escrito en el tenant de otro" declarar_recuento_calcos "$M_STOCK" \
+  "/@tenant_de_la_sesion/s/v_lub uuid := mi_lubricentro_id();/v_lub uuid := (select id from lubricentros where slug = 'r41-aviso');/" R41 "R41b declarar_recuento_calcos() no dejó la fila"
+
+echo "── R41h · calcos_propias ──"
+correr_marcada "el candado de calcos_propias apagado" bloquear_calcos_propias_directo "$M_STOCK" \
+  "/@candado_calcos_propias/s/if new.calcos_propias is distinct from old.calcos_propias/if false and new.calcos_propias is distinct from old.calcos_propias/" R41 "R41h UN UPDATE DIRECTO"
+correr "el candado de calcos_propias deshabilitado" \
+  "alter table lubricentros disable trigger candado_calcos_propias;" R41 "R41h UN UPDATE DIRECTO"
+correr "el candado de calcos_propias bajado de ALWAYS a ORIGIN" \
+  "alter table lubricentros enable trigger candado_calcos_propias;" R41 "R41h el candado de"
+correr_marcada "la puerta deja la bandera prendida" marcar_calcos_propias "$M_STOCK" \
+  "/@apagar_bandera_propias/s/perform set_config('fidelli.calcos_propias', '', true);/null;/" R41 "R41h UN UPDATE DIRECTO"
+correr_marcada "calcos_propias se prende sin nota" marcar_calcos_propias "$M_STOCK" \
+  "/@nota_propias/s/if p_nota is null or char_length(trim(p_nota)) < 10 then/if false then/" R41 "R41h marcar_calcos_propias() SIN NOTA"
+correr_marcada "la guarda de calcos_propias sacada: un owner se lo prende" marcar_calcos_propias "$M_STOCK" \
+  "/@guarda_propias/s/if not soy_superadmin() then/if false then/" R41 "R41h UN OWNER SE PRENDI"
+correr_marcada "prender calcos_propias no deja el evento" marcar_calcos_propias "$M_STOCK" \
+  "/@evento_propias/s/perform emitir_evento_tenant(/perform concat(/" R41 "R41h PRENDER"
+correr_marcada "marcar lo que ya estaba deja otro evento" marcar_calcos_propias "$M_STOCK" \
+  "/@propias_sin_cambio/s/if v_antes = p_propias then/if false then/" R41 "R41h marcar dos veces"
+
+echo "── R41e · el aviso ──"
+correr_marcada "el aviso recién a las 3 semanas" nivel_de_aviso_calcos "$M_STOCK" \
+  "/@cuatro_semanas/s/p_semanas < 4/p_semanas < 3/" R41 "R41e CON MENOS DE 4 SEMANAS"
+correr_marcada "el aviso con 4 semanas justas" nivel_de_aviso_calcos "$M_STOCK" \
+  "/@cuatro_semanas/s/p_semanas < 4/p_semanas <= 4/" R41 "R41e con 40 calcos"
+correr_marcada "el segundo escalón que no llega nunca por semanas" nivel_de_aviso_calcos "$M_STOCK" \
+  "/@una_semana/s/p_semanas < 1/p_semanas < 0/" R41 "R41e con 25 calcos"
+correr_marcada "el segundo escalón sin la cláusula de las 20 calcos" nivel_de_aviso_calcos "$M_STOCK" \
+  "/@veinte_calcos/s/p_stock <= 20/p_stock <= 2/" R41 "R41e CON 20 CALCOS O MENOS"
+correr_marcada "el segundo escalón con 21 calcos" nivel_de_aviso_calcos "$M_STOCK" \
+  "/@veinte_calcos/s/p_stock <= 20/p_stock <= 21/" R41 "R41e con 21 calcos"
+correr_marcada "el aviso con un pedido abierto" aviso_calcos "$M_STOCK" \
+  "/@aviso_sin_encargo/s/and not tiene_encargo_calcos_abierto(p_lubricentro_id)/and true/" R41 "R41e EL AVISO CON UN PEDIDO ABIERTO"
+correr_marcada "«enviado» se cae de los estados abiertos" tiene_encargo_calcos_abierto "$M_STOCK" \
+  "/@estados_abiertos/s/'enviado', //" R41 "R41e EL AVISO CON UN PEDIDO ABIERTO"
+correr_marcada "«entregado» cuenta como pedido abierto" tiene_encargo_calcos_abierto "$M_STOCK" \
+  "/@estados_abiertos/s/'listo_retiro')/'listo_retiro', 'entregado')/" R41 "R41e EL AVISO CON UN PEDIDO CERRADO"
+
+echo "── R41g · la lista del hub ──"
+correr_marcada "la lista del hub recién a las 2 semanas" calcos_por_agotarse "$M_STOCK" \
+  "/@tres_semanas/s/s.semanas_cobertura < 3/s.semanas_cobertura < 2/" R41 "R41g CON MENOS DE 3 SEMANAS"
+correr_marcada "la lista del hub con el umbral del aviso (4 semanas)" calcos_por_agotarse "$M_STOCK" \
+  "/@tres_semanas/s/s.semanas_cobertura < 3/s.semanas_cobertura < 4/" R41 "R41g con 3,5 semanas"
+correr_marcada "sin_stock que no cuenta la lista" resumen_admin "$M_STOCK" \
+  "/@calcos_sin_stock/s/(select count(\*) from calcos_por_agotarse())/0/" R41 "R41g resumen_admin().calcos.sin_stock"
+correr_marcada "la lista del hub con un pedido abierto" calcos_por_agotarse "$M_STOCK" \
+  "/@lista_sin_encargo/s/and not tiene_encargo_calcos_abierto(l.id)/and true/" R41 "R41g LA LISTA DEL HUB CON UN PEDIDO ABIERTO"
+correr_marcada "la lista del hub con el suspendido" calcos_por_agotarse "$M_STOCK" \
+  "/@lista_sin_suspendidos/s/where es_activo(l)/where true/" R41 "R41f A UN SUSPENDIDO"
+correr_marcada "la lista del hub con el demo" calcos_por_agotarse "$M_STOCK" \
+  "/@lista_sin_demo/s/and l.slug <> 'demo'/and true/" R41 "R41f EL DEMO ENTRA"
+
+echo "── R41f · los mails ──"
+correr_marcada "el mail con un pedido abierto" avisos_calcos_pendientes "$M_STOCK" \
+  "/@mail_sin_encargo/s/and not tiene_encargo_calcos_abierto(c.id)/and true/" R41 "R41f EL MAIL CON UN PEDIDO ABIERTO"
+correr_marcada "el mail al suspendido" avisos_calcos_pendientes "$M_STOCK" \
+  "/@mail_sin_suspendidos/s/where es_activo(l)/where true/" R41 "R41f A UN SUSPENDIDO"
+correr_marcada "el mail al demo" avisos_calcos_pendientes "$M_STOCK" \
+  "/@mail_sin_demo/s/and l.slug <> 'demo'/and true/" R41 "R41f EL DEMO ENTRA"
+correr_marcada "después del de 1 semana se cae al de 4" avisos_calcos_pendientes "$M_STOCK" \
+  "/@no_cae_al_anterior/s/or e.tipo = 'calcos_1_semana'))/or false))/" R41 "TE QUEDAN CUATRO"
+correr_marcada "el ciclo que no mira la entrega: una entrega nueva no habilita nada" avisos_calcos_pendientes "$M_STOCK" \
+  "/@mail_por_ciclo/s/and e.entrega_ref = c.entrega_ref/and true/" R41 "R41f DESPUÉS DE UNA ENTREGA NUEVA"
+correr_marcada "«la última entrega» es la primera" avisos_calcos_pendientes "$M_STOCK" \
+  "/@ultima_entrega/s/order by pc.fecha desc, pc.created_at desc, pc.id/order by pc.fecha asc, pc.created_at asc, pc.id/" R41 "R41f DESPUÉS DE UNA ENTREGA NUEVA"
+correr_marcada "el mail de 4 semanas que se repite al día siguiente" avisos_calcos_pendientes "$M_STOCK" \
+  "/@mail_enviado/s/and (e.tipo = c.tipo/and (false/" R41 "R41f el mail de 4 semanas se repite"
+# La entrega cargada el mismo día cuenta por su hora. Rota, cuenta desde la
+# medianoche: queda ANTES del recuento de hace un minuto y no suma. (A la
+# noche el que la acusa es el piso del demo; por eso el patrón es R41f.)
+correr_marcada "la entrega del día contada desde la medianoche" momento_de_entrega_calcos "$M_STOCK" \
+  "/@entrega_del_dia/s/when p_fecha >= (p_created_at at time zone 'America\/Argentina\/Buenos_Aires')::date/when false/" R41 "R41f"
+
+echo "── R41i · los dos libros ──"
+correr "el unique de emails_calcos borrado" \
+  "alter table emails_calcos drop constraint emails_calcos_lubricentro_id_tipo_entrega_ref_key;" R41 "R41i emails_calcos ACEPT"
+correr_marcada "el candado de borrado de emails_calcos" bloquear_borrado_de_email_calcos "$M_STOCK" \
+  "/@candado_borrado_email_calcos/s/raise exception/raise notice/" R41 "R41i"
+correr_marcada "el candado de edición de emails_calcos" bloquear_edicion_de_email_calcos "$M_STOCK" \
+  "/@candado_edicion_email_calcos/s/if new is distinct from old then/if false then/" R41 "R41i"
+correr_marcada "el candado de purga de emails_calcos" bloquear_purga_de_emails_calcos "$M_STOCK" \
+  "/@candado_purga_email_calcos/s/raise exception/raise notice/" R41 "R41i"
+correr "los tres candados de emails_calcos bajados de ALWAYS a ORIGIN" \
+  "alter table emails_calcos enable trigger candado_borrado_email_calcos;
+   alter table emails_calcos enable trigger candado_edicion_email_calcos;
+   alter table emails_calcos enable trigger candado_purga_emails_calcos;" R41 "R41i los seis candados"
+correr_marcada "el candado de edición de recuentos_calcos" bloquear_edicion_de_recuento "$M_STOCK" \
+  "/@candado_edicion_recuento/s/raise exception/raise notice/" R41 "R41i"
+correr_marcada "el candado de borrado de recuentos_calcos" bloquear_borrado_de_recuento "$M_STOCK" \
+  "/@candado_borrado_recuento/s/if exists (select 1 from lubricentros where id = old.lubricentro_id) then/if false then/" R41 "R41i"
+correr_marcada "el candado de purga de recuentos_calcos" bloquear_purga_de_recuentos "$M_STOCK" \
+  "/@candado_purga_recuento/s/raise exception/raise notice/" R41 "R41i"
+correr "los tres candados de recuentos_calcos bajados de ALWAYS a ORIGIN" \
+  "alter table recuentos_calcos enable trigger candado_edicion_recuento;
+   alter table recuentos_calcos enable trigger candado_borrado_recuento;
+   alter table recuentos_calcos enable trigger candado_purga_recuentos;" R41 "R41i los seis candados"
+
+echo "── R41k · quién ejecuta qué ──"
+correr_marcada "la guarda del stock sacada: un owner lee el del vecino" stock_calcos "$M_STOCK" \
+  "/@guarda_stock/s/if not (soy_superadmin()/if false and not (soy_superadmin()/" R41 "R41k"
+correr_marcada "la guarda del stock sin el coalesce: un usuario sin lubricentro la pasa" stock_calcos "$M_STOCK" \
+  "/@sin_tenant_no_pasa/s/coalesce(p_lubricentro_id = mi_lubricentro_id(), false)/p_lubricentro_id = mi_lubricentro_id()/" R41 "UN USUARIO SIN LUBRICENTRO"
+correr "la decisión de los mails grantada a authenticated" \
+  "grant execute on function avisos_calcos_pendientes() to authenticated;" R41 "R41k"
+correr "tiene_encargo_calcos_abierto() como /rpc/ de cualquiera" \
+  "grant execute on function tiene_encargo_calcos_abierto(uuid) to authenticated;" R41 "R41k"
+correr "nivel_de_aviso_calcos() como /rpc/ de cualquiera" \
+  "grant execute on function nivel_de_aviso_calcos(integer, numeric) to authenticated;" R41 "R41k"
+correr_marcada "la guarda del recuento sacada" declarar_recuento_calcos "$M_STOCK" \
+  "/@guarda_recuento/s/if v_lub is null then/if false then/" R41 "R41k"
+correr "recuentos_calcos escribible por el owner" \
+  "grant insert on recuentos_calcos to authenticated; create policy rota on recuentos_calcos for insert to authenticated with check (true);" R41 "R41k"
+correr "los recuentos de todos, a la vista de cualquier owner" \
+  "drop policy recuentos_calcos_lectura on recuentos_calcos; create policy recuentos_calcos_lectura on recuentos_calcos for select to authenticated using (true);" R41 "R41k el owner ve"
+correr "emails_calcos escribible por una sesión" \
+  "grant insert on emails_calcos to authenticated; create policy rota on emails_calcos for insert to authenticated with check (true);" R41 "R41k"
+correr "emails_calcos a la vista de cualquier owner" \
+  "drop policy emails_calcos_superadmin on emails_calcos; create policy emails_calcos_superadmin on emails_calcos for select to authenticated using (true);" R41 "R41k el owner ve"
+
 echo
 if [ "$fallas" -eq 0 ]; then
-  echo "La red atrapó las $total roturas (R39 y R40)."
+  echo "La red atrapó las $total roturas (R39, R40 y R41)."
 else
   echo "ALGUNA ROTURA SE ESCAPÓ: la prueba que dice cubrirla no la cubre."
 fi

@@ -47,7 +47,7 @@ export function armarAlertas(r: ResumenAdmin): Alerta[] {
   const alertas: Alerta[] = [];
 
   // Los pedidos de calcos, primeros. Sin pedidos no hay alerta.
-  const { esperando_produccion: esperando, atrasados, por_vencer: porVencer } = r.calcos;
+  const { esperando_produccion: esperando, atrasados, por_vencer: porVencer, sin_stock: sinStock } = r.calcos;
   if (esperando > 0) {
     alertas.push({
       clave: "calcos-esperando",
@@ -71,6 +71,17 @@ export function armarAlertas(r: ResumenAdmin): Alerta[] {
       texto: `${porVencer} sin pagar ${plural(porVencer, "vence", "vencen")} mañana.`,
       href: "/fidelli/calcos?estado=pendiente_pago",
       accion: "Ver cuáles",
+    });
+  }
+
+  // Los que se quedan sin calcos y todavía no pidieron: es la lista que se
+  // llama. Va con las de calcos porque lleva a la misma pantalla.
+  if (sinStock > 0) {
+    alertas.push({
+      clave: "calcos-sin-stock",
+      texto: `${sinStock} ${plural(sinStock, "tenant se queda", "tenants se quedan")} sin calcos en menos de 3 semanas.`,
+      href: "/fidelli/calcos",
+      accion: "Ver a quién llamar",
     });
   }
 

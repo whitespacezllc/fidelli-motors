@@ -132,8 +132,12 @@ file_size_limit = "50MiB"
 enabled = true
 
 # Image transformation API is available to Supabase Pro plan.
-# [storage.image_transformation]
-# enabled = true
+# Prendida en local para que la miniatura del calco (Mi cuenta → Calcos)
+# salga por /render/image como en la nube, y no cargando el archivo entero.
+# Si el proyecto de la nube no la tiene, la pantalla cae sola al archivo
+# original (components/cuenta/calcos/miniatura-del-calco.tsx).
+[storage.image_transformation]
+enabled = true
 
 # Store analytical data in S3 for running ETL jobs over Iceberg Catalog
 # This feature is only available on the hosted platform.

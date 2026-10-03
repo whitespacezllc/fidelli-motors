@@ -57,7 +57,7 @@ export default async function PaginaFicha({
   const [tenantRes, suscripcionRes, ownerRes, planesRes] = await Promise.all([
     supabase
       .from("lubricentros")
-      .select("id, nombre, slug, activo, calcos_entregadas, created_at, origen, origen_detalle")
+      .select("id, nombre, slug, activo, calcos_entregadas, calcos_propias, created_at, origen, origen_detalle")
       .eq("id", id)
       .maybeSingle(),
     // La vigente es la última que arrancó, el mismo criterio que el listado.

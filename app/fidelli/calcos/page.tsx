@@ -2,8 +2,19 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { TablaEncargos } from "@/components/fidelli/calcos/tabla-encargos";
+import { IconoWhatsapp } from "@/components/iconos";
+import { clasesBoton } from "@/components/ui/boton";
 import type { EstadoEncargo } from "@/lib/calcos";
-import { ESTADOS_ABIERTOS, leerEncargos, type EncargoAdmin } from "@/lib/fidelli/calcos";
+import { fechaCalendarioAR, formatearFecha } from "@/lib/fechas";
+import {
+  ESTADOS_ABIERTOS,
+  leerEncargos,
+  leerPorAgotarse,
+  whatsappPorCalcos,
+  type EncargoAdmin,
+  type PorAgotarse,
+} from "@/lib/fidelli/calcos";
+import { cantidadDicha } from "@/lib/stock-calcos";
 
 export const metadata: Metadata = { title: "Calcos" };
 
@@ -26,6 +37,104 @@ function filtrar(encargos: EncargoAdmin[], estados: readonly EstadoEncargo[] | n
   return estados ? encargos.filter((e) => estados.includes(e.estado)) : encargos;
 }
 
+const DECIMAL = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 1 });
+
+// ============================================================
+// Los que se quedan sin calcos: la lista que se llama.
+//
+// Menos de 3 semanas de cobertura y sin un pedido abierto
+// (`calcos_por_agotarse()`: la regla es de la base). No están los que
+// imprimen por su cuenta, ni los suspendidos, ni el demo. Va arriba de la
+// cola porque es lo primero del día: un lubricentro sin calcos no suma
+// autos nuevos al programa.
+//
+// El número es una ESTIMACIÓN —entregadas menos autos nuevos, o lo que el
+// dueño contó—: por eso al lado va de dónde sale.
+// ============================================================
+function SinStock({ filas }: { filas: PorAgotarse[] }) {
+  if (filas.length === 0) return null;
+  return (
+    <section className="surface-card mb-5 overflow-hidden" data-sin-stock>
+      <div className="border-b border-line px-4.5 py-3">
+        <h2 className="font-brand text-ui font-bold tracking-[0.04em] text-ink-60 uppercase">
+          Se quedan sin calcos
+        </h2>
+        <p className="mt-0.5 text-label text-ink-60">
+          Menos de 3 semanas de calcos y ningún pedido abierto. Producir y enviar tarda hasta 2.
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[720px] border-collapse text-ui">
+          <thead>
+            <tr className="border-b border-line text-left text-label font-semibold tracking-[0.04em] text-ink-60 uppercase">
+              <th className="px-4.5 py-2.5 font-semibold">Lubricentro</th>
+              <th className="px-4 py-2.5 font-semibold">Le quedan</th>
+              <th className="px-4 py-2.5 font-semibold">Autos nuevos</th>
+              <th className="px-4 py-2.5 font-semibold">Alcanza para</th>
+              <th className="px-4.5 py-2.5 font-semibold">
+                <span className="sr-only">Escribirle</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {filas.map((f) => {
+              const wa = whatsappPorCalcos(f);
+              return (
+                <tr
+                  key={f.lubricentro_id}
+                  data-sin-stock-fila={f.slug}
+                  className="border-b border-line align-middle last:border-b-0"
+                >
+                  <td className="px-4.5 py-2.5">
+                    <Link
+                      href={`/fidelli/${f.lubricentro_id}?tab=calcos`}
+                      className="font-semibold text-ink underline-offset-2 hover:underline"
+                    >
+                      {f.nombre}
+                    </Link>
+                    <span className="block text-label text-ink-40 tabular-nums">
+                      {f.baseRecuentoAt
+                        ? `según su recuento del ${formatearFecha(fechaCalendarioAR(new Date(f.baseRecuentoAt)))}`
+                        : "entregadas menos autos nuevos"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 font-semibold whitespace-nowrap text-ink tabular-nums">
+                    unas {cantidadDicha(f.stock)}
+                  </td>
+                  <td className="px-4 py-2.5 whitespace-nowrap text-ink-60 tabular-nums">
+                    {f.ritmo != null ? `${DECIMAL.format(f.ritmo)} por semana` : "—"}
+                  </td>
+                  <td className="px-4 py-2.5 whitespace-nowrap text-ink-60 tabular-nums">
+                    {f.semanas != null
+                      ? `${DECIMAL.format(f.semanas)} ${f.semanas === 1 ? "semana" : "semanas"}`
+                      : "—"}
+                  </td>
+                  <td className="px-4.5 py-1.5 text-right">
+                    {wa ? (
+                      <a
+                        href={wa}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={`Escribirle a ${f.ownerNombre ?? f.nombre} por WhatsApp`}
+                        className={`${clasesBoton("secundario")} whitespace-nowrap`}
+                      >
+                        <IconoWhatsapp aria-hidden className="size-4" />
+                        Escribirle
+                      </a>
+                    ) : (
+                      <span className="text-ui text-ink-40">Sin teléfono cargado</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 // ============================================================
 // La cola de calcos: los pedidos de TODOS los lubricentros, uno por fila,
 // en el orden en que hay que atenderlos. El orden lo trae la base
@@ -43,7 +152,10 @@ export default async function PaginaCalcos({
   const filtro = FILTROS.find((f) => f.clave === estado) ?? FILTROS[0];
 
   const supabase = await createClient();
-  const { data } = await supabase.rpc("encargos_calcos_admin");
+  const [{ data }, { data: sinStock }] = await Promise.all([
+    supabase.rpc("encargos_calcos_admin"),
+    supabase.rpc("calcos_por_agotarse"),
+  ]);
   const todos = leerEncargos(data);
   const encargos = filtrar(todos, filtro.estados);
 
@@ -55,6 +167,8 @@ export default async function PaginaCalcos({
         pagados que esperan producción, después lo que está en la gráfica, lo despachado y lo que
         todavía no se pagó.
       </p>
+
+      <SinStock filas={leerPorAgotarse(sinStock)} />
 
       <nav aria-label="Filtrar por estado" className="mb-4 flex flex-wrap gap-1.5">
         {FILTROS.map((f) => {

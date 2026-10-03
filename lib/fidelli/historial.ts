@@ -219,6 +219,18 @@ export function describirEvento(e: EventoHistorial): LineaHistorial {
       };
 
     case "edicion": {
+      // Quién imprime sus calcos (20261003210000): lo marca Fidelli desde la
+      // ficha, y la nota viaja en el motivo.
+      if (despues.calcos_propias != null) {
+        return {
+          titulo:
+            despues.calcos_propias === true
+              ? "Imprime sus calcos por su cuenta"
+              : "Dejó de imprimir sus calcos por su cuenta",
+          detalle: texto(e.motivo),
+          actor,
+        };
+      }
       const partes: string[] = [];
       if (texto(antes.nombre) !== texto(despues.nombre)) {
         partes.push(`Cambió el nombre de «${texto(antes.nombre) ?? ""}» a «${texto(despues.nombre) ?? ""}»`);

@@ -8,6 +8,8 @@ export type Tenant = {
   slug: string;
   activo: boolean;
   calcos_entregadas: number;
+  /** Imprime sus calcos con una gráfica propia: sin estimación ni avisos. */
+  calcos_propias: boolean;
   created_at: string;
   /** De dónde vino (docs/METRICAS.md § 1). Null = todavía no se cargó. */
   origen: OrigenTenant | null;

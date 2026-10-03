@@ -1,12 +1,16 @@
 import { marcoHtml, marcoTexto, type ContenidoEmail } from "./marco";
 
 // ============================================================
-// LOS DOS EMAILS DE UN PEDIDO DE CALCOS · la voz del panel, entregada
+// LOS EMAILS DE CALCOS · la voz del panel, entregada
 //
+// Dos de un pedido:
 //   · «Recibimos tu pago»: lo manda la ruta del webhook, DESPUÉS de
 //     contestarle 200 a Cresium, cuando el depósito acredita el pedido.
 //   · «Salió tu pedido» / «Tu pedido está listo»: lo manda la acción de
 //     /fidelli que marca el pedido enviado o listo para retirar.
+//
+// Y dos del stock (PR 3), por el cron de las 9:00: «te quedan calcos para
+// pocas semanas» y «te estás quedando sin calcos». Ver el final del archivo.
 //
 // Los textos son los del sprint (docs/PROMPT-calcos.md § 4.4) y dicen lo
 // mismo que dice la pantalla ese día. Con el marco de siempre
@@ -89,5 +93,45 @@ export function emailPedidoDespachado(
     titulo: `Hola, ${d.nombre}.`,
     parrafos: ["Tu pedido está listo. Te escribimos por WhatsApp para coordinar la entrega."],
     boton: { texto: "Ver mi pedido", href: d.enlace },
+  });
+}
+
+// ============================================================
+// LOS DOS DEL STOCK (PR 3 de calcos)
+//
+// Los manda el cron de los avisos de cobranza (/api/fidelli/avisos-cobranza)
+// cuando `avisos_calcos_pendientes()` dice que toca: uno al cruzar las 4
+// semanas de cobertura y otro al cruzar 1 semana o las 20 calcos. Uno por
+// escalón por ciclo de entrega: lo garantiza la base (emails_calcos), no
+// esta plantilla.
+//
+// LA FRASE ENTRA POR PARÁMETRO y es la MISMA del aviso del Inicio
+// (`fraseDelAviso()` en lib/stock-calcos.ts): el mail dice lo que el panel
+// dice ese día. Acá no se arma ningún número.
+// ============================================================
+
+export type TipoDeMailDeStock = "calcos_4_semanas" | "calcos_1_semana";
+
+const ASUNTO_DE_STOCK: Record<TipoDeMailDeStock, string> = {
+  calcos_4_semanas: "Te quedan calcos para pocas semanas",
+  calcos_1_semana: "Te estás quedando sin calcos",
+};
+
+export function emailStockDeCalcos(d: {
+  /** El nombre del lubricentro. */
+  nombre: string;
+  tipo: TipoDeMailDeStock;
+  /** «Te quedan unas 80 calcos, para unas 3 semanas…», ya armada. */
+  frase: string;
+  /** /panel/cuenta/calcos, absoluta. */
+  enlace: string;
+}): Email {
+  return armar(ASUNTO_DE_STOCK[d.tipo], {
+    titulo: `Hola, ${d.nombre}.`,
+    parrafos: [
+      d.frase,
+      "La cuenta la sacamos de los autos nuevos que cargaste desde la última entrega. Si no coincide con lo que tenés en el local, contá cuántas te quedan y corregila desde la misma pantalla.",
+    ],
+    boton: { texto: "Pedir calcos", href: d.enlace },
   });
 }
