@@ -76,6 +76,14 @@ export default async function LayoutFidelli({
           >
             Cobranzas
           </NavLink>
+          {/* La cola de pedidos de calcos: lo que hay que mandar a producir,
+              despachar y entregar hoy. Operación, al lado de cobranzas. */}
+          <NavLink
+            href="/fidelli/calcos"
+            className="flex h-10 items-center rounded-md px-3 text-ui transition-colors"
+          >
+            Calcos
+          </NavLink>
           <NavLink
             href="/fidelli/precios"
             className="flex h-10 items-center rounded-md px-3 text-ui transition-colors"

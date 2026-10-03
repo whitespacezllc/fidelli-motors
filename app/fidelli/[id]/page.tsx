@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { CabeceraTenant } from "@/components/fidelli/ficha/cabecera-tenant";
 import { TabResumen } from "@/components/fidelli/ficha/tab-resumen";
 import { TabSuscripcion } from "@/components/fidelli/ficha/tab-suscripcion";
+import { TabCalcos } from "@/components/fidelli/ficha/tab-calcos";
 import { TabHistorial } from "@/components/fidelli/ficha/tab-historial";
 import { TabDatos } from "@/components/fidelli/ficha/tab-datos";
 import { TabConfiguracion } from "@/components/fidelli/ficha/tab-configuracion";
@@ -125,6 +126,9 @@ export default async function PaginaFicha({
       )}
       {pestana === "suscripcion" && (
         <TabSuscripcion tenant={tenant} suscripcion={suscripcion} />
+      )}
+      {pestana === "calcos" && (
+        <TabCalcos tenant={tenant} planNombre={suscripcion?.plan?.nombre ?? null} />
       )}
       {pestana === "historial" && <TabHistorial tenant={tenant} pagina={pagina} />}
       {pestana === "datos" && <TabDatos tenant={tenant} params={busqueda} />}

@@ -1,11 +1,22 @@
 // ============================================================
-// El contrato de resumen_admin() (migración 20260923100000), leído con
+// El contrato de resumen_admin() (migración 20260923100000; la clave
+// `calcos` es de 20261003120000), leído con
 // tolerancia: PostgREST devuelve numeric como string y jsonb como lo que
 // sea, así que cada campo pasa por su coerción antes de llegar a una
 // pantalla. Un número que no está es 0; una fecha que no está es null.
 // ============================================================
 
 export type TenantAlerta = { id: string; nombre: string; dias: number | null };
+
+/** Lo que cuenta la alerta de calcos del hub (20261003120000). */
+export type CalcosAlerta = {
+  /** Pagados que todavía no entraron a producción. */
+  esperando_produccion: number;
+  /** En producción hace más de 5 días hábiles. */
+  atrasados: number;
+  /** Sin pagar que vencen en las próximas 24 horas. */
+  por_vencer: number;
+};
 
 export type ResumenAdmin = {
   mrr_ars: number;
@@ -36,6 +47,7 @@ export type ResumenAdmin = {
   sin_origen: number;
   sin_trabajos: TenantAlerta[];
   owner_pendiente: TenantAlerta[];
+  calcos: CalcosAlerta;
 };
 
 type Obj = Record<string, unknown>;
@@ -61,6 +73,15 @@ function tenants(v: unknown): TenantAlerta[] {
     .map((x) => x as Obj)
     .filter((x) => typeof x.id === "string" && typeof x.nombre === "string")
     .map((x) => ({ id: x.id as string, nombre: x.nombre as string, dias: numeroONull(x.dias) }));
+}
+
+function calcos(v: unknown): CalcosAlerta {
+  const c = (v && typeof v === "object" ? v : {}) as Obj;
+  return {
+    esperando_produccion: entero(c.esperando_produccion),
+    atrasados: entero(c.atrasados),
+    por_vencer: entero(c.por_vencer),
+  };
 }
 
 export function leerResumen(v: unknown): ResumenAdmin {
@@ -94,6 +115,7 @@ export function leerResumen(v: unknown): ResumenAdmin {
     sin_origen: entero(r.sin_origen),
     sin_trabajos: tenants(r.sin_trabajos),
     owner_pendiente: tenants(r.owner_pendiente),
+    calcos: calcos(r.calcos),
   };
 }
 

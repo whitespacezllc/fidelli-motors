@@ -17,9 +17,14 @@ import {
 const INICIAL: EstadoPedidoCalcos = {};
 
 // ============================================================
-// Registrar una entrega de calcos (bloque MÉTRICAS 3): fecha, cantidad,
-// incluidas o cobradas, el monto si se cobraron, y una nota. La fila queda
-// para siempre (append-only) y el contador del tenant pasa a ser la suma.
+// Corrección del libro: registrar a mano una entrega de calcos (fecha,
+// cantidad, incluidas o cobradas, el monto si se cobraron, y una nota). La
+// fila queda para siempre (append-only) y el contador del tenant pasa a ser
+// la suma.
+//
+// Desde los pedidos de calcos (20261003120000) el libro lo escribe
+// «Entregado». Esto queda para lo que NO pasó por un pedido: una entrega
+// anterior a la pantalla, o una diferencia que hay que asentar.
 // ============================================================
 export function DialogPedidoCalcos({
   lubricentroId,
@@ -47,10 +52,17 @@ export function DialogPedidoCalcos({
 
   return (
     <Dialog open={abierto} onOpenChange={setAbierto}>
-      <DialogTrigger className={clasesBoton("secundario", "md")}>Registrar pedido</DialogTrigger>
+      <DialogTrigger className={`${clasesBoton("secundario", "md")} shrink-0 whitespace-nowrap`}>
+        Corrección del libro
+      </DialogTrigger>
 
-      <DialogContenido titulo={`Calcos para ${nombre}`}>
+      <DialogContenido titulo={`Corrección del libro · ${nombre}`}>
         <form action={registrar} className="flex flex-col gap-4">
+          <p className="text-ui text-ink-60">
+            Para lo que no pasó por un pedido. Lo que se entrega por un pedido se registra solo,
+            al marcarlo entregado.
+          </p>
+
           {estado.error && (
             <p role="alert" className={CLASE_ERROR}>
               {estado.error}
@@ -151,13 +163,13 @@ export function DialogPedidoCalcos({
               className={CLASE_CAMPO}
             />
             <p className={CLASE_AYUDA}>
-              El pedido queda registrado para siempre y el contador del lubricentro pasa a ser
-              la suma de sus pedidos.
+              La entrega queda registrada para siempre y el contador del lubricentro pasa a ser
+              la suma del libro.
             </p>
           </div>
 
           <Boton type="submit" tam="lg" disabled={registrando} className="mt-1 w-full">
-            {registrando ? "Registrando…" : "Registrar pedido"}
+            {registrando ? "Registrando…" : "Registrar en el libro"}
           </Boton>
         </form>
       </DialogContenido>
