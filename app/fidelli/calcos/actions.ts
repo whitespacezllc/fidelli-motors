@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { obtenerSesion } from "@/lib/auth/session";
 import { esEstadoEncargo } from "@/lib/calcos";
 import { DISENO_MAX_BYTES, DISENO_TIPOS } from "@/lib/fidelli/calcos";
+import { avisarPorMail } from "@/lib/pedidos-calcos/avisos";
 
 // ============================================================
 // Las acciones de los pedidos de calcos, compartidas por la solapa Calcos
@@ -99,6 +100,14 @@ export async function avanzarEncargo(
     p_datos: datos,
   });
   if (error) return { error: traducir(error.message) };
+
+  // El pedido salió de la gráfica: al owner le llega «salió tu pedido», con
+  // el seguimiento, o «está listo» si lo retira. Una vez por pedido (lo
+  // garantiza la base) y sin tirar: si el mail no sale, el pedido igual
+  // quedó marcado y el motivo está en el log.
+  if (estado === "enviado" || estado === "listo_retiro") {
+    await avisarPorMail(supabase, encargoId, "envio");
+  }
 
   revalidar(lubricentroId);
   return { ok: true };

@@ -23,6 +23,8 @@ import { sumarDias } from "@/lib/fidelli/plan";
 //       anterior, no hay cierre (502) y lo dice.
 //   3 · Corre con la clave de servicio (crearClienteAdmin): no hay usuario
 //       detrás, y cerrar_dia() solo está grantada a service_role.
+//   4 · Y vence los pedidos de calcos que llevan más de siete días sin
+//       pagar (vencer_encargos_calcos, también solo de service_role).
 // ============================================================
 
 export const dynamic = "force-dynamic";
@@ -86,6 +88,16 @@ export async function GET(request: Request) {
 
   const admin = crearClienteAdmin();
 
+  // ---------- Los pedidos de calcos sin pagar vencen a los siete días ----------
+  // (PR 2 de calcos.) Va ANTES del tipo de cambio y no depende de él: si
+  // hoy no hay cotización y el día no cierra, los pedidos vencen igual. Es
+  // idempotente —corre en cada disparo, también en uno con `?fecha=`— y un
+  // error acá no corta el cierre: queda en el log y en la respuesta.
+  const { data: calcosVencidos, error: errorCalcos } = await admin.rpc("vencer_encargos_calcos");
+  if (errorCalcos) {
+    console.error(`[fidelli/cierre-diario] no se pudieron vencer los pedidos de calcos: ${errorCalcos.message}`);
+  }
+
   // El tipo de cambio: el del día, o el último conocido como 'repetido'.
   let tc = await cotizacionOficial();
   if (!tc) {
@@ -127,7 +139,7 @@ export async function GET(request: Request) {
   ]);
 
   console.log(
-    `[fidelli/cierre-diario] ${fecha}: ${resultado} · tc venta ${tc.venta} (${tc.fuente}) · ${count ?? 0} tenants`,
+    `[fidelli/cierre-diario] ${fecha}: ${resultado} · tc venta ${tc.venta} (${tc.fuente}) · ${count ?? 0} tenants · ${calcosVencidos ?? "?"} pedidos de calcos vencidos`,
   );
 
   return NextResponse.json({
@@ -135,6 +147,7 @@ export async function GET(request: Request) {
     resultado,
     tipo_cambio: tc,
     tenants: count ?? 0,
+    calcos_vencidos: errorCalcos ? null : (calcosVencidos ?? 0),
     snapshot: dia,
   });
 }
