@@ -486,6 +486,11 @@ try {
     check("«A quién llamar» no ofrece la fuente Caja", (await page.locator('a[href*="fuente=caja"]').count()) === 0);
     await page.goto(`${BASE}/panel`, { waitUntil: "networkidle" });
     check("el Inicio no tiene la tarjeta de cajas", (await page.getByText("Services de caja del mes").count()) === 0);
+    // Y el Excel de un lubricentro sin cajas no gana una columna vacía.
+    const excel = await page.request.get(`${BASE}/panel/services/exportar`);
+    const cabecera = excel.ok() ? (hojasDelXlsx(Buffer.from(await excel.body()))[0]?.[0] ?? []) : [];
+    check("la exportación no trae la columna «Próx. caja»",
+      cabecera.includes("Próximo service (km)") && !cabecera.includes("Próx. caja"), JSON.stringify(cabecera));
     await ctx.close();
 
     const r = await rpcComoOwner("guardar_service", cajaPorApi(AUTO.id));
@@ -508,7 +513,11 @@ try {
     await page.selectOption("#ov-caja", "si");
     check("no pide precio ni motivo con formato: no es un módulo pago",
       (await page.getByText(/tiene que empezar con la forma de cobro/).count()) === 0);
-    const motivo = "Taller de cajas automáticas: se le prende el service de caja (regresión).";
+    // Único por corrida: el historial de overrides no se borra (es
+    // auditoría), y con un texto fijo la espera de más abajo se daba por
+    // cumplida con la fila que dejó la corrida ANTERIOR, antes de que
+    // esta terminara de guardar.
+    const motivo = `Taller de cajas automáticas: se le prende el service de caja (regresión ${Date.now()}).`;
     await page.fill("#ov-motivo", motivo);
     await page.getByRole("button", { name: "Guardar overrides" }).click();
     // Al guardar, el formulario se monta de cero con lo guardado (lleva
@@ -843,6 +852,24 @@ try {
       (productos ?? []).some((f) => f.includes("Aceite de caja") && f.includes("ATF Dexron VI"))
         && !(productos ?? []).some((f) => f.includes("Aceite de motor")),
       JSON.stringify((productos ?? []).slice(0, 4)));
+    // La columna es del taller que hace cajas: con la feature está siempre
+    // —aunque el archivo no traiga ninguna—, y si la feature se apaga, las
+    // cajas ya cargadas la conservan (los datos son suyos).
+    const cabeceraDe = async (query) => {
+      const resp = await page.request.get(`${BASE}/panel/services/exportar${query}`);
+      return resp.ok() ? (hojasDelXlsx(Buffer.from(await resp.body()))[0]?.[0] ?? []) : [`status ${resp.status()}`];
+    };
+    const soloServices = await cabeceraDe("?tipo=service");
+    check("con la feature, la columna está aunque el archivo no traiga cajas",
+      soloServices.includes("Próx. caja"), JSON.stringify(soloServices));
+    sql(sqlOverride("caja", false));
+    const apagada = await cabeceraDe("?tipo=caja");
+    const apagadaSinCajas = await cabeceraDe("?tipo=service");
+    sql(sqlOverride("caja", true));
+    check("con la feature apagada, un archivo con cajas conserva la columna",
+      apagada.includes("Próx. caja"), JSON.stringify(apagada));
+    check("y uno sin cajas no la trae",
+      apagadaSinCajas.includes("Próximo service (km)") && !apagadaSinCajas.includes("Próx. caja"), JSON.stringify(apagadaSinCajas));
     await ctx.close();
   });
 

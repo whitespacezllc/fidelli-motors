@@ -18,6 +18,7 @@ import {
   respuestaSinFilas,
   respuestaXlsx,
 } from "@/lib/exportar/respuesta";
+import { featureHabilitada } from "@/lib/auth/session";
 import { paginar } from "@/lib/exportar/paginar";
 import {
   fecha,
@@ -226,7 +227,7 @@ export async function GET(request: NextRequest) {
   if (!contexto) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
-  const { supabase, slug } = contexto;
+  const { supabase, sesion, slug } = contexto;
 
   const params = request.nextUrl.searchParams;
   const filtros = filtrosTrabajos({
@@ -268,6 +269,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // La columna «Próx. caja» es del taller que hace cajas: va si tiene
+    // la feature —siempre, aunque este archivo no traiga ninguna, para
+    // que sus exportaciones tengan todas la misma forma— o si el archivo
+    // trae alguna caja (un tenant al que se le apagó la feature conserva
+    // sus datos). Al resto de los lubricentros no se les suma una columna
+    // vacía: sin la feature, la caja no existe en ninguna pantalla.
+    const conCaja =
+      featureHabilitada(sesion, "caja") ||
+      trabajos.some((t) => t.tipo === "caja");
+
     const filasTrabajos: Celda[][] = [];
     const filasProductos: Celda[][] = [];
 
@@ -299,7 +310,7 @@ export async function GET(request: NextRequest) {
         // Los dos próximos, cada uno en su columna: el del cambio de
         // aceite queda vacío en una caja, y el de caja en todo lo demás.
         numero(t.prox_service_km),
-        numero(t.prox_caja_km),
+        ...(conCaja ? [numero(t.prox_caja_km)] : []),
         texto(t.usuarios?.nombre),
         siNo(t.anulado),
         texto(t.id),
@@ -377,7 +388,7 @@ export async function GET(request: NextRequest) {
           "Renglones",
           "Observaciones",
           "Próximo service (km)",
-          "Próx. caja",
+          ...(conCaja ? ["Próx. caja"] : []),
           "Cargado por",
           "Anulado",
           "ID de trabajo",
