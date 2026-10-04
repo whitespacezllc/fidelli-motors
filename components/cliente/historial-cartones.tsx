@@ -1,4 +1,5 @@
 import { IconoChevron, IconoCandado } from "@/components/iconos";
+import { AdjuntosCliente } from "@/components/cliente/adjuntos-cliente";
 import {
   CartonPapel,
   CartonPapelCaja,
@@ -146,6 +147,8 @@ export function HistorialCartones({
   colorTenant,
   colorPapel = null,
   clase = null,
+  slug,
+  patente,
 }: {
   services: ServiceCarton[];
   lubricentroNombre: string;
@@ -153,6 +156,10 @@ export function HistorialCartones({
   colorPapel?: string | null;
   /** La clase del vehículo: el papel de referencia de cada cartón. */
   clase?: ClaseVehiculo | null;
+  /** Para el enlace de los adjuntos: /[slug]/[patente]/adjunto/[id]. */
+  slug: string;
+  /** La patente normalizada. */
+  patente: string;
 }) {
   if (services.length === 0) return null;
 
@@ -183,8 +190,11 @@ export function HistorialCartones({
 
       <ul className="mt-4 flex flex-col gap-3">
         {services.map((s, i) => (
-          <li key={`${s.fecha}-${i}`}>
-            <details className="group rounded-lg border border-line">
+          // El borde es de la ENTRADA, no del desplegable: debajo del papel
+          // —y a la vista aunque el papel esté cerrado— van los adjuntos
+          // que el taller decidió mostrar.
+          <li key={`${s.fecha}-${i}`} className="rounded-lg border border-line">
+            <details className="group">
               <summary className="flex min-h-16 cursor-pointer list-none items-center gap-3 p-4 [&::-webkit-details-marker]:hidden">
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-baseline gap-x-2 text-c-body font-bold tabular-nums">
@@ -231,6 +241,15 @@ export function HistorialCartones({
                 )}
               </div>
             </details>
+            {/* Debajo del papel, nunca adentro. Afuera del <details>: un
+                diagnóstico que solo aparece si alguien abre la fila es un
+                diagnóstico que nadie encuentra. */}
+            <AdjuntosCliente
+              adjuntos={s.adjuntos}
+              slug={slug}
+              patente={patente}
+              enEntrada
+            />
           </li>
         ))}
       </ul>

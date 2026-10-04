@@ -23,6 +23,7 @@ import { ProgresoFidelizacion } from "@/components/cliente/progreso-fidelizacion
 import { Recomendaciones } from "@/components/cliente/recomendaciones";
 import { PendientesTaller } from "@/components/cliente/pendientes-taller";
 import { HistorialCartones } from "@/components/cliente/historial-cartones";
+import { AdjuntosCliente } from "@/components/cliente/adjuntos-cliente";
 import { BotonTurno } from "@/components/cliente/boton-turno";
 import { SinHistorial } from "@/components/cliente/sin-historial";
 import { PatenteNoEncontrada } from "@/components/cliente/patente-no-encontrada";
@@ -297,6 +298,17 @@ export default async function PaginaVehiculo({ params }: Props) {
                     Hecho en {ultimo.sucursal}
                   </p>
                 )}
+                {/* Los adjuntos del trabajo destacado que el taller decidió
+                    mostrar: debajo del papel, nunca adentro. */}
+                {ultimo.adjuntos.length > 0 && (
+                  <div className="mt-4">
+                    <AdjuntosCliente
+                      adjuntos={ultimo.adjuntos}
+                      slug={slug}
+                      patente={normalizarPatente(patente)}
+                    />
+                  </div>
+                )}
               </div>
 
               {/* 3. Recomendaciones, fidelización, historial y el CTA.
@@ -335,6 +347,8 @@ export default async function PaginaVehiculo({ params }: Props) {
                   colorTenant={paleta.primary}
                   colorPapel={lubricentro.colorCarton}
                   clase={vehiculo.clase}
+                  slug={slug}
+                  patente={normalizarPatente(patente)}
                 />
 
                 <BotonTurno
