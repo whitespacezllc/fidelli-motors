@@ -11,12 +11,14 @@ import type { TipoTrabajo } from "@/lib/trabajos";
 // fijan a las 24 horas; una mecánica, a los 7 días: un arreglo de motor
 // se termina de cerrar en días, no en una tarde, y el mecánico completa
 // la ficha a medida que llegan los repuestos. Record y no ternario: un
-// cuarto tipo obliga a contestar acá y en la base.
+// cuarto tipo obliga a contestar acá y en la base. El cuarto —el service
+// de caja, 20261004120100— se fija a las 24 horas, como el service.
 // ============================================================
 export const PLAZO_EDICION_HORAS: Record<TipoTrabajo, number> = {
   service: 24,
   mecanica: 24 * 7,
   neumaticos: 24,
+  caja: 24,
 };
 
 /** "24 horas" · "7 días" — el plazo del tipo, en palabras. */

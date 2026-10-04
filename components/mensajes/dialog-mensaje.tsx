@@ -7,6 +7,7 @@ import {
   VARIABLES_MENSAJE,
   VARIABLES_MENSAJE_PENDIENTE,
   VARIABLES_MENSAJE_NEUMATICOS,
+  VARIABLES_MENSAJE_CAJA,
   resolverTemplate,
   variablesDesconocidas,
   type VariablesMensaje,
@@ -25,6 +26,8 @@ type Mensaje = {
   contenido_pendiente: string | null;
   /** El mensaje del RETORNO DE GOMERÍA: {motivo} en vez de km. */
   contenido_neumaticos: string | null;
+  /** El mensaje del PRÓXIMO SERVICE DE CAJA: {proximo_km} es el de caja. */
+  contenido_caja: string | null;
 };
 
 const ESTADO_INICIAL: EstadoMensaje = {};
@@ -40,12 +43,14 @@ function FormularioMensaje({
   ejemploEsReal,
   alGuardar,
   puedeNeumaticos,
+  puedeCaja,
 }: {
   mensaje?: Mensaje;
   ejemplo: VariablesMensaje;
   ejemploEsReal: boolean;
   alGuardar: () => void;
   puedeNeumaticos: boolean;
+  puedeCaja: boolean;
 }) {
   const [estado, accion, pendiente] = useActionState(
     mensaje ? editarMensaje : crearMensaje,
@@ -57,6 +62,9 @@ function FormularioMensaje({
   );
   const [contenidoNeumaticos, setContenidoNeumaticos] = useState(
     mensaje?.contenido_neumaticos ?? "",
+  );
+  const [contenidoCaja, setContenidoCaja] = useState(
+    mensaje?.contenido_caja ?? "",
   );
   const [sinConexion, setSinConexion] = useState(false);
   const areaRef = useRef<HTMLTextAreaElement>(null);
@@ -93,6 +101,10 @@ function FormularioMensaje({
   const desconocidasNeumaticos = variablesDesconocidas(
     contenidoNeumaticos,
     VARIABLES_MENSAJE_NEUMATICOS,
+  );
+  const desconocidasCaja = variablesDesconocidas(
+    contenidoCaja,
+    VARIABLES_MENSAJE_CAJA,
   );
   const vistaPrevia = contenido.trim()
     ? resolverTemplate(contenido, ejemplo)
@@ -269,6 +281,56 @@ function FormularioMensaje({
         <input type="hidden" name="contenido_neumaticos" value={contenidoNeumaticos} />
       )}
 
+      {/* La cuarta plantilla del tono: la del PRÓXIMO SERVICE DE CAJA. Solo
+          con la feature. Lleva las mismas cuatro variables que la del
+          service, pero acá {proximo_km} es el próximo de caja: no puede
+          salir de la del service, que avisa de un cambio de aceite. Sin la
+          feature el campo no aparece y lo guardado no se pisa: el hidden
+          lo lleva tal cual. */}
+      {puedeCaja ? (
+        <div>
+          <label htmlFor="contenido_caja" className={CLASE_LABEL}>
+            Mensaje del próximo service de caja
+          </label>
+          <textarea
+            id="contenido_caja"
+            name="contenido_caja"
+            rows={4}
+            value={contenidoCaja}
+            onChange={(e) => setContenidoCaja(e.target.value)}
+            className="w-full rounded-md border border-line bg-base px-3.5 py-3 text-body text-ink"
+          />
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {VARIABLES_MENSAJE_CAJA.map((v) => (
+              <button
+                key={v.clave}
+                type="button"
+                onClick={() => setContenidoCaja((c) => `${c}{${v.clave}}`)}
+                title={`Se reemplaza por ${v.descripcion}`}
+                className="rounded-md border border-line bg-surface px-2.5 py-1.5 font-ui text-label font-semibold text-ink tabular-nums hover:bg-line/60"
+              >
+                {`{${v.clave}}`}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-label text-ink-60">
+            Se manda desde A quién llamar cuando a un auto le toca el service
+            de caja. {"{proximo_km}"} son los kilómetros del próximo service
+            de caja.
+          </p>
+          {desconocidasCaja.length > 0 && (
+            <p className="mt-2 rounded-md border border-urgente bg-urgente-soft px-3.5 py-3 text-ui text-urgente">
+              <span className="font-semibold tabular-nums">
+                {desconocidasCaja.map((d) => `{${d}}`).join(", ")}
+              </span>{" "}
+              no {desconocidasCaja.length === 1 ? "es una variable" : "son variables"} de este mensaje: las que existen son las cuatro de arriba.
+            </p>
+          )}
+        </div>
+      ) : (
+        <input type="hidden" name="contenido_caja" value={contenidoCaja} />
+      )}
+
       {desconocidas.length > 0 && (
         <p className="rounded-md border border-urgente bg-urgente-soft px-3.5 py-3 text-ui text-urgente">
           {desconocidas.length === 1 ? (
@@ -321,6 +383,7 @@ export function DialogMensaje({
   etiquetaTrigger,
   variante = "secundario",
   puedeNeumaticos = false,
+  puedeCaja = false,
 }: {
   mensaje?: Mensaje;
   ejemplo: VariablesMensaje;
@@ -329,6 +392,8 @@ export function DialogMensaje({
   variante?: "primario" | "secundario";
   /** El módulo de gomería está activo: se edita la tercera plantilla. */
   puedeNeumaticos?: boolean;
+  /** El service de caja está activo: se edita la cuarta plantilla. */
+  puedeCaja?: boolean;
 }) {
   const [abierto, setAbierto] = useState(false);
 
@@ -347,6 +412,7 @@ export function DialogMensaje({
           ejemploEsReal={ejemploEsReal}
           alGuardar={() => setAbierto(false)}
           puedeNeumaticos={puedeNeumaticos}
+          puedeCaja={puedeCaja}
         />
       </DialogContenido>
     </Dialog>

@@ -10,7 +10,10 @@ import { descripcionEnUnaLinea } from "@/lib/renglones-mecanica";
 
 // De qué se trató cada uno de los últimos trabajos, por tipo: el service
 // no dice nada (sus kilómetros van en la celda de la derecha), la mecánica
-// su descripción, la gomería el resumen de las ruedas.
+// su descripción, la gomería el resumen de las ruedas. El service de caja
+// dice sus kilómetros, que son su dato igual que en el service; van acá y
+// no a la derecha porque esa celda es la de su sello: sin el sello, una
+// caja se leía como un cambio de aceite.
 const RESUMEN_POR_TIPO: Record<
   TipoTrabajo,
   (s: DatosInicio["ultimos"][number]) => string | null
@@ -18,6 +21,7 @@ const RESUMEN_POR_TIPO: Record<
   service: () => null,
   mecanica: (s) => descripcionEnUnaLinea(s.descripcion),
   neumaticos: (s) => resumenRuedas(s.ruedas ?? [], s.alineacion ?? false) || null,
+  caja: (s) => (s.km == null ? null : `${formatearKm(s.km)} km`),
 };
 import { formatearFechaHora, nombreDelMes } from "@/lib/fechas";
 import type { PuntoSerie, VistaPanel } from "@/lib/series";
@@ -25,6 +29,10 @@ import type { PuntoSerie, VistaPanel } from "@/lib/series";
 export type DatosInicio = {
   metricas: {
     services_mes: number;
+    /** Los services de caja del mes. Lo emite resumen_inicio desde
+     *  20261004120100; opcional por la misma ventana que `tipo`, más
+     *  abajo: sin la clave, la tarjeta dice 0. */
+    cajas_mes?: number;
     clientes_nuevos: number;
     recuperados: number;
     canjes_mes: number;
@@ -107,12 +115,16 @@ export function Dashboard({
   datos,
   hoy,
   vista,
+  puedeCaja = false,
   stockBajo = [],
 }: {
   datos: DatosInicio;
   hoy: string;
   /** La vista inicial del gráfico de services, validada en la page. */
   vista: VistaPanel;
+  /** El tenant tiene la feature `caja`. Sin ella la tarjeta de services
+   *  de caja NO existe: ni vacía, ni con candado. */
+  puedeCaja?: boolean;
   /** Productos en o bajo su mínimo. Vacío = la tarjeta NO existe. */
   stockBajo?: {
     id: string;
@@ -175,7 +187,9 @@ export function Dashboard({
         </div>
       )}
 
-      {/* Cuatro métricas: dos filas de dos en el celular, una fila en desktop */}
+      {/* Cuatro métricas: dos filas de dos en el celular, una fila en
+          desktop. Con la feature `caja` son cinco, en la misma grilla: la
+          última baja a la fila siguiente y ninguna cambia de tamaño. */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {/* El número YA cuenta los dos tipos (services_mes no filtra por
             tipo desde 2A): lo que mentía era la etiqueta. */}
@@ -184,6 +198,15 @@ export function Dashboard({
           valor={metricas.services_mes}
           detalle={desglose || "todavía sin trabajos este mes"}
         />
+        {/* Los services de caja, al lado del total que ya los cuenta: es
+            el número de un taller de cajas. */}
+        {puedeCaja && (
+          <Metrica
+            clave="Services de caja del mes"
+            valor={metricas.cajas_mes ?? 0}
+            detalle={`en ${nombreDelMes(hoy)}`}
+          />
+        )}
         <Metrica
           clave="Clientes nuevos"
           valor={metricas.clientes_nuevos}
@@ -335,7 +358,7 @@ export function Dashboard({
                     {s.sucursal}
                   </span>
                   {/* Los kilómetros son el dato del service; los otros
-                      dos tipos se identifican por su sello. En positivo:
+                      tipos se identifican por su sello. En positivo:
                       "si no es mecánica, es service" le ponía al trabajo
                       de gomería la celda equivocada. */}
                   {(s.tipo ?? "service") === "service" ? (

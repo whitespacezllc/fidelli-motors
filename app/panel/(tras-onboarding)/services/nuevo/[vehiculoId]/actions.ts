@@ -4,7 +4,13 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { sesionParaEscribir, featureHabilitada } from "@/lib/auth/session";
 import type { CategoriaProducto } from "@/lib/categorias";
-import { esSaltoValido, SALTO_RANGO_ERROR } from "@/lib/renglones";
+import {
+  esSaltoValido,
+  errorDeCaja,
+  normalizarAtf,
+  SALTO_RANGO_ERROR,
+  validarCaja,
+} from "@/lib/renglones";
 import { FEATURE_DE_TIPO, type TipoTrabajo } from "@/lib/trabajos";
 import {
   DOT_FORMATO,
@@ -64,6 +70,9 @@ export type PayloadService = {
   /** Litros usados: solo viaja si el producto lleva stock. */
   aceiteLitros?: number | null;
   proxServiceKm: number;
+  /** Caja: el próximo service de caja, en su propia columna. null o
+   *  ausente en los otros tres tipos. */
+  proxCajaKm?: number | null;
   observaciones: string | null;
   items: ItemCargado[];
   /** El toggle del cartón. El canje se registra al confirmar, no después. */
@@ -96,11 +105,25 @@ const SIN_CONEXION =
 const PREMIO_YA_NO =
   "Este vehículo ya no tiene un premio disponible: puede que haya cambiado la meta del programa. Destildá “Aplicar premio” y confirmá de nuevo.";
 
+// Lo que se le dice al que manda un tipo que su cuenta no tiene. La UI ya
+// no ofrece el segmento; esto atiende el payload armado a mano. Un mapa por
+// feature: un tipo nuevo con feature no compila sin su mensaje.
+const SIN_LA_FEATURE: Record<"mecanica" | "neumaticos" | "caja", string> = {
+  mecanica:
+    "Los trabajos de mecánica no están en tu plan. Escribinos si los querés activar.",
+  neumaticos:
+    "El módulo de gomería no está activo en tu cuenta. Escribinos si lo querés activar.",
+  caja: "El service de caja automática no está activo en tu cuenta. Escribinos si lo querés activar.",
+};
+
 function traducirError(error: { code?: string; message?: string }): string {
   if (/premio_no_disponible/.test(error.message ?? "")) return PREMIO_YA_NO;
   if (/canje_solo_en_service/.test(error.message ?? "")) {
     return "Tu programa de premios cuenta solo services: el canje va en un service, no en un trabajo de mecánica.";
   }
+  // Los tres errores nombrados de la rama de la caja.
+  const deCaja = errorDeCaja(error.message ?? "");
+  if (deCaja) return deCaja;
   if (/descripcion_requerida/.test(error.message ?? "")) {
     return "Contá qué trabajo se hizo: es lo que va a ver tu cliente en su historial.";
   }
@@ -157,6 +180,9 @@ export async function guardarService(
   const tipo: TipoTrabajo = payload.tipo ?? "service";
   const esMecanica = tipo === "mecanica";
   const esNeumaticos = tipo === "neumaticos";
+  const esCaja = tipo === "caja";
+  // El aceite viaja en un service (la viscosidad) y en una caja (el ATF).
+  const llevaAceite = tipo === "service" || esCaja;
 
   // La feature la hace cumplir la base (policy condicional al tipo); esto
   // pone el mensaje ANTES de perder lo tipeado en un error al final.
@@ -164,11 +190,7 @@ export async function guardarService(
   // sin feature declarada no compila.
   const feature = FEATURE_DE_TIPO[tipo];
   if (feature && !featureHabilitada(sesion, feature)) {
-    return {
-      error: esNeumaticos
-        ? "El módulo de gomería no está activo en tu cuenta. Escribinos si lo querés activar."
-        : "Los trabajos de mecánica no están en tu plan. Escribinos si los querés activar.",
-    };
+    return { error: SIN_LA_FEATURE[feature] };
   }
 
   // La mecánica adjunta: la misma feature que la mecánica sola, y solo al
@@ -226,6 +248,11 @@ export async function guardarService(
   } else if (esNeumaticos) {
     const problema = validarNeumaticos(payload);
     if (problema) return { error: problema };
+  } else if (esCaja) {
+    // Kilómetros, aceite de caja y un próximo dentro del rango. La base
+    // repite las tres con su error nombrado.
+    const problema = validarCaja(payload);
+    if (problema) return { error: problema };
   } else {
     if (
       payload.kilometros == null ||
@@ -263,21 +290,31 @@ export async function guardarService(
     // Los tres son argumentos SIN default en la función: viajan siempre,
     // con null explícito en mecánica (los CHECK condicionales los admiten).
     p_kilometros: payload.kilometros as number,
+    // El aceite: la viscosidad en un service, el ATF en una caja (tal cual
+    // se escribió, sin espacios de más), null en los otros dos.
     p_aceite_tipo: (tipo === "service"
       ? payload.aceiteTipo
-      : null) as unknown as string,
+      : esCaja
+        ? normalizarAtf(payload.aceiteTipo)
+        : null) as unknown as string,
+    // El próximo cambio de aceite es SOLO del service. Una caja lo manda
+    // en null: su próximo viaja en p_prox_caja_km, más abajo.
     p_prox_service_km: (tipo === "service"
       ? payload.proxServiceKm
       : null) as unknown as number,
     p_items: payload.items,
-    p_aceite_producto_id:
-      tipo === "service" ? (payload.aceiteProductoId ?? undefined) : undefined,
-    p_aceite_nombre:
-      tipo === "service" ? (payload.aceiteNombre ?? undefined) : undefined,
+    p_aceite_producto_id: llevaAceite
+      ? (payload.aceiteProductoId ?? undefined)
+      : undefined,
+    p_aceite_nombre: llevaAceite
+      ? (payload.aceiteNombre ?? undefined)
+      : undefined,
     p_observaciones: payload.observaciones ?? undefined,
     p_canjear_premio: payload.canjearPremio ?? false,
-    p_aceite_litros:
-      tipo === "service" ? (payload.aceiteLitros ?? undefined) : undefined,
+    p_aceite_litros: llevaAceite
+      ? (payload.aceiteLitros ?? undefined)
+      : undefined,
+    p_prox_caja_km: esCaja ? (payload.proxCajaKm ?? undefined) : undefined,
     p_pendientes: pendientes.map((tp) => ({
       descripcion: tp.descripcion.trim(),
       objetivo_fecha: tp.objetivoFecha,
@@ -325,10 +362,13 @@ export async function crearProductoRapido(
     .insert({
       lubricentro_id: sesion.lubricentroId,
       categoria,
-      // El alta rápida del cartón es siempre de aceite: nace midiéndose
-      // en litros para que el stock (si después se activa) hable la
-      // misma unidad que el service.
-      unidad: categoria === "aceite" ? "litro" : "unidad",
+      // El alta rápida del cartón es de un aceite —de motor, o de caja
+      // (`transmision`)—: nace midiéndose en litros para que el stock (si
+      // después se activa) hable la misma unidad que el trabajo.
+      unidad:
+        categoria === "aceite" || categoria === "transmision"
+          ? "litro"
+          : "unidad",
       nombre: limpio,
       marca: marca.trim() || null,
     })

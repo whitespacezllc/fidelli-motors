@@ -16,6 +16,7 @@ type Mensaje = {
   contenido: string;
   contenido_pendiente: string | null;
   contenido_neumaticos: string | null;
+  contenido_caja: string | null;
   activo: boolean;
 };
 
@@ -27,12 +28,14 @@ export function FilaMensaje({
   ejemploEsReal,
   suspendido = false,
   puedeNeumaticos = false,
+  puedeCaja = false,
 }: {
   mensaje: Mensaje;
   ejemplo: VariablesMensaje;
   ejemploEsReal: boolean;
   suspendido?: boolean;
   puedeNeumaticos?: boolean;
+  puedeCaja?: boolean;
 }) {
   const router = useRouter();
   const [activando, iniciarActivar] = useTransition();
@@ -86,6 +89,7 @@ export function FilaMensaje({
               ejemplo={ejemplo}
               ejemploEsReal={ejemploEsReal}
               puedeNeumaticos={puedeNeumaticos}
+              puedeCaja={puedeCaja}
             />
           )}
 

@@ -13,9 +13,9 @@ import {
 } from "@/lib/contacto";
 
 export type ProximoServicio = {
-  /** De dónde viene la fila: el motor de retención, un pendiente, o el
-   *  retorno de gomería. */
-  fuente?: "service" | "pendiente" | "neumaticos";
+  /** De dónde viene la fila: el motor de retención, un pendiente, el
+   *  retorno de gomería o el próximo service de caja. */
+  fuente?: "service" | "pendiente" | "neumaticos" | "caja";
   pendienteId?: string;
   /** Los motivos dados del retorno de gomería (solo neumáticos). */
   motivos?: MotivoNeumaticos[];
@@ -37,9 +37,11 @@ export type ProximoServicio = {
   clienteTelefono: string;
   patente: string;
   vehiculo: string;
+  /** En una caja, la fecha y los km de la ÚLTIMA CAJA. */
   ultimoServiceFecha: string;
   ultimoServiceKm: number;
   sucursal: string;
+  /** En una caja, el próximo DE CAJA (prox_caja_km). */
   proxServiceKm: number;
   fechaEstimada: string;
   estimacionInicial: boolean;
@@ -62,13 +64,21 @@ export function FilaProximo({
 }) {
   const esPendiente = fila.fuente === "pendiente";
   const esNeumaticos = fila.fuente === "neumaticos";
+  const esCaja = fila.fuente === "caja";
   // El motivo que se registra al contactar: el anti-spam del pendiente es
   // por motivo 'pendiente' y el de gomería por 'neumaticos', separados de
   // los tres estados del service. Un mapa por fuente, no un ternario.
-  const MOTIVO_POR_FUENTE: Record<"service" | "pendiente" | "neumaticos", MotivoContacto> = {
+  // La caja también va con SU motivo y no con el estado, aunque su fila
+  // esté vencida, urgente o próxima: los tres estados son del cambio de
+  // aceite, y usarlos tildaría la fila del service del mismo auto.
+  const MOTIVO_POR_FUENTE: Record<
+    "service" | "pendiente" | "neumaticos" | "caja",
+    MotivoContacto
+  > = {
     service: fila.estado,
     pendiente: "pendiente",
     neumaticos: "neumaticos",
+    caja: "caja",
   };
   const motivo = MOTIVO_POR_FUENTE[fila.fuente ?? "service"];
   // El cliente de una planilla importada: «Sin nombre» y teléfono «-». El
@@ -131,8 +141,16 @@ export function FilaProximo({
         )}
       </div>
 
-      {/* 3. Último service — en mobile es dato de respaldo, no de decisión */}
+      {/* 3. Último service — en mobile es dato de respaldo, no de decisión.
+          En una caja la fecha y los km son los de la última CAJA, no los
+          del último cambio de aceite, y la celda lo dice: la cabecera de
+          la columna es una sola para las cuatro fuentes. */}
       <div className="mt-2 hidden lg:mt-0 lg:block">
+        {esCaja && (
+          <span className="block text-label text-ink-60">
+            Último service de caja
+          </span>
+        )}
         {esPendiente ? (
           <span className={`block ${CLASE_DATO}`}>
             anotado {fila.creado ? formatearFecha(fila.creado) : "—"}
@@ -149,7 +167,8 @@ export function FilaProximo({
       </div>
 
       {/* 4. Próximo service — el km declarado por el mecánico; en gomería,
-          el km al que toca la rotación (si es uno de los motivos). */}
+          el km al que toca la rotación (si es uno de los motivos); en una
+          caja, el próximo de caja, que ya viene en proxServiceKm. */}
       <div className="hidden lg:block">
         <span className={CLASE_DATO}>
           {esPendiente
@@ -238,6 +257,11 @@ export function FilaProximo({
         {esNeumaticos && (
           <span className="mt-1 block w-fit rounded-sm border border-line bg-surface px-2 py-0.5 text-label font-semibold tracking-[0.04em] text-ink-60 uppercase">
             Neumáticos
+          </span>
+        )}
+        {esCaja && (
+          <span className="mt-1 block w-fit rounded-sm border border-line bg-surface px-2 py-0.5 text-label font-semibold tracking-[0.04em] text-ink-60 uppercase">
+            Caja
           </span>
         )}
       </div>

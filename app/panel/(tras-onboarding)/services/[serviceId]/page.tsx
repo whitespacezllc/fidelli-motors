@@ -6,6 +6,7 @@ import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { clasesBoton } from "@/components/ui/boton";
 import {
   CartonPapel,
+  CartonPapelCaja,
   CartonPapelMecanica,
   CartonPapelNeumaticos,
 } from "@/components/services/carton-papel";
@@ -19,7 +20,7 @@ import {
 } from "@/lib/servicios";
 import { formatearKm } from "@/lib/renglones";
 import { descripcionEnUnaLinea } from "@/lib/renglones-mecanica";
-import { ETIQUETA_TIPO } from "@/lib/trabajos";
+import { ETIQUETA_TIPO, type TipoTrabajo } from "@/lib/trabajos";
 import {
   formatearFecha,
   formatearFechaHora,
@@ -46,12 +47,12 @@ export default async function PaginaService({ params }: Props) {
         `id, tipo, trabajo_descripcion, fecha, created_at, kilometros,
          aceite_tipo, aceite_nombre, alineacion,
          beneficio_hasta_km, beneficio_hasta_fecha,
-         prox_service_km, observaciones, anulado, desbloqueado_hasta,
+         prox_service_km, prox_caja_km, observaciones, anulado, desbloqueado_hasta,
          cargado_con_id,
          vehiculos(patente, marca, modelo, clase, cliente_id, clientes(nombre)),
          sucursales(nombre),
          usuarios!usuario_id(nombre),
-         service_items(item_tipo, detalle, cambiado, productos(nombre, marca)),
+         service_items(item_tipo, detalle, cambiado, cantidad, productos(nombre, marca)),
          service_ruedas(posicion, posicion_anterior, colocada, rotada, balanceada,
                         reparada, marca, medida, indice_carga_vel, dot,
                         profundidad_mm, presion_psi, productos(nombre, marca))`,
@@ -116,8 +117,6 @@ export default async function PaginaService({ params }: Props) {
 
   // El mismo criterio de get_carton: el detalle escrito manda, y si el
   // renglón se cargó con producto del catálogo, se muestra su nombre.
-  const esMecanica = service.tipo === "mecanica";
-  const esNeumaticos = service.tipo === "neumaticos";
   const renglonesLibres = service.service_items
     .filter((i) => i.item_tipo === null)
     .map(
@@ -138,6 +137,9 @@ export default async function PaginaService({ params }: Props) {
             ? [i.productos.nombre, i.productos.marca].filter(Boolean).join(" ")
             : null),
         cambiado: i.cambiado,
+        // El «×2» del papel: es el mismo componente que ve el cliente, y a
+        // él get_carton le manda la cantidad.
+        cantidad: Number(i.cantidad),
       },
     ]),
   );
@@ -159,6 +161,80 @@ export default async function PaginaService({ params }: Props) {
     profundidadMm: r.profundidad_mm,
     presionPsi: r.presion_psi,
   }));
+
+  // EL PAPEL, POR TIPO. Un mapa y no un ternario: escrito como «si es
+  // gomería… si es mecánica… si no, el cartón de aceite», el cuarto tipo
+  // —el service de caja— caía en el cartón de aceite sin dar error. Con el
+  // Record, un tipo nuevo no compila hasta que alguien le dé su papel.
+  const marca = {
+    lubricentroNombre: sesion?.lubricentroNombre ?? "Tu lubricentro",
+    colorTenant: configRes.data?.color_primario ?? "#0A0A0A",
+    colorPapel: configRes.data?.color_carton ?? null,
+  };
+  const PAPEL_POR_TIPO: Record<TipoTrabajo, () => React.ReactNode> = {
+    neumaticos: () => (
+      <CartonPapelNeumaticos
+        datos={{
+          ...marca,
+          fecha: service.fecha,
+          kilometros: service.kilometros,
+          alineacion: service.alineacion ?? false,
+          ruedas: ruedasPapel,
+          beneficio:
+            (configNeumRes.data?.beneficio_km ?? 0) > 0 &&
+            service.beneficio_hasta_km != null &&
+            service.beneficio_hasta_fecha
+              ? {
+                  hastaKm: service.beneficio_hasta_km,
+                  hastaFecha: service.beneficio_hasta_fecha,
+                }
+              : null,
+        }}
+      />
+    ),
+    mecanica: () => (
+      <CartonPapelMecanica
+        datos={{
+          ...marca,
+          fecha: service.fecha,
+          kilometros: service.kilometros,
+          descripcion: service.trabajo_descripcion ?? "",
+          renglones: renglonesLibres,
+        }}
+      />
+    ),
+    service: () => (
+      <CartonPapel
+        datos={{
+          ...marca,
+          fecha: service.fecha,
+          kilometros: service.kilometros ?? 0,
+          aceiteTipo: service.aceite_tipo ?? "",
+          aceiteNombre: service.aceite_nombre,
+          proxServiceKm: service.prox_service_km ?? 0,
+          marcados,
+          // El papel de referencia es el de la clase del vehículo:
+          // los 20 de un camión, marcados o no.
+          clase: service.vehiculos?.clase ?? null,
+        }}
+      />
+    ),
+    // El service de caja: la misma hoja, con su aceite, sus cuatro
+    // renglones y su próximo.
+    caja: () => (
+      <CartonPapelCaja
+        datos={{
+          ...marca,
+          fecha: service.fecha,
+          kilometros: service.kilometros ?? 0,
+          aceiteTipo: service.aceite_tipo ?? "",
+          aceiteNombre: service.aceite_nombre,
+          proxCajaKm: service.prox_caja_km ?? 0,
+          marcados,
+        }}
+      />
+    ),
+  };
 
   // formatearHora fija la zona argentina: este componente se renderiza en
   // el servidor y el Intl pelado usaba la hora del proceso (UTC en Vercel).
@@ -286,57 +362,7 @@ export default async function PaginaService({ params }: Props) {
       {/* El cartón + la metadata operativa, lado a lado en desktop */}
       <div className="grid gap-5 md:grid-cols-[minmax(0,22rem)_1fr] md:items-start">
         <div className={estado.tipo === "anulado" ? "opacity-55" : ""}>
-          {esNeumaticos ? (
-            <CartonPapelNeumaticos
-              datos={{
-                lubricentroNombre: sesion?.lubricentroNombre ?? "Tu lubricentro",
-                colorTenant: configRes.data?.color_primario ?? "#0A0A0A",
-                colorPapel: configRes.data?.color_carton ?? null,
-                fecha: service.fecha,
-                kilometros: service.kilometros,
-                alineacion: service.alineacion ?? false,
-                ruedas: ruedasPapel,
-                beneficio:
-                  (configNeumRes.data?.beneficio_km ?? 0) > 0 &&
-                  service.beneficio_hasta_km != null &&
-                  service.beneficio_hasta_fecha
-                    ? {
-                        hastaKm: service.beneficio_hasta_km,
-                        hastaFecha: service.beneficio_hasta_fecha,
-                      }
-                    : null,
-              }}
-            />
-          ) : esMecanica ? (
-            <CartonPapelMecanica
-              datos={{
-                lubricentroNombre: sesion?.lubricentroNombre ?? "Tu lubricentro",
-                colorTenant: configRes.data?.color_primario ?? "#0A0A0A",
-                colorPapel: configRes.data?.color_carton ?? null,
-                fecha: service.fecha,
-                kilometros: service.kilometros,
-                descripcion: service.trabajo_descripcion ?? "",
-                renglones: renglonesLibres,
-              }}
-            />
-          ) : (
-            <CartonPapel
-              datos={{
-                lubricentroNombre: sesion?.lubricentroNombre ?? "Tu lubricentro",
-                colorTenant: configRes.data?.color_primario ?? "#0A0A0A",
-                colorPapel: configRes.data?.color_carton ?? null,
-                fecha: service.fecha,
-                kilometros: service.kilometros ?? 0,
-                aceiteTipo: service.aceite_tipo ?? "",
-                aceiteNombre: service.aceite_nombre,
-                proxServiceKm: service.prox_service_km ?? 0,
-                marcados,
-                // El papel de referencia es el de la clase del vehículo:
-                // los 20 de un camión, marcados o no.
-                clase: service.vehiculos?.clase ?? null,
-              }}
-            />
-          )}
+          {PAPEL_POR_TIPO[service.tipo]()}
         </div>
 
         {/* Lo que el cliente no ve: quién, cuándo, dónde */}

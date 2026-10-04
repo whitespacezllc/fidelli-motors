@@ -23,8 +23,9 @@ type ServiceDelVehiculo = {
   tipo: TipoTrabajo;
   fecha: string;
   kilometros: number | null;
-  /** El aceite del service, la descripción de la mecánica o el resumen
-   *  de las ruedas del trabajo de gomería. */
+  /** El aceite del service, la descripción de la mecánica, el resumen
+   *  de las ruedas del trabajo de gomería o el aceite de caja del
+   *  service de caja. */
   aceite: string;
   sucursal: string;
   estado: EstadoService;
@@ -242,8 +243,8 @@ function TarjetaVehiculo({
                 <span className="text-ui font-semibold text-ink tabular-nums">
                   {formatearFecha(s.fecha)}
                 </span>
-                {/* Los kilómetros son el dato del service; los otros dos
-                    tipos se identifican por su sello. */}
+                {/* Los kilómetros son el dato del service; los otros tipos
+                    se identifican por su sello. */}
                 {s.tipo === "service" ? (
                   <span className="text-ui text-ink-60 tabular-nums">
                     {formatearKm(s.kilometros ?? 0)} km

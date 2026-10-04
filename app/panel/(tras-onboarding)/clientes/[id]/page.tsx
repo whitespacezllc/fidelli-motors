@@ -38,6 +38,9 @@ const RESUMEN_POR_TIPO: Record<TipoTrabajo, (s: FilaTrabajo) => string> = {
   mecanica: (s) => descripcionEnUnaLinea(s.trabajo_descripcion) ?? "",
   neumaticos: (s) =>
     resumenRuedas(s.service_ruedas ?? [], s.alineacion ?? false),
+  // El service de caja, con la misma forma que el service: su aceite —el
+  // ATF— y el producto, si se anotó.
+  caja: (s) => [s.aceite_tipo, s.aceite_nombre].filter(Boolean).join(" · "),
 };
 
 export const metadata: Metadata = { title: "Cliente" };
@@ -243,6 +246,22 @@ export default async function FichaCliente({
       : null,
   ].filter(Boolean);
 
+  // «Último service» es el último cambio de aceite; «Última visita», el
+  // último trabajo de cualquier tipo. Un cliente que solo vino por la caja
+  // —o por mecánica, o por cubiertas— no tiene service y sí tiene visitas:
+  // «Todavía no tiene trabajos cargados» va solo cuando no hay ninguna de
+  // las dos fechas. Preguntarle solo a la del service le decía eso mismo,
+  // al lado de la fecha de su última visita.
+  const ultimasFechas = [
+    cliente.ultimo_service_fecha
+      ? `Último service ${formatearFecha(cliente.ultimo_service_fecha)}`
+      : null,
+    cliente.ultima_visita_fecha &&
+    cliente.ultima_visita_fecha !== cliente.ultimo_service_fecha
+      ? `Última visita ${formatearFecha(cliente.ultima_visita_fecha)}`
+      : null,
+  ].filter(Boolean);
+
   return (
     <div>
       <nav aria-label="Migas de pan" className="mb-4 text-ui text-ink-60">
@@ -265,12 +284,9 @@ export default async function FichaCliente({
           </h1>
           <p className="mt-1 text-ui text-ink-60">{contacto.join(" · ")}</p>
           <p className="mt-0.5 text-ui text-ink-60">
-            {cliente.ultimo_service_fecha
-              ? `Último service ${formatearFecha(cliente.ultimo_service_fecha)}`
+            {ultimasFechas.length > 0
+              ? ultimasFechas.join(" · ")
               : "Todavía no tiene trabajos cargados"}
-            {cliente.ultima_visita_fecha &&
-              cliente.ultima_visita_fecha !== cliente.ultimo_service_fecha &&
-              ` · Última visita ${formatearFecha(cliente.ultima_visita_fecha)}`}
           </p>
         </div>
 
@@ -336,7 +352,8 @@ export default async function FichaCliente({
             kilometros: s.kilometros,
             // La columna cuenta de qué se trató cada trabajo, y cada
             // tipo la llena con lo suyo: el aceite en el service, la
-            // descripción en mecánica, las ruedas en gomería.
+            // descripción en mecánica, las ruedas en gomería, el aceite
+            // de caja en el service de caja.
             aceite: RESUMEN_POR_TIPO[s.tipo](s),
             sucursal: s.sucursales?.nombre ?? "",
             estado: estadoService(s),

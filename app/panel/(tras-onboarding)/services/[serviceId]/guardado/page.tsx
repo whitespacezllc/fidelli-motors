@@ -8,6 +8,16 @@ import { formatearKm } from "@/lib/renglones";
 import { descripcionEnUnaLinea } from "@/lib/renglones-mecanica";
 import { resumenRuedas } from "@/lib/ruedas";
 import { nombreParaMensaje } from "@/lib/clientes";
+import type { TipoTrabajo } from "@/lib/trabajos";
+
+// Qué dice la confirmación, por tipo. Un mapa: con cuatro tipos, «si no es
+// un service es un trabajo» ya no alcanza —el service de caja se nombra—.
+const GUARDADO: Record<TipoTrabajo, string> = {
+  service: "Service guardado",
+  mecanica: "Trabajo guardado",
+  neumaticos: "Trabajo guardado",
+  caja: "Service de caja guardado",
+};
 
 export const metadata: Metadata = { title: "Trabajo guardado" };
 
@@ -25,6 +35,7 @@ export default async function PaginaGuardado({
     .from("services")
     .select(
       `id, tipo, trabajo_descripcion, fecha, kilometros, alineacion, vehiculo_id, created_at,
+       aceite_tipo, prox_caja_km,
        vehiculos(patente, marca, modelo, clientes(nombre)),
        service_ruedas(colocada, rotada, balanceada, reparada)`,
     )
@@ -88,11 +99,9 @@ export default async function PaginaGuardado({
     <div className="mx-auto max-w-md lg:max-w-xl lg:pt-4">
       <p className="rounded-md bg-success-soft px-3.5 py-3 font-brand text-body font-bold text-success">
         ✓{" "}
-        {service.tipo === "service"
-          ? adjunta
-            ? "Service y mecánica guardados"
-            : "Service guardado"
-          : "Trabajo guardado"}
+        {service.tipo === "service" && adjunta
+          ? "Service y mecánica guardados"
+          : GUARDADO[service.tipo]}
       </p>
 
       <div className="surface-card mt-4 p-4">
@@ -113,6 +122,11 @@ export default async function PaginaGuardado({
               : null,
             service.tipo === "neumaticos"
               ? resumenRuedas(service.service_ruedas ?? [], service.alineacion ?? false)
+              : null,
+            // La caja: su aceite y, sobre todo, cuándo le toca volver.
+            service.tipo === "caja" ? service.aceite_tipo : null,
+            service.tipo === "caja" && service.prox_caja_km != null
+              ? `próximo service de caja a los ${formatearKm(service.prox_caja_km)} km`
               : null,
           ]
             .filter(Boolean)
