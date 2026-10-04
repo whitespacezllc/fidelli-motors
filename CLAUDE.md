@@ -389,6 +389,25 @@ para botones, roles de botón, tabs y triggers de Radix — no pantalla por pant
 
 **Gráficos con Visx**, para que hereden nuestros tokens en vez de traer su look.
 
+**Una tabla hecha de grillas sueltas no mide ninguna columna por su
+contenido.** En el panel, el encabezado y cada fila de una tabla son grillas
+APARTE (cada `<li>` es la suya): solo quedan alineadas si todas resuelven
+las mismas columnas. Una columna `auto` —o `1fr` a secas, que es
+`minmax(auto, 1fr)`— mide distinto en cada fila según lo que tenga adentro,
+y cero en el encabezado: en «A quién llamar» los títulos quedaban corridos
+44 px, y 62 en la fila de «Cargar teléfono» (03/10/2026). Toda columna es un
+largo fijo o `minmax(<largo>, <n>fr)`, la plantilla vive en UN archivo que
+importan el encabezado y la fila (`components/proximos/grilla.ts`), y lo que
+puede ser más ancho que su columna —un error al guardar, el motivo de un
+botón apagado— va a un renglón propio debajo de la fila. **Y el ancho se
+calcula con la barra de desplazamiento de Windows**: la media query no la
+descuenta (a 1280 de ventana rige `xl` con 1263 de contenido), el menú se
+lleva 256 px y el margen 64, así que a la tarjeta le quedan 645 px a 1024 y
+901 a 1280. Lo que no entra en un renglón baja a un segundo renglón en el
+mismo orden de lectura: no se achica la letra ni se esconde una columna. Lo
+vigila `scripts/regresion-proximos-grilla.mjs`, a ocho anchos, con y sin la
+barra, y con sus roturas adentro.
+
 **Tipos generados desde el schema**, no escritos a mano:
 `supabase gen types typescript --local > lib/database.types.ts`
 
@@ -975,6 +994,7 @@ node --no-warnings scripts/regresion-cresium-orden.mjs
 node --no-warnings scripts/regresion-cobranza-emails.mjs
 node --no-warnings scripts/regresion-avisos-cobranza.mjs   # contra next dev + el doble de Resend
 node --no-warnings scripts/regresion-orden-de-trabajo.mjs  # contra next dev + el seed (Playwright)
+node --no-warnings scripts/regresion-proximos-grilla.mjs   # ídem; toca el demo local por psql y lo restaura
 node --no-warnings scripts/regresion-aceite.mjs            # ídem; toca el demo local por psql y lo restaura
 node --no-warnings scripts/regresion-calcos.mjs            # contra next dev + la base RECIÉN reseteada (Playwright)
 node --no-warnings scripts/regresion-calcos-tenant.mjs     # ídem; levanta los dobles de Cresium y de Resend

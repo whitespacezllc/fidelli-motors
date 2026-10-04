@@ -262,6 +262,13 @@ estimado** (con la leyenda "estimada: 40 km/día supuestos" cuando el auto tiene
 service) · estado (`VENCIDO` / `URGENTE` / `PRÓXIMO`, siempre en ámbar, **nunca en el rojo
 de marca**) · checkbox "contactado" · botón de WhatsApp.
 
+**La tabla según el ancho:** desde 1280 px, las ocho columnas en un renglón; de 1024 a
+1279, dos renglones por fila —cliente · vehículo · último service · próximo · retorno
+arriba; estado, contactado y la acción abajo, con el encabezado también en dos—; por
+debajo de 1024, una tarjeta por fila que se lee sola. El encabezado y las filas comparten
+una sola plantilla (`components/proximos/grilla.ts`): ninguna columna se mide por su
+contenido.
+
 Arriba: tres contadores + conmutador Todo/Services/Pendientes + la métrica dorada
 **"Recuperados este mes"**.
 
