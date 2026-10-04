@@ -18,6 +18,29 @@ export function slugificar(texto: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+// EL SLUG ENTRA EN EL QR DEL CALCO. Lo que va impreso en el QR es el
+// dominio más el slug, y cada carácter de más le saca resistencia: con más
+// de 18 el QR tolera menos roce y menos mugre (un parasol es justo eso), y
+// con más de 32 directamente no se puede hacer —un tenant entró con 34 y
+// hubo que acortarlo—. El tope lo hace cumplir la base (CHECK
+// slug_largo_qr, y slug_estado() lo dice antes de escribir); acá se repite
+// para avisar mientras se escribe.
+export const SLUG_MAXIMO = 32;
+export const SLUG_AVISO_QR = 18;
+
+/** El slug que se propone desde el nombre, ya dentro del tope: un nombre
+ *  largo no puede proponer un slug que la base va a rechazar. */
+export function slugSugerido(nombre: string): string {
+  return slugificar(nombre).slice(0, SLUG_MAXIMO).replace(/-+$/, "");
+}
+
+/** El aviso del QR, o null si el slug no lo necesita. Avisa, no frena:
+ *  entre 19 y 32 caracteres el slug vale. */
+export function avisoSlugQr(slug: string): string | null {
+  if (slug.length <= SLUG_AVISO_QR) return null;
+  return `Con más de ${SLUG_AVISO_QR} caracteres el QR del calco pierde resistencia. Este tiene ${slug.length}.`;
+}
+
 // Deja solo letras, números y espacios. Los filtros de PostgREST se arman
 // como texto ("campo.like.*algo*,otro.like.*algo*"), así que la coma, el
 // punto, el paréntesis y el asterisco tienen significado: si el término del

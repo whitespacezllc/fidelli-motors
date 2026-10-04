@@ -2,8 +2,9 @@
 
 import { useActionState, useEffect, useState, useTransition } from "react";
 import Link from "next/link";
-import { slugificar } from "@/lib/texto";
+import { SLUG_MAXIMO, avisoSlugQr, slugSugerido } from "@/lib/texto";
 import { DOMINIO_SITIO } from "@/lib/seo";
+import { IconoAviso } from "@/components/iconos";
 import {
   ALIAS_FORMATO,
   ALIAS_LARGO_MAXIMO,
@@ -68,7 +69,7 @@ const VEREDICTO: Record<EstadoSlug, { texto: (s: string) => string; clase: strin
   },
   invalido: {
     texto: () =>
-      "Minúsculas, números y guiones simples, entre 3 y 60 caracteres.",
+      `Minúsculas, números y guiones simples, entre 3 y ${SLUG_MAXIMO} caracteres.`,
     clase: "text-overdue",
   },
 };
@@ -118,7 +119,7 @@ export function WizardAlta({
   // nombre, y en cuanto se escribe algo manda la persona — sin un efecto que
   // le pise lo que tipeó medio segundo después.
   const [slugEscrito, setSlugEscrito] = useState<string | null>(null);
-  const slug = slugEscrito ?? slugificar(nombre);
+  const slug = slugEscrito ?? slugSugerido(nombre);
 
   // De dónde vino (docs/METRICAS.md § 1). Obligatorio: sin este dato la
   // pregunta "cuántos vinieron de Meta" no tiene respuesta, y a un tenant
@@ -126,7 +127,12 @@ export function WizardAlta({
   const [origen, setOrigen] = useState<OrigenTenant | "">("");
 
   const formatoValido =
-    slug.length >= 3 && slug.length <= 60 && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug);
+    slug.length >= 3 &&
+    slug.length <= SLUG_MAXIMO &&
+    /^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug);
+  // Entre 19 y 32 el slug vale, pero el QR del calco sale más frágil: se
+  // avisa acá, que es el único momento en que acortarlo es gratis.
+  const avisoQr = avisoSlugQr(slug);
 
   // El alias se propone desde el SLUG, no desde el nombre, y con la misma
   // mecánica: se deriva mientras nadie lo toque. En cuanto alguien escribe,
@@ -310,6 +316,8 @@ export function WizardAlta({
                   id="slug"
                   value={slug}
                   onChange={(e) => setSlugEscrito(e.target.value.toLowerCase())}
+                  maxLength={SLUG_MAXIMO}
+                  aria-describedby={avisoQr ? "slug-aviso-qr" : undefined}
                   className={CLASE_CAMPO}
                 />
               </div>
@@ -330,6 +338,15 @@ export function WizardAlta({
                     ? `${veredicto === "disponible" ? "✓" : "×"} ${VEREDICTO[veredicto].texto(slug)}`
                     : "Es la dirección que va impresa en el QR de las calcos."}
               </p>
+              {avisoQr && (
+                <p
+                  id="slug-aviso-qr"
+                  className="mt-1.5 flex items-start gap-1.5 text-label text-overdue"
+                >
+                  <IconoAviso aria-hidden className="mt-px size-3.5 shrink-0" />
+                  <span>{avisoQr}</span>
+                </p>
+              )}
             </div>
 
             <div>

@@ -76,10 +76,17 @@ Seis rutas, el inventario completo: `/fidelli` (listado + Pulso de plataforma + 
 pestañas Resumen · Suscripción · Datos · Configuración), `/fidelli/precios`,
 `/fidelli/cuenta`.
 
+**El slug entra en el QR del calco (04/10/2026).** Lo que va impreso en el QR es el dominio
+más el slug: el alta y **Editar** avisan desde los 19 caracteres (*"Con más de 18
+caracteres el QR del calco pierde resistencia"*) y no dejan pasar de **32**; la base
+rechaza uno más largo aunque alguien se saltee el campo. El slug que el alta propone desde
+el nombre ya viene dentro del tope.
+
 **Qué puede hacer:** dar de alta un tenant (dos fases: transacción en Postgres, después
 la invitación por HTTP — si falla la segunda queda un lubricentro "Sin owner" que se
-arregla con un botón); invitar/reenviar invitación (**único uso de `service_role` en todo
-el producto**); suspender y reactivar; registrar pagos y avisos de vencimiento; editar
+arregla con un botón); invitar/reenviar invitación (el uso de `service_role` de este
+panel; los otros son los dos crons y, desde el 04/10/2026, la ruta que le firma al cliente
+el adjunto de un trabajo); suspender y reactivar; registrar pagos y avisos de vencimiento; editar
 planes y precios de lista; fijar overrides de features por tenant; **desbloquear un
 trabajo fijado** y **corregir una patente** (las dos únicas escrituras sobre datos del
 cliente, ambas con motivo y auditoría).
@@ -173,6 +180,9 @@ es mecánica) · sucursal · km (o sello `MECÁNICA`) · estado (`EDITABLE 22 HS
 propósito) + Sucursal + Desde + Hasta. Paginado de 30. Los anulados no se borran: quedan
 atenuados.
 
+**El clip (04/10/2026):** al lado de la patente, un clip cuando el trabajo tiene archivos
+adjuntos. La exportación suma la columna **«Adjuntos»** con la cantidad.
+
 **Sin gating.** Un suspendido lo ve entero.
 
 ### 2.3 · Carga de un SERVICE
@@ -223,18 +233,35 @@ canje + pendientes + descuento de stock.
 que solo existe con la feature `mecanica` y **no aparece al editar** (el tipo de un trabajo
 guardado no se reescribe).
 
-| | Service | Mecánica |
-|---|---|---|
-| Descripción del trabajo | no existe | **obligatoria**, ≥5 caracteres |
-| Kilómetros | **obligatorios** | opcionales |
-| Aceite (viscosidad, producto, litros) | obligatorio | **no existe** |
-| Los 11 renglones | sí | **no** — en su lugar, la **orden de trabajo**: 42 renglones en 6 grupos que escriben la descripción (tocar uno escribe su línea; tocarlo de nuevo la borra), más los renglones libres de "Repuestos" |
-| Próximo service | sí | **no existe** |
-| Premio | sí | **solo si el premio cuenta "todos los trabajos"** |
-| Papel que se dibuja | cartón de 11 renglones | orden de trabajo |
+| | Service | Mecánica | Caja (04/10/2026) |
+|---|---|---|---|
+| Descripción del trabajo | no existe | **obligatoria**, ≥5 caracteres | no existe |
+| Kilómetros | **obligatorios** | opcionales | **obligatorios** |
+| Aceite (viscosidad, producto, litros) | obligatorio | **no existe** | **el aceite de caja**: 7 chips de ATF (Dexron III · Dexron VI · Mercon V · ATF+4 · Multi ATF · CVT · DCT) más «Otro», obligatorio; producto (categoría «Aceite de caja») y litros, opcionales, **sin litros sugeridos** |
+| Los 11 renglones | sí | **no** — en su lugar, la **orden de trabajo**: 42 renglones en 6 grupos que escriben la descripción (tocar uno escribe su línea; tocarlo de nuevo la borra), más los renglones libres de "Repuestos" | **no** — los **cuatro de la caja**: filtro y aditivo (con producto y cantidad), limpieza de cárter e imanes y lavado del circuito (con una nota). **Un solo toque: prendido = hecho**, sin «¿se cambió?» |
+| Próximo service | sí | **no existe** | **el suyo**, aparte: 60.000 · 70.000 · **80.000** · Otro (de 20.000 a 200.000). El próximo de aceite no se toca |
+| Premio | sí | **solo si el premio cuenta "todos los trabajos"** | ídem mecánica |
+| Plazo de edición | 24 horas | 7 días | 24 horas |
+| Papel que se dibuja | cartón de 11 renglones | orden de trabajo | la misma hoja del cartón, con bajada SERVICE DE CAJA, la etiqueta vertical CAJA y PRÓX. SERVICE CAJA al pie |
 
 **Una mecánica es más barata de cargar que un service:** un solo campo obligatorio contra
 tres.
+
+**El service de caja automática es un cuarto tipo** (con gomería, que esta tabla no
+cubre, son cuatro: el selector pasa a 2 × 2). **No viene con ningún plan y no tiene
+precio:** se prende por lubricentro desde la ficha de `/fidelli` («Service de caja
+automática»), para los talleres que se dedican a cajas. Sin la feature no se puede
+cargar ni aparece en el cartón, en «A quién llamar» ni en el Inicio; solo se la ve
+nombrada, apagada, en «Qué incluye» de Mi cuenta, y como una opción más del filtro de
+tipo del listado (igual que Neumáticos). Lo que suma, además de la carga:
+- **«A quién llamar»** gana la fuente **Caja**: avisa cuando al auto le toca el service
+  de caja, estimando con el odómetro de TODOS sus trabajos (no solo las cajas), con su
+  propio mensaje de WhatsApp por tono y su propio tilde de contactado.
+- **La página del cliente** muestra «Tu próximo service de caja» al lado de «Tu próximo
+  service» (o sola, si el auto solo tiene caja), y el papel de la caja en el historial.
+- **El Inicio** muestra «Services de caja del mes»; el listado, el sello `CAJA`; la
+  exportación, el tipo `Caja` y la columna «Próx. caja» (que solo existe para el
+  lubricentro con la feature, o en un archivo que trae alguna caja).
 
 ### 2.5 · Detalle, edición y anulación
 
@@ -249,6 +276,29 @@ premio, pero queda como registro.
 **Editar** reusa el mismo componente del cartón, precargado. Avisa que **el stock no se
 ajusta al editar** (el descuento pasa una sola vez, al crear).
 
+**Adjuntos (04/10/2026) — todos los planes, todos los tipos de trabajo.** Debajo de la
+metadata, la sección **Adjuntos**: el PDF del escaneo o una foto del diagnóstico, colgados
+del trabajo.
+
+- **Hasta 3 por trabajo, 2 MB cada uno**, PDF o foto. **Las fotos se achican solas en el
+  teléfono** antes de subir (1.600 px de lado mayor, JPEG): una foto de 4 MB sale en unos
+  cien KB. Un PDF que pasa los 2 MB se rechaza antes de subir, con lo que pesa: *"Pesa
+  2,5 MB. El máximo es 2 MB."*
+- Por archivo: su nombre (lo abre en una pestaña nueva), cuánto pesa, cuándo se subió, su
+  miniatura si es una foto, el interruptor **«Mostrar al cliente»** y **«Quitar»** (con
+  confirmación).
+- **«Mostrar al cliente» nace apagado**, archivo por archivo: prendido, el cliente lo ve
+  en su historial como «Diagnóstico adjunto»; apagado, solo lo ve el taller. Misma regla
+  que los pendientes.
+- **Adjuntar no edita el cartón**: la sección está siempre, también en un trabajo fijado
+  hace un año. Se adjunta, se prende, se apaga y se quita en cualquier momento. Quitar un
+  adjunto es la única cosa que el panel borra de verdad: es un archivo, no el registro
+  del trabajo.
+- **No hay adjuntos en la carga** (los 90 segundos no se tocan): la pantalla de guardado
+  tiene el botón secundario **«Adjuntar el diagnóstico»**, que lleva al detalle con la
+  sección a la vista.
+- Un suspendido los ve y los abre; no adjunta ni quita.
+
 ### 2.6 · A quién llamar — `/panel/proximos`
 
 La pantalla donde el dueño cobra el retorno de lo que paga. Viene ordenada para trabajarla
@@ -261,6 +311,13 @@ la feature `pendientes`).
 estimado** (con la leyenda "estimada: 40 km/día supuestos" cuando el auto tiene un solo
 service) · estado (`VENCIDO` / `URGENTE` / `PRÓXIMO`, siempre en ámbar, **nunca en el rojo
 de marca**) · checkbox "contactado" · botón de WhatsApp.
+
+**La tabla según el ancho:** desde 1280 px, las ocho columnas en un renglón; de 1024 a
+1279, dos renglones por fila —cliente · vehículo · último service · próximo · retorno
+arriba; estado, contactado y la acción abajo, con el encabezado también en dos—; por
+debajo de 1024, una tarjeta por fila que se lee sola. El encabezado y las filas comparten
+una sola plantilla (`components/proximos/grilla.ts`): ninguna columna se mide por su
+contenido.
 
 Arriba: tres contadores + conmutador Todo/Services/Pendientes + la métrica dorada
 **"Recuperados este mes"**.
@@ -558,6 +615,7 @@ El QR de la calco apunta a **`/[slug]`, nunca al cartón directo**. Lo que ve:
 | **Pendientes** | "Recomendado por el taller" — descripción + objetivo por fecha o km | pendientes marcados visibles (**default: oculto**) |
 | **Progreso de fidelización** | "Vas N de M services/trabajos", barra, y al completar: **"Tenés un premio disponible"** en dorado | tenant activo y `mostrar_fidelizacion` |
 | **Historial** | lista desplegable de todos los trabajos, cada uno con su papel completo | si hay trabajos |
+| **Diagnóstico adjunto** | debajo del papel —nunca adentro—, una línea por archivo: **«Diagnóstico adjunto · {nombre} · PDF/Foto · {fecha}»** y **«Ver →»**. En el historial va en la entrada de su trabajo, a la vista aunque el papel esté cerrado | solo los adjuntos que el taller marcó **«Mostrar al cliente»** (**default: oculto**) |
 | **Botón de WhatsApp** | "Escribinos por WhatsApp", **nunca "pedir turno"** (no hay turnos) | **Ultra** |
 
 **El aviso de inmutabilidad, que es el argumento de confianza de primer orden**, va en el
@@ -572,6 +630,13 @@ botón de WhatsApp al lubricentro. **Que la patente no aparezca es un lead.**
 
 **El único 404 real** es el lubricentro inexistente.
 
+**«Ver» no es un enlace al archivo.** Es la ruta `/[slug]/[patente]/adjunto/[id]`, que
+verifica en el servidor que ese adjunto sigue visible, que su trabajo no está anulado y que
+es de ese auto de ese lubricentro, y recién ahí redirige a una URL del archivo que **vence
+a los 60 segundos**. En el HTML de la página no hay ninguna URL del archivo: reenviar el
+enlace por WhatsApp le sirve solo a quien tiene la patente, y si el taller apaga o quita el
+adjunto, deja de abrir (*"Ese archivo ya no está disponible"*, con la vuelta al historial).
+
 ### 4.3 · Qué datos NO se muestran nunca
 
 Verificado leyendo la función vigente entera:
@@ -585,6 +650,8 @@ Verificado leyendo la función vigente entera:
 4. **Ningún dato del operador** (quién cargó el trabajo).
 5. **Notas internas** — solo las marcadas visibles.
 6. **Pendientes internos** — solo los marcados visibles, y vienen **apagados por defecto**.
+   Lo mismo los **adjuntos**: solo los marcados «Mostrar al cliente», **apagados por
+   defecto**; de un adjunto oculto no viaja ni el nombre.
 7. **Observaciones del service** — apagadas por defecto ("suelen ser notas internas").
 8. **Trabajos anulados** y **sucursales inactivas.**
 9. **IDs internos.**

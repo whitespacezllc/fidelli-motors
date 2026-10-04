@@ -15,6 +15,18 @@ import { Alertas } from "@/components/fidelli/alertas";
 
 export const metadata: Metadata = { title: "Resumen" };
 
+// El punto del Pulso como llega de metricas_plataforma(). `caja` viaja en
+// cada punto desde 20261004120100 y acá es opcional por la ventana entre
+// el deploy de Vercel y el db push: una respuesta de la función vieja no
+// la trae, y un `undefined` en la pila rompe el dibujo entero (la suma da
+// NaN). Sin la clave vale 0, que además es verdad: antes de esa migración
+// no existían las cajas.
+type PuntoCrudo = Omit<PuntoPulso, "caja"> & { caja?: number };
+
+function conCaja(puntos: PuntoCrudo[] | undefined): PuntoPulso[] {
+  return (puntos ?? []).map((p) => ({ ...p, caja: p.caja ?? 0 }));
+}
+
 // ============================================================
 // El Resumen de /fidelli: lo que se mira a la mañana.
 //
@@ -113,12 +125,12 @@ export default async function PaginaResumen({
   const metricas = (plataformaRes.data ?? {}) as {
     trabajos_mes?: number;
     acumulado?: number;
-    series?: Partial<Record<Granularidad, PuntoPulso[]>>;
+    series?: Partial<Record<Granularidad, PuntoCrudo[]>>;
   };
   const series: Record<Granularidad, PuntoPulso[]> = {
-    dia: metricas.series?.dia ?? [],
-    semana: metricas.series?.semana ?? [],
-    mes: metricas.series?.mes ?? [],
+    dia: conCaja(metricas.series?.dia),
+    semana: conCaja(metricas.series?.semana),
+    mes: conCaja(metricas.series?.mes),
   };
 
   return (

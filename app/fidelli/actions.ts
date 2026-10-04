@@ -85,7 +85,7 @@ function traducir(mensaje: string): string {
     return "El alias de un lubricentro se escribe una vez y no se cambia.";
   }
   if (mensaje.includes("slug_formato") || mensaje.includes("slug_largo")) {
-    return "El slug va en minúsculas, con números y guiones, entre 3 y 60 caracteres.";
+    return "El slug va en minúsculas, con números y guiones, entre 3 y 32 caracteres: es lo que entra en el QR del calco.";
   }
   if (mensaje.includes("vencimiento_posterior")) {
     return "El vencimiento no puede ser anterior al inicio del período.";

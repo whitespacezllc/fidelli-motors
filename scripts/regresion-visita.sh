@@ -46,6 +46,13 @@ cd "$(dirname "$0")/.."
 DB="docker exec -i supabase_db_fidelli-motors psql -U postgres -d postgres -X"
 V=supabase/verificaciones.sql
 M=supabase/migrations/20260929100000_service_con_mecanica.sql
+# guardar_service y actualizar_service se redefinieron para ganar la rama
+# del service de caja (20261004120100): la versión vigente vive acá y es la
+# que hay que romper. Las dos cambiaron de FIRMA —un parámetro más—, así
+# que reinstalar la de $M dejaría dos sobrecargas y todas las llamadas
+# contestarían «is not unique». Los marcadores `-- @` viajaron intactos.
+# (El trigger del vínculo, services_validar_vinculo, sigue en $M.)
+M_CAJA=supabase/migrations/20261004120100_service_caja.sql
 # premio_disponible y ciclos_fidelizacion se redefinieron para no contar lo
 # importado: la versión vigente vive acá y es la que hay que romper.
 M_IM=supabase/migrations/20261002120000_importado_de.sql
@@ -93,30 +100,30 @@ correr_marcada "premio_disponible de vuelta a contar filas" premio_disponible "$
 correr_marcada "ciclos_fidelizacion de vuelta a contar filas (la copia que se olvida)" ciclos_fidelizacion "$M_IM" \
   "/@visitas-flota/s/count(distinct s.fecha)/count(s.id)/" R38 "R38e"
 # La pareja: misma fecha, vínculo y renglones.
-correr_marcada "la mecánica adjunta con la fecha de hoy y no la del service" guardar_service "$M" \
+correr_marcada "la mecánica adjunta con la fecha de hoy y no la del service" guardar_service "$M_CAJA" \
   "/@adjunta-fecha/s/=> p_fecha,/=> current_date,/" R38 "R38a"
-correr_marcada "la mecánica adjunta sin el vínculo al service" guardar_service "$M" \
+correr_marcada "la mecánica adjunta sin el vínculo al service" guardar_service "$M_CAJA" \
   "/@adjunta-vinculo/s/cargado_con_id = v_service/cargado_con_id = null/" R38 "R38a"
-correr_marcada "los renglones de la mecánica adjunta ignorados" guardar_service "$M" \
+correr_marcada "los renglones de la mecánica adjunta ignorados" guardar_service "$M_CAJA" \
   "/@adjunta-items/s/= 'array'/= 'nunca'/" R38 "R38a"
 # El bug que nombra la regla 22: «ordenar» la mecánica con clock_timestamp()
 # le da otro created_at, y la del día del canje cuenta para el ciclo nuevo.
-correr_marcada "la mecánica adjunta «ordenada» con clock_timestamp()" guardar_service "$M" \
+correr_marcada "la mecánica adjunta «ordenada» con clock_timestamp()" guardar_service "$M_CAJA" \
   "/@adjunta-vinculo/s/cargado_con_id = v_service where/cargado_con_id = v_service, created_at = clock_timestamp() where/" R38 "R38a"
 # Los pendientes reenviados a la recursiva: cada uno entra dos veces.
-correr_marcada "los pendientes reenviados a la mecánica adjunta" guardar_service "$M" \
+correr_marcada "los pendientes reenviados a la mecánica adjunta" guardar_service "$M_CAJA" \
   "/@adjunta-llamada/s/p_trabajo_descripcion => p_mecanica->>'descripcion'/p_trabajo_descripcion => p_mecanica->>'descripcion', p_pendientes => p_pendientes/" R38 "R38a"
 # El corte del ciclo por fecha en vez de created_at: el trabajo cargado
 # después del canje con fecha vieja deja de contar.
 correr_marcada "el corte del ciclo por fecha en vez de created_at" premio_disponible "$M_IM" \
   "/@corte-ciclo/s/s.created_at > uc.fecha/s.fecha > uc.fecha::date/" R38 "R38f"
 # La propagación al editar: sin ella la visita se parte en dos.
-correr_marcada "actualizar_service sin propagar a la mecánica adjunta" actualizar_service "$M" \
+correr_marcada "actualizar_service sin propagar a la mecánica adjunta" actualizar_service "$M_CAJA" \
   "/@propaga-visita/s/where cargado_con_id = p_service_id/where cargado_con_id = null/" R38 "R38g"
 # La descripción: el CHECK de la tabla frena igual, pero con otro error.
-correr_marcada "la descripción mínima de la mecánica bajada a cero" guardar_service "$M" \
+correr_marcada "la descripción mínima de la mecánica bajada a cero" guardar_service "$M_CAJA" \
   "/@descripcion-minima/s/< 5 then/< 0 then/" R38 "R38b"
-correr_marcada "la mecánica adjunta colgando de una mecánica" guardar_service "$M" \
+correr_marcada "la mecánica adjunta colgando de una mecánica" guardar_service "$M_CAJA" \
   "/@adjunta-solo-service/s/p_tipo <> 'service'/false/" R38 "R38c"
 # El gating: las policies sin el gate por tipo (20260911120100) dejan
 # entrar la segunda fila a un Basic. Se rompen LAS DOS —inserción y
@@ -129,7 +136,7 @@ correr "services_insercion y services_edicion sin el gate por tipo" \
   "alter policy services_insercion on services with check ((lubricentro_id = mi_lubricentro_id()) or soy_superadmin()); alter policy services_edicion on services with check ((lubricentro_id = mi_lubricentro_id()) or soy_superadmin());" R38 "R38d"
 # La función como definer: la policy deja de regir adentro. Se ve en el
 # catálogo (R38j), antes de descubrirlo por las malas.
-correr_marcada "guardar_service como security definer" guardar_service "$M" \
+correr_marcada "guardar_service como security definer" guardar_service "$M_CAJA" \
   "/@invoker/s/set search_path = public/security definer set search_path = public/" R38 "R38j"
 # El vínculo: el CHECK y las dos condiciones del trigger.
 correr "el CHECK del vínculo borrado" \

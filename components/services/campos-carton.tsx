@@ -2,10 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { clasesBoton } from "@/components/ui/boton";
+import { Boton, clasesBoton } from "@/components/ui/boton";
 import { formatearFecha } from "@/lib/fechas";
 import {
+  ATF_COMUNES,
   VISCOSIDADES_SAE,
+  atfComun,
   esViscosidadValida,
   normalizarViscosidad,
   formatearKm,
@@ -360,6 +362,200 @@ export function SelectorViscosidad({
             </button>
           </p>
         )}
+    </div>
+  );
+}
+
+// ---------- Aceite de caja: los ATF de uso corriente y «Otro» ----------
+// El mismo patrón que la viscosidad, con otra lista: los chips son el
+// control y el campo libre aparece SOLO al tocar «Otro» (o cuando el valor
+// guardado no es ninguno de la lista: un «Toyota WS» abre así en la
+// edición). Es otro componente y no una variante de SelectorViscosidad
+// porque lo que hacía particular a aquel acá no existe: un ATF no se
+// normaliza a mayúsculas ni se lee del nombre del producto.
+//
+// El valor sigue siendo UN string, tal cual se va a guardar.
+export function SelectorAtf({
+  valor,
+  alCambiar,
+}: {
+  valor: string;
+  alCambiar: (valor: string) => void;
+}) {
+  const [otroElegido, setOtroElegido] = useState(false);
+  // Lo último que salió del campo de «Otro»: si el valor cambia por otro
+  // lado (un chip), el campo se va solo.
+  const [escrito, setEscrito] = useState<string | null>(null);
+  // El campo toma el foco solo cuando se acaba de tocar «Otro», no al
+  // abrir una caja que ya se guardó con un aceite propio.
+  const [recienElegido, setRecienElegido] = useState(false);
+
+  // El chip que corresponde a lo escrito, sin importar mayúsculas.
+  const chip = atfComun(valor);
+  const enLista = chip !== null;
+  const campoVisible =
+    (valor.trim() !== "" && !enLista) ||
+    (otroElegido && (valor === "" || valor === escrito));
+  const otroPrendido = campoVisible && !enLista;
+
+  function elegir(v: string) {
+    setOtroElegido(false);
+    setEscrito(null);
+    alCambiar(v);
+  }
+
+  const claseChip = (activa: boolean) =>
+    `flex h-11 items-center rounded-md border px-2.5 text-ui transition-colors ${
+      activa
+        ? "border-ink bg-ink font-semibold text-white"
+        : "border-line bg-base text-ink-60 hover:bg-surface"
+    }`;
+
+  return (
+    <div role="group" aria-labelledby="atf-etiqueta">
+      <span id="atf-etiqueta" className={CLASE_LABEL}>
+        Tipo <span className="text-ink-40 normal-case">(ATF)</span>
+      </span>
+      {/* Siempre en el mismo lugar y ninguno marcado de entrada: el aceite
+          de caja no se autocompleta sin que el mecánico elija algo.
+          Envuelven: en un celular de 360 ocupan dos o tres filas. */}
+      <div className="flex flex-wrap gap-1.5">
+        {ATF_COMUNES.map((a) => (
+          <button
+            key={a}
+            type="button"
+            onClick={() => elegir(a)}
+            aria-pressed={chip === a}
+            className={claseChip(chip === a)}
+          >
+            {a}
+          </button>
+        ))}
+        <button
+          type="button"
+          data-atf-otro
+          onClick={() => {
+            if (otroPrendido) return;
+            setOtroElegido(true);
+            setEscrito(null);
+            setRecienElegido(true);
+            alCambiar("");
+          }}
+          aria-pressed={otroPrendido}
+          className={`${claseChip(otroPrendido)} ${otroPrendido ? "" : "border-dashed"}`}
+        >
+          Otro
+        </button>
+      </div>
+
+      {/* El texto libre, para lo que no está en la lista: el que tiene el
+          bidón en la mano sabe más. En su propia fila y angosto. */}
+      {campoVisible && (
+        <div className="mt-2 max-w-[220px]">
+          <input
+            id="atf-otro"
+            value={valor}
+            onChange={(e) => {
+              setEscrito(e.target.value);
+              alCambiar(e.target.value);
+            }}
+            // Si lo escrito terminó siendo uno de la lista, el chip ya lo
+            // muestra: al salir, el campo se va y queda el nombre del chip.
+            onBlur={() => {
+              if (chip !== null) elegir(chip);
+            }}
+            autoFocus={recienElegido}
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="Ej: Toyota WS"
+            aria-label="Otro aceite de caja"
+            className={CLASE_CAMPO}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- El alta rápida de un producto, sin salir del cartón ----------
+// Presentación pura, con el estado y la acción inyectados. La usa el
+// bloque «Aceite de caja»; el del aceite de motor tiene la suya escrita en
+// carton.tsx desde antes y no se tocó.
+export function AltaProductoRapida({
+  idBase,
+  nombre,
+  marca,
+  alCambiarNombre,
+  alCambiarMarca,
+  focoEnMarca,
+  ejemploNombre,
+  ejemploMarca,
+  error,
+  alAgregar,
+  alCancelar,
+}: {
+  /** Prefijo de los `id` de los dos campos: único en la pantalla. */
+  idBase: string;
+  nombre: string;
+  marca: string;
+  alCambiarNombre: (valor: string) => void;
+  alCambiarMarca: (valor: string) => void;
+  /** El alta abrió con el nombre ya escrito (lo tipeado en el buscador):
+   *  el foco va a Marca; si no, a Nombre. */
+  focoEnMarca: boolean;
+  ejemploNombre: string;
+  ejemploMarca: string;
+  error: string | null;
+  alAgregar: () => void;
+  alCancelar: () => void;
+}) {
+  return (
+    <div
+      data-alta-producto={idBase}
+      className="mt-3 rounded-md border border-line bg-base p-3"
+    >
+      <p className="mb-2 text-label font-semibold tracking-[0.06em] text-ink-60 uppercase">
+        Producto nuevo
+      </p>
+      <div className="grid gap-2 sm:grid-cols-[1fr_10rem]">
+        <div>
+          <label htmlFor={`${idBase}-nombre`} className={CLASE_LABEL}>
+            Nombre
+          </label>
+          <input
+            id={`${idBase}-nombre`}
+            value={nombre}
+            onChange={(e) => alCambiarNombre(e.target.value)}
+            autoFocus={!focoEnMarca}
+            autoComplete="off"
+            placeholder={ejemploNombre}
+            className={CLASE_CAMPO}
+          />
+        </div>
+        <div>
+          <label htmlFor={`${idBase}-marca`} className={CLASE_LABEL}>
+            Marca
+          </label>
+          <input
+            id={`${idBase}-marca`}
+            value={marca}
+            onChange={(e) => alCambiarMarca(e.target.value)}
+            autoFocus={focoEnMarca}
+            autoComplete="off"
+            placeholder={ejemploMarca}
+            className={CLASE_CAMPO}
+          />
+        </div>
+      </div>
+      {error && <p className="mt-2 text-ui text-overdue">{error}</p>}
+      <div className="mt-2 flex gap-2">
+        <Boton onClick={alAgregar} className="flex-1">
+          Agregar al catálogo
+        </Boton>
+        <Boton variante="secundario" onClick={alCancelar}>
+          Cancelar
+        </Boton>
+      </div>
     </div>
   );
 }

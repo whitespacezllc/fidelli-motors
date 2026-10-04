@@ -8,7 +8,11 @@ import { clasesBoton } from "@/components/ui/boton";
 import { IconoReloj, IconoPremio } from "@/components/iconos";
 import { ContadorEstado } from "@/components/proximos/badge-urgencia";
 import { FiltrosProximosServices } from "@/components/proximos/filtros-proximos";
-import { FilaProximo, type ProximoServicio } from "@/components/proximos/fila-proximo";
+import {
+  EncabezadoProximos,
+  FilaProximo,
+  type ProximoServicio,
+} from "@/components/proximos/fila-proximo";
 import {
   esMotivoNeumaticos,
   fraseMotivos,
@@ -28,10 +32,11 @@ const ESTADOS: EstadoContacto[] = ["vencido", "urgente", "proximo"];
 
 type Params = { sucursal?: string; estado?: string; fuente?: string };
 
-type Fuente = "services" | "pendientes" | "neumaticos";
+type Fuente = "services" | "pendientes" | "neumaticos" | "caja";
 
 const ETIQUETA_FUENTE: Record<Fuente, string> = {
   services: "Services",
+  caja: "Caja",
   pendientes: "Pendientes",
   neumaticos: "Neumáticos",
 };
@@ -52,10 +57,13 @@ export default async function PaginaProximos({
 
   const puedePendientes = featureHabilitada(sesion, "pendientes");
   const puedeNeumaticos = featureHabilitada(sesion, "neumaticos");
-  // Las fuentes que este tenant puede elegir en el filtro. Con una sola
+  const puedeCaja = featureHabilitada(sesion, "caja");
+  // Las fuentes que este tenant puede elegir en el filtro, en el orden en
+  // que se leen: Services · Caja · Pendientes · Neumáticos. Con una sola
   // (services) el filtro no aparece: no hay nada que filtrar.
   const fuentes: Fuente[] = [
     "services",
+    ...(puedeCaja ? (["caja"] as const) : []),
     ...(puedePendientes ? (["pendientes"] as const) : []),
     ...(puedeNeumaticos ? (["neumaticos"] as const) : []),
   ];
@@ -83,8 +91,10 @@ export default async function PaginaProximos({
   if (filtros.sucursal) consulta = consulta.eq("sucursal_id", filtros.sucursal);
   if (filtros.estado) consulta = consulta.eq("estado", filtros.estado);
 
-  // Cuatro conjuntos distintos, en paralelo: las filas, el template con el
-  // que se arma cada mensaje, las sucursales del filtro y la métrica del mes.
+  // Cuatro conjuntos distintos, en paralelo: las filas —una consulta por
+  // fuente habilitada: services, pendientes, neumáticos y caja—, el
+  // template con el que se arma cada mensaje, las sucursales del filtro y
+  // la métrica del mes.
   let consultaPendientes = supabase
     .from("vista_pendientes")
     .select(
@@ -113,7 +123,23 @@ export default async function PaginaProximos({
   if (filtros.estado)
     consultaNeumaticos = consultaNeumaticos.eq("estado", filtros.estado);
 
-  const [filasRes, pendientesRes, neumaticosRes, templateRes, sucursalesRes, recuperadosRes] =
+  // La cuarta fuente: los próximos services de caja, una fila por vehículo.
+  // Mismo contrato de columnas que la vista de services, con una
+  // diferencia: prox_service_km viene siempre en null —una caja no tiene
+  // próximo de aceite— y el suyo es prox_caja_km.
+  let consultaCaja = supabase
+    .from("vista_proximos_caja")
+    .select(
+      `vehiculo_id, patente, marca, modelo, cliente_id, cliente_nombre,
+       cliente_telefono, ultimo_service_fecha, ultimo_service_km,
+       sucursal_id, sucursal_nombre, estimacion_inicial, fecha_estimada,
+       estado, contactado, prox_caja_km`,
+    );
+  if (filtros.sucursal)
+    consultaCaja = consultaCaja.eq("sucursal_id", filtros.sucursal);
+  if (filtros.estado) consultaCaja = consultaCaja.eq("estado", filtros.estado);
+
+  const [filasRes, pendientesRes, neumaticosRes, cajaRes, templateRes, sucursalesRes, recuperadosRes] =
     await Promise.all([
       filtros.fuente && filtros.fuente !== "services"
         ? Promise.resolve({ data: [] as never[] })
@@ -124,9 +150,14 @@ export default async function PaginaProximos({
       puedeNeumaticos && (!filtros.fuente || filtros.fuente === "neumaticos")
         ? consultaNeumaticos
         : Promise.resolve({ data: [] as never[] }),
+      puedeCaja && (!filtros.fuente || filtros.fuente === "caja")
+        ? consultaCaja
+        : Promise.resolve({ data: [] as never[] }),
       supabase
         .from("mensaje_templates")
-        .select("contenido, contenido_pendiente, contenido_neumaticos")
+        .select(
+          "contenido, contenido_pendiente, contenido_neumaticos, contenido_caja",
+        )
         .eq("activo", true)
         .limit(1)
         .maybeSingle(),
@@ -141,6 +172,7 @@ export default async function PaginaProximos({
   const template = templateRes.data?.contenido ?? null;
   const templatePendiente = templateRes.data?.contenido_pendiente ?? null;
   const templateNeumaticos = templateRes.data?.contenido_neumaticos ?? null;
+  const templateCaja = templateRes.data?.contenido_caja ?? null;
   const recuperados = (recuperadosRes.data as number | null) ?? 0;
 
   // Las columnas de una vista llegan tipadas como nullable: se acotan acá,
@@ -293,7 +325,52 @@ export default async function PaginaProximos({
     },
   );
 
-  const todas = [...filas, ...filasPendientes, ...filasNeumaticos];
+  // Los próximos services de caja, al MISMO contrato de fila. El mensaje
+  // sale de la cuarta plantilla del tono activo — nunca de la del service,
+  // que dice «del próximo service» y acá sería mentira. {proximo_km} es el
+  // próximo DE CAJA, y es también lo que viaja en proxServiceKm.
+  const filasCaja: ProximoServicio[] = (cajaRes.data ?? []).flatMap((f) => {
+    if (!f.vehiculo_id || !f.estado || !f.fecha_estimada) return [];
+
+    const vehiculo =
+      [f.marca, f.modelo].filter(Boolean).join(" ") || "el vehículo";
+    const patente = (f.patente ?? "").toUpperCase();
+    const telefono = f.cliente_telefono ?? "";
+
+    const mensaje = templateCaja
+      ? resolverTemplate(templateCaja, {
+          nombre: nombreParaMensaje(f.cliente_nombre),
+          vehiculo,
+          patente,
+          proximo_km: formatearKm(f.prox_caja_km ?? 0),
+        })
+      : null;
+
+    return [
+      {
+        fuente: "caja" as const,
+        vehiculoId: f.vehiculo_id,
+        clienteId: f.cliente_id ?? "",
+        clienteNombre: f.cliente_nombre ?? "",
+        clienteTelefono: telefono,
+        patente,
+        vehiculo,
+        // Los de la ÚLTIMA CAJA, no los del último cambio de aceite.
+        ultimoServiceFecha: f.ultimo_service_fecha ?? "",
+        ultimoServiceKm: f.ultimo_service_km ?? 0,
+        sucursal: f.sucursal_nombre ?? "",
+        proxServiceKm: f.prox_caja_km ?? 0,
+        fechaEstimada: f.fecha_estimada,
+        estimacionInicial: Boolean(f.estimacion_inicial),
+        estado: f.estado as EstadoContacto,
+        contactado: Boolean(f.contactado),
+        linkWhatsapp: mensaje ? linkWhatsapp(telefono, mensaje) : null,
+        telefonoValido: telefonoWhatsapp(telefono) !== null,
+      },
+    ];
+  });
+
+  const todas = [...filas, ...filasCaja, ...filasPendientes, ...filasNeumaticos];
 
   // Vencidos arriba, después urgentes, después próximos; dentro de cada
   // estado, por fecha estimada (un pendiente solo-por-km no tiene fecha:
@@ -314,6 +391,7 @@ export default async function PaginaProximos({
     urgente: filas.filter((f) => f.estado === "urgente").length,
     proximo: filas.filter((f) => f.estado === "proximo").length,
   };
+  const cuantosCaja = filasCaja.length;
   const cuantosPendientes = filasPendientes.length;
   const cuantosNeumaticos = filasNeumaticos.length;
 
@@ -355,10 +433,19 @@ export default async function PaginaProximos({
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           {/* Los contadores dicen QUÉ cuentan: los tres estados son de
-              services; el pendiente tiene su propio número. */}
+              services; la caja, los pendientes y la gomería tienen cada
+              uno su propio número, en el orden del filtro. */}
           {ESTADOS.map((e) => (
             <ContadorEstado key={e} estado={e} cantidad={conteos[e]} />
           ))}
+          {puedeCaja && (!filtros.fuente || filtros.fuente === "caja") && (
+            <span className="inline-flex h-9 items-center gap-1.5 rounded-md border border-line bg-surface px-3 text-ui text-ink-60 tabular-nums">
+              Caja
+              <span className="font-brand font-bold text-ink">
+                {cuantosCaja}
+              </span>
+            </span>
+          )}
           {puedePendientes && (!filtros.fuente || filtros.fuente === "pendientes") && (
             <span className="inline-flex h-9 items-center gap-1.5 rounded-md border border-line bg-surface px-3 text-ui text-ink-60 tabular-nums">
               Pendientes
@@ -413,17 +500,9 @@ export default async function PaginaProximos({
       {todas.length > 0 ? (
         <div className="surface-card">
           {/* La cabecera de columnas solo existe en desktop: en mobile cada
-              fila es una tarjeta que se lee sola. */}
-          <div className="hidden border-b border-line px-5 py-2.5 text-label font-semibold tracking-[0.06em] text-ink-40 uppercase lg:grid lg:grid-cols-[minmax(9rem,1fr)_7.5rem_11rem_6rem_9.5rem_6.5rem_5rem_auto] lg:gap-x-4">
-            <span>Cliente</span>
-            <span>Vehículo</span>
-            <span>Último service</span>
-            <span>Próximo</span>
-            <span>Retorno est.</span>
-            <span>Estado</span>
-            <span className="justify-self-center">Contactado</span>
-            <span />
-          </div>
+              fila es una tarjeta que se lee sola. Vive con la fila y usa su
+              misma plantilla: son dos grillas que tienen que coincidir. */}
+          <EncabezadoProximos />
           <ul>
             {todas.map((f) => (
               <FilaProximo
@@ -432,7 +511,9 @@ export default async function PaginaProximos({
                     ? `p-${f.pendienteId}`
                     : f.fuente === "neumaticos"
                       ? `n-${f.vehiculoId}`
-                      : `s-${f.vehiculoId}`
+                      : f.fuente === "caja"
+                        ? `c-${f.vehiculoId}`
+                        : `s-${f.vehiculoId}`
                 }
                 fila={f}
                 suspendido={suspendido}

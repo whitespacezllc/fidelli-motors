@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BadgeEstado } from "@/components/services/badge-estado";
+import { IconoClip } from "@/components/iconos";
 import { formatearKm } from "@/lib/renglones";
 import { formatearFechaHora } from "@/lib/fechas";
 import type { EstadoService } from "@/lib/servicios";
@@ -8,8 +9,11 @@ import { ETIQUETA_TIPO, type TipoTrabajo } from "@/lib/trabajos";
 export type ServiceListado = {
   id: string;
   tipo: TipoTrabajo;
-  /** Qué se hizo, en mecánica. */
+  /** De qué se trató: qué se hizo en mecánica, el aceite de caja en un
+   *  service de caja. */
   descripcion: string | null;
+  /** Cuántos archivos adjuntos tiene el trabajo (PDF o foto). */
+  adjuntos: number;
   creado: string;
   patente: string;
   vehiculo: string | null;
@@ -17,6 +21,17 @@ export type ServiceListado = {
   sucursal: string;
   kilometros: number | null;
   estado: EstadoService;
+};
+
+// Qué va en la cuarta columna: de qué se trató el trabajo (la descripción
+// de la mecánica, el aceite del service de caja) o de quién es el auto (el
+// service y la gomería). Es un Record y no un `tipo === "mecanica"`: un
+// quinto tipo no compila hasta que alguien conteste por él.
+const DICE_DE_QUE_SE_TRATO: Record<TipoTrabajo, boolean> = {
+  service: false,
+  mecanica: true,
+  neumaticos: false,
+  caja: true,
 };
 
 // Fila del registro operativo. La fila entera es el link — el objetivo
@@ -36,14 +51,27 @@ export function FilaService({ service }: { service: ServiceListado }) {
         <span className="order-2 text-label text-ink-60 tabular-nums lg:order-none">
           {formatearFechaHora(service.creado)}
         </span>
-        <span className="plate order-1 text-ui text-ink lg:order-none">
-          {service.patente.toUpperCase()}
+        {/* El clip avisa que el trabajo tiene archivos adjuntos (el PDF del
+            escaneo, una foto): se ven en el detalle. */}
+        <span className="order-1 flex items-center gap-1.5 lg:order-none">
+          <span className="plate text-ui text-ink">
+            {service.patente.toUpperCase()}
+          </span>
+          {service.adjuntos > 0 && (
+            <IconoClip
+              role="img"
+              aria-label={
+                service.adjuntos === 1 ? "Tiene 1 adjunto" : `Tiene ${service.adjuntos} adjuntos`
+              }
+              className="size-4 shrink-0 text-ink-60"
+            />
+          )}
         </span>
         <span className="order-3 truncate text-ui text-ink-60 lg:order-none">
           {service.vehiculo ?? "Vehículo"}
         </span>
         <span className="order-4 hidden truncate text-ui text-ink-60 sm:inline lg:order-none">
-          {service.tipo === "mecanica" && service.descripcion
+          {DICE_DE_QUE_SE_TRATO[service.tipo] && service.descripcion
             ? service.descripcion
             : (service.cliente ?? "")}
         </span>
@@ -52,9 +80,10 @@ export function FilaService({ service }: { service: ServiceListado }) {
         </span>
         {/* La celda dice el TIPO de un vistazo: los kilómetros para el
             service —el dato que el lubricentro busca en la lista— y el
-            sello del tipo para los otros dos. Es un mapa y no un "si no
-            es mecánica, es service": con tres tipos esa forma le ponía
-            al trabajo de gomería la etiqueta equivocada. */}
+            sello del tipo para los demás (la caja también: «Caja»). Es
+            un mapa y no un "si no es mecánica, es service": con tres
+            tipos esa forma le ponía al trabajo de gomería la etiqueta
+            equivocada. */}
         {service.tipo === "service" ? (
           <span className="order-6 text-ui text-ink-60 tabular-nums lg:order-none lg:text-right">
             {formatearKm(service.kilometros ?? 0)} km

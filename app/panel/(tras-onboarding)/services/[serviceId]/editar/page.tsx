@@ -50,7 +50,7 @@ export default async function PaginaEditarService({ params }: Props) {
           `id, tipo, trabajo_descripcion, fecha, created_at, kilometros,
            aceite_litros, alineacion,
            aceite_tipo, aceite_producto_id,
-           prox_service_km, observaciones, anulado, desbloqueado_hasta,
+           prox_service_km, prox_caja_km, observaciones, anulado, desbloqueado_hasta,
            sucursal_id, vehiculo_id, cargado_con_id,
            vehiculos(patente, marca, modelo, clase, clientes(nombre)),
            service_items(item_tipo, detalle, cambiado, cantidad, producto_id, productos(nombre, marca)),
@@ -312,6 +312,8 @@ export default async function PaginaEditarService({ params }: Props) {
           aceiteTipo: service.aceite_tipo ?? "",
           aceiteProductoId: service.aceite_producto_id,
           proxServiceKm: service.prox_service_km ?? 0,
+          // El próximo de una caja: de ahí sale qué salto viene elegido.
+          proxCajaKm: service.prox_caja_km,
           trabajoDescripcion: service.trabajo_descripcion,
           libres,
           observaciones: service.observaciones,

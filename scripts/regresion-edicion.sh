@@ -34,10 +34,14 @@ cd "$(dirname "$0")/.."
 DB="docker exec -i supabase_db_fidelli-motors psql -U postgres -d postgres -X"
 V=supabase/verificaciones.sql
 M=supabase/migrations/20260925110000_edicion_mecanica_7_dias.sql
-# get_carton se redefinió después (la suspensión por reloj, 20260926200000):
-# la versión vigente vive ahí y es la que hay que romper. El sello
+# get_carton se redefinió después (la suspensión por reloj, 20260926200000;
+# el próximo de caja, 20261004120100; y los adjuntos, 20261004200000): la
+# versión vigente vive en el último y es la que hay que romper. El sello
 # `@fijado` viaja intacto en esa copia.
-M_CARTON=supabase/migrations/20260926200000_suspension_por_reloj.sql
+M_CARTON=supabase/migrations/20261004200000_adjuntos_trabajo.sql
+# plazo_edicion() también se redefinió ahí, para darle su plazo al cuarto
+# tipo (la caja, 24 horas). Las policies siguen en $M.
+M_PLAZO=supabase/migrations/20261004120100_service_caja.sql
 M2=supabase/migrations/20260925120000_ventana_edicion_en_with_check.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
@@ -73,15 +77,15 @@ correr_marcada() { # $1 = nombre · $2 = marcador · $3 = migración · $4 = sed
 }
 
 echo "── R35 · el plazo de edición por tipo ──"
-correr_marcada "la mecánica de vuelta a 24 horas" plazo_edicion "$M" \
+correr_marcada "la mecánica de vuelta a 24 horas" plazo_edicion "$M_PLAZO" \
   "/@plazo-mecanica/s/interval '7 days'/interval '24 hours'/" R35 "R35a"
-correr_marcada "el service a 7 días (la pasada de rosca)" plazo_edicion "$M" \
+correr_marcada "el service a 7 días (la pasada de rosca)" plazo_edicion "$M_PLAZO" \
   "/@plazo-service/s/interval '24 hours'/interval '7 days'/" R35 "R35a"
-correr_marcada "los neumáticos a 7 días (el plazo que se contagia)" plazo_edicion "$M" \
+correr_marcada "los neumáticos a 7 días (el plazo que se contagia)" plazo_edicion "$M_PLAZO" \
   "/@plazo-neumaticos/s/interval '24 hours'/interval '7 days'/" R35 "R35a"
 # Sin else, el tipo que se cae del case devuelve null: sus trabajos nacen
 # fijados y nadie se entera. R35a recorre el enum entero por esto.
-correr_marcada "un tipo afuera del case (neumáticos sin plazo)" plazo_edicion "$M" \
+correr_marcada "un tipo afuera del case (neumáticos sin plazo)" plazo_edicion "$M_PLAZO" \
   "/@plazo-neumaticos/d" R35 "R35a"
 # La función dice 7 días y la policy sigue con el literal: el panel pinta
 # "editable" y el guardado falla limpio. Es la rotura de un refactor.

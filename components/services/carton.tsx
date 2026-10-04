@@ -7,14 +7,17 @@ import { Boton } from "@/components/ui/boton";
 import { Combobox } from "@/components/ui/combobox";
 import {
   CartonPapel,
+  CartonPapelCaja,
   CartonPapelMecanica,
   CartonPapelNeumaticos,
 } from "@/components/services/carton-papel";
 import {
   RENGLONES,
+  RENGLONES_CAJA,
   GRUPOS,
   esViscosidadValida,
   normalizarViscosidad,
+  normalizarAtf,
   viscosidadDelNombre,
   formatearKm,
   VISCOSIDAD_FORMATO,
@@ -22,18 +25,26 @@ import {
   SALTO_POR_DEFECTO,
   SALTO_RANGO,
   esSaltoValido,
+  SALTOS_CAJA,
+  SALTO_CAJA_POR_DEFECTO,
+  SALTO_CAJA_RANGO,
+  SALTO_CAJA_RANGO_ERROR,
+  esSaltoCajaValido,
   desplegadoPorClase,
   etiquetaCorta,
   normalizarClase,
   type ClaseVehiculo,
   type ItemTipo,
   type Renglon,
+  type RenglonCaja,
 } from "@/lib/renglones";
 import {
   CLASE_CAMPO,
   CLASE_LABEL,
+  AltaProductoRapida,
   CabeceraCarton,
   CampoKilometros,
+  SelectorAtf,
   SelectorViscosidad,
   SelectorProductoBuscable,
   RenglonInterruptor,
@@ -107,6 +118,9 @@ export type DatosCarton = {
   puedeMecanica?: boolean;
   /** El módulo de gomería está pago y prendido para este tenant. */
   puedeNeumaticos?: boolean;
+  /** La feature `caja` está prendida para este tenant (override de
+   *  /fidelli, sin costo): sin esto el segmento «Caja» no existe. */
+  puedeCaja?: boolean;
   /** El beneficio de la compra vigente de este auto: rotación y balanceo
    *  sin cargo hasta X km o hasta tal fecha. null si no tiene o venció. */
   beneficioVigente?: { hastaKm: number; hastaFecha: string } | null;
@@ -157,6 +171,8 @@ export type ServiceEnEdicion = {
   aceiteTipo: string;
   aceiteProductoId: string | null;
   proxServiceKm: number;
+  /** Caja: el próximo service de caja. null en los otros tres tipos. */
+  proxCajaKm?: number | null;
   trabajoDescripcion: string | null;
   /** Renglones libres de una mecánica, como texto. */
   libres: string[];
@@ -207,6 +223,30 @@ function proxInicial(edicion: ServiceEnEdicion | undefined): {
   return fijo ? { modo: fijo, otro: "" } : { modo: "otro", otro: String(salto) };
 }
 
+// Lo mismo para el próximo service de CAJA: tres atajos y «Otro». Una caja
+// guardada con un salto que no es ninguno de los tres reabre con «Otro»
+// elegido y ese salto escrito.
+type ProxCajaModo = (typeof SALTOS_CAJA)[number] | "otro";
+
+function proxCajaInicial(edicion: ServiceEnEdicion | undefined): {
+  modo: ProxCajaModo;
+  otro: string;
+} {
+  if (!edicion || edicion.kilometros == null || !edicion.proxCajaKm)
+    return { modo: SALTO_CAJA_POR_DEFECTO, otro: "" };
+  const salto = edicion.proxCajaKm - edicion.kilometros;
+  const fijo = SALTOS_CAJA.find((s) => s === salto);
+  return fijo ? { modo: fijo, otro: "" } : { modo: "otro", otro: String(salto) };
+}
+
+// Qué dice el aviso de «el tipo no se cambia» al editar. Un mapa y no un
+// ternario: con cuatro tipos, «si no es mecánica es gomería» ya no es cierto.
+const TRABAJO_EN_EDICION: Record<Exclude<TipoTrabajo, "service">, string> = {
+  mecanica: "Trabajo de mecánica",
+  neumaticos: "Trabajo de gomería",
+  caja: "Service de caja",
+};
+
 export function Carton({
   datos,
   edicion,
@@ -231,6 +271,8 @@ export function Carton({
   // tipo en positivo a propósito: "si no es mecánica, entonces es service"
   // era exactamente la rama implícita que un tercer tipo rompe.
   const esService = tipo === "service";
+  // El cuarto tipo: el service de caja automática (04/10/2026).
+  const esCaja = tipo === "caja";
 
   // La clase del vehículo, contestada una vez en el alta. null (nunca se
   // preguntó) y cualquier valor desconocido se leen como liviano: la
@@ -313,6 +355,46 @@ export function Carton({
     return base;
   });
 
+  // EL SERVICE DE CAJA tiene su propio estado, a propósito: no comparte el
+  // aceite, los litros ni los renglones con el cartón de aceite. Si los
+  // compartiera, cambiar de «Service» a «Caja» con el formulario a medio
+  // llenar llevaría un 5W30 al campo del ATF (o un Dexron a la viscosidad),
+  // y los renglones de uno viajarían en el guardado del otro. Lo único
+  // común es lo que es de LA VISITA: fecha, kilómetros, observaciones,
+  // pendientes y premio.
+  const edicionCaja = edicion?.tipo === "caja" ? edicion : undefined;
+  const [atf, setAtf] = useState(edicionCaja?.aceiteTipo ?? "");
+  const [atfProductoId, setAtfProductoId] = useState(
+    edicionCaja?.aceiteProductoId ?? "",
+  );
+  // Los litros de la caja: opcionales y SIEMPRE vacíos de entrada. Acá no
+  // hay litros sugeridos: cada caja lleva lo suyo y el taller lo sabe.
+  const [litrosCaja, setLitrosCaja] = useState(
+    edicionCaja?.aceiteLitros != null ? String(edicionCaja.aceiteLitros) : "",
+  );
+  // renglón de caja → su detalle (el producto o la nota). Que la clave
+  // exista es que el renglón está HECHO: no hay segundo estado.
+  const [hechosCaja, setHechosCaja] = useState<Record<string, string>>(
+    edicionCaja?.marcados ?? {},
+  );
+  const [cantidadesCaja, setCantidadesCaja] = useState<Record<string, string>>(
+    edicionCaja?.cantidades ?? {},
+  );
+  const [abiertosCaja, setAbiertosCaja] = useState<Record<string, boolean>>({});
+  const [proxCajaModo, setProxCajaModo] = useState<ProxCajaModo>(
+    () => proxCajaInicial(edicion).modo,
+  );
+  const [otroSaltoCaja, setOtroSaltoCaja] = useState(
+    () => proxCajaInicial(edicion).otro,
+  );
+  const [otroCajaRecienElegido, setOtroCajaRecienElegido] = useState(false);
+  // El alta rápida de un aceite de caja, sin salir del cartón.
+  const [altaAtf, setAltaAtf] = useState(false);
+  const [nombreAtf, setNombreAtf] = useState("");
+  const [marcaAtf, setMarcaAtf] = useState("");
+  const [altaAtfConNombre, setAltaAtfConNombre] = useState(false);
+  const [errorAtf, setErrorAtf] = useState<string | null>(null);
+
   const [observaciones, setObservaciones] = useState(
     edicion?.observaciones ?? "",
   );
@@ -375,6 +457,26 @@ export function Carton({
         : 0
       : proxModo;
   const proxKm = kmCargado && salto > 0 ? kmNum + salto : 0;
+
+  // El próximo service de caja: la misma cuenta, con sus saltos y su rango.
+  const otroCajaNum = Number(otroSaltoCaja.replace(/\D/g, ""));
+  const otroCajaCargado = otroSaltoCaja.trim() !== "";
+  const otroCajaFueraDeRango =
+    otroCajaCargado && !esSaltoCajaValido(otroCajaNum);
+  const saltoCaja =
+    proxCajaModo === "otro"
+      ? otroCajaCargado && !otroCajaFueraDeRango
+        ? otroCajaNum
+        : 0
+      : proxCajaModo;
+  const proxCajaKm = kmCargado && saltoCaja > 0 ? kmNum + saltoCaja : 0;
+
+  // Los aceites de caja viven en su propia categoría (`transmision`): así
+  // no aparecen entre los aceites de motor ni en sus chips de «más usados».
+  const atfsDelCatalogo = productos.filter(
+    (p) => p.categoria === "transmision",
+  );
+  const atfElegido = productos.find((p) => p.id === atfProductoId) ?? null;
 
   const aceitesDelCatalogo = productos.filter((p) => p.categoria === "aceite");
   // La categoría `neumatico` ya existía en el catálogo, con orden 6: lo
@@ -477,6 +579,55 @@ export function Carton({
     }
   }
 
+  // Un renglón de la caja: prenderlo es marcarlo como hecho; apagarlo se
+  // lleva su detalle y su cantidad.
+  function alternarRenglonCaja(tipo: ItemTipo) {
+    setHechosCaja((previo) => {
+      const copia = { ...previo };
+      if (tipo in copia) delete copia[tipo];
+      else copia[tipo] = "";
+      return copia;
+    });
+    setAbiertosCaja((previo) => ({ ...previo, [tipo]: false }));
+    setCantidadesCaja((previo) => {
+      const copia = { ...previo };
+      delete copia[tipo];
+      return copia;
+    });
+  }
+
+  function abrirAltaAtf(nombre: string) {
+    setErrorAtf(null);
+    setNombreAtf(nombre);
+    setMarcaAtf("");
+    setAltaAtfConNombre(nombre !== "");
+    setAltaAtf(true);
+  }
+
+  async function agregarAtf() {
+    setErrorAtf(null);
+    const resultado = await crearProductoRapido("transmision", nombreAtf, marcaAtf);
+    if (resultado.error) return setErrorAtf(resultado.error);
+    if (resultado.id && resultado.nombre) {
+      // Nace como lo crea la acción: aceite de caja, medido en litros, sin
+      // stock. Queda elegido.
+      setProductos((p) => [
+        ...p,
+        {
+          id: resultado.id!,
+          nombre: resultado.nombre!,
+          marca: marcaAtf.trim() || null,
+          categoria: "transmision",
+          unidad: "litro",
+        },
+      ]);
+      setAtfProductoId(resultado.id);
+      setAltaAtf(false);
+      setNombreAtf("");
+      setMarcaAtf("");
+    }
+  }
+
   async function confirmar() {
     setGuardando(true);
     setError(null);
@@ -526,9 +677,35 @@ export function Carton({
         cantidad: Number(cantidadesLibres[i]?.replace(",", ".")) || 1,
       }));
 
+    // Los renglones de la caja: solo los cuatro del tipo, y todos como
+    // hechos (la base lo fuerza igual). Filtro y aditivo vinculan el
+    // producto si el nombre coincide con uno del catálogo; limpieza y
+    // lavado llevan una nota.
+    const itemsCaja: ItemCargado[] = RENGLONES_CAJA.filter(
+      (r) => r.tipo in hechosCaja,
+    ).map((r) => {
+      const limpio = hechosCaja[r.tipo].trim();
+      const producto =
+        r.lleva === "producto"
+          ? productos.find((p) => p.nombre === limpio)
+          : undefined;
+      return {
+        tipo: r.tipo,
+        producto_id: producto?.id ?? null,
+        detalle: producto ? null : limpio || null,
+        cambiado: true,
+        cantidad:
+          r.lleva === "producto"
+            ? Number(cantidadesCaja[r.tipo]?.replace(",", ".")) || 1
+            : 1,
+      };
+    });
+
     const items: ItemCargado[] = esMecanica
       ? itemsLibres
-      : Object.entries(marcados).map(([tipo, detalle]) => {
+      : esCaja
+        ? itemsCaja
+        : Object.entries(marcados).map(([tipo, detalle]) => {
           const limpio = detalle.trim();
           const producto = productos.find((p) => p.nombre === limpio);
           return {
@@ -548,17 +725,37 @@ export function Carton({
       fecha,
       // En mecánica los kilómetros son opcionales: null si no se anotaron.
       kilometros: esMecanica ? (kmCargado ? kmNum : null) : kmNum,
-      aceiteTipo: esService ? normalizarViscosidad(aceiteTipo) : "",
-      aceiteProductoId: esService ? aceiteProductoId || null : null,
-      aceiteNombre: esService ? nombreAceite : null,
+      // El aceite de una caja es un ATF y se guarda como se escribió: no
+      // pasa por normalizarViscosidad («Dexron VI» no es «DEXRONVI»).
+      aceiteTipo: esService
+        ? normalizarViscosidad(aceiteTipo)
+        : esCaja
+          ? normalizarAtf(atf)
+          : "",
+      aceiteProductoId: esService
+        ? aceiteProductoId || null
+        : esCaja
+          ? atfProductoId || null
+          : null,
+      aceiteNombre: esService
+        ? nombreAceite
+        : esCaja
+          ? (atfElegido?.nombre ?? null)
+          : null,
       aceiteLitros:
         esService &&
         aceiteElegido != null &&
         descuentaPorLitros(aceiteElegido) &&
         litros.trim() !== ""
           ? Number(litros.replace(",", ".")) || null
-          : null,
+          : // En una caja los litros son un dato del trabajo, con o sin
+            // producto: viajan si se anotaron. El stock lo decide la base.
+            esCaja && litrosCaja.trim() !== ""
+            ? Number(litrosCaja.replace(",", ".")) || null
+            : null,
       proxServiceKm: esService ? proxKm : 0,
+      // El próximo de caja va en su columna; el de aceite queda vacío.
+      proxCajaKm: esCaja ? proxCajaKm : null,
       // Gomería. `alineacion` viaja en null para los otros dos tipos: la
       // columna es del trabajo de cubiertas y el CHECK espejo lo exige.
       alineacion: esNeumaticos ? alineacion : null,
@@ -643,7 +840,8 @@ export function Carton({
   // puede cambiar sin recargar.
   const hayProductosConStock =
     Boolean(edicion?.usaProductosConStock) ||
-    datos.productos.some((p) => p.id === aceiteProductoId && p.stock != null);
+    datos.productos.some((p) => p.id === aceiteProductoId && p.stock != null) ||
+    datos.productos.some((p) => p.id === atfProductoId && p.stock != null);
 
   // Un pendiente escrito sin objetivo no puede pasar: el compromiso ES el
   // vencimiento. (Las filas totalmente vacías se ignoran solas.)
@@ -667,6 +865,10 @@ export function Carton({
     service: kmCargado && aceiteTipo.trim().length >= 2 && proxKm > kmNum,
     mecanica: descripcion.trim().length >= 5,
     neumaticos: listoNeumaticos,
+    // Caja: kilómetros, el aceite de caja (2 letras) y un próximo dentro
+    // del rango. Los renglones son opcionales: un cambio de aceite de caja
+    // sin filtro ni lavado es un service de caja.
+    caja: kmCargado && normalizarAtf(atf).length >= 2 && proxCajaKm > kmNum,
   };
 
   // Con la mecánica adjunta tildada, su descripción es obligatoria ANTES de
@@ -696,6 +898,11 @@ export function Carton({
       : !kmCargado
         ? "Faltan los kilómetros del odómetro."
         : "Marcá al menos una rueda o la alineación.",
+    caja: !kmCargado
+      ? "Faltan los kilómetros."
+      : normalizarAtf(atf).length < 2
+        ? "Falta el tipo de aceite de caja."
+        : SALTO_CAJA_RANGO_ERROR,
   };
   const queFalta = pendienteIncompleto
     ? "A cada pendiente ponele qué es (5 letras mínimo) y una fecha o kilómetros."
@@ -709,7 +916,8 @@ export function Carton({
     (t) =>
       t === "service" ||
       (t === "mecanica" && datos.puedeMecanica) ||
-      (t === "neumaticos" && datos.puedeNeumaticos),
+      (t === "neumaticos" && datos.puedeNeumaticos) ||
+      (t === "caja" && datos.puedeCaja),
   );
 
   // ---------- Momento 2 ----------
@@ -780,6 +988,38 @@ export function Carton({
                         : null,
                     };
                   }),
+                }}
+              />
+            ) : esCaja ? (
+              // El papel del service de caja: la misma hoja que el cartón
+              // de aceite, con su bajada, sus cuatro renglones y su próximo.
+              <CartonPapelCaja
+                datos={{
+                  lubricentroNombre: datos.lubricentroNombre,
+                  colorTenant: datos.colorTenant,
+                  colorPapel: datos.colorPapel,
+                  fecha,
+                  kilometros: kmNum || 0,
+                  aceiteTipo: normalizarAtf(atf),
+                  aceiteNombre: atfElegido?.nombre ?? null,
+                  proxCajaKm,
+                  marcados: Object.fromEntries(
+                    RENGLONES_CAJA.filter((r) => r.tipo in hechosCaja).map(
+                      (r) => [
+                        r.tipo,
+                        {
+                          detalle: hechosCaja[r.tipo].trim() || null,
+                          cambiado: true,
+                          cantidad:
+                            r.lleva === "producto"
+                              ? Number(
+                                  cantidadesCaja[r.tipo]?.replace(",", "."),
+                                ) || 1
+                              : 1,
+                        },
+                      ],
+                    ),
+                  ),
                 }}
               />
             ) : (
@@ -911,11 +1151,20 @@ export function Carton({
             botones en fila parten "Confirmar service" en dos renglones. Ahí se
             apilan —con el primario arriba, como en el resto del panel— y en
             desktop, con ancho de sobra, vuelven a la fila. */}
-        <div className="mt-4 flex gap-2.5 md:flex-col-reverse lg:flex-row">
+        {/* «Confirmar service de caja» no entra en media fila de un celular:
+            en una caja los dos botones se apilan también en mobile, con el
+            primario arriba, y recién en desktop van lado a lado. */}
+        <div
+          className={`mt-4 flex gap-2.5 lg:flex-row ${
+            esCaja && !edicion ? "flex-col-reverse" : "md:flex-col-reverse"
+          }`}
+        >
           <Boton
             variante="secundario"
             tam="lg"
-            className="flex-1 md:flex-none lg:flex-1"
+            className={
+              esCaja && !edicion ? "lg:flex-1" : "flex-1 md:flex-none lg:flex-1"
+            }
             onClick={() => setPaso("carton")}
             disabled={guardando}
           >
@@ -925,7 +1174,9 @@ export function Carton({
               duplicado por doble tap. Ancho fijo para que no salte. */}
           <Boton
             tam="lg"
-            className="flex-1 md:flex-none lg:flex-1"
+            className={
+              esCaja && !edicion ? "lg:flex-1" : "flex-1 md:flex-none lg:flex-1"
+            }
             onClick={confirmar}
             disabled={guardando}
           >
@@ -1044,6 +1295,77 @@ export function Carton({
             </div>
           )}
         </div>
+    );
+  }
+
+  // Un renglón del service de caja. El mismo interruptor que el del cartón
+  // de aceite, SIN el segundo toggle: prendido = hecho, porque en una caja
+  // no existe el «revisado y OK». Prendido ofrece lo que ese renglón lleva:
+  // un producto del catálogo con su cantidad (el filtro, el aditivo), o
+  // una nota (la limpieza, el lavado).
+  function dibujarRenglonCaja(r: RenglonCaja) {
+    const encendido = r.tipo in hechosCaja;
+    return (
+      <div key={r.tipo} className="border-b border-line last:border-b-0">
+        <RenglonInterruptor
+          etiqueta={r.corto}
+          encendido={encendido}
+          alAlternar={() => alternarRenglonCaja(r.tipo)}
+        />
+
+        {encendido && (
+          <div className="flex flex-col gap-1 px-3.5 pb-3">
+            {abiertosCaja[r.tipo] || hechosCaja[r.tipo] ? (
+              r.lleva === "producto" ? (
+                <div className="flex items-start gap-2">
+                  <div className="min-w-0 flex-1">
+                    <Combobox
+                      value={hechosCaja[r.tipo]}
+                      onChange={(v) =>
+                        setHechosCaja((p) => ({ ...p, [r.tipo]: v }))
+                      }
+                      opciones={nombresProductos}
+                      ariaLabel={`Producto de ${r.corto}`}
+                    />
+                  </div>
+                  <input
+                    value={cantidadesCaja[r.tipo] ?? "1"}
+                    onChange={(e) =>
+                      setCantidadesCaja((prev) => ({
+                        ...prev,
+                        [r.tipo]: e.target.value,
+                      }))
+                    }
+                    inputMode="decimal"
+                    aria-label={`Cantidad de ${r.corto}`}
+                    className="h-11 w-13 shrink-0 rounded-md border border-line bg-base text-center text-ui text-ink tabular-nums"
+                  />
+                </div>
+              ) : (
+                <input
+                  value={hechosCaja[r.tipo]}
+                  onChange={(e) =>
+                    setHechosCaja((p) => ({ ...p, [r.tipo]: e.target.value }))
+                  }
+                  autoComplete="off"
+                  aria-label={`Nota de ${r.corto}`}
+                  className="h-11 w-full rounded-md border border-line bg-base px-3 text-ui text-ink"
+                />
+              )
+            ) : (
+              <button
+                type="button"
+                onClick={() =>
+                  setAbiertosCaja((p) => ({ ...p, [r.tipo]: true }))
+                }
+                className="min-h-11 self-start text-ui font-semibold text-brand"
+              >
+                {r.lleva === "producto" ? "+ producto" : "+ nota"}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -1207,7 +1529,11 @@ export function Carton({
           SIN MÓDULO NO HAY NADA QUE MOSTRAR: el que no tiene gomería ve
           el control de dos mitades de siempre, sin candado, sin cartel y
           sin upsell. El panel es la herramienta de trabajo, no la
-          vidriera — la venta del módulo pasa por otro lado. */}
+          vidriera — la venta del módulo pasa por otro lado.
+
+          Con TRES tipos van en una fila; con dos o con CUATRO, en dos
+          columnas (cuatro = 2 × 2): a 360 px, cuatro segmentos en fila no
+          dejan entrar «Neumáticos» entero. */}
       {tiposDisponibles.length > 1 && !edicion && (
         <fieldset className="mb-4">
           <legend className="sr-only">Tipo de trabajo</legend>
@@ -1236,10 +1562,7 @@ export function Carton({
       )}
       {edicion && edicion.tipo !== "service" && (
         <p className="mb-4 rounded-md border border-line bg-surface px-3.5 py-2.5 text-ui text-ink-60">
-          {edicion.tipo === "mecanica"
-            ? "Trabajo de mecánica"
-            : "Trabajo de gomería"}{" "}
-          — el tipo no se cambia al editar.
+          {TRABAJO_EN_EDICION[edicion.tipo]} — el tipo no se cambia al editar.
         </p>
       )}
 
@@ -1430,6 +1753,96 @@ export function Carton({
                 litrosSugeridos: null,
               }))}
             />
+          </>
+        )}
+
+        {/* 4-C. El service de caja automática. La misma forma que el de
+            aceite —un aceite, renglones, un próximo— con OTRO contenido:
+            el aceite es un ATF (chips y «Otro»), el producto y los litros
+            son opcionales y los litros nunca vienen precargados, y los
+            renglones son los cuatro de la caja. SIN IMPORTES, como todo. */}
+        {esCaja && (
+          <>
+            <div
+              data-bloque-aceite-caja
+              className="rounded-lg border border-line bg-surface/60 p-4"
+            >
+              <p className="mb-3 font-brand text-body font-bold text-ink">
+                Aceite de caja
+              </p>
+
+              <SelectorAtf valor={atf} alCambiar={setAtf} />
+
+              {/* El producto, del catálogo de aceites de caja y con alta
+                  rápida en esa categoría; al lado, los litros. Los dos
+                  opcionales. Con producto que lleva stock, baja igual que
+                  el de motor: los litros a granel, un bidón si es envasado. */}
+              <div className="mt-4 grid grid-cols-[minmax(0,1fr)_8rem] items-start gap-3">
+                <SelectorProductoBuscable
+                  id="atf-producto"
+                  productoId={atfProductoId}
+                  alElegir={(p) => setAtfProductoId(p?.id ?? "")}
+                  productos={atfsDelCatalogo.map((p) => ({
+                    id: p.id,
+                    nombre: p.nombre,
+                    marca: p.marca ?? null,
+                    precioVenta: p.precioVenta ?? null,
+                    stock: p.stock ?? null,
+                    unidad: p.unidad ?? "litro",
+                    litrosSugeridos: null,
+                  }))}
+                  alPedirAlta={abrirAltaAtf}
+                />
+                <div>
+                  {/* En una línea: si la etiqueta parte en dos, el campo de
+                      los litros queda más abajo que el del producto. */}
+                  <label
+                    htmlFor="atf-litros"
+                    className={`${CLASE_LABEL} whitespace-nowrap`}
+                  >
+                    Litros{" "}
+                    <span className="text-ink-40 normal-case">(opcional)</span>
+                  </label>
+                  <input
+                    id="atf-litros"
+                    inputMode="decimal"
+                    value={litrosCaja}
+                    onChange={(e) => setLitrosCaja(e.target.value)}
+                    autoComplete="off"
+                    className={`${CLASE_CAMPO} text-center tabular-nums`}
+                  />
+                </div>
+              </div>
+
+              {altaAtf && (
+                <AltaProductoRapida
+                  idBase="alta-atf"
+                  nombre={nombreAtf}
+                  marca={marcaAtf}
+                  alCambiarNombre={setNombreAtf}
+                  alCambiarMarca={setMarcaAtf}
+                  focoEnMarca={altaAtfConNombre}
+                  ejemploNombre="ATF Dexron VI"
+                  ejemploMarca="Total"
+                  error={errorAtf}
+                  alAgregar={agregarAtf}
+                  alCancelar={() => setAltaAtf(false)}
+                />
+              )}
+            </div>
+
+            {/* Los cuatro renglones de la caja, en el orden de su papel.
+                SIN overflow-hidden, igual que los grupos del cartón: el
+                panel del combobox se despliega por debajo del borde. */}
+            <div
+              data-renglones-caja
+              className="rounded-lg border border-line"
+            >
+              <p className="rounded-t-[11px] border-b border-line bg-surface px-3.5 py-2 text-label font-semibold tracking-[0.12em] text-ink-60 uppercase">
+                Lo que se hizo
+              </p>
+              {RENGLONES_CAJA.map(dibujarRenglonCaja)}
+            </div>
           </>
         )}
 
@@ -1785,6 +2198,70 @@ export function Carton({
             </p>
           )}
         </div>
+        )}
+
+        {/* 6-C. El próximo service de CAJA: los tres saltos y «Otro», con
+            el mismo patrón que el del service. Los cuatro botones van en
+            UNA fila —a 360 px cada uno mide 70 px y «80.000» entra
+            entero—. 80.000 viene elegido: es el intervalo del rubro. */}
+        {esCaja && (
+          <div
+            data-proximo-caja
+            className="rounded-lg border border-line bg-surface/60 p-4"
+          >
+            <p className="mb-3 font-brand text-body font-bold text-ink">
+              Próximo service de caja
+            </p>
+            <div className="grid grid-cols-4 gap-1.5">
+              {([...SALTOS_CAJA, "otro"] as const).map((modo) => (
+                <button
+                  key={modo}
+                  type="button"
+                  onClick={() => {
+                    setProxCajaModo(modo);
+                    setOtroCajaRecienElegido(modo === "otro");
+                  }}
+                  aria-pressed={proxCajaModo === modo}
+                  className={`flex h-11 items-center justify-center rounded-md border px-1 text-ui tabular-nums transition-colors ${
+                    proxCajaModo === modo
+                      ? "border-ink bg-ink font-semibold text-white"
+                      : `border-line bg-base text-ink-60 hover:bg-surface ${
+                          modo === "otro" ? "border-dashed" : ""
+                        }`
+                  }`}
+                >
+                  {modo === "otro" ? "Otro" : formatearKm(modo)}
+                </button>
+              ))}
+            </div>
+            {proxCajaModo === "otro" && (
+              <div className="mt-2">
+                <input
+                  id="otro-salto-caja"
+                  inputMode="numeric"
+                  autoFocus={otroCajaRecienElegido}
+                  value={otroSaltoCaja}
+                  onChange={(e) => setOtroSaltoCaja(e.target.value)}
+                  placeholder="Ej: 100.000"
+                  aria-label="Cada cuántos kilómetros hasta el próximo service de caja"
+                  className={`${CLASE_CAMPO} tabular-nums`}
+                />
+                {otroCajaFueraDeRango && (
+                  <p className="mt-2 rounded-md bg-urgente-soft px-3.5 py-3 text-ui text-urgente">
+                    {SALTO_CAJA_RANGO}
+                  </p>
+                )}
+              </div>
+            )}
+            {proxCajaKm > 0 && (
+              <p className="mt-2 text-ui text-ink-60 tabular-nums">
+                Próximo service de caja:{" "}
+                <span className="font-semibold text-ink">
+                  {formatearKm(proxCajaKm)} km
+                </span>
+              </p>
+            )}
+          </div>
         )}
 
         {/* 7. Observaciones — colapsado, el margen del cartón */}

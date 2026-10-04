@@ -3,7 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { sesionParaEscribir } from "@/lib/auth/session";
-import { esSaltoValido, SALTO_RANGO_ERROR } from "@/lib/renglones";
+import {
+  esSaltoValido,
+  errorDeCaja,
+  normalizarAtf,
+  SALTO_RANGO_ERROR,
+  validarCaja,
+} from "@/lib/renglones";
 import type {
   PayloadService,
   ResultadoGuardado,
@@ -36,6 +42,9 @@ function traducirError(
   if (/neumaticos_sin_trabajo/.test(error.message ?? "")) {
     return "Marcá al menos una rueda o la alineación: un trabajo vacío no se guarda.";
   }
+  // Los tres errores nombrados de la caja, los mismos que en el alta.
+  const deCaja = errorDeCaja(error.message ?? "");
+  if (deCaja) return deCaja;
   if (/medida_invalida/.test(error.message ?? "")) return MEDIDA_FORMATO;
   if (/dot_invalido/.test(error.message ?? "")) return DOT_FORMATO;
   if (/profundidad_invalida/.test(error.message ?? "")) {
@@ -66,6 +75,7 @@ export async function actualizarService(
   const tipo: TipoTrabajo = payload.tipo ?? "service";
   const esMecanica = tipo === "mecanica";
   const esNeumaticos = tipo === "neumaticos";
+  const esCaja = tipo === "caja";
 
   if (!payload.sucursalId) return { error: "Elegí la sucursal donde se hizo." };
   if (esMecanica) {
@@ -77,6 +87,10 @@ export async function actualizarService(
   } else if (esNeumaticos) {
     // La MISMA validación que el alta: las dos escriben en service_ruedas.
     const problema = validarNeumaticos(payload);
+    if (problema) return { error: problema };
+  } else if (esCaja) {
+    // La MISMA validación que el alta.
+    const problema = validarCaja(payload);
     if (problema) return { error: problema };
   } else {
     if (
@@ -111,8 +125,11 @@ export async function actualizarService(
     p_kilometros: payload.kilometros as number,
     p_aceite_tipo: (payload.tipo === "neumaticos" || esMecanica
       ? null
-      : payload.aceiteTipo) as unknown as string,
-    p_prox_service_km: (payload.tipo === "neumaticos" || esMecanica
+      : esCaja
+        ? normalizarAtf(payload.aceiteTipo)
+        : payload.aceiteTipo) as unknown as string,
+    // Una caja no tiene próximo de aceite: el suyo viaja en p_prox_caja_km.
+    p_prox_service_km: (payload.tipo === "neumaticos" || esMecanica || esCaja
       ? null
       : payload.proxServiceKm) as unknown as number,
     p_items: payload.items,
@@ -129,6 +146,7 @@ export async function actualizarService(
     // cómo quedó el auto, no la fila 3.
     p_alineacion: esNeumaticos ? Boolean(payload.alineacion) : undefined,
     p_ruedas: esNeumaticos ? (payload.ruedas ?? []) : undefined,
+    p_prox_caja_km: esCaja ? (payload.proxCajaKm ?? undefined) : undefined,
   });
 
   if (error) return { error: traducirError(error, tipo) };

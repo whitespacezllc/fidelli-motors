@@ -3,9 +3,14 @@ import {
   aplicarFiltrosTrabajos,
   filtrosTrabajos,
   ETIQUETA_TIPO,
+  type TipoTrabajo,
 } from "@/lib/trabajos";
-import { ETIQUETA_POSICION, resumenRuedas } from "@/lib/ruedas";
-import { RENGLONES, type ItemTipo } from "@/lib/renglones";
+import {
+  ETIQUETA_POSICION,
+  resumenRuedas,
+  type RuedaResumible,
+} from "@/lib/ruedas";
+import { RENGLONES, RENGLONES_CAJA, type ItemTipo } from "@/lib/renglones";
 import { descripcionEnUnaLinea } from "@/lib/renglones-mecanica";
 import {
   contextoExportacion,
@@ -13,6 +18,7 @@ import {
   respuestaSinFilas,
   respuestaXlsx,
 } from "@/lib/exportar/respuesta";
+import { featureHabilitada } from "@/lib/auth/session";
 import { paginar } from "@/lib/exportar/paginar";
 import {
   fecha,
@@ -45,10 +51,11 @@ import {
 // de hace seis meses.
 // ============================================================
 
-// El renglón del cartón, escrito como se lee. Los 21, en el orden del
-// papel. Es un Record TOTAL a propósito: un valor nuevo de item_tipo sin
-// etiqueta no compila, que es la única red que impide mandarle al cliente
-// un Excel con una celda en blanco.
+// El renglón del cartón, escrito como se lee. Los 21 del cartón de aceite,
+// en el orden del papel, y al final los cuatro del service de caja. Es un
+// Record TOTAL a propósito: un valor nuevo de item_tipo sin etiqueta no
+// compila, que es la única red que impide mandarle al cliente un Excel
+// con una celda en blanco.
 //
 // UNA SOLA ETIQUETA POR VALOR, siempre la neutra. "Combustible" se lee
 // "Combustible primario" en la carga de un camión y "Diferencial" se lee
@@ -79,9 +86,24 @@ const ETIQUETA_RENGLON: Record<ItemTipo, string> = {
   aditivo_transmision: "Aditivo de transmisión",
   engrase: "Engrase",
   bateria: "Batería",
+  // Los cuatro del service de caja. En la carga el aditivo se lee
+  // «Aditivo» (la pantalla ya dice que es una caja); acá va «de caja»
+  // porque comparte columna con el aditivo de motor y el de transmisión.
+  caja_filtro: "Filtro de caja",
+  caja_aditivo: "Aditivo de caja",
+  caja_limpieza_carter: "Limpieza de cárter e imanes",
+  caja_lavado: "Lavado del circuito (máquina)",
 };
 
-const ORDEN_RENGLON = new Map(RENGLONES.map((r, i) => [r.tipo, i]));
+// Los 21 del cartón de aceite y, DESPUÉS, los cuatro de la caja: es el
+// orden del enum, y cada papel conserva el suyo.
+const ORDEN_RENGLON = new Map(
+  [...RENGLONES, ...RENGLONES_CAJA].map((r, i) => [r.tipo, i]),
+);
+
+// En un service de caja prendido = hecho: no existe el «revisado y OK»
+// del cartón de aceite, así que sus renglones no llevan estado.
+const RENGLON_DE_CAJA = new Set<ItemTipo>(RENGLONES_CAJA.map((r) => r.tipo));
 
 type Producto = { nombre: string; marca: string | null; unidad: string };
 
@@ -146,7 +168,9 @@ function resumenProductos(trabajo: Trabajo, items: Item[]): string {
 }
 
 // "Filtro de aceite: Mann W712 (cambiado); Filtro de aire (OK)". Los
-// renglones libres de la mecánica van con su texto y su cantidad.
+// renglones libres de la mecánica van con su texto y su cantidad, y los
+// del service de caja sin estado: "Filtro de caja: Mann H199; Lavado del
+// circuito (máquina)" — ahí todo lo que figura está hecho.
 function renglones(items: Item[]): string {
   return items
     .map((item) => {
@@ -155,8 +179,10 @@ function renglones(items: Item[]): string {
       const cantidad = item.cantidad !== 1 ? ` ×${cantidadTexto(item.cantidad)}` : "";
       if (item.item_tipo) {
         const etiqueta = ETIQUETA_RENGLON[item.item_tipo];
+        const renglon = `${etiqueta}${nombre ? `: ${nombre}` : ""}${cantidad}`;
+        if (RENGLON_DE_CAJA.has(item.item_tipo)) return renglon;
         const estado = item.cambiado ? "cambiado" : "OK";
-        return `${etiqueta}${nombre ? `: ${nombre}` : ""}${cantidad} (${estado})`;
+        return `${renglon} (${estado})`;
       }
       return nombre ? `${nombre}${cantidad}` : "";
     })
@@ -164,12 +190,44 @@ function renglones(items: Item[]): string {
     .join("; ");
 }
 
+// La columna Detalle cuenta de qué se trató el trabajo, y cada tipo la
+// llena con lo suyo: la descripción en mecánica, el resumen de las ruedas
+// en gomería (ahí la descripción libre viene siempre en null). El service
+// y el service de caja la dejan vacía: lo suyo ya está en las columnas del
+// aceite y en Renglones. Es un Record y no un ternario a propósito: con
+// `tipo === "neumaticos" ? … : …` la caja caía en la rama de la mecánica
+// sin dar error.
+type ConDetalle = {
+  trabajo_descripcion: string | null;
+  alineacion: boolean | null;
+  service_ruedas: RuedaResumible[];
+};
+
+const DETALLE_POR_TIPO: Record<TipoTrabajo, (t: ConDetalle) => string | null> = {
+  service: () => null,
+  mecanica: (t) => descripcionEnUnaLinea(t.trabajo_descripcion),
+  neumaticos: (t) =>
+    resumenRuedas(t.service_ruedas ?? [], t.alineacion ?? false),
+  caja: () => null,
+};
+
+// El aceite del trabajo, como renglón de la hoja de productos. Solo lo
+// llevan el service y el service de caja —a la mecánica y a la gomería se
+// lo prohíbe un CHECK de la base—, y el de la caja es un ATF: anotarlo
+// como «de motor» le miente a quien cruza la hoja con el stock.
+const RENGLON_DEL_ACEITE: Record<TipoTrabajo, string | null> = {
+  service: "Aceite de motor",
+  mecanica: null,
+  neumaticos: null,
+  caja: "Aceite de caja",
+};
+
 export async function GET(request: NextRequest) {
   const contexto = await contextoExportacion();
   if (!contexto) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
-  const { supabase, slug } = contexto;
+  const { supabase, sesion, slug } = contexto;
 
   const params = request.nextUrl.searchParams;
   const filtros = filtrosTrabajos({
@@ -187,8 +245,8 @@ export async function GET(request: NextRequest) {
     const trabajos = await paginar((desde, hasta) => {
       const consulta = supabase.from("services").select(
         `id, tipo, trabajo_descripcion, fecha, created_at, kilometros, anulado,
-         observaciones, prox_service_km, aceite_tipo, aceite_nombre, aceite_litros,
-         alineacion,
+         observaciones, prox_service_km, prox_caja_km, aceite_tipo, aceite_nombre,
+         aceite_litros, alineacion,
          vehiculos!inner(patente, marca, modelo, clientes(nombre, telefono)),
          sucursales(nombre),
          usuarios!usuario_id(nombre),
@@ -196,7 +254,8 @@ export async function GET(request: NextRequest) {
          service_items(item_tipo, detalle, cambiado, cantidad, productos(nombre, marca, unidad)),
          service_ruedas(posicion, colocada, rotada, balanceada, reparada,
                         marca, medida, dot, profundidad_mm,
-                        productos(nombre, marca, unidad))`,
+                        productos(nombre, marca, unidad)),
+         adjuntos_trabajo(count)`,
       );
       return aplicarFiltrosTrabajos(consulta, filtros)
         .order("fecha", { ascending: false })
@@ -210,6 +269,16 @@ export async function GET(request: NextRequest) {
         "No hay trabajos para exportar con esos filtros. Volvé al listado y probá con otro rango o sin filtros.",
       );
     }
+
+    // La columna «Próx. caja» es del taller que hace cajas: va si tiene
+    // la feature —siempre, aunque este archivo no traiga ninguna, para
+    // que sus exportaciones tengan todas la misma forma— o si el archivo
+    // trae alguna caja (un tenant al que se le apagó la feature conserva
+    // sus datos). Al resto de los lubricentros no se les suma una columna
+    // vacía: sin la feature, la caja no existe en ninguna pantalla.
+    const conCaja =
+      featureHabilitada(sesion, "caja") ||
+      trabajos.some((t) => t.tipo === "caja");
 
     const filasTrabajos: Celda[][] = [];
     const filasProductos: Celda[][] = [];
@@ -232,19 +301,20 @@ export async function GET(request: NextRequest) {
         texto(t.aceite_nombre ?? (t.aceite ? nombreProducto(t.aceite) : null)),
         numero(t.aceite_litros),
         texto(resumenProductos(t, items)),
-        // La columna Detalle cuenta de qué se trató el trabajo. En
-        // gomería, el resumen de las ruedas: la descripción libre es de
-        // la mecánica y en neumáticos viene siempre en null. En una
-        // línea: una celda con saltos se lee mal en una tabla y obliga a
-        // configurar el ajuste de texto.
-        texto(
-          t.tipo === "neumaticos"
-            ? resumenRuedas(t.service_ruedas ?? [], t.alineacion ?? false)
-            : descripcionEnUnaLinea(t.trabajo_descripcion),
-        ),
+        // La columna Detalle cuenta de qué se trató el trabajo
+        // (DETALLE_POR_TIPO, arriba). En una línea: una celda con saltos
+        // se lee mal en una tabla y obliga a configurar el ajuste de
+        // texto.
+        texto(DETALLE_POR_TIPO[t.tipo](t)),
         texto(renglones(items)),
         texto(t.observaciones),
+        // Los dos próximos, cada uno en su columna: el del cambio de
+        // aceite queda vacío en una caja, y el de caja en todo lo demás.
         numero(t.prox_service_km),
+        ...(conCaja ? [numero(t.prox_caja_km)] : []),
+        // Cuántos archivos tiene adjuntos el trabajo (el PDF del escaneo,
+        // una foto). El número, siempre: 0 también es un dato.
+        numero(t.adjuntos_trabajo[0]?.count ?? 0),
         texto(t.usuarios?.nombre),
         siNo(t.anulado),
         texto(t.id),
@@ -252,12 +322,13 @@ export async function GET(request: NextRequest) {
 
       // Una fila por producto del catálogo: primero el aceite, después
       // los renglones que se cargaron con producto.
-      if (t.aceite) {
+      const renglonAceite = RENGLON_DEL_ACEITE[t.tipo];
+      if (t.aceite && renglonAceite) {
         filasProductos.push([
           texto(t.id),
           fecha(t.fecha),
           patente(t.vehiculos.patente),
-          texto("Aceite de motor"),
+          texto(renglonAceite),
           texto(t.aceite.nombre),
           texto(t.aceite.marca),
           numero(cantidadAceite(t.aceite, t.aceite_litros)),
@@ -321,6 +392,8 @@ export async function GET(request: NextRequest) {
           "Renglones",
           "Observaciones",
           "Próximo service (km)",
+          ...(conCaja ? ["Próx. caja"] : []),
+          "Adjuntos",
           "Cargado por",
           "Anulado",
           "ID de trabajo",

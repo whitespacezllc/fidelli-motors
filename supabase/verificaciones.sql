@@ -2381,6 +2381,16 @@ drop function r16_lub();
 --       y get_carton devolverlos en el orden del papel. Si alguien escribe
 --       un `case item_tipo when …` o un CHECK con la lista de los once,
 --       esto lo atrapa.
+--
+-- Desde 20261004120000 el enum tiene 25 valores: los 21 del cartón de
+-- aceite y, AL FINAL, los cuatro renglones del service de caja
+-- (caja_filtro, caja_aditivo, caja_limpieza_carter, caja_lavado), en el
+-- orden de SU papel. No contradice a (a): la regla «nunca al final» es del
+-- cartón de aceite, y los de caja son otro papel —se dibujan solos, con su
+-- etiqueta vertical CAJA, y el front no los mezcla con los 21
+-- (RENGLONES_CAJA en lib/renglones.ts)—. R17a aprende el orden nuevo,
+-- R17b sigue probando los 21 del cartón de aceite, y los cuatro de caja
+-- pasan por el mismo casteo genérico en R42c.
 -- ============================================================
 
 -- >>> R17a
@@ -2394,7 +2404,9 @@ declare
     'aceite_caja_reductora', 'aceite_diferencial_delantero',
     'liq_refrigerante', 'liq_frenos',
     'aditivo_motor', 'aditivo_transmision',
-    'engrase', 'bateria'
+    'engrase', 'bateria',
+    -- El papel del service de caja: otro cartón, al final y en su orden.
+    'caja_filtro', 'caja_aditivo', 'caja_limpieza_carter', 'caja_lavado'
   ];
   v_real text[];
 begin
@@ -2405,8 +2417,9 @@ begin
     raise exception E'R17a ORDEN DEL CARTÓN ROTO: item_tipo no está en el orden del papel.\n  real:     %\n  esperado: %',
       array_to_string(v_real, ' · '), array_to_string(v_esperado, ' · ')
       using hint =
-        'Todo valor nuevo de item_tipo entra con ADD VALUE … AFTER, anclado a un valor que ya existía '
-        '(ver 20260915120000_item_tipo_pesado). Nunca al final: el orden del enum es el del cartón físico.';
+        'Todo valor nuevo del cartón de aceite entra con ADD VALUE … AFTER, anclado a un valor que ya existía '
+        '(ver 20260915120000_item_tipo_pesado). Nunca al final: el orden del enum es el del cartón físico, '
+        'y al final van solo los cuatro renglones del service de caja, que son otro papel.';
   end if;
 end $$;
 -- <<< R17a
@@ -2433,9 +2446,12 @@ begin
   from vehiculos v where v.lubricentro_id = v_lub order by v.created_at limit 1;
 
   -- Los 21, en el orden del enum tal cual está en la base (R17a ya
-  -- verificó que ese orden es el del cartón).
+  -- verificó que ese orden es el del cartón). Sin los cuatro del service
+  -- de caja, que son otro papel y se prueban en R42c: acá va el cartón de
+  -- aceite de un camión, entero.
   select array_agg(e.enumlabel::text order by e.enumsortorder) into v_todos
-  from pg_enum e where e.enumtypid = 'item_tipo'::regtype;
+  from pg_enum e where e.enumtypid = 'item_tipo'::regtype
+    and e.enumlabel not like 'caja\_%';
   -- Guarda explícita, para que este bloque no se pruebe a sí mismo: con
   -- la base sin la migración, 11 contra 11 pasaba en verde.
   if coalesce(array_length(v_todos, 1), 0) <> 21 then
@@ -6469,13 +6485,17 @@ begin
   end if;
 
   -- ---------- j · La serie por tipo suma el total ----------
+  -- Con CUATRO tipos desde 20261004120100: el service de caja tiene su
+  -- clave en cada punto. `is distinct from` y no `<>`: si la clave `caja`
+  -- se cae del punto, la suma da null y un `<>` lo dejaría pasar.
   v_j := metricas_plataforma();
   select count(*) into v_n
     from jsonb_array_elements(v_j -> 'series' -> 'dia') p
    where (p ->> 'cantidad')::integer
-      <> (p ->> 'service')::integer + (p ->> 'mecanica')::integer + (p ->> 'neumaticos')::integer;
+      is distinct from (p ->> 'service')::integer + (p ->> 'mecanica')::integer
+                     + (p ->> 'neumaticos')::integer + (p ->> 'caja')::integer;
   if v_n <> 0 then
-    raise exception 'R33j EN % PUNTO(S) DE LA SERIE DIARIA service + mecanica + neumaticos ≠ cantidad. El Pulso apilado dibuja tres áreas cuya suma tiene que ser el total.', v_n;
+    raise exception 'R33j EN % PUNTO(S) DE LA SERIE DIARIA service + mecanica + neumaticos + caja ≠ cantidad. El Pulso apilado dibuja cuatro áreas cuya suma tiene que ser el total.', v_n;
   end if;
   select count(*) into v_n from jsonb_array_elements(v_j -> 'series' -> 'dia') p
    where (p ->> 'mecanica')::integer > 0;
@@ -7637,6 +7657,24 @@ begin
 end;
 $$;
 
+-- La función vigente sin las claves ADITIVAS del service de caja
+-- (20261004120100): cajas_mes y cajas_acumulado arriba, y `caja` en cada
+-- punto de las tres series. Es lo que R34h compara contra la copia vieja,
+-- que no las conoce: sacándolas, el resto del jsonb tiene que ser el
+-- mismo. El orden de los puntos se conserva (with ordinality).
+create or replace function r34_sin_caja(p jsonb)
+returns jsonb
+language sql
+immutable
+as $$
+  select (p - 'cajas_mes' - 'cajas_acumulado')
+    || jsonb_build_object('series', (
+         select coalesce(jsonb_object_agg(s.key, (
+           select coalesce(jsonb_agg(pt.punto - 'caja' order by pt.n), '[]'::jsonb)
+           from jsonb_array_elements(s.value) with ordinality as pt(punto, n))), '{}'::jsonb)
+         from jsonb_each(p -> 'series') s));
+$$;
+
 -- Un tenant de prueba con su sucursal, un cliente, un auto y —si se pide—
 -- un owner que entró ('activo'), que nunca entró ('pendiente') o ninguno
 -- (null). El owner entra por auth.users como en el seed. Se borra al
@@ -8228,8 +8266,14 @@ begin
   end if;
 
   -- ---------- h · metricas_plataforma(): el mismo jsonb ----------
+  -- Desde 20261004120100 la función vigente trae TRES claves aditivas del
+  -- service de caja (cajas_mes, cajas_acumulado y `caja` en cada punto de
+  -- las series) que la copia vieja no conoce. El contrato que se compara
+  -- acá es el de las claves que ya existían: a la nueva se le sacan las de
+  -- caja (r34_sin_caja) y todo lo demás tiene que seguir idéntico, clave
+  -- por clave y como texto. Las de caja las vigila R42h.
   v_a := r34_metricas_v1();
-  v_b := metricas_plataforma();
+  v_b := r34_sin_caja(metricas_plataforma());
 
   -- Que los trabajos de prueba estén donde tienen que estar, en la NUEVA:
   -- el punto de hoy de la serie diaria con los tres tipos y sin el anulado.
@@ -8292,7 +8336,7 @@ begin
       json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     v_a := r34_metricas_v1();
-    v_b := metricas_plataforma();
+    v_b := r34_sin_caja(metricas_plataforma());
     if v_b -> 'series' <> '{"dia": [], "semana": [], "mes": []}'::jsonb
        or (v_b ->> 'acumulado')::bigint <> 0
        or v_b ->> 'primer_trabajo' is not null
@@ -8423,6 +8467,7 @@ drop function r34_perf_tenant(text, text, boolean, text, timestamptz);
 drop function r34_perf_owner(uuid, text, text, timestamptz, boolean);
 drop function r34_listado_v1();
 drop function r34_metricas_v1();
+drop function r34_sin_caja(jsonb);
 
 -- ============================================================
 -- R34j · EL CANDADO DEL CONTADOR DE CALCOS (bloque MÉTRICAS 4)
@@ -12140,3 +12185,1892 @@ drop function r41_owner(uuid, text);
 drop function r41_autos(uuid, uuid, integer, text);
 drop function r41_trabajos(uuid, uuid, uuid, text, timestamptz, text, boolean);
 -- <<< R41
+
+
+
+-- ============================================================
+-- R42 · El service de caja automática: el cuarto tipo de trabajo
+--       (20261004120000 + 20261004120100)
+--
+-- Un cuarto valor de `tipo_trabajo` es exactamente el caso que nombra la
+-- regla 11: los CHECK y las policies de `services` están escritos como
+-- `tipo <> 'x' or (...)`, y sobre un tipo que no nombran no dicen nada.
+-- Con 'caja' en el enum y sin la segunda migración, una caja entra sin
+-- kilómetros, con descripción de mecánica, y sin mirar la feature —también
+-- por la API directa—. Y hay una segunda forma de romper esto sin ruido,
+-- más cara: que la caja se cuele en la retención del cambio de aceite. La
+-- caja tiene SU próximo (`prox_caja_km`), SU vista (`vista_proximos_caja`)
+-- y SU motivo de contacto (`'caja'`); `vista_proximos_service` no se toca
+-- y no se tiene que enterar.
+--
+--   j · El catálogo: la feature `caja` existe y NO figura en el `features`
+--       de ningún plan (se prende por override, sin costo); la categoría
+--       `transmision` está entre los aceites y los filtros; una sola firma
+--       de guardar_service y de actualizar_service; los dos CHECK por su
+--       nombre; la vista es invoker.
+--   a · El gating, en las dos capas de la base: sin la feature no entra
+--       una caja ni por la RPC ni por INSERT directo, y un service no se
+--       convierte en caja por UPDATE. Con el override de /fidelli, sí. Y
+--       apagar la feature apaga la ESCRITURA, nunca la lectura (regla 2).
+--   b · Los CHECK, sin RLS de por medio: `caja_coherente` (kilómetros,
+--       aceite y próximo de caja obligatorios; el próximo mayor que los
+--       km; sin próximo service de aceite ni descripción de mecánica) y el
+--       espejo `prox_caja_solo_caja` (un service, una mecánica o un
+--       trabajo de gomería con próximo de caja es un dato mentiroso). Una
+--       caja no es adjunta de nada ni lleva adjunta.
+--   c · La rama de guardar_service: la caja con sus cuatro renglones, que
+--       se guardan como HECHOS (`cambiado = true`) aunque el jsonb diga
+--       otra cosa; el stock del aceite baja por litros o por bidón como en
+--       el motor y el de los renglones por cantidad; los pendientes
+--       cuelgan de la caja; y las tres validaciones con su error nombrado
+--       (kilómetros, aceite de 2 letras, salto de 20.000 a 200.000).
+--   d · La edición: actualizar_service cambia el ATF, los litros, el
+--       producto, el próximo y las observaciones y sincroniza los
+--       renglones por tipo, sin tocar el stock; el tipo no se edita; y el
+--       plazo es de 24 horas (a las 25 ya no).
+--   e · `vista_proximos_caja`: el km/día y el último odómetro salen de
+--       TODOS los trabajos del auto (un auto con una caja cada 80.000 km
+--       tiene un solo punto), los tres estados con sus bordes (15 / 7 /
+--       30), 40 km/día con un solo punto, una caja anulada no cuenta, el
+--       horizonte (vencido hace más de 18 meses ya no entra; una caja de
+--       hace cinco años SÍ), la feature como puerta, y el anti-spam por
+--       motivo `'caja'` —el contacto de un service no la tilda—.
+--   f · `vista_proximos_service` devuelve EXACTAMENTE las mismas filas
+--       antes y después de cargar cajas (y de contactar por caja) en los
+--       mismos autos; un auto que solo tiene cajas no aparece ahí; y en
+--       `vista_vehiculos` el último service sigue siendo el de aceite.
+--   g · El premio: una caja suma con alcance `'todos'` y no con
+--       `'services'`, y las dos funciones del ciclo dicen lo mismo.
+--   h · `get_carton` trae `prox_caja_km` en cada entrada; `resumen_inicio`
+--       cuenta `cajas_mes`; `metricas_plataforma` cuenta `cajas_mes` y
+--       `cajas_acumulado`, la caja no es un «service» de la plataforma y
+--       cada punto de la serie sigue sumando el total.
+--   i · El badge suma la cuarta fuente solo con la feature, y las
+--       plantillas de mensaje tienen su texto de caja sin pisar nada.
+--
+-- Fixtures propios y TODO dentro de una subtransacción que se deshace al
+-- final, como R36 a R41: el override del demo, el alcance del premio, los
+-- autos y los trabajos de prueba no quedan.
+-- ============================================================
+-- >>> R42
+create or replace function r42_como(p_uid uuid) returns void language plpgsql as $$
+begin
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', p_uid, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+end $$;
+
+create or replace function r42_postgres() returns void language plpgsql as $$
+begin
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+end $$;
+
+-- El interruptor, por la puerta real de /fidelli: exige superadmin y
+-- motivo, y deja el registro. Sin precio y sin formato de módulo: la
+-- feature `caja` no es un módulo pago.
+create or replace function r42_feature(p_lub uuid, p_super uuid, p_on boolean) returns void language plpgsql as $$
+begin
+  perform r42_como(p_super);
+  perform fijar_override_plan(p_lub,
+    case when p_on then '{"caja": true}'::jsonb else '{}'::jsonb end,
+    'Service de caja automática · sin costo — prueba de regresión R42');
+  perform r42_postgres();
+end $$;
+
+-- Un intento de cargar una caja, con el rol que esté puesto. Devuelve
+-- 'entro' o el mensaje del error: así cada validación se lee en una línea.
+create or replace function r42_intento(
+  p_veh uuid, p_suc uuid, p_km integer, p_aceite text, p_prox integer,
+  p_mecanica jsonb default null, p_fecha date default current_date)
+returns text language plpgsql as $$
+begin
+  perform guardar_service(
+    p_vehiculo_id => p_veh, p_sucursal_id => p_suc, p_fecha => p_fecha,
+    p_kilometros => p_km, p_aceite_tipo => p_aceite, p_prox_service_km => null,
+    p_tipo => 'caja', p_prox_caja_km => p_prox, p_mecanica => p_mecanica);
+  return 'entro';
+exception when others then
+  return sqlstate || ' ' || sqlerrm;
+end $$;
+
+do $$
+declare
+  v_demo    uuid;
+  v_own     uuid;
+  v_super   uuid;
+  v_suc     uuid;
+  v_premio  uuid;
+  v_cli     uuid;
+  v_veh     uuid;   -- la caja completa (c, d, h)
+  v_val     uuid;   -- las validaciones y los CHECK (a, b, c)
+  v_va      uuid;   -- el auto con services + caja (e)
+  v_vb      uuid;   -- el auto con una sola caja (e)
+  v_vg      uuid;   -- el premio (g)
+  v_vh      uuid;   -- los contadores (h)
+  v_atf     uuid;   -- ATF a granel, con stock en litros
+  v_atf_u   uuid;   -- ATF envasado, con stock en bidones
+  v_filtro  uuid;
+  v_aditivo uuid;
+  v_pend    uuid;
+  v_caja    uuid;
+  v_srv     uuid;
+  v_c1      uuid;
+  v_c2      uuid;
+  v_c3      uuid;
+  v_id      uuid;
+  v_fila    services%rowtype;
+  v_vista   record;
+  v_tipos   text[];
+  v_cols    text[];
+  v_cols_s  text[];
+  v_ids     uuid[];
+  v_kms     integer[];
+  v_txt     text;
+  v_antes   text;
+  v_despues text;
+  v_err     text;
+  v_con     text;
+  v_n       integer;
+  v_m       integer;
+  v_stock   numeric;
+  v_json    jsonb;
+  v_ini     jsonb;
+  v_fin     jsonb;
+  v_pini    jsonb;
+  v_pfin    jsonb;
+  v_base    integer;
+  v_ciclo   integer;
+  v_flota   integer;
+  v_t       record;
+  i         integer;
+  -- Las cajas que había antes de la prueba y las que hay después, contadas
+  -- a mano: del demo en el mes, de la plataforma en el mes y acumuladas,
+  -- y el total de trabajos de la plataforma.
+  v_d0 integer; v_p0 integer; v_a0 integer; v_t0 integer;
+  v_d1 integer; v_p1 integer; v_a1 integer; v_t1 integer;
+  v_hoy     date := current_date;
+  v_mes_ant date := (date_trunc('month', current_date) - interval '1 day')::date;
+begin
+  select id into v_demo  from lubricentros where slug = 'demo';
+  select id into v_own   from usuarios where lubricentro_id = v_demo and rol = 'owner' limit 1;
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  select id into v_suc   from sucursales where lubricentro_id = v_demo and activa order by created_at limit 1;
+  select p.id into v_premio from premios p where p.lubricentro_id = v_demo and p.activo limit 1;
+  if v_demo is null or v_own is null or v_super is null or v_suc is null or v_premio is null then
+    raise exception 'R42 SIN PISO: falta el demo, su owner, su sucursal, el superadmin o el premio activo del seed.';
+  end if;
+
+  -- ---------- j · el catálogo y la forma, antes de tocar nada ----------
+  if not feature_plan_valida('caja') then
+    raise exception 'R42j la feature «caja» no está en catalogo_features_plan(): plan_permite(''caja'') revienta y el override de /fidelli no la acepta.';
+  end if;
+  select count(*) into v_n from planes p where p.features ? 'caja';
+  if v_n > 0 then
+    raise exception 'R42j % plan(es) traen la clave «caja» en su features. La feature se prende por tenant, con el override: en el jsonb de un plan —en true o en false— deja de ser eso.', v_n;
+  end if;
+  if not exists (select 1 from categorias_producto where clave = 'transmision' and activa) then
+    raise exception 'R42j falta la categoría de producto «transmision»: los ATF no tienen dónde vivir y aparecerían entre los aceites de motor.';
+  end if;
+  if not ((select orden from categorias_producto where clave = 'aceite')
+            < (select orden from categorias_producto where clave = 'transmision')
+          and (select orden from categorias_producto where clave = 'transmision')
+            < (select orden from categorias_producto where clave = 'filtro')) then
+    raise exception 'R42j la categoría «transmision» no quedó entre los aceites y los filtros.';
+  end if;
+  select count(*) into v_n from (
+    select orden from categorias_producto group by orden having count(*) > 1) x;
+  if v_n > 0 then
+    raise exception 'R42j hay categorías de producto con el mismo orden: el catálogo se dibuja en un orden que cambia solo.';
+  end if;
+  select count(*) into v_n from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'guardar_service';
+  select count(*) into v_m from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'actualizar_service';
+  if v_n <> 1 or v_m <> 1 then
+    raise exception 'R42j hay % firmas de guardar_service y % de actualizar_service (esperaba 1 y 1): la vieja no se soltó y PostgREST contesta «ambiguous» para TODAS las cargas del panel.', v_n, v_m;
+  end if;
+  select count(*) into v_n from pg_constraint c
+  where c.conrelid = 'public.services'::regclass and c.contype = 'c'
+    and c.conname in ('caja_coherente', 'prox_caja_solo_caja');
+  if v_n <> 2 then
+    raise exception 'R42j faltan los CHECK del cuarto tipo (hay % de 2: caja_coherente y prox_caja_solo_caja). Regla 11: sin ellos una caja entra sin ninguna restricción.', v_n;
+  end if;
+  select array_to_string(reloptions, ',') into v_txt from pg_class where relname = 'vista_proximos_caja';
+  if v_txt is null or (v_txt not like '%security_invoker=on%' and v_txt not like '%security_invoker=true%') then
+    raise exception 'R42j AISLAMIENTO ROTO: vista_proximos_caja no tiene security_invoker — un owner vería los próximos de caja de TODOS los lubricentros.'
+      using hint = 'alter view vista_proximos_caja set (security_invoker = on);';
+  end if;
+  -- El contrato de columnas: las 23 de vista_proximos_service, en el mismo
+  -- orden, y la propia al final. La página une las fuentes con ese contrato.
+  select array_agg(column_name::text order by ordinal_position) into v_cols
+  from information_schema.columns where table_schema = 'public' and table_name = 'vista_proximos_caja';
+  select array_agg(column_name::text order by ordinal_position) into v_cols_s
+  from information_schema.columns where table_schema = 'public' and table_name = 'vista_proximos_service';
+  if v_cols[1:23] is distinct from v_cols_s or v_cols[24] is distinct from 'prox_caja_km' then
+    raise exception E'R42j vista_proximos_caja no respeta el contrato de columnas de vista_proximos_service.\n  caja:    %\n  service: %',
+      array_to_string(v_cols, ' · '), array_to_string(v_cols_s, ' · ');
+  end if;
+
+  begin
+    -- ---------- los fixtures, como postgres ----------
+    insert into clientes (lubricentro_id, nombre, telefono, email)
+    values (v_demo, 'Persona R42', '351 555 0420', 'r42@ejemplo.com') returning id into v_cli;
+    insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+    values (v_demo, v_cli, 'AB142CD', 'Toyota', 'Corolla') returning id into v_veh;
+    insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+    values (v_demo, v_cli, 'AB242CD', 'Honda', 'Fit') returning id into v_val;
+    insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+    values (v_demo, v_cli, 'AB342CD', 'Volkswagen', 'Vento') returning id into v_va;
+    insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+    values (v_demo, v_cli, 'AB442CD', 'Chevrolet', 'Cruze') returning id into v_vb;
+    insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+    values (v_demo, v_cli, 'AB542CD', 'Ford', 'Focus') returning id into v_vg;
+    insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+    values (v_demo, v_cli, 'AB642CD', 'Peugeot', '308') returning id into v_vh;
+
+    insert into productos (lubricentro_id, categoria, nombre, marca, unidad, stock)
+    values (v_demo, 'transmision', 'R42 ATF Dexron VI', 'Total', 'litro', 20) returning id into v_atf;
+    insert into productos (lubricentro_id, categoria, nombre, marca, unidad, stock)
+    values (v_demo, 'transmision', 'R42 ATF CVT x4L', 'Motul', 'unidad', 8) returning id into v_atf_u;
+    insert into productos (lubricentro_id, categoria, nombre, marca, unidad, stock)
+    values (v_demo, 'filtro', 'R42 Filtro de caja', 'Wega', 'unidad', 5) returning id into v_filtro;
+    insert into productos (lubricentro_id, categoria, nombre, marca, unidad, stock)
+    values (v_demo, 'aditivo', 'R42 Aditivo de caja', 'Liqui Moly', 'unidad', 10) returning id into v_aditivo;
+
+    insert into trabajos_pendientes (lubricentro_id, vehiculo_id, usuario_id, descripcion, objetivo_km)
+    values (v_demo, v_veh, v_own, 'R42 pendiente previo', 85000) returning id into v_pend;
+
+    -- Lo que dicen los contadores antes de la primera caja (h), y lo que
+    -- hay en la base contado a mano.
+    select count(*) filter (where s.tipo = 'caja' and s.lubricentro_id = v_demo
+                              and s.fecha >= date_trunc('month', v_hoy)::date),
+           count(*) filter (where s.tipo = 'caja' and s.importado_de is null
+                              and s.fecha >= date_trunc('month', v_hoy)::date),
+           count(*) filter (where s.tipo = 'caja' and s.importado_de is null),
+           count(*) filter (where s.importado_de is null)
+      into v_d0, v_p0, v_a0, v_t0
+    from services s where not s.anulado;
+    perform r42_como(v_own);
+    v_ini := resumen_inicio() -> 'metricas';
+    perform r42_postgres();
+    perform r42_como(v_super);
+    v_pini := metricas_plataforma();
+    perform r42_postgres();
+
+    -- ---------- a · SIN la feature, las dos capas de la base rechazan ----------
+    perform r42_como(v_own);
+    if plan_permite('caja') then
+      raise exception 'R42 SIN PISO: el demo ya tiene la feature «caja» — la prueba a) no probaría nada.';
+    end if;
+    -- Un service común, para la conversión por UPDATE de más abajo.
+    v_srv := guardar_service(
+      p_vehiculo_id => v_val, p_sucursal_id => v_suc, p_fecha => v_hoy - 50,
+      p_kilometros => 40000, p_aceite_tipo => '5W30', p_prox_service_km => 50000);
+
+    v_err := r42_intento(v_val, v_suc, 84300, 'Dexron VI', 164300);
+    if v_err = 'entro' then
+      raise exception 'R42a un tenant SIN la feature cargó un service de caja por la RPC. La condición (tipo <> ''caja'' or plan_permite(''caja'')) no está en services_insercion —o guardar_service dejó de ser security invoker—: el cuarto tipo entra sin gating, también por /rpc/.';
+    elsif v_err not like '42501%' then
+      raise exception 'R42a sin la feature, la caja se rechazó con OTRO error que el de la policy (%): la acción traduce el 42501, no este.', v_err;
+    end if;
+    begin
+      insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id,
+                            tipo, fecha, kilometros, aceite_tipo, prox_caja_km)
+      values (v_demo, v_suc, v_val, v_own, 'caja', v_hoy, 84300, 'Dexron VI', 164300);
+      raise exception 'R42a_entro';
+    exception
+      when insufficient_privilege then null; -- exactamente lo esperado
+      when others then
+        if sqlerrm = 'R42a_entro' then
+          raise exception 'R42a un tenant SIN la feature insertó una caja directo en la tabla: services_insercion no la gatea.';
+        end if;
+        raise;
+    end;
+    begin
+      update services set tipo = 'caja', prox_service_km = null, prox_caja_km = 120000
+      where id = v_srv;
+      get diagnostics v_n = row_count;
+      raise exception 'R42a_entro';
+    exception
+      when insufficient_privilege then null;
+      when others then
+        if sqlerrm = 'R42a_entro' then
+          raise exception 'R42a un tenant SIN la feature convirtió un service en caja por UPDATE (% fila): services_edicion no la gatea.', v_n;
+        end if;
+        raise;
+    end;
+    perform r42_postgres();
+
+    -- ---------- el interruptor, por la puerta real ----------
+    perform r42_feature(v_demo, v_super, true);
+    perform r42_como(v_own);
+    if not plan_permite('caja') then
+      raise exception 'R42a el override de /fidelli no habilita la feature: plan_permite(''caja'') sigue en false con la clave en true.';
+    end if;
+
+    -- ---------- c · la rama: la caja completa ----------
+    -- Los renglones viajan desordenados y con `cambiado` en false o sin la
+    -- clave, a propósito: en una caja prendido = hecho, y el orden lo pone
+    -- el enum.
+    begin
+      v_caja := guardar_service(
+        p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => v_hoy,
+        p_kilometros => 84300, p_aceite_tipo => '  Dexron VI ', p_prox_service_km => null,
+        p_items => jsonb_build_array(
+          jsonb_build_object('tipo', 'caja_lavado', 'cambiado', false, 'detalle', 'R42 con máquina, 12 litros'),
+          jsonb_build_object('tipo', 'caja_filtro', 'cambiado', false, 'producto_id', v_filtro),
+          jsonb_build_object('tipo', 'caja_aditivo', 'cambiado', false, 'producto_id', v_aditivo, 'cantidad', 2),
+          jsonb_build_object('tipo', 'caja_limpieza_carter', 'detalle', 'R42 imanes con viruta fina')),
+        p_aceite_producto_id => v_atf, p_aceite_nombre => 'R42 ATF Dexron VI · Total',
+        p_observaciones => 'R42 observación de la caja',
+        p_tipo => 'caja', p_aceite_litros => 6.5, p_prox_caja_km => 164300,
+        p_pendientes => jsonb_build_array(
+          jsonb_build_object('descripcion', 'R42 revisar el soporte de la caja', 'objetivo_km', 90000)),
+        p_resolver_pendientes => array[v_pend]);
+    exception when others then
+      raise exception 'R42c con la feature prendida, un service de caja NO se pudo cargar (% %). La rama de guardar_service no existe o el gating quedó cerrado para todos.', sqlstate, sqlerrm;
+    end;
+
+    select * into v_fila from services where id = v_caja;
+    if v_fila.tipo is distinct from 'caja' or v_fila.kilometros is distinct from 84300
+       or v_fila.aceite_tipo is distinct from 'Dexron VI'
+       or v_fila.aceite_producto_id is distinct from v_atf
+       or v_fila.aceite_nombre is distinct from 'R42 ATF Dexron VI · Total'
+       or v_fila.aceite_litros is distinct from 6.5
+       or v_fila.prox_caja_km is distinct from 164300
+       or v_fila.observaciones is distinct from 'R42 observación de la caja' then
+      raise exception 'R42c la caja no se guardó como se mandó: tipo %, km %, aceite «%», producto %, nombre «%», litros %, próximo de caja %, obs «%».',
+        v_fila.tipo, v_fila.kilometros, v_fila.aceite_tipo, v_fila.aceite_producto_id,
+        v_fila.aceite_nombre, v_fila.aceite_litros, v_fila.prox_caja_km, v_fila.observaciones;
+    end if;
+    if v_fila.prox_service_km is not null or v_fila.trabajo_descripcion is not null
+       or v_fila.alineacion is not null or v_fila.cargado_con_id is not null then
+      raise exception 'R42c la caja quedó con datos de otro tipo: próximo service %, descripción «%», alineación %, cargado con %. El cambio de aceite no se tiene que enterar.',
+        v_fila.prox_service_km, v_fila.trabajo_descripcion, v_fila.alineacion, v_fila.cargado_con_id;
+    end if;
+
+    select array_agg(si.item_tipo::text order by si.item_tipo), count(*) filter (where si.cambiado)
+      into v_tipos, v_n
+    from service_items si where si.service_id = v_caja;
+    if v_tipos is distinct from array['caja_filtro', 'caja_aditivo', 'caja_limpieza_carter', 'caja_lavado'] then
+      raise exception 'R42c los renglones de la caja no son los cuatro, en el orden del papel: %', array_to_string(v_tipos, ' · ');
+    end if;
+    if v_n <> 4 then
+      raise exception 'R42c % de los 4 renglones quedaron como HECHOS. En un service de caja prendido = hecho: `cambiado` se guarda true siempre, venga lo que venga en el jsonb (no existe «revisado y OK»).', v_n;
+    end if;
+    if not exists (select 1 from service_items where service_id = v_caja and item_tipo = 'caja_aditivo'
+                   and producto_id = v_aditivo and cantidad = 2)
+       or not exists (select 1 from service_items where service_id = v_caja and item_tipo = 'caja_lavado'
+                      and detalle = 'R42 con máquina, 12 litros')
+       or not exists (select 1 from service_items where service_id = v_caja and item_tipo = 'caja_filtro'
+                      and producto_id = v_filtro and cantidad = 1) then
+      raise exception 'R42c un renglón de la caja perdió su producto, su cantidad o su nota.';
+    end if;
+
+    -- El stock: el ATF a granel baja los litros; el filtro, uno; el aditivo, dos.
+    select stock into v_stock from productos where id = v_atf;
+    if v_stock <> 13.5 then
+      raise exception 'R42c el stock del ATF a granel quedó en % y esperaba 13,5 (20 menos los 6,5 litros de la caja). El aceite de caja baja con la misma lógica que el de motor.', v_stock;
+    end if;
+    select stock into v_stock from productos where id = v_filtro;
+    if v_stock <> 4 then
+      raise exception 'R42c el stock del filtro de caja quedó en % y esperaba 4 (5 menos el del renglón).', v_stock;
+    end if;
+    select stock into v_stock from productos where id = v_aditivo;
+    if v_stock <> 8 then
+      raise exception 'R42c el stock del aditivo quedó en % y esperaba 8 (10 menos los DOS del renglón).', v_stock;
+    end if;
+
+    -- Los pendientes cuelgan de la caja, igual que de cualquier trabajo.
+    if not exists (select 1 from trabajos_pendientes where origen_service_id = v_caja
+                   and descripcion = 'R42 revisar el soporte de la caja' and estado = 'pendiente') then
+      raise exception 'R42c el pendiente anotado en la caja no quedó colgado de ella.';
+    end if;
+    if not exists (select 1 from trabajos_pendientes where id = v_pend
+                   and estado = 'resuelto' and resuelto_service_id = v_caja) then
+      raise exception 'R42c el pendiente tildado en la caja no quedó resuelto por ella.';
+    end if;
+
+    -- Las validaciones, con su error nombrado (la acción los traduce).
+    select count(*) into v_n from services where vehiculo_id = v_val;
+    v_err := r42_intento(v_val, v_suc, null, 'Dexron VI', 164300);
+    if v_err not like '%caja_sin_kilometros%' then
+      raise exception 'R42c una caja SIN kilómetros no se rechazó con caja_sin_kilometros (%). El próximo de caja y la retención se calculan contra ese número.', v_err;
+    end if;
+    v_err := r42_intento(v_val, v_suc, 84300, ' x ', 164300);
+    if v_err not like '%aceite_caja_requerido%' then
+      raise exception 'R42c una caja con el aceite «x» no se rechazó con aceite_caja_requerido (%). El tipo de ATF es obligatorio, con 2 letras como mínimo.', v_err;
+    end if;
+    v_err := r42_intento(v_val, v_suc, 84300, null, 164300);
+    if v_err not like '%aceite_caja_requerido%' then
+      raise exception 'R42c una caja SIN aceite no se rechazó con aceite_caja_requerido (%).', v_err;
+    end if;
+    v_err := r42_intento(v_val, v_suc, 84300, 'Dexron VI', null);
+    if v_err not like '%salto_caja_invalido%' then
+      raise exception 'R42c una caja SIN próximo no se rechazó con salto_caja_invalido (%).', v_err;
+    end if;
+    v_err := r42_intento(v_val, v_suc, 84300, 'Dexron VI', 84300 + 19999);
+    if v_err not like '%salto_caja_invalido%' then
+      raise exception 'R42c un salto de 19.999 km no se rechazó con salto_caja_invalido (%). El rango del próximo de caja (20.000 a 200.000) lo hace cumplir la base.', v_err;
+    end if;
+    v_err := r42_intento(v_val, v_suc, 84300, 'Dexron VI', 84300 + 200001);
+    if v_err not like '%salto_caja_invalido%' then
+      raise exception 'R42c un salto de 200.001 km no se rechazó con salto_caja_invalido (%).', v_err;
+    end if;
+    v_err := r42_intento(v_val, v_suc, 84300, 'Dexron VI', 164300,
+      jsonb_build_object('descripcion', 'R42 mecánica colgada de una caja'));
+    if v_err not like '%mecanica_adjunta_solo_en_service%' then
+      raise exception 'R42c una caja con mecánica adjunta no se rechazó con mecanica_adjunta_solo_en_service (%).', v_err;
+    end if;
+    select count(*) into v_m from services where vehiculo_id = v_val;
+    if v_m <> v_n then
+      raise exception 'R42c los intentos rechazados dejaron % fila(s) en la base.', v_m - v_n;
+    end if;
+    -- Los bordes entran: 20.000 y 200.000 clavados. Y el ATF envasado baja
+    -- UN bidón, con o sin litros.
+    v_err := r42_intento(v_val, v_suc, 84300, 'CVT', 84300 + 20000, null, v_hoy - 3);
+    if v_err <> 'entro' then
+      raise exception 'R42c un salto de 20.000 km clavados fue rechazado (%). El borde entra.', v_err;
+    end if;
+    v_err := r42_intento(v_val, v_suc, 84300, 'CVT', 84300 + 200000, null, v_hoy - 2);
+    if v_err <> 'entro' then
+      raise exception 'R42c un salto de 200.000 km clavados fue rechazado (%). El borde entra.', v_err;
+    end if;
+    perform guardar_service(
+      p_vehiculo_id => v_val, p_sucursal_id => v_suc, p_fecha => v_hoy - 1,
+      p_kilometros => 84300, p_aceite_tipo => 'CVT', p_prox_service_km => null,
+      p_aceite_producto_id => v_atf_u, p_aceite_litros => 4,
+      p_tipo => 'caja', p_prox_caja_km => 164300);
+    select stock into v_stock from productos where id = v_atf_u;
+    if v_stock <> 7 then
+      raise exception 'R42c el stock del ATF envasado quedó en % y esperaba 7 (8 menos UN bidón: con unidad = unidad no bajan los litros anotados).', v_stock;
+    end if;
+
+    -- ---------- d · la edición ----------
+    perform actualizar_service(
+      p_service_id => v_caja, p_sucursal_id => v_suc, p_fecha => v_hoy,
+      p_kilometros => 84500, p_aceite_tipo => ' Mercon V ', p_prox_service_km => 99999,
+      p_items => jsonb_build_array(
+        jsonb_build_object('tipo', 'caja_filtro', 'cambiado', false, 'detalle', 'R42 filtro original'),
+        jsonb_build_object('tipo', 'caja_limpieza_carter', 'cambiado', false, 'detalle', 'R42 imanes limpios')),
+      p_aceite_producto_id => null, p_aceite_nombre => null,
+      p_observaciones => 'R42 corregida', p_aceite_litros => 7, p_prox_caja_km => 154500);
+
+    select * into v_fila from services where id = v_caja;
+    if v_fila.aceite_tipo is distinct from 'Mercon V' or v_fila.kilometros is distinct from 84500
+       or v_fila.prox_caja_km is distinct from 154500 or v_fila.aceite_producto_id is not null
+       or v_fila.aceite_nombre is not null or v_fila.aceite_litros is distinct from 7
+       or v_fila.observaciones is distinct from 'R42 corregida' then
+      raise exception 'R42d actualizar_service no editó la caja: aceite «%», km %, próximo de caja %, producto %, litros %, obs «%».',
+        v_fila.aceite_tipo, v_fila.kilometros, v_fila.prox_caja_km, v_fila.aceite_producto_id,
+        v_fila.aceite_litros, v_fila.observaciones;
+    end if;
+    if v_fila.tipo is distinct from 'caja' or v_fila.prox_service_km is not null then
+      raise exception 'R42d editar la caja le cambió el tipo (%) o le escribió un próximo service de aceite (%). El tipo no se edita, y la caja no tiene próximo de aceite.', v_fila.tipo, v_fila.prox_service_km;
+    end if;
+    select array_agg(si.item_tipo::text order by si.item_tipo), count(*) filter (where si.cambiado)
+      into v_tipos, v_n
+    from service_items si where si.service_id = v_caja;
+    if v_tipos is distinct from array['caja_filtro', 'caja_limpieza_carter'] then
+      raise exception 'R42d la edición no sincronizó los renglones por tipo (esperaba filtro y limpieza): %', array_to_string(v_tipos, ' · ');
+    end if;
+    if v_n <> 2 then
+      raise exception 'R42d al editar, % de los 2 renglones quedaron como HECHOS: la edición aceptó el `cambiado` del jsonb.', v_n;
+    end if;
+    if not exists (select 1 from service_items where service_id = v_caja and item_tipo = 'caja_filtro'
+                   and producto_id is null and detalle = 'R42 filtro original') then
+      raise exception 'R42d el renglón del filtro no tomó el detalle nuevo.';
+    end if;
+    -- El stock NO se re-toca al editar (la regla de siempre).
+    if (select stock from productos where id = v_atf) <> 13.5
+       or (select stock from productos where id = v_filtro) <> 4
+       or (select stock from productos where id = v_aditivo) <> 8 then
+      raise exception 'R42d editar la caja movió el stock (ATF %, filtro %, aditivo %): el descuento pasa una sola vez, al crear.',
+        (select stock from productos where id = v_atf), (select stock from productos where id = v_filtro),
+        (select stock from productos where id = v_aditivo);
+    end if;
+    -- Las mismas validaciones que en el alta.
+    begin
+      perform actualizar_service(
+        p_service_id => v_caja, p_sucursal_id => v_suc, p_fecha => v_hoy,
+        p_kilometros => 84500, p_aceite_tipo => 'Mercon V', p_prox_service_km => null,
+        p_prox_caja_km => 84500 + 10000);
+      raise exception 'R42d_entro';
+    exception when others then
+      if sqlerrm = 'R42d_entro' then
+        raise exception 'R42d la edición aceptó un salto de 10.000 km: el rango del próximo de caja no rige al editar.';
+      end if;
+      if sqlerrm not like '%salto_caja_invalido%' then raise; end if;
+    end;
+    begin
+      perform actualizar_service(
+        p_service_id => v_caja, p_sucursal_id => v_suc, p_fecha => v_hoy,
+        p_kilometros => 84500, p_aceite_tipo => 'M', p_prox_service_km => null,
+        p_prox_caja_km => 154500);
+      raise exception 'R42d_entro';
+    exception when others then
+      if sqlerrm = 'R42d_entro' then
+        raise exception 'R42d la edición aceptó un aceite de caja de una letra.';
+      end if;
+      if sqlerrm not like '%aceite_caja_requerido%' then raise; end if;
+    end;
+    perform r42_postgres();
+
+    -- El plazo: 24 horas, como el service. A las 23 se edita; a las 25 no.
+    if plazo_edicion('caja') is distinct from interval '24 hours' then
+      raise exception 'R42d plazo_edicion(''caja'') es % y no 24 horas.', plazo_edicion('caja');
+    end if;
+    update services set created_at = now() - interval '23 hours' where id = v_caja;
+    perform r42_como(v_own);
+    begin
+      perform actualizar_service(
+        p_service_id => v_caja, p_sucursal_id => v_suc, p_fecha => v_hoy,
+        p_kilometros => 84500, p_aceite_tipo => 'Mercon V', p_prox_service_km => null,
+        -- Y vuelve a prender el lavado, que se había apagado: un renglón
+        -- NUEVO en la edición también nace como hecho.
+        p_items => jsonb_build_array(
+          jsonb_build_object('tipo', 'caja_filtro'),
+          jsonb_build_object('tipo', 'caja_lavado', 'cambiado', false, 'detalle', 'R42 lavado, de vuelta')),
+        p_aceite_litros => 7, p_prox_caja_km => 154500);
+    exception when others then
+      raise exception 'R42d una caja de hace 23 horas NO se pudo editar (%): el plazo de la caja no es de 24 horas.', sqlerrm;
+    end;
+    select array_agg(si.item_tipo::text order by si.item_tipo), count(*) filter (where si.cambiado)
+      into v_tipos, v_n
+    from service_items si where si.service_id = v_caja;
+    perform r42_postgres();
+    if v_tipos is distinct from array['caja_filtro', 'caja_lavado'] or v_n <> 2 then
+      raise exception 'R42d un renglón prendido AL EDITAR no quedó como hecho, o la edición no sincronizó (renglones: %; hechos: % de 2).', array_to_string(v_tipos, ' · '), v_n;
+    end if;
+    update services set created_at = now() - interval '25 hours' where id = v_caja;
+    perform r42_como(v_own);
+    begin
+      perform actualizar_service(
+        p_service_id => v_caja, p_sucursal_id => v_suc, p_fecha => v_hoy,
+        p_kilometros => 84600, p_aceite_tipo => 'ATF+4', p_prox_service_km => null,
+        p_aceite_litros => 7, p_prox_caja_km => 154600);
+      raise exception 'R42d_entro';
+    exception when others then
+      if sqlerrm = 'R42d_entro' then
+        raise exception 'R42d una caja de hace 25 horas se editó: la caja se fija a las 24 horas, como el service (plazo_edicion).';
+      end if;
+      if sqlerrm not like '%service_no_editable%' then raise; end if;
+    end;
+    perform r42_postgres();
+    update services set created_at = now() where id = v_caja;
+
+    -- ---------- b · los CHECK, sin RLS de por medio ----------
+    -- Como postgres: la forma de la fila la sostiene la TABLA y no la
+    -- función de guardado. Cada caso viola UN CHECK y se mira cuál fue
+    -- (Postgres los evalúa por orden alfabético del nombre).
+    for v_t in
+      select * from (values
+        ('sin kilómetros',
+         $q$insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, aceite_tipo, prox_caja_km)
+            values ($1, $2, $3, $4, 'caja', current_date, 'Dexron VI', 164300)$q$, 'caja_coherente'),
+        ('sin aceite de caja',
+         $q$insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, kilometros, prox_caja_km)
+            values ($1, $2, $3, $4, 'caja', current_date, 84300, 164300)$q$, 'caja_coherente'),
+        ('sin próximo de caja',
+         $q$insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, kilometros, aceite_tipo)
+            values ($1, $2, $3, $4, 'caja', current_date, 84300, 'Dexron VI')$q$, 'caja_coherente'),
+        ('con el próximo de caja igual a los kilómetros',
+         $q$insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, kilometros, aceite_tipo, prox_caja_km)
+            values ($1, $2, $3, $4, 'caja', current_date, 84300, 'Dexron VI', 84300)$q$, 'caja_coherente'),
+        ('con próximo service de aceite',
+         $q$insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, kilometros, aceite_tipo, prox_caja_km, prox_service_km)
+            values ($1, $2, $3, $4, 'caja', current_date, 84300, 'Dexron VI', 164300, 94300)$q$, 'caja_coherente'),
+        ('con descripción de mecánica',
+         $q$insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, kilometros, aceite_tipo, prox_caja_km, trabajo_descripcion)
+            values ($1, $2, $3, $4, 'caja', current_date, 84300, 'Dexron VI', 164300, 'R42 cambio de embrague')$q$, 'caja_coherente'),
+        ('un SERVICE con próximo de caja',
+         $q$insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, kilometros, aceite_tipo, prox_service_km, prox_caja_km)
+            values ($1, $2, $3, $4, 'service', current_date, 84300, '5W30', 94300, 164300)$q$, 'prox_caja_solo_caja'),
+        ('una MECÁNICA con próximo de caja',
+         $q$insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, trabajo_descripcion, prox_caja_km)
+            values ($1, $2, $3, $4, 'mecanica', current_date, 'R42 cambio de embrague', 164300)$q$, 'prox_caja_solo_caja'),
+        ('un trabajo de NEUMÁTICOS con próximo de caja',
+         $q$insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, kilometros, alineacion, prox_caja_km)
+            values ($1, $2, $3, $4, 'neumaticos', current_date, 84300, true, 164300)$q$, 'prox_caja_solo_caja'),
+        ('una caja con alineación',
+         $q$insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, kilometros, aceite_tipo, prox_caja_km, alineacion)
+            values ($1, $2, $3, $4, 'caja', current_date, 84300, 'Dexron VI', 164300, true)$q$, 'alineacion_solo_neumaticos')
+      ) as c(caso, sql, esperado)
+    loop
+      begin
+        execute v_t.sql using v_demo, v_suc, v_val, v_own;
+        raise exception 'R42b_entro';
+      exception
+        when check_violation then
+          get stacked diagnostics v_con = constraint_name;
+          if v_con is distinct from v_t.esperado then
+            raise exception 'R42b «%» lo frenó el CHECK «%» y no «%»: el que dice cubrirlo no rige.', v_t.caso, v_con, v_t.esperado;
+          end if;
+        when others then
+          if sqlerrm = 'R42b_entro' then
+            raise exception 'R42b entró %. Regla 11: los CHECK escritos como (tipo <> ''x'' or …) no dicen nada sobre un tipo que no nombran; sin «%» esta fila pasa.', v_t.caso, v_t.esperado;
+          end if;
+          raise;
+      end;
+    end loop;
+    -- Una caja no es adjunta de un service (el CHECK del vínculo está en
+    -- positivo) ni lleva una mecánica adjunta (el trigger exige un service
+    -- como destino).
+    begin
+      insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, kilometros, aceite_tipo, prox_caja_km, cargado_con_id)
+      values (v_demo, v_suc, v_val, v_own, 'caja', v_hoy, 84300, 'Dexron VI', 164300, v_srv);
+      raise exception 'R42b_entro';
+    exception
+      when check_violation then
+        get stacked diagnostics v_con = constraint_name;
+        if v_con is distinct from 'cargado_con_solo_mecanica' then
+          raise exception 'R42b una caja «cargada con» un service la frenó «%» y no cargado_con_solo_mecanica.', v_con;
+        end if;
+      when others then
+        if sqlerrm = 'R42b_entro' then
+          raise exception 'R42b una caja quedó «cargada con» un service: el vínculo es solo de la mecánica adjunta.';
+        end if;
+        raise;
+    end;
+    begin
+      insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, trabajo_descripcion, cargado_con_id)
+      values (v_demo, v_suc, v_veh, v_own, 'mecanica', v_hoy, 'R42 mecánica colgada de una caja', v_caja);
+      raise exception 'R42b_entro';
+    exception when others then
+      if sqlerrm = 'R42b_entro' then
+        raise exception 'R42b una mecánica quedó «cargada con» una CAJA: el trigger del vínculo dejó de exigir un service como destino.';
+      end if;
+      if sqlerrm not like '%vinculo_invalido%' then raise; end if;
+    end;
+    -- El contracaso: la fila bien formada entra por la tabla (los CHECK no
+    -- se cerraron de más).
+    begin
+      insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, kilometros,
+                            aceite_tipo, aceite_nombre, aceite_litros, prox_caja_km, observaciones)
+      values (v_demo, v_suc, v_val, v_own, 'caja', v_hoy - 4, 84300, 'Multi ATF', 'R42 a mano', 5, 164300, 'R42 por la tabla')
+      returning id into v_id;
+    exception when others then
+      raise exception 'R42b una caja bien formada fue rechazada por la tabla (%): un CHECK se cerró de más.', sqlerrm;
+    end;
+    delete from services where id = v_id;
+
+    -- ---------- e · vista_proximos_caja ----------
+    -- El auto A: dos services y una caja. El ritmo sale de los TRES
+    -- (30.000 km en 300 días: 100 km/día), y el último odómetro es el del
+    -- service más nuevo (80.000 km, hace 100 días), no el de la caja.
+    -- Con el próximo de caja en 88.400 faltan 8.400 km: 84 días desde esa
+    -- lectura, o sea hace 16 días → vencido.
+    perform r42_como(v_own);
+    perform guardar_service(
+      p_vehiculo_id => v_va, p_sucursal_id => v_suc, p_fecha => v_hoy - 400,
+      p_kilometros => 50000, p_aceite_tipo => '5W30', p_prox_service_km => 60000);
+    v_c1 := guardar_service(
+      p_vehiculo_id => v_va, p_sucursal_id => v_suc, p_fecha => v_hoy - 300,
+      p_kilometros => 55000, p_aceite_tipo => 'Dexron VI', p_prox_service_km => null,
+      p_tipo => 'caja', p_prox_caja_km => 88400);
+    perform guardar_service(
+      p_vehiculo_id => v_va, p_sucursal_id => v_suc, p_fecha => v_hoy - 100,
+      p_kilometros => 80000, p_aceite_tipo => '5W30', p_prox_service_km => 90000);
+
+    select * into v_vista from vista_proximos_caja where vehiculo_id = v_va;
+    if v_vista.vehiculo_id is null then
+      raise exception 'R42e el auto con dos services y una caja (próximo en 88.400 km, hoy rondando los 90.000) no aparece en vista_proximos_caja. El km/día o el último odómetro se están calculando solo con las cajas —y con una sola caja no hay ritmo—, o la vista tomó otro trabajo como la última caja.';
+    end if;
+    if v_vista.km_por_dia <> 100 or v_vista.cantidad_services <> 3 or v_vista.estimacion_inicial then
+      raise exception 'R42e el km/día del auto A es % con % trabajo(s) (esperaba 100 con 3: el ritmo sale de TODO el odómetro del auto, de cualquier tipo de trabajo).',
+        v_vista.km_por_dia, v_vista.cantidad_services;
+    end if;
+    if v_vista.fecha_estimada <> v_hoy - 16 or v_vista.estado <> 'vencido'
+       or v_vista.km_faltantes <> 8400 or v_vista.dias_hasta <> -16 then
+      raise exception 'R42e la proyección del auto A da el % (% · faltan % km) y esperaba el % (vencido · 8.400 km): se proyecta desde el último odómetro conocido —80.000 km, hace 100 días— a 100 km/día.',
+        v_vista.fecha_estimada, v_vista.estado, v_vista.km_faltantes, v_hoy - 16;
+    end if;
+    if v_vista.ultimo_service_id <> v_c1 or v_vista.ultimo_service_km <> 55000
+       or v_vista.ultimo_service_fecha <> v_hoy - 300 or v_vista.prox_caja_km <> 88400
+       or v_vista.prox_service_km is not null or v_vista.patente_normalizada <> 'AB342CD'
+       or v_vista.cliente_nombre <> 'Persona R42' or v_vista.sucursal_id <> v_suc then
+      raise exception 'R42e la fila del auto A no describe su última caja (id %, % km, %, próximo %, próximo service %).',
+        v_vista.ultimo_service_id, v_vista.ultimo_service_km, v_vista.ultimo_service_fecha,
+        v_vista.prox_caja_km, v_vista.prox_service_km;
+    end if;
+    perform r42_postgres();
+
+    -- Los bordes de los tres estados y de la ventana: 15 / 7 / 30.
+    for v_t in
+      select * from (values
+        (88500, -15, 'urgente'), (90700, 7, 'urgente'), (90800, 8, 'proximo'),
+        (93000, 30, 'proximo'),  (93100, 31, null)
+      ) as c(prox, dias, estado)
+    loop
+      update services set prox_caja_km = v_t.prox where id = v_c1;
+      perform r42_como(v_own);
+      select * into v_vista from vista_proximos_caja where vehiculo_id = v_va;
+      perform r42_postgres();
+      if v_t.estado is null then
+        if v_vista.vehiculo_id is not null then
+          raise exception 'R42e un próximo de caja estimado para dentro de % días aparece en la lista: la ventana es de 30.', v_t.dias;
+        end if;
+      elsif v_vista.vehiculo_id is null or v_vista.estado::text <> v_t.estado or v_vista.dias_hasta <> v_t.dias then
+        raise exception 'R42e con el próximo de caja a % días la vista dice «%» a % días (esperaba «%»). Los umbrales son 15 de vencido, 7 de urgente y 30 de ventana.',
+          v_t.dias, v_vista.estado, v_vista.dias_hasta, v_t.estado;
+      end if;
+    end loop;
+    update services set prox_caja_km = 88400 where id = v_c1;
+
+    -- El auto B: UNA sola caja, de hace 1.990 días. Un solo punto → 40
+    -- km/día supuestos; los 80.000 km son 2.000 días: dentro de 10.
+    -- Es EL caso del taller de cajas, y por eso el horizonte no puede
+    -- medirse sobre la fecha de la última caja: a 40 km/día el ciclo dura
+    -- cinco años y medio.
+    perform r42_como(v_own);
+    v_c2 := guardar_service(
+      p_vehiculo_id => v_vb, p_sucursal_id => v_suc, p_fecha => v_hoy - 1990,
+      p_kilometros => 60000, p_aceite_tipo => 'ATF+4', p_prox_service_km => null,
+      p_tipo => 'caja', p_prox_caja_km => 140000);
+    select * into v_vista from vista_proximos_caja where vehiculo_id = v_vb;
+    perform r42_postgres();
+    if v_vista.vehiculo_id is null then
+      raise exception 'R42e el auto con UNA sola caja, de hace cinco años y medio y con el próximo a 10 días, no aparece. Con un ciclo de 80.000 km la última caja siempre es vieja: el horizonte de 18 meses va sobre la fecha ESTIMADA, no sobre la fecha de la última caja.';
+    end if;
+    if v_vista.km_por_dia <> 40 or not v_vista.estimacion_inicial or v_vista.cantidad_services <> 1
+       or v_vista.fecha_estimada <> v_hoy + 10 or v_vista.estado <> 'proximo' then
+      raise exception 'R42e el auto con un solo punto de odómetro da % km/día (inicial: %), % trabajos y el % «%»; esperaba 40 supuestos, 1 trabajo y el % «proximo».',
+        v_vista.km_por_dia, v_vista.estimacion_inicial, v_vista.cantidad_services,
+        v_vista.fecha_estimada, v_vista.estado, v_hoy + 10;
+    end if;
+    -- El horizonte: vencido hace 500 días, sigue; hace 600, está perdido.
+    update services set fecha = v_hoy - 2500 where id = v_c2;
+    perform r42_como(v_own);
+    select count(*) into v_n from vista_proximos_caja where vehiculo_id = v_vb and estado = 'vencido';
+    perform r42_postgres();
+    if v_n <> 1 then
+      raise exception 'R42e una caja vencida hace 500 días no aparece como vencida (% fila): el horizonte se comió un auto que todavía hay que llamar.', v_n;
+    end if;
+    update services set fecha = v_hoy - 2600 where id = v_c2;
+    perform r42_como(v_own);
+    select count(*) into v_n from vista_proximos_caja where vehiculo_id = v_vb;
+    perform r42_postgres();
+    if v_n <> 0 then
+      raise exception 'R42e una caja vencida hace 600 días sigue en la lista: pasados los 18 meses de vencida el auto no está vencido, está perdido (el mismo criterio que la vista de services).';
+    end if;
+    update services set fecha = v_hoy - 1990 where id = v_c2;
+    -- Una caja ANULADA no cuenta: ni como la última, ni para el ritmo.
+    perform r42_como(v_own);
+    v_c3 := guardar_service(
+      p_vehiculo_id => v_vb, p_sucursal_id => v_suc, p_fecha => v_hoy,
+      p_kilometros => 139000, p_aceite_tipo => 'ATF+4', p_prox_service_km => null,
+      p_tipo => 'caja', p_prox_caja_km => 219000);
+    select count(*) into v_n from vista_proximos_caja where vehiculo_id = v_vb;
+    perform r42_postgres();
+    if v_n <> 0 then
+      raise exception 'R42e SIN PISO: con la caja recién hecha (próximo a 80.000 km) el auto B tendría que haber salido de la lista.';
+    end if;
+    update services set anulado = true where id = v_c3;
+    perform r42_como(v_own);
+    select * into v_vista from vista_proximos_caja where vehiculo_id = v_vb;
+    perform r42_postgres();
+    if v_vista.vehiculo_id is null or v_vista.ultimo_service_id <> v_c2 or v_vista.cantidad_services <> 1 then
+      raise exception 'R42e una caja ANULADA sigue contando: la última caja del auto B es % con % trabajo(s) (esperaba la anterior, con 1).',
+        v_vista.ultimo_service_id, v_vista.cantidad_services;
+    end if;
+
+    -- El anti-spam, por motivo 'caja' y por ciclo. Las cajas de la prueba
+    -- nacen con el now() de esta transacción: se atrasan para que el
+    -- contacto quede DESPUÉS de la última caja, como en la vida real.
+    update services set created_at = now() - interval '2 hours' where id = v_c1;
+    insert into contactos (lubricentro_id, vehiculo_id, usuario_id, estado, canal)
+    values (v_demo, v_va, v_own, 'vencido', 'whatsapp');
+    perform r42_como(v_own);
+    select contactado into v_vista from vista_proximos_caja where vehiculo_id = v_va;
+    perform r42_postgres();
+    if v_vista.contactado then
+      raise exception 'R42e el contacto de un SERVICE (estado vencido) tildó la fila de caja del mismo auto. Son dos avisos distintos: la caja se tilda con su propio motivo.';
+    end if;
+    insert into contactos (lubricentro_id, vehiculo_id, usuario_id, estado, canal)
+    values (v_demo, v_va, v_own, 'caja', 'whatsapp');
+    perform r42_como(v_own);
+    select contactado into v_vista from vista_proximos_caja where vehiculo_id = v_va;
+    perform r42_postgres();
+    if not v_vista.contactado then
+      raise exception 'R42e el contacto por caja, posterior a la última caja, no tildó la fila.';
+    end if;
+    -- Una caja nueva abre un ciclo nuevo: el contacto de antes ya no cuenta.
+    -- (El próximo se acerca a mano para que la fila siga a la vista.)
+    update contactos set created_at = now() - interval '1 hour' where vehiculo_id = v_va;
+    perform r42_como(v_own);
+    v_id := guardar_service(
+      p_vehiculo_id => v_va, p_sucursal_id => v_suc, p_fecha => v_hoy,
+      p_kilometros => 81000, p_aceite_tipo => 'Dexron VI', p_prox_service_km => null,
+      p_tipo => 'caja', p_prox_caja_km => 161000);
+    perform r42_postgres();
+    update services set prox_caja_km = 81400 where id = v_id;
+    perform r42_como(v_own);
+    select * into v_vista from vista_proximos_caja where vehiculo_id = v_va;
+    perform r42_postgres();
+    if v_vista.vehiculo_id is null or v_vista.ultimo_service_id <> v_id then
+      raise exception 'R42e la caja más nueva del auto A no es «la última» de la vista (%).', v_vista.ultimo_service_id;
+    end if;
+    if v_vista.contactado then
+      raise exception 'R42e una caja NUEVA no reabrió el contacto: el aviso del ciclo anterior sigue tildando la fila.';
+    end if;
+    delete from services where id = v_id;
+
+    -- La feature como puerta: sin ella, cero filas; y el badge, igual.
+    perform r42_como(v_own);
+    select count(*) into v_n from vista_proximos_caja where not contactado;
+    v_m := contactos_por_hacer();
+    perform r42_postgres();
+    if v_n < 1 then
+      raise exception 'R42e SIN PISO: no quedó ninguna fila de caja sin contactar para probar el badge.';
+    end if;
+    perform r42_como(v_super);
+    select count(*) into v_base from vista_proximos_caja;
+    perform r42_postgres();
+    if v_base <> 0 then
+      raise exception 'R42e un superadmin ve % fila(s) en vista_proximos_caja: no tiene tenant, y la lista es del owner.', v_base;
+    end if;
+    perform r42_feature(v_demo, v_super, false);
+    perform r42_como(v_own);
+    select count(*) into v_base from vista_proximos_caja;
+    if v_base <> 0 then
+      raise exception 'R42e un tenant SIN la feature ve % fila(s) de caja en «A quién llamar».', v_base;
+    end if;
+    v_base := contactos_por_hacer();
+    perform r42_postgres();
+    if v_m <> v_base + v_n then
+      raise exception 'R42i el badge no suma la cuarta fuente: con la feature dice %, sin ella %, y hay % fila(s) de caja sin contactar (esperaba %).', v_m, v_base, v_n, v_base + v_n;
+    end if;
+
+    -- ---------- a · apagar la feature apaga la ESCRITURA, no la lectura ----------
+    perform r42_como(v_own);
+    select count(*) into v_n from services where id = v_caja;
+    select count(*) into v_m from service_items where service_id = v_caja;
+    if v_n <> 1 or v_m <> 2 then
+      raise exception 'R42a apagar la feature le SACÓ al taller la caja que ya había cargado (% cabecera y % renglones; esperaba 1 y 2). Se apaga la escritura, nunca la lectura (regla 2).', v_n, v_m;
+    end if;
+    v_err := r42_intento(v_val, v_suc, 90000, 'Dexron VI', 170000);
+    if v_err = 'entro' then
+      raise exception 'R42a con la feature apagada otra vez, se cargó una caja nueva.';
+    elsif v_err not like '42501%' then
+      raise exception 'R42a con la feature apagada, la caja nueva se rechazó con OTRO error que el de la policy (%).', v_err;
+    end if;
+    begin
+      perform actualizar_service(
+        p_service_id => v_caja, p_sucursal_id => v_suc, p_fecha => v_hoy,
+        p_kilometros => 84500, p_aceite_tipo => 'ATF+4', p_prox_service_km => null,
+        p_aceite_litros => 7, p_prox_caja_km => 154500);
+      raise exception 'R42a_entro';
+    exception
+      when insufficient_privilege then null;
+      when others then
+        if sqlerrm = 'R42a_entro' then
+          raise exception 'R42a con la feature apagada, una caja dentro de su plazo se editó: el WITH CHECK de services_edicion no la gatea.';
+        end if;
+        raise;
+    end;
+    perform r42_postgres();
+    v_json := get_carton('demo', 'AB142CD');
+    if not exists (select 1 from jsonb_array_elements(v_json -> 'services') s where s ->> 'tipo' = 'caja') then
+      raise exception 'R42a la caja desapareció del cartón del cliente al apagar la feature. El calco del parasol no se apaga porque al taller se le sacó una función.';
+    end if;
+    perform r42_feature(v_demo, v_super, true);
+
+    -- ---------- h · get_carton ----------
+    v_json := get_carton('demo', 'AB342CD');
+    select count(*), count(*) filter (where s ? 'prox_caja_km') into v_n, v_m
+    from jsonb_array_elements(v_json -> 'services') s;
+    if v_n <> 3 or v_m <> 3 then
+      raise exception 'R42h get_carton devuelve % trabajo(s) del auto A y % traen la clave prox_caja_km (esperaba 3 y 3): la clave viaja en CADA entrada, con null en lo que no es una caja.', v_n, v_m;
+    end if;
+    if not exists (
+      select 1 from jsonb_array_elements(v_json -> 'services') s
+      where s ->> 'tipo' = 'caja' and (s ->> 'prox_caja_km')::integer = 88400
+        and s -> 'prox_service_km' = 'null'::jsonb and s ->> 'aceite_tipo' = 'Dexron VI'
+        and (s ->> 'kilometros')::integer = 55000
+    ) then
+      raise exception 'R42h la entrada de la caja en get_carton no trae su próximo (88.400), su aceite o sus kilómetros.';
+    end if;
+    if exists (
+      select 1 from jsonb_array_elements(v_json -> 'services') s
+      where s ->> 'tipo' = 'service' and s -> 'prox_caja_km' <> 'null'::jsonb
+    ) then
+      raise exception 'R42h un service de aceite sale de get_carton con próximo de caja.';
+    end if;
+    v_json := get_carton('demo', 'AB142CD');
+    select array_agg(i.item ->> 'tipo' order by i.n) into v_tipos
+    from jsonb_array_elements(v_json -> 'services' -> 0 -> 'items') with ordinality as i(item, n);
+    if v_tipos is distinct from array['caja_filtro', 'caja_lavado'] then
+      raise exception 'R42h get_carton no devuelve los renglones de la caja en el orden de su papel (%).', array_to_string(v_tipos, ' · ');
+    end if;
+
+    -- ---------- f · vista_proximos_service no se entera ----------
+    -- La foto, campo por campo, de TODA la vista (como postgres: sin RLS).
+    select coalesce(string_agg(row_to_json(vp)::text, E'\n' order by vp.vehiculo_id), '')
+      into v_antes from vista_proximos_service vp;
+    select array_agg(x.vehiculo_id), array_agg(x.ultimo_service_km) into v_ids, v_kms
+    from (select vp.vehiculo_id, vp.ultimo_service_km from vista_proximos_service vp
+          where vp.lubricentro_id = v_demo and vp.vehiculo_id not in (v_va, v_val)
+          order by vp.vehiculo_id limit 3) x;
+    if coalesce(array_length(v_ids, 1), 0) = 0 then
+      raise exception 'R42f SIN PISO: el seed no deja ningún auto en la lista de a quién llamar.';
+    end if;
+    select string_agg(concat_ws('|', vv.id, vv.cantidad_services, vv.ultimo_service_fecha), E'\n' order by vv.id)
+      into v_txt from vista_vehiculos vv where vv.id = any(v_ids);
+    -- Cajas de HOY, con MÁS kilómetros que el último service, en los mismos
+    -- autos de la lista, y un contacto por caja en cada uno. Si la caja se
+    -- colara como «último service», o su contacto tildara el del service,
+    -- la fila cambia.
+    perform r42_como(v_own);
+    for i in 1 .. array_length(v_ids, 1) loop
+      perform guardar_service(
+        p_vehiculo_id => v_ids[i], p_sucursal_id => v_suc, p_fecha => v_hoy,
+        p_kilometros => v_kms[i] + 500, p_aceite_tipo => 'Dexron VI', p_prox_service_km => null,
+        p_tipo => 'caja', p_prox_caja_km => v_kms[i] + 80500);
+    end loop;
+    perform r42_postgres();
+    insert into contactos (lubricentro_id, vehiculo_id, usuario_id, estado, canal, created_at)
+    select v_demo, u.id, v_own, 'caja', 'whatsapp', now() + interval '1 minute' from unnest(v_ids) as u(id);
+
+    select coalesce(string_agg(row_to_json(vp)::text, E'\n' order by vp.vehiculo_id), '')
+      into v_despues from vista_proximos_service vp;
+    if v_despues is distinct from v_antes then
+      raise exception
+        E'R42f · RETENCIÓN ROTA: cargar services de CAJA (o contactar por caja) alteró vista_proximos_service.\n  antes:   %\n  después: %',
+        left(v_antes, 400), left(v_despues, 400)
+        using hint = 'Este sprint no toca esa vista. Si cambió, alguien le sacó el filtro de tipo (regla 5) o registró el contacto de caja con un estado del service.';
+    end if;
+    select count(*) into v_n from services where tipo = 'caja' and vehiculo_id = any(v_ids);
+    if v_n <> array_length(v_ids, 1) then
+      raise exception 'R42f SIN PISO: las cajas de la prueba no se cargaron (% de %).', v_n, array_length(v_ids, 1);
+    end if;
+    -- Un auto que SOLO tiene cajas no es de la lista del cambio de aceite.
+    select count(*) into v_n from vista_proximos_service where vehiculo_id in (v_vb, v_veh);
+    if v_n <> 0 then
+      raise exception 'R42f un auto que solo tiene services de caja aparece en vista_proximos_service: la caja se está contando como «último service».';
+    end if;
+    -- Y en la ficha: el último service sigue siendo el de aceite; la
+    -- última visita sí es la caja.
+    select string_agg(concat_ws('|', vv.id, vv.cantidad_services, vv.ultimo_service_fecha), E'\n' order by vv.id)
+      into v_err from vista_vehiculos vv where vv.id = any(v_ids);
+    if v_err is distinct from v_txt then
+      raise exception 'R42f vista_vehiculos cuenta la caja como service: «cantidad de services» y «último service» son del cambio de aceite.';
+    end if;
+    if exists (select 1 from vista_vehiculos vv where vv.id = any(v_ids) and vv.ultima_visita_fecha <> v_hoy) then
+      raise exception 'R42f la caja de hoy no movió la última visita del auto en vista_vehiculos.';
+    end if;
+
+    -- ---------- g · el premio ----------
+    update premios set alcance = 'services' where id = v_premio;
+    perform r42_como(v_own);
+    perform guardar_service(
+      p_vehiculo_id => v_vg, p_sucursal_id => v_suc, p_fecha => v_hoy - 5,
+      p_kilometros => 70000, p_aceite_tipo => 'DCT', p_prox_service_km => null,
+      p_tipo => 'caja', p_prox_caja_km => 150000);
+    select services_ciclo into v_ciclo from premio_disponible(v_vg);
+    select cf.services_ciclo into v_flota from ciclos_fidelizacion() cf where cf.vehiculo_id = v_vg;
+    perform r42_postgres();
+    if v_ciclo <> 0 or v_flota <> 0 then
+      raise exception 'R42g con alcance «services» una caja sumó al ciclo del premio (auto: %, flota: %). Con ese alcance cuentan solo los cambios de aceite.', v_ciclo, v_flota;
+    end if;
+    update premios set alcance = 'todos' where id = v_premio;
+    perform r42_como(v_own);
+    select services_ciclo into v_ciclo from premio_disponible(v_vg);
+    select cf.services_ciclo into v_flota from ciclos_fidelizacion() cf where cf.vehiculo_id = v_vg;
+    perform r42_postgres();
+    if v_ciclo <> 1 or v_flota <> 1 then
+      raise exception 'R42g con alcance «todos» una caja no cuenta como una visita (auto: %, flota: %; esperaba 1 y 1).', v_ciclo, v_flota;
+    end if;
+    update premios set alcance = 'services' where id = v_premio;
+
+    -- ---------- h · los contadores del Inicio y de la plataforma ----------
+    -- Tres cajas en un auto aparte: una de hoy, una del mes pasado y una
+    -- de hoy ANULADA. Del mes cuenta una sola. Y un service común de hoy,
+    -- que NO es una caja: sin él, un contador que cuente «todos los
+    -- trabajos del mes» daría el mismo número y la prueba no lo vería.
+    perform r42_como(v_own);
+    perform guardar_service(
+      p_vehiculo_id => v_vh, p_sucursal_id => v_suc, p_fecha => v_hoy,
+      p_kilometros => 21000, p_aceite_tipo => '5W30', p_prox_service_km => 31000);
+    perform guardar_service(
+      p_vehiculo_id => v_vh, p_sucursal_id => v_suc, p_fecha => v_mes_ant,
+      p_kilometros => 20000, p_aceite_tipo => 'CVT', p_prox_service_km => null,
+      p_tipo => 'caja', p_prox_caja_km => 100000);
+    v_id := guardar_service(
+      p_vehiculo_id => v_vh, p_sucursal_id => v_suc, p_fecha => v_hoy,
+      p_kilometros => 21000, p_aceite_tipo => 'CVT', p_prox_service_km => null,
+      p_tipo => 'caja', p_prox_caja_km => 101000);
+    perform r42_postgres();
+    update services set anulado = true where id = v_id;
+    select count(*) filter (where s.tipo = 'caja' and s.lubricentro_id = v_demo
+                              and s.fecha >= date_trunc('month', v_hoy)::date),
+           count(*) filter (where s.tipo = 'caja' and s.importado_de is null
+                              and s.fecha >= date_trunc('month', v_hoy)::date),
+           count(*) filter (where s.tipo = 'caja' and s.importado_de is null),
+           count(*) filter (where s.importado_de is null)
+      into v_d1, v_p1, v_a1, v_t1
+    from services s where not s.anulado;
+    if v_d1 - v_d0 < 1 or v_a1 - v_a0 < 2 then
+      raise exception 'R42h SIN PISO: la prueba no dejó al menos una caja del mes y dos acumuladas (mes: %, acumuladas: %).', v_d1 - v_d0, v_a1 - v_a0;
+    end if;
+
+    perform r42_como(v_own);
+    v_fin := resumen_inicio() -> 'metricas';
+    perform r42_postgres();
+    if not (v_fin ? 'cajas_mes') then
+      raise exception 'R42h resumen_inicio() no trae metricas.cajas_mes: la tarjeta «Services de caja del mes» del Inicio no tiene de dónde salir.';
+    end if;
+    if (v_fin ->> 'cajas_mes')::integer - coalesce((v_ini ->> 'cajas_mes')::integer, 0) <> v_d1 - v_d0 then
+      raise exception 'R42h resumen_inicio().cajas_mes subió % durante la prueba y en el mes entraron % caja(s) sin anular. Cuenta las cajas del mes, sin las anuladas ni las de otros meses.',
+        (v_fin ->> 'cajas_mes')::integer - coalesce((v_ini ->> 'cajas_mes')::integer, 0), v_d1 - v_d0;
+    end if;
+
+    perform r42_como(v_super);
+    v_pfin := metricas_plataforma();
+    perform r42_postgres();
+    if not (v_pfin ? 'cajas_mes') or not (v_pfin ? 'cajas_acumulado') then
+      raise exception 'R42h metricas_plataforma() no trae cajas_mes o cajas_acumulado.';
+    end if;
+    if (v_pfin ->> 'cajas_mes')::integer - coalesce((v_pini ->> 'cajas_mes')::integer, 0) <> v_p1 - v_p0
+       or (v_pfin ->> 'cajas_acumulado')::integer - coalesce((v_pini ->> 'cajas_acumulado')::integer, 0) <> v_a1 - v_a0 then
+      raise exception 'R42h metricas_plataforma() contó % caja(s) del mes y % acumuladas durante la prueba (esperaba % y %: sin las anuladas, y del mes solo las del mes).',
+        (v_pfin ->> 'cajas_mes')::integer - coalesce((v_pini ->> 'cajas_mes')::integer, 0),
+        (v_pfin ->> 'cajas_acumulado')::integer - coalesce((v_pini ->> 'cajas_acumulado')::integer, 0),
+        v_p1 - v_p0, v_a1 - v_a0;
+    end if;
+    -- La caja es un TRABAJO de la plataforma y no un «service»: el total
+    -- sube con ella, y cada punto de las tres series sigue sumando el total.
+    if (v_pfin ->> 'acumulado')::integer - (v_pini ->> 'acumulado')::integer <> v_t1 - v_t0 then
+      raise exception 'R42h el acumulado de trabajos de la plataforma subió % y entraron % trabajo(s): una caja es un trabajo y cuenta en el total.',
+        (v_pfin ->> 'acumulado')::integer - (v_pini ->> 'acumulado')::integer, v_t1 - v_t0;
+    end if;
+    select count(*) into v_n
+    from jsonb_each(v_pfin -> 'series') ser, jsonb_array_elements(ser.value) p
+    where (p ->> 'cantidad')::integer is distinct from
+          (p ->> 'service')::integer + (p ->> 'mecanica')::integer
+          + (p ->> 'neumaticos')::integer + (p ->> 'caja')::integer;
+    if v_n > 0 then
+      raise exception 'R42h en % punto(s) de las series del Pulso el total no es la suma de los cuatro tipos: la caja se cuenta en el total y en ningún tipo, o se cuenta como service.', v_n;
+    end if;
+    select (p ->> 'caja')::integer into v_n
+    from jsonb_array_elements(v_pfin -> 'series' -> 'mes') p
+    where (p ->> 'inicio')::date = date_trunc('month', v_hoy)::date;
+    if v_n is distinct from v_p1 then
+      raise exception 'R42h el punto de este mes de la serie del Pulso dice % caja(s) y en la base hay %.', v_n, v_p1;
+    end if;
+
+    -- ---------- i · las plantillas de mensaje ----------
+    select count(*) into v_n from mensaje_templates where contenido_caja is null;
+    if v_n > 0 then
+      raise exception 'R42i % plantilla(s) sin contenido_caja después de la migración y del seed: con ese tono activo, la fuente Caja de «A quién llamar» no tiene qué mandar.', v_n;
+    end if;
+    delete from mensaje_templates where lubricentro_id = v_demo;
+    perform sembrar_templates(v_demo, 'Lubricentro R42');
+    select count(*), count(contenido_caja), count(contenido_neumaticos), count(contenido_pendiente)
+      into v_n, v_m, v_base, v_ciclo
+    from mensaje_templates where lubricentro_id = v_demo;
+    if v_n <> 3 or v_m <> 3 or v_base <> 3 or v_ciclo <> 3 then
+      raise exception 'R42i la siembra dejó % tonos: % con el texto de caja, % con el de gomería y % con el de pendientes (esperaba 3 de cada uno).', v_n, v_m, v_base, v_ciclo;
+    end if;
+    if not exists (select 1 from mensaje_templates where lubricentro_id = v_demo and tono = 'Cercano'
+                   and contenido_caja like '%Lubricentro R42%' and contenido_caja like '%{proximo_km}%'
+                   and contenido_caja like '%service de caja%') then
+      raise exception 'R42i el tono Cercano sembrado no nombra al lubricentro, no lleva {proximo_km} o no dice «service de caja».';
+    end if;
+    -- El backfill no pisa lo personalizado, y es idempotente.
+    insert into mensaje_templates (lubricentro_id, tono, contenido, contenido_pendiente, contenido_neumaticos, contenido_caja, activo)
+    values (v_demo, 'Promo', 'PERSONALIZADO DE SERVICE', 'PERSONALIZADO DE PENDIENTE', 'PERSONALIZADO DE GOMERÍA', null, false);
+    update mensaje_templates set contenido_caja = 'PERSONALIZADO DE CAJA' where lubricentro_id = v_demo and tono = 'Formal';
+    v_n := completar_templates_caja();
+    if v_n <> 1 then
+      raise exception 'R42i completar_templates_caja() completó % fila(s) (esperaba 1: solo la que estaba en null).', v_n;
+    end if;
+    select * into v_t from mensaje_templates where lubricentro_id = v_demo and tono = 'Promo';
+    if v_t.contenido <> 'PERSONALIZADO DE SERVICE' or v_t.contenido_pendiente <> 'PERSONALIZADO DE PENDIENTE'
+       or v_t.contenido_neumaticos <> 'PERSONALIZADO DE GOMERÍA' then
+      raise exception 'R42i el backfill PISÓ lo personalizado de otra plantilla.';
+    end if;
+    if v_t.contenido_caja is null or v_t.contenido_caja not like '%{proximo_km}%' then
+      raise exception 'R42i el backfill no cargó contenido_caja (%).', v_t.contenido_caja;
+    end if;
+    if (select contenido_caja from mensaje_templates where lubricentro_id = v_demo and tono = 'Formal')
+         <> 'PERSONALIZADO DE CAJA' then
+      raise exception 'R42i el backfill pisó un texto de caja que el taller había personalizado.';
+    end if;
+    v_n := completar_templates_caja();
+    if v_n <> 0 then
+      raise exception 'R42i el backfill no es idempotente: la segunda corrida tocó % fila(s).', v_n;
+    end if;
+
+    -- Todo lo escrito en este bloque se deshace acá. Cualquier otra
+    -- excepción de arriba NO se atrapa: sube y pone el reset en rojo.
+    raise exception 'rollback_r42' using errcode = 'P0042';
+  exception
+    when sqlstate 'P0042' then
+      execute 'reset role';
+      perform set_config('request.jwt.claims', '{}', true);
+  end;
+
+  if exists (select 1 from vehiculos where patente_normalizada like 'AB_42CD')
+     or exists (select 1 from clientes where email = 'r42@ejemplo.com')
+     or exists (select 1 from services where tipo = 'caja' and observaciones like 'R42%') then
+    raise exception 'R42 SIN PISO: la subtransacción no deshizo los fixtures.';
+  end if;
+end $$;
+
+drop function r42_intento(uuid, uuid, integer, text, integer, jsonb, date);
+drop function r42_feature(uuid, uuid, boolean);
+drop function r42_postgres();
+drop function r42_como(uuid);
+-- <<< R42
+
+
+-- ============================================================
+-- R43 · ADJUNTOS EN CUALQUIER TRABAJO (20261004200000)
+--
+-- Un PDF o una foto del diagnóstico, colgados de un trabajo. Lo que este
+-- bloque vigila, y por qué cada cosa falla en silencio si se rompe:
+--
+--   j · LA FORMA. La tabla con RLS, el bucket PRIVADO de 2 MB y tres
+--       formatos, los dos triggers, la FK en cascada, y los privilegios:
+--       `anon` sin nada, `authenticated` que solo puede prender y apagar
+--       «Mostrar al cliente», y las dos funciones de servicio que nadie
+--       más ejecuta.
+--   a · EL ALTA. El adjunto nace OCULTO, con el tenant y el usuario que
+--       pone la base (no los que manda el navegador), y su archivo vive en
+--       la carpeta de SU trabajo. Y entra en un trabajo FIJADO hace un
+--       mes: adjuntar no edita el cartón.
+--   b · EL TOPE. Tres por trabajo; el cuarto falla con `tope_adjuntos`,
+--       para cualquiera, y es por trabajo.
+--   c · LO ÚNICO QUE SE EDITA es «Mostrar al cliente».
+--   d · EL AISLAMIENTO. El owner no ve ni toca lo del tenant de al lado,
+--       ni en la tabla ni en el bucket; `anon` no lee ninguno de los dos.
+--   e · LA PUERTA DEL CLIENTE. adjunto_publico() devuelve la ruta solo si
+--       el adjunto existe, está visible, su trabajo no está anulado y es
+--       de ESE vehículo de ESE tenant. Con dos tenants que tienen la misma
+--       patente, el slug decide.
+--   f · get_carton lista los visibles —y nada más que id, nombre, mime y
+--       fecha— y NO perdió `prox_caja_km` (la función se parte de su
+--       última definición, que es la del service de caja).
+--   g · LOS HUÉRFANOS. Un archivo sin fila lo barre el cierre diario,
+--       pero no si se subió hace un rato (la subida en vuelo).
+-- ============================================================
+
+-- >>> R43
+create or replace function r43_como(p_uid uuid) returns void language plpgsql as $$
+begin
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', p_uid, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+end $$;
+
+create or replace function r43_anon() returns void language plpgsql as $$
+begin
+  perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+  execute 'set local role anon';
+end $$;
+
+create or replace function r43_postgres() returns void language plpgsql as $$
+begin
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+end $$;
+
+-- Un intento, con el rol que esté puesto. Devuelve 'entro' o el error en
+-- una línea: así cada rechazo se comprueba por su código y su mensaje.
+create or replace function r43_intento(p_sql text) returns text language plpgsql as $$
+begin
+  execute p_sql;
+  return 'entro';
+exception when others then
+  return sqlstate || ' ' || sqlerrm;
+end $$;
+
+-- El alta de un adjunto como la hace la acción del panel: cinco columnas
+-- y nada más.
+create or replace function r43_alta(
+  p_service uuid, p_nombre text, p_ruta text, p_mime text, p_bytes integer)
+returns text language sql as $$
+  select format(
+    'insert into adjuntos_trabajo (service_id, nombre, ruta, mime, bytes) values (%L, %L, %L, %L, %s)',
+    p_service, p_nombre, p_ruta, p_mime, p_bytes);
+$$;
+
+-- Los helpers se llaman con el rol que esté puesto, también `anon`, que
+-- en este proyecto no hereda el execute de las funciones nuevas.
+grant execute on function r43_como(uuid), r43_anon(), r43_postgres(),
+  r43_intento(text), r43_alta(uuid, text, text, text, integer) to anon, authenticated;
+
+do $$
+declare
+  v_demo    uuid;
+  v_own     uuid;
+  v_super   uuid;
+  v_suc     uuid;
+  v_cli     uuid;
+  v_v1      uuid;   -- el auto con el trabajo fijado y el de hoy
+  v_v2      uuid;   -- otro auto del mismo tenant
+  v_s1      uuid;   -- un service FIJADO hace un mes
+  v_s1b     uuid;   -- un service de hoy, mismo auto
+  v_s2      uuid;   -- el del otro auto
+  v_lub_b   uuid;   -- el tenant de al lado, con la MISMA patente que v_v1
+  v_suc_b   uuid;
+  v_cli_b   uuid;
+  v_veh_b   uuid;
+  v_sb      uuid;
+  v_a1      uuid;
+  v_a2      uuid;
+  v_a3      uuid;
+  v_ab      uuid;
+  v_r1      text;
+  v_r2      text;
+  v_r3      text;
+  v_rb      text;
+  v_carp    text;   -- la carpeta de s1 en el bucket
+  v_fila    record;
+  v_b       record;
+  r         record;
+  v_err     text;
+  v_txt     text;
+  v_n       integer;
+  v_m       integer;
+  v_json    jsonb;
+  v_e1      jsonb;
+  v_e1b     jsonb;
+  v_ids     text[];
+  v_arr     text[];
+  v_hoy     date := current_date;
+begin
+  select id into v_demo  from lubricentros where slug = 'demo';
+  select id into v_own   from usuarios where lubricentro_id = v_demo and rol = 'owner' limit 1;
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  select id into v_suc   from sucursales where lubricentro_id = v_demo and activa order by created_at limit 1;
+  if v_demo is null or v_own is null or v_super is null or v_suc is null then
+    raise exception 'R43 SIN PISO: falta el demo, su owner, su sucursal o el superadmin del seed.';
+  end if;
+
+  -- ---------- j · la forma, antes de tocar nada ----------
+  if to_regclass('public.adjuntos_trabajo') is null then
+    raise exception 'R43j no existe la tabla adjuntos_trabajo: un trabajo no tiene dónde guardar el PDF o la foto del diagnóstico.';
+  end if;
+  if not (select relrowsecurity from pg_class where oid = to_regclass('public.adjuntos_trabajo')) then
+    raise exception 'R43j AISLAMIENTO ROTO: adjuntos_trabajo no tiene RLS — cualquier owner lee los adjuntos de todos los lubricentros.';
+  end if;
+  if has_table_privilege('anon', 'public.adjuntos_trabajo', 'select')
+     or has_table_privilege('anon', 'public.adjuntos_trabajo', 'insert')
+     or has_table_privilege('anon', 'public.adjuntos_trabajo', 'update')
+     or has_table_privilege('anon', 'public.adjuntos_trabajo', 'delete') then
+    raise exception 'R43j `anon` tiene privilegios sobre adjuntos_trabajo. El cliente llega al archivo SOLO por la ruta con adjunto_publico(): la tabla no es suya.';
+  end if;
+  if not has_table_privilege('authenticated', 'public.adjuntos_trabajo', 'select')
+     or not has_table_privilege('authenticated', 'public.adjuntos_trabajo', 'delete') then
+    raise exception 'R43j el owner no puede leer o quitar sus adjuntos (faltan select o delete para authenticated).';
+  end if;
+  -- El alta: seis columnas. Con `visible_cliente` insertable, un adjunto
+  -- podría NACER a la vista del cliente; con `subido_por` o `created_at`,
+  -- mentir quién lo subió y cuándo. (El tenant se puede mandar y no decide
+  -- nada: lo pisa el trigger, y R43a lo comprueba.)
+  select string_agg(a.attname, ', ' order by a.attnum) into v_txt
+  from pg_attribute a
+  where a.attrelid = to_regclass('public.adjuntos_trabajo') and a.attnum > 0 and not a.attisdropped
+    and has_column_privilege('authenticated', a.attrelid, a.attnum, 'insert');
+  if v_txt is distinct from 'service_id, lubricentro_id, nombre, ruta, mime, bytes' then
+    raise exception 'R43j authenticated puede insertar las columnas «%» de adjuntos_trabajo (esperaba service_id, lubricentro_id, nombre, ruta, mime, bytes). «Mostrar al cliente» está apagado por defecto porque NADIE puede mandarlo prendido en el alta.', coalesce(v_txt, 'ninguna');
+  end if;
+  -- La edición: una sola columna.
+  select string_agg(a.attname, ', ' order by a.attnum) into v_txt
+  from pg_attribute a
+  where a.attrelid = to_regclass('public.adjuntos_trabajo') and a.attnum > 0 and not a.attisdropped
+    and has_column_privilege('authenticated', a.attrelid, a.attnum, 'update');
+  if v_txt is distinct from 'visible_cliente' then
+    raise exception 'R43j authenticated puede actualizar las columnas «%» de adjuntos_trabajo (esperaba solo visible_cliente). Un adjunto no se edita: se prende, se apaga o se quita.', coalesce(v_txt, 'ninguna');
+  end if;
+
+  select count(*) into v_n from pg_trigger
+  where tgrelid = to_regclass('public.adjuntos_trabajo') and not tgisinternal
+    and tgname in ('adjuntos_trabajo_tenant', 'adjuntos_trabajo_tope');
+  if v_n <> 2 then
+    raise exception 'R43j faltan triggers de adjuntos_trabajo (hay % de 2: adjuntos_trabajo_tenant y adjuntos_trabajo_tope). Sin el del tope, el cuarto archivo entra: un CHECK no cuenta filas.', v_n;
+  end if;
+  if not exists (
+    select 1 from pg_constraint c
+    where c.conrelid = to_regclass('public.adjuntos_trabajo') and c.contype = 'f'
+      and c.confrelid = 'public.services'::regclass and c.confdeltype = 'c') then
+    raise exception 'R43j la FK de adjuntos_trabajo a services no es ON DELETE CASCADE: borrar un tenant de prueba (o purgar uno) falla por sus adjuntos.';
+  end if;
+
+  select b.public, b.file_size_limit, b.allowed_mime_types into v_b
+  from storage.buckets b where b.id = 'adjuntos';
+  if not found then
+    raise exception 'R43j no existe el bucket «adjuntos».';
+  end if;
+  if v_b.public then
+    raise exception 'R43j EL BUCKET «adjuntos» ES PÚBLICO: cualquiera con la URL baja el diagnóstico de cualquier auto.';
+  end if;
+  if v_b.file_size_limit is distinct from 2097152 then
+    raise exception 'R43j el bucket «adjuntos» tiene un tope de % bytes (esperaba 2.097.152: 2 MB por archivo).', v_b.file_size_limit;
+  end if;
+  if v_b.allowed_mime_types is null
+     or not (v_b.allowed_mime_types @> array['application/pdf', 'image/jpeg', 'image/png']
+             and array_length(v_b.allowed_mime_types, 1) = 3) then
+    raise exception 'R43j el bucket «adjuntos» acepta «%» (esperaba PDF, JPEG y PNG, y nada más).', v_b.allowed_mime_types;
+  end if;
+  -- Ninguna policy del bucket alcanza a anon (ni a public, que lo incluye).
+  select count(*) into v_n from pg_policies
+  where schemaname = 'storage' and tablename = 'objects'
+    and (coalesce(qual, '') || ' ' || coalesce(with_check, '')) like '%adjuntos%'
+    and roles && array['anon', 'public']::name[];
+  if v_n > 0 then
+    raise exception 'R43j % policy(s) del bucket «adjuntos» alcanzan a `anon`. Anon no lee el bucket: la única puerta del cliente es la ruta, con su URL firmada de 60 segundos.', v_n;
+  end if;
+  select count(*) into v_n from pg_policies
+  where schemaname = 'storage' and tablename = 'objects' and policyname like 'adjuntos %';
+  if v_n <> 3 then
+    raise exception 'R43j el bucket «adjuntos» tiene % policy(s) (esperaba 3: lectura, subida y borrado, las tres de la carpeta del propio tenant).', v_n;
+  end if;
+
+  if to_regprocedure('public.adjunto_publico(uuid, text, text)') is null then
+    raise exception 'R43j no existe adjunto_publico(uuid, text, text): la ruta del cliente no tiene con qué verificar.';
+  end if;
+  if not (select prosecdef from pg_proc where oid = to_regprocedure('public.adjunto_publico(uuid, text, text)')) then
+    raise exception 'R43j adjunto_publico() no es SECURITY DEFINER.';
+  end if;
+  if has_function_privilege('anon', 'public.adjunto_publico(uuid, text, text)', 'execute')
+     or has_function_privilege('authenticated', 'public.adjunto_publico(uuid, text, text)', 'execute') then
+    raise exception 'R43j adjunto_publico() la ejecutan `anon` o `authenticated`. Devuelve la ruta del archivo en el bucket: solo la llama la ruta del servidor, con la clave de servicio, que es la que después firma la URL.';
+  end if;
+  if not has_function_privilege('service_role', 'public.adjunto_publico(uuid, text, text)', 'execute') then
+    raise exception 'R43j service_role no puede ejecutar adjunto_publico(): la ruta del cliente devuelve 404 para todo.';
+  end if;
+  if to_regprocedure('public.adjuntos_huerfanos()') is null then
+    raise exception 'R43j no existe adjuntos_huerfanos(): el cierre diario no tiene cómo saber qué archivos barrer.';
+  end if;
+  if has_function_privilege('anon', 'public.adjuntos_huerfanos()', 'execute')
+     or has_function_privilege('authenticated', 'public.adjuntos_huerfanos()', 'execute')
+     or not has_function_privilege('service_role', 'public.adjuntos_huerfanos()', 'execute') then
+    raise exception 'R43j adjuntos_huerfanos() es del cierre diario (service_role) y de nadie más: lista archivos de todos los tenants.';
+  end if;
+
+  begin
+    -- ---------- los fixtures, como postgres ----------
+    insert into clientes (lubricentro_id, nombre, telefono, email)
+    values (v_demo, 'Persona R43', '351 555 0430', 'r43@ejemplo.com') returning id into v_cli;
+    insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+    values (v_demo, v_cli, 'AB143CD', 'Toyota', 'Corolla') returning id into v_v1;
+    insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+    values (v_demo, v_cli, 'AB243CD', 'Honda', 'Fit') returning id into v_v2;
+
+    insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha,
+                          kilometros, aceite_tipo, prox_service_km, observaciones, created_at)
+    values (v_demo, v_suc, v_v1, v_own, 'service', v_hoy - 30, 50000, '5W30', 60000,
+            'R43 fijado', now() - interval '30 days') returning id into v_s1;
+    insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha,
+                          kilometros, aceite_tipo, prox_service_km, observaciones)
+    values (v_demo, v_suc, v_v1, v_own, 'service', v_hoy, 51000, '5W30', 61000, 'R43 de hoy')
+    returning id into v_s1b;
+    insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha,
+                          kilometros, aceite_tipo, prox_service_km, observaciones)
+    values (v_demo, v_suc, v_v2, v_own, 'service', v_hoy, 30000, '10W40', 40000, 'R43 otro auto')
+    returning id into v_s2;
+
+    -- El tenant de al lado, con un auto de la MISMA patente que v_v1.
+    insert into lubricentros (nombre, slug) values ('Adjuntos R43', 'adjuntos-r43') returning id into v_lub_b;
+    insert into sucursales (lubricentro_id, nombre) values (v_lub_b, 'Centro') returning id into v_suc_b;
+    insert into clientes (lubricentro_id, nombre, telefono)
+    values (v_lub_b, 'Vecino R43', '351 555 0431') returning id into v_cli_b;
+    insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+    values (v_lub_b, v_cli_b, 'AB143CD', 'Fiat', 'Cronos') returning id into v_veh_b;
+    insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha,
+                          kilometros, aceite_tipo, prox_service_km, observaciones)
+    values (v_lub_b, v_suc_b, v_veh_b, v_super, 'service', v_hoy, 20000, '10W40', 30000, 'R43 vecino')
+    returning id into v_sb;
+
+    v_carp := v_demo || '/' || v_s1 || '/';
+    v_r1 := v_carp || gen_random_uuid() || '.pdf';
+    v_r2 := v_carp || gen_random_uuid() || '.jpg';
+    v_r3 := v_carp || gen_random_uuid() || '.png';
+    v_rb := v_lub_b || '/' || v_sb || '/' || gen_random_uuid() || '.pdf';
+
+    -- ---------- a · el alta ----------
+    perform r43_como(v_own);
+
+    -- El trabajo está FIJADO: el owner ya no lo puede editar…
+    update services set observaciones = 'R43 retocado' where id = v_s1;
+    get diagnostics v_n = row_count;
+    if v_n <> 0 then
+      raise exception 'R43a SIN PISO: el owner pudo editar un service de hace un mes (el fixture no quedó fijado).';
+    end if;
+    -- …y le adjunta igual. Adjuntar no edita el cartón.
+    v_err := r43_intento(r43_alta(v_s1, 'Escaneo de caja.pdf', v_r1, 'application/pdf', 312000));
+    if v_err <> 'entro' then
+      raise exception 'R43a NO SE PUDO ADJUNTAR A UN TRABAJO FIJADO («%»). Adjuntar nunca edita el cartón: funciona fuera del plazo de edición también.', v_err;
+    end if;
+    select * into v_fila from adjuntos_trabajo where ruta = v_r1;
+    v_a1 := v_fila.id;
+    if v_fila.lubricentro_id is distinct from v_demo then
+      raise exception 'R43a el adjunto no heredó el tenant de su trabajo (quedó con %).', v_fila.lubricentro_id;
+    end if;
+    if v_fila.subido_por is distinct from v_own then
+      raise exception 'R43a el adjunto no quedó a nombre de quien lo subió (subido_por = %).', v_fila.subido_por;
+    end if;
+    if v_fila.visible_cliente then
+      raise exception 'R43a UN ADJUNTO NACIÓ VISIBLE PARA EL CLIENTE. «Mostrar al cliente» está apagado por defecto: lo prende el taller, archivo por archivo.';
+    end if;
+
+    -- Lo que el navegador no puede mandar en el alta: 42501, columna por columna.
+    for r in select unnest(array[
+        format('insert into adjuntos_trabajo (service_id, nombre, ruta, mime, bytes, visible_cliente) values (%L, %L, %L, %L, 1000, true)',
+               v_s1b, 'Visible de entrada.pdf', v_demo || '/' || v_s1b || '/' || gen_random_uuid() || '.pdf', 'application/pdf'),
+        format('insert into adjuntos_trabajo (service_id, nombre, ruta, mime, bytes, subido_por) values (%L, %L, %L, %L, 1000, %L)',
+               v_s1b, 'De otro usuario.pdf', v_demo || '/' || v_s1b || '/' || gen_random_uuid() || '.pdf', 'application/pdf', v_super),
+        format('insert into adjuntos_trabajo (service_id, nombre, ruta, mime, bytes, created_at) values (%L, %L, %L, %L, 1000, now() - interval ''1 year'')',
+               v_s1b, 'Con otra fecha.pdf', v_demo || '/' || v_s1b || '/' || gen_random_uuid() || '.pdf', 'application/pdf')
+      ]) as consulta
+    loop
+      v_err := r43_intento(r.consulta);
+      if left(v_err, 5) <> '42501' then
+        raise exception 'R43a el alta dejó pasar una columna que no es del navegador («%»). Consulta: %', v_err, r.consulta;
+      end if;
+    end loop;
+
+    -- El tenant escrito a mano no decide nada: con el del lubricentro de
+    -- al lado en el insert, el adjunto queda en el tenant de SU trabajo.
+    v_txt := v_demo || '/' || v_s1b || '/' || gen_random_uuid() || '.pdf';
+    v_err := r43_intento(format(
+      'insert into adjuntos_trabajo (service_id, lubricentro_id, nombre, ruta, mime, bytes) values (%L, %L, %L, %L, %L, 1000)',
+      v_s1b, v_lub_b, 'Con el tenant de al lado.pdf', v_txt, 'application/pdf'));
+    if v_err <> 'entro' then
+      raise exception 'R43a con el tenant de al lado escrito a mano, el adjunto no entró («%»): la base tiene que pisarlo con el del trabajo, no rechazarlo ni creerle.', v_err;
+    end if;
+    if not exists (select 1 from adjuntos_trabajo where ruta = v_txt and lubricentro_id = v_demo) then
+      raise exception 'R43a UN ADJUNTO QUEDÓ EN EL TENANT QUE MANDÓ EL NAVEGADOR y no en el de su trabajo.';
+    end if;
+
+    -- Lo que la tabla rechaza por forma (23514), nombrado por su constraint.
+    for r in select * from (values
+        ('el archivo en la carpeta de OTRO trabajo',
+         r43_alta(v_s1b, 'a.pdf', v_demo || '/' || v_s2 || '/' || gen_random_uuid() || '.pdf', 'application/pdf', 1000), 'adjunto_ruta_valida'),
+        ('el archivo en la carpeta de OTRO tenant',
+         r43_alta(v_s1b, 'a.pdf', v_lub_b || '/' || v_s1b || '/' || gen_random_uuid() || '.pdf', 'application/pdf', 1000), 'adjunto_ruta_valida'),
+        ('una ruta que sube de carpeta',
+         r43_alta(v_s1b, 'a.pdf', v_demo || '/' || v_s1b || '/../' || gen_random_uuid() || '.pdf', 'application/pdf', 1000), 'adjunto_ruta_valida'),
+        ('un nombre de archivo que no es un uuid',
+         r43_alta(v_s1b, 'a.pdf', v_demo || '/' || v_s1b || '/diagnostico.pdf', 'application/pdf', 1000), 'adjunto_ruta_valida'),
+        ('la extensión que no es la del formato',
+         r43_alta(v_s1b, 'a.pdf', v_demo || '/' || v_s1b || '/' || gen_random_uuid() || '.png', 'application/pdf', 1000), 'adjunto_ruta_valida'),
+        ('un formato que no es PDF, JPEG ni PNG',
+         r43_alta(v_s1b, 'a.html', v_demo || '/' || v_s1b || '/' || gen_random_uuid() || '.pdf', 'text/html', 1000), 'adjunto_'),
+        ('un archivo vacío',
+         r43_alta(v_s1b, 'a.pdf', v_demo || '/' || v_s1b || '/' || gen_random_uuid() || '.pdf', 'application/pdf', 0), 'adjunto_bytes_validos'),
+        ('un archivo de 2 MB y un byte',
+         r43_alta(v_s1b, 'a.pdf', v_demo || '/' || v_s1b || '/' || gen_random_uuid() || '.pdf', 'application/pdf', 2097153), 'adjunto_bytes_validos'),
+        ('un nombre en blanco',
+         r43_alta(v_s1b, '   ', v_demo || '/' || v_s1b || '/' || gen_random_uuid() || '.pdf', 'application/pdf', 1000), 'adjunto_nombre_valido'),
+        ('un nombre de 121 caracteres',
+         r43_alta(v_s1b, repeat('a', 121), v_demo || '/' || v_s1b || '/' || gen_random_uuid() || '.pdf', 'application/pdf', 1000), 'adjunto_nombre_valido')
+      ) as t(caso, consulta, constraint_esperada)
+    loop
+      v_err := r43_intento(r.consulta);
+      if v_err = 'entro' then
+        raise exception 'R43a ENTRÓ un adjunto con %.', r.caso;
+      end if;
+      if left(v_err, 5) <> '23514' or v_err not like '%' || r.constraint_esperada || '%' then
+        raise exception 'R43a un adjunto con % lo frenó «%» y no el CHECK %.', r.caso, v_err, r.constraint_esperada;
+      end if;
+    end loop;
+
+    -- El borde: exactamente 2 MB entra.
+    v_err := r43_intento(r43_alta(v_s1b, 'Justo dos megas.pdf',
+      v_demo || '/' || v_s1b || '/' || gen_random_uuid() || '.pdf', 'application/pdf', 2097152));
+    if v_err <> 'entro' then
+      raise exception 'R43a un archivo de exactamente 2 MB no entró («%»).', v_err;
+    end if;
+
+    -- A un trabajo del tenant de al lado: no, por donde sea.
+    v_err := r43_intento(r43_alta(v_sb, 'Colado.pdf', v_rb, 'application/pdf', 1000));
+    if v_err = 'entro' then
+      raise exception 'R43a AISLAMIENTO ROTO: un owner le adjuntó un archivo a un trabajo de OTRO lubricentro.';
+    end if;
+    if left(v_err, 5) not in ('42501', '23502') then
+      raise exception 'R43a el adjunto a un trabajo ajeno falló con «%» (esperaba 42501 o 23502).', v_err;
+    end if;
+
+    -- ---------- b · el tope: tres por trabajo ----------
+    v_err := r43_intento(r43_alta(v_s1, 'Foto cárter.jpg', v_r2, 'image/jpeg', 287000));
+    if v_err <> 'entro' then raise exception 'R43b el segundo adjunto no entró («%»).', v_err; end if;
+    v_err := r43_intento(r43_alta(v_s1, 'Informe.png', v_r3, 'image/png', 150000));
+    if v_err <> 'entro' then raise exception 'R43b el tercer adjunto no entró («%»).', v_err; end if;
+    select id into v_a2 from adjuntos_trabajo where ruta = v_r2;
+    select id into v_a3 from adjuntos_trabajo where ruta = v_r3;
+
+    v_err := r43_intento(r43_alta(v_s1, 'El cuarto.pdf', v_carp || gen_random_uuid() || '.pdf', 'application/pdf', 1000));
+    if v_err = 'entro' then
+      raise exception 'R43b EL CUARTO ADJUNTO ENTRÓ. El tope es de 3 por trabajo, y lo hace cumplir un trigger: un CHECK no cuenta filas.';
+    end if;
+    if v_err not like '%tope_adjuntos%' then
+      raise exception 'R43b el cuarto adjunto lo frenó «%» y no tope_adjuntos, que es el error que la pantalla traduce.', v_err;
+    end if;
+    -- El tope es por TRABAJO: el del otro auto recibe el suyo.
+    v_err := r43_intento(r43_alta(v_s2, 'Del otro auto.pdf', v_demo || '/' || v_s2 || '/' || gen_random_uuid() || '.pdf', 'application/pdf', 1000));
+    if v_err <> 'entro' then
+      raise exception 'R43b el tope de un trabajo frenó el adjunto de OTRO trabajo («%»).', v_err;
+    end if;
+    -- Y es para cualquiera: tampoco entra por fuera de la sesión del owner.
+    perform r43_postgres();
+    v_err := r43_intento(r43_alta(v_s1, 'El cuarto, por atrás.pdf', v_carp || gen_random_uuid() || '.pdf', 'application/pdf', 1000));
+    if v_err not like '%tope_adjuntos%' then
+      raise exception 'R43b el cuarto adjunto entró (o falló con otra cosa) fuera de la sesión del owner: «%». El tope no mira el rol.', v_err;
+    end if;
+    -- Al quitar uno, entra otro. Y quitar también funciona en un trabajo fijado.
+    perform r43_como(v_own);
+    delete from adjuntos_trabajo where id = v_a3;
+    get diagnostics v_n = row_count;
+    if v_n <> 1 then
+      raise exception 'R43b el owner no pudo quitar un adjunto de un trabajo fijado (% filas). Quitar un adjunto no edita el cartón.', v_n;
+    end if;
+    v_err := r43_intento(r43_alta(v_s1, 'Informe.png', v_r3, 'image/png', 150000));
+    if v_err <> 'entro' then
+      raise exception 'R43b después de quitar uno, el tercero no volvió a entrar («%»).', v_err;
+    end if;
+    select id into v_a3 from adjuntos_trabajo where ruta = v_r3;
+
+    -- ---------- c · lo único que se edita es «Mostrar al cliente» ----------
+    update adjuntos_trabajo set visible_cliente = true where id = v_a1;
+    get diagnostics v_n = row_count;
+    if v_n <> 1 then
+      raise exception 'R43c el owner no pudo prender «Mostrar al cliente» en un adjunto de un trabajo fijado (% filas).', v_n;
+    end if;
+    for r in select unnest(array[
+        format('update adjuntos_trabajo set nombre = %L where id = %L', 'Otro nombre.pdf', v_a1),
+        format('update adjuntos_trabajo set ruta = %L where id = %L', v_carp || gen_random_uuid() || '.pdf', v_a1),
+        format('update adjuntos_trabajo set mime = %L where id = %L', 'image/png', v_a1),
+        format('update adjuntos_trabajo set bytes = 1 where id = %L', v_a1),
+        format('update adjuntos_trabajo set service_id = %L where id = %L', v_s2, v_a1),
+        format('update adjuntos_trabajo set lubricentro_id = %L where id = %L', v_lub_b, v_a1),
+        format('update adjuntos_trabajo set subido_por = null where id = %L', v_a1),
+        format('update adjuntos_trabajo set created_at = now() where id = %L', v_a1)
+      ]) as consulta
+    loop
+      v_err := r43_intento(r.consulta);
+      if left(v_err, 5) <> '42501' then
+        raise exception 'R43c el owner pudo editar un adjunto, o falló con otra cosa («%»). Consulta: %', v_err, r.consulta;
+      end if;
+    end loop;
+
+    -- ---------- d · el aislamiento ----------
+    perform r43_postgres();
+    insert into adjuntos_trabajo (service_id, nombre, ruta, mime, bytes, visible_cliente)
+    values (v_sb, 'Del vecino.pdf', v_rb, 'application/pdf', 1000, true) returning id into v_ab;
+    -- Los archivos, en el bucket: dos con fila (uno de cada tenant) y uno
+    -- del demo que se subió y nunca se registró.
+    insert into storage.objects (bucket_id, name) values ('adjuntos', v_r1);
+    insert into storage.objects (bucket_id, name) values ('adjuntos', v_rb);
+    insert into storage.objects (bucket_id, name) values ('adjuntos', v_carp || 'r43-sin-registrar.pdf');
+
+    perform r43_como(v_own);
+    select count(*) filter (where lubricentro_id = v_demo),
+           count(*) filter (where lubricentro_id = v_lub_b)
+      into v_n, v_m from adjuntos_trabajo;
+    if v_n < 3 or v_m <> 0 then
+      raise exception 'R43d AISLAMIENTO ROTO: el owner lee % adjunto(s) propios y % del tenant de al lado (tenía que ver los suyos y cero ajenos).', v_n, v_m;
+    end if;
+    update adjuntos_trabajo set visible_cliente = false where id = v_ab;
+    get diagnostics v_n = row_count;
+    delete from adjuntos_trabajo where id = v_ab;
+    get diagnostics v_m = row_count;
+    if v_n <> 0 or v_m <> 0 then
+      raise exception 'R43d AISLAMIENTO ROTO: el owner tocó un adjunto de OTRO lubricentro (% actualizado, % borrado).', v_n, v_m;
+    end if;
+
+    -- El bucket: ve su carpeta y no la ajena.
+    select count(*) filter (where name = v_r1), count(*) filter (where name = v_rb)
+      into v_n, v_m from storage.objects where bucket_id = 'adjuntos';
+    if v_n <> 1 or v_m <> 0 then
+      raise exception 'R43d EN EL BUCKET adjuntos EL OWNER VE % ARCHIVO(S) DE SU CARPETA Y % DE LA AJENA (tenían que ser 1 y 0). La URL firmada del panel se arma con su sesión: sin su carpeta no abre sus archivos, y con la de otro abre los del taller de enfrente.', v_n, v_m;
+    end if;
+    -- Sube a su carpeta, y a la ajena no.
+    v_err := r43_intento(format('insert into storage.objects (bucket_id, name) values (''adjuntos'', %L)', v_carp || 'r43-subida.pdf'));
+    if v_err <> 'entro' then
+      raise exception 'R43d el owner no puede subir a la carpeta de su propio tenant («%»): la URL firmada de subida se pide con su sesión.', v_err;
+    end if;
+    v_err := r43_intento(format('insert into storage.objects (bucket_id, name) values (''adjuntos'', %L)', v_lub_b || '/' || v_sb || '/r43-colado.pdf'));
+    if left(v_err, 5) <> '42501' then
+      raise exception 'R43d AISLAMIENTO ROTO: el owner subió (o falló con otra cosa) a la carpeta de OTRO lubricentro: «%».', v_err;
+    end if;
+    -- Borra de su carpeta lo que NO está registrado, y nada más: un
+    -- archivo con fila no se borra por afuera (dejaría un «Ver» roto), y el
+    -- de otro tenant no existe para él.
+    perform set_config('storage.allow_delete_query', 'true', true);
+    delete from storage.objects where bucket_id = 'adjuntos' and name = v_carp || 'r43-sin-registrar.pdf';
+    get diagnostics v_n = row_count;
+    if v_n <> 1 then
+      raise exception 'R43d el owner no pudo borrar de su carpeta un archivo sin registrar (% filas): la subida que no pasa la validación quedaría para siempre.', v_n;
+    end if;
+    delete from storage.objects where bucket_id = 'adjuntos' and name = v_r1;
+    get diagnostics v_n = row_count;
+    delete from storage.objects where bucket_id = 'adjuntos' and name = v_rb;
+    get diagnostics v_m = row_count;
+    if v_n <> 0 or v_m <> 0 then
+      raise exception 'R43d el owner borró del bucket un archivo REGISTRADO (%) o uno de OTRO tenant (%). El archivo se va cuando se quita el adjunto, no por afuera.', v_n, v_m;
+    end if;
+    perform set_config('storage.allow_delete_query', 'false', true);
+
+    -- anon: ni la tabla, ni el bucket, ni la función.
+    perform r43_anon();
+    v_err := r43_intento('select count(*) from adjuntos_trabajo');
+    if left(v_err, 5) <> '42501' then
+      raise exception 'R43d `anon` LEE adjuntos_trabajo (o falla con otra cosa): «%».', v_err;
+    end if;
+    select count(*) into v_n from storage.objects where bucket_id = 'adjuntos';
+    if v_n <> 0 then
+      raise exception 'R43d `anon` VE % ARCHIVO(S) DEL BUCKET adjuntos. Uno de ellos está marcado visible: aun así, anon no lee el bucket — llega por la ruta, con una URL de 60 segundos.', v_n;
+    end if;
+    v_err := r43_intento(format('insert into storage.objects (bucket_id, name) values (''adjuntos'', %L)', v_carp || 'r43-anon.pdf'));
+    if left(v_err, 5) <> '42501' then
+      raise exception 'R43d `anon` subió al bucket adjuntos (o falló con otra cosa): «%».', v_err;
+    end if;
+    v_err := r43_intento(format('select adjunto_publico(%L, ''demo'', ''AB143CD'')', v_a1));
+    if left(v_err, 5) <> '42501' then
+      raise exception 'R43d `anon` ejecutó adjunto_publico() (o falló con otra cosa): «%».', v_err;
+    end if;
+    perform r43_como(v_own);
+    v_err := r43_intento(format('select adjunto_publico(%L, ''demo'', ''AB143CD'')', v_a1));
+    if left(v_err, 5) <> '42501' then
+      raise exception 'R43d un owner ejecutó adjunto_publico() (o falló con otra cosa): «%».', v_err;
+    end if;
+    v_err := r43_intento('select * from adjuntos_huerfanos()');
+    if left(v_err, 5) <> '42501' then
+      raise exception 'R43d un owner ejecutó adjuntos_huerfanos(), que lista archivos de todos los tenants: «%».', v_err;
+    end if;
+
+    -- ---------- e · la puerta del cliente ----------
+    perform r43_postgres();
+    -- v_a1 está visible (c); v_a2 y v_a3, ocultos; v_ab (el vecino), visible.
+    if adjunto_publico(v_a1, 'demo', 'ab 143 cd') is distinct from v_r1 then
+      raise exception 'R43e adjunto_publico() no devolvió la ruta de un adjunto visible, pedido con la patente como la escribe la gente («ab 143 cd»): devolvió «%».', adjunto_publico(v_a1, 'demo', 'ab 143 cd');
+    end if;
+    if adjunto_publico(v_a2, 'demo', 'AB143CD') is not null then
+      raise exception 'R43e adjunto_publico() ENTREGÓ UN ADJUNTO OCULTO. «Mostrar al cliente» apagado quiere decir que solo lo ve el taller.';
+    end if;
+    if adjunto_publico(v_a1, 'demo', 'AB243CD') is not null then
+      raise exception 'R43e adjunto_publico() entregó un adjunto pedido con la patente de OTRO vehículo del mismo taller.';
+    end if;
+    if adjunto_publico(v_a1, 'adjuntos-r43', 'AB143CD') is not null then
+      raise exception 'R43e adjunto_publico() entregó un adjunto del demo pedido con el slug de OTRO tenant que tiene la misma patente. La patente no alcanza: el slug decide.';
+    end if;
+    if adjunto_publico(v_ab, 'demo', 'AB143CD') is not null then
+      raise exception 'R43e adjunto_publico() entregó el adjunto del tenant de al lado pedido con el slug del demo.';
+    end if;
+    if adjunto_publico(v_ab, 'adjuntos-r43', 'AB143CD') is distinct from v_rb then
+      raise exception 'R43e adjunto_publico() no entregó el adjunto visible del vecino pedido con SU slug.';
+    end if;
+    if adjunto_publico(gen_random_uuid(), 'demo', 'AB143CD') is not null
+       or adjunto_publico(v_a1, 'no-existe', 'AB143CD') is not null
+       or adjunto_publico(v_a1, 'demo', '') is not null
+       or adjunto_publico(null, null, null) is not null then
+      raise exception 'R43e adjunto_publico() devolvió algo para un id que no existe, un slug que no existe, una patente vacía o todo en null.';
+    end if;
+    -- Un trabajo anulado no está en el historial del cliente: su adjunto tampoco.
+    update services set anulado = true where id = v_s1;
+    if adjunto_publico(v_a1, 'demo', 'AB143CD') is not null then
+      raise exception 'R43e adjunto_publico() entregó el adjunto de un trabajo ANULADO, que no aparece en el historial del cliente.';
+    end if;
+    update services set anulado = false where id = v_s1;
+    -- Y al apagarlo, deja de salir.
+    update adjuntos_trabajo set visible_cliente = false where id = v_a1;
+    if adjunto_publico(v_a1, 'demo', 'AB143CD') is not null then
+      raise exception 'R43e adjunto_publico() siguió entregando un adjunto después de apagarle «Mostrar al cliente».';
+    end if;
+    update adjuntos_trabajo set visible_cliente = true where id = v_a1;
+
+    -- ---------- f · get_carton ----------
+    -- Orden estable: a1 primero, a2 después (nacieron en la misma transacción).
+    update adjuntos_trabajo set created_at = now() - interval '2 hours' where id = v_a1;
+    v_json := get_carton('demo', 'AB143CD');
+    select e into v_e1  from jsonb_array_elements(v_json -> 'services') e where (e ->> 'fecha')::date = v_hoy - 30;
+    select e into v_e1b from jsonb_array_elements(v_json -> 'services') e where (e ->> 'fecha')::date = v_hoy;
+    if v_e1 is null or v_e1b is null then
+      raise exception 'R43f SIN PISO: get_carton no devolvió los dos trabajos del auto de prueba.';
+    end if;
+    if not (v_e1 ? 'adjuntos') or not (v_e1b ? 'adjuntos') then
+      raise exception 'R43f get_carton no trae la clave «adjuntos» en cada entrada: el cliente no tiene de dónde ver el diagnóstico.';
+    end if;
+    if not (v_e1 ? 'prox_caja_km') then
+      raise exception 'R43f get_carton PERDIÓ «prox_caja_km». Se redefinió partiendo de una versión vieja: la última vigente es la del service de caja (20261004120100), y de ahí se parte.';
+    end if;
+    select array_agg(a ->> 'id' order by ord) into v_ids
+    from jsonb_array_elements(v_e1 -> 'adjuntos') with ordinality as t(a, ord);
+    if v_ids is distinct from array[v_a1::text] then
+      raise exception 'R43f get_carton lista «%» en el trabajo de prueba (esperaba solo el adjunto visible, %). Los ocultos no viajan: ni el nombre.', v_ids, v_a1;
+    end if;
+    select string_agg(k, ', ' order by k) into v_txt
+    from jsonb_object_keys((v_e1 -> 'adjuntos') -> 0) k;
+    if v_txt is distinct from 'creado, id, mime, nombre' then
+      raise exception 'R43f cada adjunto de get_carton trae «%» (esperaba creado, id, mime, nombre). La ruta del archivo, su peso y quién lo subió no son del cliente.', v_txt;
+    end if;
+    if (v_e1 -> 'adjuntos' -> 0 ->> 'nombre') <> 'Escaneo de caja.pdf'
+       or (v_e1 -> 'adjuntos' -> 0 ->> 'mime') <> 'application/pdf' then
+      raise exception 'R43f el adjunto de get_carton no trae su nombre y su formato: %', v_e1 -> 'adjuntos' -> 0;
+    end if;
+    if jsonb_array_length(v_e1b -> 'adjuntos') <> 0 then
+      raise exception 'R43f get_carton lista % adjunto(s) en un trabajo que solo tiene adjuntos ocultos (esperaba []).', jsonb_array_length(v_e1b -> 'adjuntos');
+    end if;
+    if v_json::text like '%' || split_part(v_r1, '/', 3) || '%' or v_json::text like '%' || v_s1::text || '%' then
+      raise exception 'R43f get_carton deja ver la ruta del archivo o el id del trabajo. Al cliente le llega el id del adjunto y nada más: la URL se firma en la ruta, por 60 segundos.';
+    end if;
+    -- Con dos visibles, en el orden en que se subieron.
+    update adjuntos_trabajo set visible_cliente = true where id = v_a2;
+    v_json := get_carton('demo', 'AB143CD');
+    select e into v_e1 from jsonb_array_elements(v_json -> 'services') e where (e ->> 'fecha')::date = v_hoy - 30;
+    select array_agg(a ->> 'id' order by ord) into v_ids
+    from jsonb_array_elements(v_e1 -> 'adjuntos') with ordinality as t(a, ord);
+    if v_ids is distinct from array[v_a1::text, v_a2::text] then
+      raise exception 'R43f con dos adjuntos visibles get_carton lista «%» (esperaba los dos, en el orden en que se subieron).', v_ids;
+    end if;
+    -- El del tenant de al lado, por su slug: el suyo y solo el suyo.
+    v_json := get_carton('adjuntos-r43', 'AB143CD');
+    select array_agg(a ->> 'id') into v_ids
+    from jsonb_array_elements(v_json -> 'services') e, jsonb_array_elements(e -> 'adjuntos') a;
+    if v_ids is distinct from array[v_ab::text] then
+      raise exception 'R43f AISLAMIENTO ROTO: get_carton del tenant de al lado, con la misma patente, lista «%» (esperaba solo su adjunto).', v_ids;
+    end if;
+
+    -- ---------- g · los huérfanos ----------
+    insert into storage.objects (bucket_id, name, created_at)
+    values ('adjuntos', v_carp || 'r43-huerfano-viejo.pdf', now() - interval '2 days');
+    insert into storage.objects (bucket_id, name, created_at)
+    values ('adjuntos', v_carp || 'r43-recien-subido.pdf', now());
+    insert into storage.objects (bucket_id, name, created_at)
+    values ('calcos', v_demo || '/r43-otro-bucket.png', now() - interval '9 days');
+    update storage.objects set created_at = now() - interval '9 days' where bucket_id = 'adjuntos' and name = v_r1;
+    select array_agg(h) into v_arr from adjuntos_huerfanos() h;
+    if v_arr is null or not (v_carp || 'r43-huerfano-viejo.pdf' = any(v_arr)) then
+      raise exception 'R43g adjuntos_huerfanos() no lista un archivo sin fila de hace dos días: nadie lo va a barrer y queda en el bucket para siempre.';
+    end if;
+    if v_carp || 'r43-recien-subido.pdf' = any(v_arr) then
+      raise exception 'R43g adjuntos_huerfanos() lista un archivo recién subido. Entre la subida y el registro pasan unos segundos: barrerlo ahí le borra el archivo a quien está adjuntando.';
+    end if;
+    if v_r1 = any(v_arr) then
+      raise exception 'R43g adjuntos_huerfanos() LISTA UN ARCHIVO QUE TIENE SU FILA: el cierre diario le borraría el diagnóstico a un trabajo.';
+    end if;
+    if v_demo || '/r43-otro-bucket.png' = any(v_arr) then
+      raise exception 'R43g adjuntos_huerfanos() lista archivos de OTRO bucket: el cierre diario borraría los diseños de los calcos.';
+    end if;
+    -- Al quitar el adjunto, su archivo pasa a ser huérfano (el viejo: ya).
+    delete from adjuntos_trabajo where id = v_a1;
+    select array_agg(h) into v_arr from adjuntos_huerfanos() h;
+    if not (v_r1 = any(v_arr)) then
+      raise exception 'R43g después de quitar el adjunto, su archivo (de hace nueve días) no figura como huérfano.';
+    end if;
+
+    -- Todo lo escrito en este bloque se deshace acá. Cualquier otra
+    -- excepción de arriba NO se atrapa: sube y pone el reset en rojo.
+    raise exception 'rollback_r43' using errcode = 'P0043';
+  exception
+    when sqlstate 'P0043' then
+      execute 'reset role';
+      perform set_config('request.jwt.claims', '{}', true);
+      perform set_config('storage.allow_delete_query', 'false', true);
+  end;
+
+  if exists (select 1 from vehiculos where patente_normalizada = 'AB143CD')
+     or exists (select 1 from clientes where email = 'r43@ejemplo.com')
+     or exists (select 1 from lubricentros where slug = 'adjuntos-r43')
+     or exists (select 1 from storage.objects where name like '%r43-%') then
+    raise exception 'R43 SIN PISO: la subtransacción no deshizo los fixtures.';
+  end if;
+end $$;
+
+drop function r43_alta(uuid, text, text, text, integer);
+drop function r43_intento(text);
+drop function r43_postgres();
+drop function r43_anon();
+drop function r43_como(uuid);
+-- <<< R43
+
+
+-- ============================================================
+-- R44 · EL SLUG ENTRA EN EL QR DEL CALCO (20261004200000)
+--
+-- La dirección del QR es fidellimotors.app/<slug>. Un tenant entró con un
+-- slug de 34 caracteres y el QR no se pudo hacer: con más de 18 pierde
+-- resistencia (se avisa en el alta y en Editar) y con más de 32 no sale.
+-- El tope lo hace cumplir la tabla, y slug_estado() lo dice antes de
+-- escribir.
+-- ============================================================
+
+-- >>> R44
+do $$
+declare
+  v_super uuid;
+  v_id    uuid;
+  v_txt   text;
+  v_32    text := 'r44-' || repeat('a', 28);
+  v_33    text := 'r44-' || repeat('a', 29);
+begin
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  if v_super is null then
+    raise exception 'R44 SIN PISO: falta el superadmin del seed.';
+  end if;
+  if char_length(v_32) <> 32 or char_length(v_33) <> 33 then
+    raise exception 'R44 SIN PISO: los slugs de prueba no miden 32 y 33.';
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.lubricentros'::regclass and conname = 'slug_largo_qr' and contype = 'c') then
+    raise exception 'R44 falta el CHECK slug_largo_qr en lubricentros: un slug de más de 32 caracteres entra, y su QR no se puede hacer.';
+  end if;
+  select string_agg(slug, ', ') into v_txt from lubricentros where char_length(slug) > 32;
+  if v_txt is not null then
+    raise exception 'R44 hay lubricentros con un slug de más de 32 caracteres: %', v_txt;
+  end if;
+
+  begin
+    -- 32 entra.
+    insert into lubricentros (nombre, slug) values ('R44 de 32', v_32) returning id into v_id;
+
+    -- 33 no, y lo frena ESTE check (el de 3 a 60 lo deja pasar).
+    begin
+      insert into lubricentros (nombre, slug) values ('R44 de 33', v_33);
+      raise exception 'R44 ENTRÓ UN SLUG DE 33 CARACTERES por INSERT.';
+    exception when check_violation then
+      get stacked diagnostics v_txt = constraint_name;
+      if v_txt <> 'slug_largo_qr' then
+        raise exception 'R44 el slug de 33 caracteres lo frenó «%» y no slug_largo_qr.', v_txt;
+      end if;
+    end;
+
+    -- Por UPDATE tampoco.
+    begin
+      update lubricentros set slug = v_33 where id = v_id;
+      raise exception 'R44 UN SLUG PASÓ A 33 CARACTERES por UPDATE.';
+    exception when check_violation then null;
+    end;
+
+    -- slug_estado() dice lo mismo que la tabla, antes de escribir.
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    if slug_estado(v_33) <> 'invalido' then
+      raise exception 'R44 slug_estado() contesta «%» para un slug de 33 caracteres (esperaba invalido): el alta diría «Disponible» y fallaría al crear.', slug_estado(v_33);
+    end if;
+    if slug_estado('r44-' || repeat('b', 28)) <> 'disponible' then
+      raise exception 'R44 slug_estado() contesta «%» para un slug libre de 32 caracteres (esperaba disponible).', slug_estado('r44-' || repeat('b', 28));
+    end if;
+    if slug_estado(v_32) <> 'ocupado' then
+      raise exception 'R44 slug_estado() contesta «%» para un slug de 32 caracteres que ya existe (esperaba ocupado).', slug_estado(v_32);
+    end if;
+
+    raise exception 'rollback_r44' using errcode = 'P0044';
+  exception
+    when sqlstate 'P0044' then
+      execute 'reset role';
+      perform set_config('request.jwt.claims', '{}', true);
+  end;
+
+  if exists (select 1 from lubricentros where slug like 'r44-%') then
+    raise exception 'R44 SIN PISO: la subtransacción no deshizo los fixtures.';
+  end if;
+end $$;
+-- <<< R44

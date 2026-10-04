@@ -206,6 +206,11 @@ export default async function PaginaInicio({
 
   const nombreSucursal = sucursales.find((s) => s.id === sucursal)?.nombre;
 
+  // La tarjeta «Services de caja del mes» es solo del taller que tiene la
+  // feature (se prende por tenant, desde /fidelli). Sin ella el dashboard
+  // no dibuja nada en su lugar.
+  const puedeCaja = featureHabilitada(sesion, "caja");
+
   return (
     <div>
       {bienvenida}
@@ -233,6 +238,7 @@ export default async function PaginaInicio({
         datos={resumen}
         hoy={hoy}
         vista={vistaInicial}
+        puedeCaja={puedeCaja}
         stockBajo={(stockBajoRes.data ?? []).map((p) => ({
           id: p.producto_id ?? "",
           nombre: p.nombre ?? "",

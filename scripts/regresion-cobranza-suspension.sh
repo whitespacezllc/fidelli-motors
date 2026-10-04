@@ -34,6 +34,11 @@ cd "$(dirname "$0")/.."
 DB="docker exec -i supabase_db_fidelli-motors psql -U postgres -d postgres -X"
 V=supabase/verificaciones.sql
 M=supabase/migrations/20260926200000_suspension_por_reloj.sql
+# get_carton se redefinió después (el próximo de caja, 20261004120100, y
+# los adjuntos, 20261004200000): la versión vigente vive en el último y es
+# la que hay que romper. Las dos condiciones de la suspensión por reloj
+# viajaron intactas. (get_landing sigue en $M.)
+M_CARTON=supabase/migrations/20261004200000_adjuntos_trabajo.sql
 M_CICLO=supabase/migrations/20260917130000_primer_pago_define_el_ciclo.sql
 M_SN=supabase/migrations/20260922204000_snapshots.sql
 
@@ -72,9 +77,9 @@ correr_marcada() { # $1 = nombre · $2 = marcador · $3 = migración · $4 = sed
 echo "── R36a · la vidriera del suspendido por reloj ──"
 correr_marcada "get_landing con el premio decidido por l.activo (como estaba)" get_landing "$M" \
   "/@premio_reloj/s/es_activo(l)/l.activo/" R36 "R36a"
-correr_marcada "get_carton con el progreso decidido por v_lubricentro.activo" get_carton "$M" \
+correr_marcada "get_carton con el progreso decidido por v_lubricentro.activo" get_carton "$M_CARTON" \
   "/@fidelizacion_reloj/s/es_activo(v_lubricentro)/v_lubricentro.activo/" R36 "R36a"
-correr_marcada "get_carton con el mensaje al escanear decidido por v_lubricentro.activo" get_carton "$M" \
+correr_marcada "get_carton con el mensaje al escanear decidido por v_lubricentro.activo" get_carton "$M_CARTON" \
   "/@mensaje_reloj/s/es_activo(v_lubricentro)/v_lubricentro.activo/" R36 "R36a"
 # El arreglo EQUIVOCADO: apagar la vidriera entera del suspendido por reloj.
 correr_marcada "get_landing apagando la vidriera del suspendido por reloj" get_landing "$M" \

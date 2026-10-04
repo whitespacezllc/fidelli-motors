@@ -107,6 +107,38 @@ export async function alternarContacto(
     return {};
   }
 
+  // El próximo service de caja también tiene su propio ciclo: la última
+  // CAJA no anulada. Destildar borra los contactos de ese motivo
+  // posteriores a ella, que son exactamente los que vista_proximos_caja
+  // mira. Los de ciclos anteriores son historial y no se tocan.
+  if (estado === "caja") {
+    const { data: ultimaCaja } = await supabase
+      .from("services")
+      .select("created_at")
+      .eq("vehiculo_id", vehiculoId)
+      .eq("anulado", false)
+      .eq("tipo", "caja")
+      .order("fecha", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    let borrado = supabase
+      .from("contactos")
+      .delete()
+      .eq("vehiculo_id", vehiculoId)
+      .eq("estado", "caja");
+    if (ultimaCaja?.created_at) borrado = borrado.gt("created_at", ultimaCaja.created_at);
+
+    const { error } = await borrado;
+    if (error) {
+      return { error: "No se pudo destildar el contacto. Probá de nuevo." };
+    }
+    revalidatePath("/panel/proximos");
+    revalidatePath("/panel", "layout");
+    return {};
+  }
+
   // El último service acota el borrado igual que la vista acota el exists:
   // los contactos de ciclos anteriores son historial y no se tocan.
   const { data: ultimo } = await supabase
