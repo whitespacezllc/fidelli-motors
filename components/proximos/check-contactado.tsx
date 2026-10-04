@@ -4,6 +4,7 @@ import { useOptimistic, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { alternarContacto } from "@/app/panel/(tras-onboarding)/proximos/actions";
 import type { MotivoContacto } from "@/lib/contacto";
+import { LUGAR_CHECK, LUGAR_MENSAJE } from "@/components/proximos/grilla";
 
 // El check es toggleable a mano y cubre dos casos reales: el llamado
 // telefónico hecho por afuera (se marca, canal 'manual') y el tap
@@ -18,6 +19,11 @@ import type { MotivoContacto } from "@/lib/contacto";
 // mostrando "sin contactar" y el toque siguiente registraba un contacto
 // nuevo en vez de destildar. useOptimistic dura lo que dura la transición
 // y después cae al valor real que llegó del servidor.
+//
+// La etiqueta al lado del check («Contactado» / «Sin contactar») va hasta
+// 1279: desde `xl` la columna tiene su título y mide 40 px. Ahí el check y
+// su error son ítems de la grilla de la fila (grilla.ts): el error ocupa
+// un renglón entero debajo, no una columna de 40.
 export function CheckContactado({
   vehiculoId,
   estado,
@@ -45,8 +51,8 @@ export function CheckContactado({
   }
 
   return (
-    <span className="inline-flex flex-col gap-0.5">
-      <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 lg:justify-center">
+    <span className="inline-flex flex-col gap-0.5 xl:contents">
+      <label className={`inline-flex min-h-11 cursor-pointer items-center gap-2 ${LUGAR_CHECK}`}>
         <input
           type="checkbox"
           checked={marcado}
@@ -55,12 +61,12 @@ export function CheckContactado({
           aria-label={etiqueta}
           className="size-5 shrink-0 cursor-pointer accent-ink"
         />
-        <span className="text-ui text-ink-60 lg:hidden">
+        <span className="text-ui text-ink-60 xl:hidden">
           {marcado ? "Contactado" : "Sin contactar"}
         </span>
       </label>
       {error && (
-        <span role="alert" className="text-label text-overdue">
+        <span role="alert" className={`text-label text-overdue ${LUGAR_MENSAJE}`}>
           {error}
         </span>
       )}

@@ -6,6 +6,11 @@ import { formatearKm } from "@/lib/renglones";
 import { formatearFecha } from "@/lib/fechas";
 import { clienteSuprimido, sinNombre, sinTelefono } from "@/lib/clientes";
 import {
+  GRILLA_PROXIMOS,
+  LUGAR_ACCION,
+  LUGAR_CONTACTADO,
+} from "@/components/proximos/grilla";
+import {
   etiquetaMotivo,
   type EstadoContacto,
   type MotivoContacto,
@@ -53,6 +58,26 @@ export type ProximoServicio = {
 
 const CLASE_DATO = "text-ui text-ink-60 tabular-nums";
 
+// El encabezado de la tabla, al lado de la fila que nombra: un título por
+// celda, en el mismo orden y con la MISMA plantilla (grilla.ts). Solo
+// existe desde 1024: por debajo cada fila es una tarjeta que se lee sola.
+// De 1024 a 1279 ocupa dos renglones, como la fila.
+export function EncabezadoProximos() {
+  return (
+    <div
+      className={`hidden border-b border-line px-5 py-2.5 text-label font-semibold tracking-[0.06em] text-ink-40 uppercase ${GRILLA_PROXIMOS}`}
+    >
+      <span>Cliente</span>
+      <span>Vehículo</span>
+      <span>Último service</span>
+      <span>Próximo</span>
+      <span>Retorno est.</span>
+      <span>Estado</span>
+      <span className={LUGAR_CONTACTADO}>Contactado</span>
+    </div>
+  );
+}
+
 export function FilaProximo({
   fila,
   suspendido = false,
@@ -92,7 +117,10 @@ export function FilaProximo({
     : "";
   return (
     <li
-      className={`border-b border-line px-4 py-4 last:border-b-0 sm:px-5 lg:grid lg:grid-cols-[minmax(9rem,1fr)_7.5rem_11rem_6rem_9.5rem_6.5rem_5rem_auto] lg:items-center lg:gap-x-4 lg:py-3 ${
+      // `lg:*:min-w-0`: una celda en una columna flexible no se estira por
+      // su contenido — el motivo de gomería o una sucursal de nombre largo
+      // se cortan con puntos suspensivos en vez de empujar a la de al lado.
+      className={`border-b border-line px-4 py-4 last:border-b-0 sm:px-5 lg:items-start lg:py-3 lg:*:min-w-0 xl:items-center ${GRILLA_PROXIMOS} ${
         fila.contactado ? "bg-surface/40" : ""
       }`}
     >
@@ -227,8 +255,8 @@ export function FilaProximo({
         )}
       </div>
 
-      {/* 6. Estado */}
-      <div className="mt-2 lg:mt-0">
+      {/* 6. Estado. De 1024 a 1279 abre el renglón de abajo. */}
+      <div className="mt-2 lg:mt-0 lg:self-center">
         <BadgeUrgencia estado={fila.estado} />
         {esPendiente && (
           <span className="mt-1 block w-fit rounded-sm border border-line bg-surface px-2 py-0.5 text-label font-semibold tracking-[0.04em] text-ink-60 uppercase">
@@ -243,7 +271,7 @@ export function FilaProximo({
       </div>
 
       {/* 7. Contactado */}
-      <div className="mt-1 lg:mt-0 lg:justify-self-center">
+      <div className={`mt-1 lg:mt-0 lg:self-center xl:contents ${LUGAR_CONTACTADO}`}>
         <CheckContactado
           vehiculoId={fila.vehiculoId}
           estado={motivo}
@@ -255,8 +283,9 @@ export function FilaProximo({
       {/* 8. La acción de la fila: compacta, del ancho de su contenido.
           El conjunto manda — diez botones estirados eran una columna de
           bloques; ahora la tabla respira y el deshabilitado marca solo
-          lo que ya está hecho. */}
-      <div className="mt-2.5 lg:mt-0 lg:justify-self-end">
+          lo que ya está hecho. La columna mide lo mismo en todas las
+          filas (grilla.ts): «Cargar teléfono» entra en dos renglones. */}
+      <div className="mt-2.5 lg:col-span-2 lg:mt-0 lg:self-center lg:justify-self-end xl:contents">
         {fila.linkWhatsapp ? (
           <BotonWhatsapp
             vehiculoId={fila.vehiculoId}
@@ -273,7 +302,7 @@ export function FilaProximo({
           // primero que le falta a esta fila es el número.
           <Link
             href={`/panel/clientes/${fila.clienteId}?editar=telefono`}
-            className="inline-flex min-h-11 items-center rounded-md border border-line bg-base px-3.5 text-ui font-semibold text-ink transition-colors hover:bg-surface"
+            className={`inline-flex min-h-11 items-center rounded-md border border-line bg-base px-3.5 text-ui font-semibold text-ink transition-colors hover:bg-surface ${LUGAR_ACCION}`}
           >
             Cargar teléfono
           </Link>
@@ -281,7 +310,7 @@ export function FilaProximo({
           // El único caso que es culpa del dato de esta fila. Cuando falta
           // el template activo, el aviso de arriba ya lo explica y acá no
           // se dice nada: echarle la culpa al teléfono sería mentir.
-          <span className="text-label text-ink-40">Sin teléfono válido</span>
+          <span className={`text-label text-ink-40 ${LUGAR_ACCION}`}>Sin teléfono válido</span>
         ) : null}
       </div>
     </li>
