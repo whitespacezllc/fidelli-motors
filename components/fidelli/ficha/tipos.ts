@@ -47,11 +47,14 @@ export function esPestana(v: string | undefined): v is Pestana {
   return PESTANAS.some((p) => p.clave === v);
 }
 
-// Las secciones de la pestaña Datos, también en la URL.
+// Las secciones de la pestaña Datos, también en la URL. Las tres primeras
+// son listados de solo lectura; «Empresa» es el formulario de los datos del
+// emisor del presupuesto (vista-empresa.tsx), lo único que se edita acá.
 export const VISTAS_DATOS = [
   { clave: "clientes", nombre: "Clientes" },
   { clave: "vehiculos", nombre: "Vehículos" },
   { clave: "services", nombre: "Services" },
+  { clave: "empresa", nombre: "Empresa" },
 ] as const;
 
 export type VistaDatos = (typeof VISTAS_DATOS)[number]["clave"];

@@ -8,6 +8,7 @@ import { estadoService } from "@/lib/servicios";
 import { FilaServiceFidelli } from "./fila-service-fidelli";
 import { FilaVehiculoFidelli } from "./fila-vehiculo-fidelli";
 import { HistorialCorrecciones } from "./historial-correcciones";
+import { VistaEmpresa } from "./vista-empresa";
 import { DialogSuprimirCliente } from "@/components/clientes/dialog-suprimir-cliente";
 import { anonimizarClienteFidelli } from "@/app/fidelli/[id]/actions";
 import { clienteSuprimido, sinNombre, sinTelefono } from "@/lib/clientes";
@@ -31,6 +32,10 @@ const TD = "px-3 py-2.5 align-middle";
 // no edita los datos de su cliente: si hay algo mal, se abre la ventana y
 // lo corrige el lubri. La frontera es del producto — no tocamos la
 // operación de nadie.
+//
+// La cuarta vista, «Empresa», es otra cosa: no es operación del taller
+// sino sus datos como emisor del presupuesto (razón social, CUIT…), y esos
+// sí se cargan desde acá cuando el lubricentro los pasa.
 //
 // Y las tres consultas de acá son las más expuestas al error de
 // aislamiento: vista_clientes y vista_vehiculos tienen security_invoker,
@@ -86,6 +91,7 @@ export async function TabDatos({
       {ver === "services" && (
         <ListaServices tenant={tenant} params={params} pagina={pagina} totalPrevio={totalPrevio} />
       )}
+      {ver === "empresa" && <VistaEmpresa tenant={tenant} />}
     </div>
   );
 }
