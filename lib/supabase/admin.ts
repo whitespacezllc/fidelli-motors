@@ -7,9 +7,14 @@ import type { Database } from "@/lib/database.types";
 // El cliente con la clave service_role.
 //
 // Bypassea RLS por completo: cualquier consulta hecha con esto ve y
-// escribe los datos de TODOS los lubricentros. Existe por una sola
+// escribe los datos de TODOS los lubricentros. Nació por una sola
 // razón — la API de administración de Auth (invitar un owner) no
-// acepta la clave anónima.
+// acepta la clave anónima — y sus usos siguen contados: esa
+// invitación; los crons (el cierre diario y los avisos), que no
+// tienen un usuario detrás; y la ruta pública del adjunto de un
+// trabajo (app/(cliente)/[slug]/[patente]/adjunto/[id]), que firma
+// por 60 segundos un archivo que `anon` no puede leer, DESPUÉS de que
+// adjunto_publico() lo autoriza, y no lee ni escribe nada más.
 //
 // LAS REGLAS, y no son negociables:
 //
@@ -23,11 +28,11 @@ import type { Database } from "@/lib/database.types";
 //      exactamente lo que inlinea el valor en el JavaScript que se
 //      manda al celular del cliente.
 //
-//   3. Se usa para Auth admin, no para leer datos. Todo lo demás
+//   3. No se usa para leer datos de una pantalla. Todo lo demás
 //      va por createClient() de lib/supabase/server.ts, con la
 //      sesión del usuario y su RLS. Si una consulta "necesita"
 //      service_role para funcionar, casi siempre lo que falta es
-//      una policy, no la clave.
+//      una policy, no la clave. Un uso nuevo se anota arriba.
 //
 // Sin persistencia de sesión ni refresco de token: es una llamada
 // de servidor sin usuario detrás.
@@ -38,7 +43,7 @@ export function crearClienteAdmin() {
 
   if (!clave) {
     throw new Error(
-      "Falta SUPABASE_SERVICE_ROLE_KEY en el entorno. Sin esa clave no se puede invitar al owner.",
+      "Falta SUPABASE_SERVICE_ROLE_KEY en el entorno. Sin esa clave no se puede invitar al owner, ni correr los crons, ni abrirle un adjunto al cliente.",
     );
   }
 

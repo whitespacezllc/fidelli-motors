@@ -82,7 +82,8 @@ export default async function PaginaServices({
        desbloqueado_hasta, alineacion, aceite_tipo,
        vehiculos!inner(patente, patente_normalizada, marca, modelo, clientes(nombre)),
        sucursales(nombre),
-       service_ruedas(colocada, rotada, balanceada, reparada)`,
+       service_ruedas(colocada, rotada, balanceada, reparada),
+       adjuntos_trabajo(count)`,
       { count: "exact" },
     )
     .order("fecha", { ascending: false })
@@ -110,6 +111,8 @@ export default async function PaginaServices({
     // La columna del medio dice de qué se trató el trabajo, y cada tipo
     // la llena con lo suyo (RESUMEN_POR_TIPO, arriba).
     descripcion: RESUMEN_POR_TIPO[s.tipo](s),
+    // Cuántos archivos tiene adjuntos: la fila lo avisa con un clip.
+    adjuntos: s.adjuntos_trabajo[0]?.count ?? 0,
     creado: s.created_at,
     patente: s.vehiculos.patente,
     vehiculo:
