@@ -62,6 +62,10 @@ where contenido_pendiente is null;
 -- lo que está en null, con el nombre del lubricentro adentro. R16g lo exige.
 select completar_templates_neumaticos();
 
+-- Y la cuarta, la del próximo service de caja (20261004120100): mismo
+-- motivo y misma forma. R42i lo exige.
+select completar_templates_caja();
+
 -- Y el backfill de los pedidos de calcos (20260924103000): la migración
 -- corre ANTES del seed, cuando el demo (que nace con 50 calcos) todavía no
 -- existe. Es idempotente y solo toca a quien no tiene ningún pedido.
