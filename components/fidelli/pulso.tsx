@@ -11,11 +11,11 @@ import { GraficoPulso, type PuntoPulso } from "@/components/fidelli/grafico-puls
 // cualquier tipo (docs/METRICAS.md § 1), desde el bloque MÉTRICAS 2.
 //
 // El dibujo vive en components/fidelli/grafico-pulso.tsx: desde el bloque
-// MÉTRICAS 3 es un área apilada por tipo (service, mecánica, neumáticos),
-// y ya no comparte el componente con el panel del lubricentro, que sigue
-// con grafico-serie.tsx y una sola serie. Acá queda lo propio de esta
-// superficie: el acumulado histórico, el selector de granularidad y el
-// cableado con la URL.
+// MÉTRICAS 3 es un área apilada por tipo (service, mecánica, neumáticos y,
+// desde 20261004120100, caja), y ya no comparte el componente con el
+// panel del lubricentro, que sigue con grafico-serie.tsx y una sola serie.
+// Acá queda lo propio de esta superficie: el acumulado histórico, el
+// selector de granularidad y el cableado con la URL.
 //
 // LAS TRES SERIES LLEGAN JUNTAS y el toggle cambia de serie al instante
 // (useState); router.replace corre atrás en una transición para que la

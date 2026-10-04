@@ -8,16 +8,21 @@ import { etiquetaDePunto, mostrarEtiqueta, type Granularidad } from "@/lib/serie
 import { OverlaySerie } from "@/components/graficos/overlay-serie";
 
 // ============================================================
-// El Pulso apilado por tipo (bloque MÉTRICAS 3): tres áreas, una por tipo
-// de trabajo, en orden fijo de abajo hacia arriba —service, mecánica,
-// neumáticos— cuya suma en cada punto es el total de trabajos.
+// El Pulso apilado por tipo (bloque MÉTRICAS 3): cuatro áreas, una por
+// tipo de trabajo, en orden fijo de abajo hacia arriba —service, mecánica,
+// neumáticos, caja— cuya suma en cada punto es el total de trabajos. La
+// cuarta es el service de caja (20261004120100): sin ella la pila quedaba
+// más baja que el total en cuanto se cargaba una caja.
 //
 // LOS COLORES SON CATEGORÍA, NO ESTADO. Salen de los tokens del proyecto:
 // service con el ladrillo de marca, mecánica con el charcoal, neumáticos
-// con el gris medio. No dependen del color solo: el orden es fijo y la
-// leyenda va siempre visible con los tres nombres, así que un lector que
-// no distingue los tonos lee «de abajo hacia arriba». El admin es solo
-// claro (no hay modo oscuro en esta superficie, CLAUDE-landing.md).
+// con el gris medio y caja con el gris oscuro (ink-60), que es el neutro
+// que quedaba: los de estado no se usan para una categoría, el ladrillo
+// profundo se confunde con el de marca y el gris de línea no se despega
+// del fondo. No dependen del color solo: el orden es fijo y la leyenda va
+// siempre visible con los cuatro nombres, así que un lector que no
+// distingue los tonos lee «de abajo hacia arriba». El admin es solo claro
+// (no hay modo oscuro en esta superficie, CLAUDE-landing.md).
 //
 // La geometría es por índice, como grafico-serie.tsx: n celdas iguales,
 // el punto en el centro de cada una, y el overlay/tooltip en HTML por
@@ -39,17 +44,21 @@ export type PuntoPulso = {
   service: number;
   mecanica: number;
   neumaticos: number;
+  /** Siempre un número: la página pone 0 si la respuesta no trae la
+   *  clave (una función anterior a 20261004120100). */
+  caja: number;
 };
 
-export type TipoPulso = "service" | "mecanica" | "neumaticos";
+export type TipoPulso = "service" | "mecanica" | "neumaticos" | "caja";
 
 export const TIPOS_PULSO: readonly { clave: TipoPulso; nombre: string; color: string }[] = [
   { clave: "service", nombre: "Service", color: "var(--color-brand)" },
   { clave: "mecanica", nombre: "Mecánica", color: "var(--color-ink)" },
   { clave: "neumaticos", nombre: "Neumáticos", color: "var(--color-ink-40)" },
+  { clave: "caja", nombre: "Caja", color: "var(--color-ink-60)" },
 ];
 
-const CLAVES: TipoPulso[] = ["service", "mecanica", "neumaticos"];
+const CLAVES: TipoPulso[] = ["service", "mecanica", "neumaticos", "caja"];
 
 const ANCHO = 900;
 const ALTO = 200;
@@ -139,14 +148,19 @@ export function GraficoPulso({
           {etiquetaDePunto(p.inicio, unidad)} — {vacio.unSoloPunto}
         </p>
         <p className="mt-1 text-label text-ink-40 tabular-nums">
-          {p.service} service · {p.mecanica} mecánica · {p.neumaticos} neumáticos
+          {p.service} service · {p.mecanica} mecánica · {p.neumaticos} neumáticos ·{" "}
+          {p.caja} caja
         </p>
       </div>
     );
   }
 
   const n = serie.length;
-  const maximo = Math.max(...serie.map((p) => p.service + p.mecanica + p.neumaticos));
+  // El techo es la suma de TODAS las áreas que se apilan: sale de CLAVES,
+  // la misma lista que dibuja la pila, para que no puedan desencontrarse.
+  const maximo = Math.max(
+    ...serie.map((p) => CLAVES.reduce((suma, clave) => suma + p[clave], 0)),
+  );
   const x = (i: number) => ((i + 0.5) / n) * ANCHO;
   const y = scaleLinear({
     domain: [0, Math.max(1, maximo)],
@@ -173,9 +187,13 @@ export function GraficoPulso({
               {serie[i].cantidad === 1 ? "trabajo" : "trabajos"}
               <span className="text-ink-60"> · {etiquetaDePunto(serie[i].inicio, unidad)}</span>
             </p>
+            {/* En dos renglones: con el cuarto tipo, en uno solo el tooltip
+                pasaba los 290px y en un celular la tarjeta lo cortaba en
+                más de la mitad de los puntos. */}
             <p className="mt-0.5 text-ink-60">
-              {serie[i].service} service · {serie[i].mecanica} mecánica ·{" "}
-              {serie[i].neumaticos} neumáticos
+              {serie[i].service} service · {serie[i].mecanica} mecánica
+              <br />
+              {serie[i].neumaticos} neumáticos · {serie[i].caja} caja
             </p>
           </div>
         )}
@@ -188,7 +206,7 @@ export function GraficoPulso({
           aria-label={`Trabajos por ${unidad}, apilados por tipo: ${serie
             .map(
               (p) =>
-                `${etiquetaDePunto(p.inicio, unidad)} ${p.cantidad} (${p.service} service, ${p.mecanica} mecánica, ${p.neumaticos} neumáticos)`,
+                `${etiquetaDePunto(p.inicio, unidad)} ${p.cantidad} (${p.service} service, ${p.mecanica} mecánica, ${p.neumaticos} neumáticos, ${p.caja} caja)`,
             )
             .join(", ")}`}
         >
