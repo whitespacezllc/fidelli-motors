@@ -13,8 +13,8 @@
 //   2 · El encabezado quedaba corrido desde ~1390 px. La última columna
 //       era `auto`: en la fila medía lo que el botón y en el encabezado,
 //       que ahí no tiene nada, cero. Cada fila es una grilla aparte, así
-//       que el `1fr` daba distinto en cada una y los títulos caían ~44 px
-//       a la derecha de su columna.
+//       que el `1fr` daba distinto en cada una y los títulos caían 44 px a
+//       la derecha de su columna (62 en la fila de «Cargar teléfono»).
 //
 // Lo que comprueba, a 390, 768, 1024, 1100, 1280, 1366, 1440 y 1920, con
 // cada fuente que ofrezca el filtro (Todo · Services · Pendientes ·
@@ -41,8 +41,8 @@
 // probar justo donde lo usa un lubricentro.
 //
 //   M · Con el motivo abierto: tocar el WhatsApp apagado de una fila ya
-//       contactada muestra por qué está apagado; con eso a la vista
-//       valen A, B y E.
+//       contactada muestra por qué está apagado; con eso a la vista vale
+//       todo lo anterior (el mensaje no estira la columna ni corre la fila).
 //   R · Las roturas: se rompe a mano, con CSS, lo que cada comprobación
 //       dice cubrir —la plantilla vieja, una columna escondida, el orden
 //       cambiado, una celda corrida, el botón achicado— y cada una tiene
@@ -351,6 +351,19 @@ function medirEnPagina({ escritorio }) {
     return conArea(b) ? b : null;
   }
 
+  // Dónde arranca una celda: su caja o, si es `display: contents`, la de
+  // su primer hijo con caja (el control; un mensaje viene después y va a
+  // su propio renglón).
+  function inicio(el) {
+    if (oculto(el)) return null;
+    if (estilo(el).display !== "contents") return caja(el);
+    for (const h of el.children) {
+      const b = inicio(h);
+      if (b) return b;
+    }
+    return null;
+  }
+
   // Lo que se VE de una celda, pieza por pieza: cada renglón de texto y
   // cada control o caja con borde o fondo, recortados por lo que los
   // recorta (un `truncate` no desborda: corta). Piezas y no una sola caja,
@@ -441,7 +454,7 @@ function medirEnPagina({ escritorio }) {
   for (const li of items) {
     const celdas = [...li.children];
     const partes = celdas.map((c) => piezas(c));
-    const cajas = celdas.map((c) => caja(c));
+    const cajas = celdas.map((c) => inicio(c));
     const quien = nombre(li);
 
     partes.forEach((ps, i) => {
@@ -591,7 +604,12 @@ try {
   }
 
   async function ir(page, fuente) {
-    await page.goto(`${BASE}/panel/proximos${fuente ? `?fuente=${fuente}` : ""}`, { waitUntil: "networkidle", timeout: 60_000 });
+    const url = `${BASE}/panel/proximos${fuente ? `?fuente=${fuente}` : ""}`;
+    // Un segundo intento: con la máquina cargada, `next dev` a veces tarda
+    // más de un minuto en contestar, y eso no es una falla de la pantalla.
+    await page.goto(url, { waitUntil: "networkidle", timeout: 60_000 }).catch(() =>
+      page.goto(url, { waitUntil: "networkidle", timeout: 60_000 }),
+    );
     await page.evaluate(() => document.fonts.ready);
     // El cartel de `next dev` no es de la pantalla.
     await page.addStyleTag({ content: "nextjs-portal { display: none !important; }" });
@@ -601,11 +619,19 @@ try {
   const conBarra = (page) => page.addStyleTag({ content: `html { padding-right: ${BARRA}px !important; }` });
   const fila = (page, patente) => page.locator("main ul > li", { has: page.locator(".plate", { hasText: patente }) });
 
+  // La tabla se captura entera: la ventana se estira al alto de la página
+  // (con `fullPage` el menú, que es fijo, queda cortado a media captura).
   async function capturar(page, nombre, entera = true) {
     if (!DIR_CAPTURAS) return;
+    const ventana = page.viewportSize();
+    if (entera) {
+      const alto = await page.evaluate(() => document.documentElement.scrollHeight);
+      await page.setViewportSize({ width: ventana.width, height: alto });
+    }
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.waitForTimeout(200);
-    await page.screenshot({ path: path.join(DIR_CAPTURAS, `${PREFIJO}${nombre}.png`), fullPage: entera });
+    await page.screenshot({ path: path.join(DIR_CAPTURAS, `${PREFIJO}${nombre}.png`) });
+    if (entera) await page.setViewportSize(ventana);
     console.log(`  ◦ captura ${PREFIJO}${nombre}.png`);
   }
 
@@ -668,7 +694,7 @@ try {
       check(`${v.width} · tocar el WhatsApp apagado dice por qué`,
         (await motivo.count()) === 1 && /Ya contactaste/.test(await motivo.textContent()));
       comprobar(await medir(page, escritorio), `${v.width} · con el motivo`, { escritorio });
-      if (v.width === 1280) await capturar(page, "motivo-1280");
+      if (v.width === 1280) await capturar(page, "motivo-1280", false);
       if (escritorio) {
         await conBarra(page);
         comprobar(await medir(page, escritorio), `${v.width} · con el motivo y la barra`, { escritorio, conScroll: false });
