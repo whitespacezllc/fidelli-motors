@@ -8,6 +8,8 @@ import { createClient } from "@/lib/supabase/server";
 // datos del tenant y un suspendido tiene que poder cambiar su contraseña.
 // eslint-disable-next-line no-restricted-imports
 import { sesionParaEscribir, obtenerSesion } from "@/lib/auth/session";
+import { guardarEmpresa } from "@/lib/datos-empresa-guardar";
+import type { EstadoEmpresa } from "@/lib/datos-empresa";
 
 export type EstadoCuenta = { error?: string; ok?: string };
 
@@ -79,6 +81,29 @@ export async function actualizarNombreLubricentro(
   if (lubri?.slug) revalidatePath(`/${lubri.slug}`);
 
   return { ok: "Listo, el nombre de tu lubricentro quedó guardado." };
+}
+
+// ---------- Datos de tu empresa: quién emite el presupuesto ----------
+// Razón social, CUIT, condición frente al IVA, domicilio, teléfono y email.
+// Opcionales los seis: vacíos, el presupuesto sale como siempre. La puerta
+// de la base (guardar_datos_empresa) toma el lubricentro de la sesión; acá
+// no se le pasa ninguno.
+//
+// Sin feature a propósito: los datos se usan solo en Presupuestos y la
+// tarjeta se muestra solo con esa función, pero no son una función paga —la
+// base no los gatea por plan y esta acción tampoco—.
+export async function guardarDatosEmpresa(
+  _prev: EstadoEmpresa,
+  formData: FormData,
+): Promise<EstadoEmpresa> {
+  await sesionParaEscribir();
+
+  const estado = await guardarEmpresa(formData, {
+    mensajeOk: "Listo, los datos de tu empresa quedaron guardados.",
+  });
+  // Salen en el encabezado de cada presupuesto: el panel entero.
+  if (estado.ok) revalidatePath("/panel", "layout");
+  return estado;
 }
 
 // ---------- Seguridad: cambiar la contraseña ----------

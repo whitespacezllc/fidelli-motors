@@ -2,6 +2,7 @@ import type { DatosDocumento } from "./documento-presupuesto";
 import { formatearFecha } from "@/lib/fechas";
 import { sumarDias } from "@/lib/fidelli/plan";
 import { formatearPesos, totalDe } from "@/lib/presupuestos";
+import { lineasDeEmpresa } from "@/lib/datos-empresa";
 
 // El PDF se DIBUJA con jsPDF a partir de los datos, no se rasteriza el DOM.
 // La rasterización (html-to-image) dependía de que el navegador pudiera
@@ -22,6 +23,9 @@ const ANCHO = X1 - X0;
 const LIMITE = A4_ALTO - MARGEN;
 // Alto de línea al envolver texto de cuerpo (9.5pt) en mm.
 const LINEA = 4.6;
+// Entre las líneas chicas (9pt) que van debajo del nombre: los datos de la
+// empresa y, después de ellos, la sucursal.
+const INTERLINEA_EMPRESA = 4.2;
 
 // La tinta y los grises del sistema, en RGB para jsPDF.
 const TINTA: [number, number, number] = [10, 10, 10];
@@ -159,8 +163,26 @@ export async function generarPdfPresupuesto(datos: DatosDocumento): Promise<void
     pdf.text(linea, X0, yIzq + i * 6);
   });
   yIzq += (nombreLineas.length - 1) * 6;
+  // Los datos de la empresa: debajo del nombre, en el cuerpo de la sucursal,
+  // una línea por dato cargado. El bloque crece hacia abajo y empuja el
+  // resto —como el destinatario largo—, y cada línea se acota al mismo
+  // ancho que el nombre: nunca llega al bloque "PRESUPUESTO N°". Sin datos
+  // no se dibuja nada y el encabezado es, byte a byte, el de siempre (lo
+  // compara scripts/regresion-datos-empresa.mjs).
+  const empresaLineas = lineasDeEmpresa(datos.empresa, datos.lubricentroNombre);
+  if (empresaLineas.length > 0) {
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(9);
+    pdf.setTextColor(...GRIS);
+    empresaLineas
+      .flatMap((linea) => pdf.splitTextToSize(linea, ANCHO - 46) as string[])
+      .forEach((renglon, i) => {
+        yIzq += i === 0 ? 5 : INTERLINEA_EMPRESA;
+        pdf.text(renglon, X0, yIzq);
+      });
+  }
   if (datos.sucursal) {
-    yIzq += 5;
+    yIzq += empresaLineas.length > 0 ? INTERLINEA_EMPRESA : 5;
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(9);
     pdf.setTextColor(...GRIS);

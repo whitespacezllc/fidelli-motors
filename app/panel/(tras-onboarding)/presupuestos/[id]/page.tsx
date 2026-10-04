@@ -8,6 +8,7 @@ import { clasesBoton } from "@/components/ui/boton";
 import { DocumentoPresupuesto } from "@/components/presupuestos/documento-presupuesto";
 import { AccionesDocumento } from "@/components/presupuestos/acciones-documento";
 import { formatearFechaHora } from "@/lib/fechas";
+import { empresaDesdeFila, hayDatosDeEmpresa } from "@/lib/datos-empresa";
 
 export const metadata: Metadata = { title: "Presupuesto" };
 
@@ -48,7 +49,7 @@ export default async function PaginaPresupuesto({ params }: Props) {
   const suspendido = await panelSuspendido();
   const supabase = await createClient();
 
-  const [presupuestoRes, configRes] = await Promise.all([
+  const [presupuestoRes, configRes, empresaRes] = await Promise.all([
     supabase
       .from("presupuestos")
       .select(
@@ -63,6 +64,12 @@ export default async function PaginaPresupuesto({ params }: Props) {
     supabase
       .from("config_experiencia")
       .select("logo_url, color_primario, color_carton")
+      .maybeSingle(),
+    // Quién emite. Sin snapshot: los datos vigentes hoy, como el nombre y
+    // el logo. RLS deja ver solo la fila del tenant.
+    supabase
+      .from("datos_empresa")
+      .select("razon_social, cuit, condicion_iva, domicilio, telefono, email")
       .maybeSingle(),
   ]);
 
@@ -95,8 +102,11 @@ export default async function PaginaPresupuesto({ params }: Props) {
   // Un solo objeto para las dos salidas: el documento en pantalla (y su
   // impresión) y el PDF que dibuja AccionesDocumento. Misma fuente, cero
   // chance de que el papel y el archivo se desincronicen.
+  const empresa = empresaDesdeFila(empresaRes.data);
   const datos = {
     lubricentroNombre: sesion?.lubricentroNombre ?? "Tu lubricentro",
+    // Una fila vacía y ninguna fila son lo mismo para el papel: null.
+    empresa: hayDatosDeEmpresa(empresa) ? empresa : null,
     logoUrl,
     colorTenant: configRes.data?.color_primario ?? "#0A0A0A",
     colorPapel: configRes.data?.color_carton ?? null,

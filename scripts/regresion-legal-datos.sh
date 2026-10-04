@@ -27,11 +27,15 @@
 # Sale con 0 si la red atrapó todos los casos; 1 si alguno se le escapó.
 set -u
 cd "$(dirname "$0")/.."
-DB="docker exec -i supabase_db_fidelli-motors psql -U postgres -d postgres -X"
+DB="docker exec -i ${DB_CONTAINER:-supabase_db_fidelli-motors} psql -U postgres -d postgres -X"
 V=supabase/verificaciones.sql
 M_BUSQ=supabase/migrations/20260922120000_busquedas_sin_patente.sql
 M_SUPR=supabase/migrations/20260922130000_supresion_cliente.sql
 M_PURGA=supabase/migrations/20260922140000_retencion_tras_cancelar.sql
+# purgar_tenants_vencidos() se redefinió en 20261004210000 (se lleva también
+# los datos de la empresa): sus roturas la muerden de ahí. El trigger de
+# cancelada_at sigue viviendo en la migración que lo creó.
+M_PURGA_FN=supabase/migrations/20261004210000_datos_empresa.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
 
@@ -87,23 +91,23 @@ correr_marcada "cancelada_at que no se escribe" suscripciones_marcar_cancelacion
 correr_marcada "cancelada_at que no se limpia al reactivar" suscripciones_marcar_cancelacion "$M_PURGA" \
   "/@reactivada/s/new.cancelada_at := null;/null;/" R29 "R29a"
 # La forma más cara del bug: "solo cuenta" y borró.
-correr_marcada "la purga que borra en simulación" purgar_tenants_vencidos "$M_PURGA" \
+correr_marcada "la purga que borra en simulación" purgar_tenants_vencidos "$M_PURGA_FN" \
   "/@simular/s/if not p_simular then/if true then/" R29 "R29b"
 # La simulación que no escribe en purgas: el insert pasa a un select con
 # `where not p_simular` y la fila de la simulación nunca existe. Santiago
 # no tendría qué revisar antes de pasar el reloj a real.
-correr_marcada "la purga que no deja evidencia (simulación sin fila en purgas)" purgar_tenants_vencidos "$M_PURGA" \
+correr_marcada "la purga que no deja evidencia (simulación sin fila en purgas)" purgar_tenants_vencidos "$M_PURGA_FN" \
   "s/    values (v_lub.id, p_simular, p_lubricentro_id is not null, v_motivo, v_uid, v_lub.cancelada_at, v_conteos)/    select v_lub.id, p_simular, p_lubricentro_id is not null, v_motivo, v_uid, v_lub.cancelada_at, v_conteos where not p_simular/" R29 "R29b"
-correr_marcada "la purga que se lleva pagos" purgar_tenants_vencidos "$M_PURGA" \
+correr_marcada "la purga que se lleva pagos" purgar_tenants_vencidos "$M_PURGA_FN" \
   "s/      delete from landing_busquedas    where lubricentro_id = v_lub.id;/      delete from landing_busquedas    where lubricentro_id = v_lub.id; delete from pagos where lubricentro_id = v_lub.id;/" R29 "R29c"
 # Las dos las atrapa la simulación de R29b (devuelve un tenant de más): el
 # de 11 meses en la primera, el demo —cancelado hace 13 a propósito— en la
 # segunda.
-correr_marcada "el plazo corrido a 11 meses" purgar_tenants_vencidos "$M_PURGA" \
+correr_marcada "el plazo corrido a 11 meses" purgar_tenants_vencidos "$M_PURGA_FN" \
   "/@plazo/s/interval '12 months'/interval '10 months'/" R29 "R29b"
-correr_marcada "la purga que no exime al demo" purgar_tenants_vencidos "$M_PURGA" \
+correr_marcada "la purga que no exime al demo" purgar_tenants_vencidos "$M_PURGA_FN" \
   "/@demo/s/l.slug <> 'demo'/true/" R29 "R29b"
-correr_marcada "el guard que deja pasar a un owner" purgar_tenants_vencidos "$M_PURGA" \
+correr_marcada "el guard que deja pasar a un owner" purgar_tenants_vencidos "$M_PURGA_FN" \
   "/@guard/s/if v_uid is not null and not soy_superadmin() then/if false then/" R29 "R29f"
 # El reloj programado EN REAL antes de que Santiago haya visto una
 # simulación: la primera vez que el cálculo se encuentra con tenants reales,

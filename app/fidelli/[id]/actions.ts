@@ -7,6 +7,8 @@ import { obtenerSesion } from "@/lib/auth/session";
 import { MODULOS_PAGOS } from "@/lib/planes";
 import { errorMotivoModulo, motivoDeModuloValido } from "@/lib/modulos";
 import type { EstadoSupresion } from "@/lib/clientes";
+import { guardarEmpresa } from "@/lib/datos-empresa-guardar";
+import type { EstadoEmpresa } from "@/lib/datos-empresa";
 
 async function exigirSuperadmin() {
   const sesion = await obtenerSesion();
@@ -338,4 +340,28 @@ export async function registrarPedidoCalcos(
   revalidatePath("/fidelli/lubricentros");
   revalidatePath("/fidelli");
   return { ok: true };
+}
+
+// ---------- Los datos de la empresa, cargados por Fidelli ----------
+// El mismo formulario y la misma puerta que Mi cuenta. La diferencia es de
+// quién: acá el lubricentro viene de la ficha (ligado a la acción con
+// .bind, no en un campo del formulario) y la base lo acepta solo porque la
+// sesión es de un superadmin; `actualizado_por` queda a su nombre.
+export async function guardarDatosEmpresaFidelli(
+  lubricentroId: string,
+  _prev: EstadoEmpresa,
+  formData: FormData,
+): Promise<EstadoEmpresa> {
+  await exigirSuperadmin();
+
+  const estado = await guardarEmpresa(formData, {
+    lubricentroId,
+    mensajeOk: "Listo, los datos de la empresa quedaron guardados.",
+  });
+  if (estado.ok) {
+    revalidatePath(`/fidelli/${lubricentroId}`);
+    // Y el panel del lubricentro: Mi cuenta y el encabezado de sus presupuestos.
+    revalidatePath("/panel", "layout");
+  }
+  return estado;
 }
