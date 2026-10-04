@@ -912,6 +912,57 @@ export type Database = {
           },
         ]
       }
+      datos_empresa: {
+        Row: {
+          actualizado_por: string | null
+          condicion_iva: string | null
+          cuit: string | null
+          domicilio: string | null
+          email: string | null
+          lubricentro_id: string
+          razon_social: string | null
+          telefono: string | null
+          updated_at: string
+        }
+        Insert: {
+          actualizado_por?: string | null
+          condicion_iva?: string | null
+          cuit?: string | null
+          domicilio?: string | null
+          email?: string | null
+          lubricentro_id: string
+          razon_social?: string | null
+          telefono?: string | null
+          updated_at?: string
+        }
+        Update: {
+          actualizado_por?: string | null
+          condicion_iva?: string | null
+          cuit?: string | null
+          domicilio?: string | null
+          email?: string | null
+          lubricentro_id?: string
+          razon_social?: string | null
+          telefono?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "datos_empresa_actualizado_por_fkey"
+            columns: ["actualizado_por"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "datos_empresa_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: true
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       disenos_calco: {
         Row: {
           actual: boolean
@@ -3972,6 +4023,26 @@ export type Database = {
       }
       get_carton: { Args: { p_patente: string; p_slug: string }; Returns: Json }
       get_landing: { Args: { p_slug: string }; Returns: Json }
+      guardar_datos_empresa: {
+        Args: { p_datos: Json; p_lubricentro_id?: string }
+        Returns: {
+          actualizado_por: string | null
+          condicion_iva: string | null
+          cuit: string | null
+          domicilio: string | null
+          email: string | null
+          lubricentro_id: string
+          razon_social: string | null
+          telefono: string | null
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "datos_empresa"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       guardar_presupuesto: {
         Args: {
           p_cliente_id?: string

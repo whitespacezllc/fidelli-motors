@@ -14074,3 +14074,409 @@ begin
   end if;
 end $$;
 -- <<< R44
+
+
+-- ============================================================
+-- R45 · LOS DATOS DE LA EMPRESA EN EL PRESUPUESTO (20261004210000)
+--
+-- Razón social, CUIT, condición frente al IVA, domicilio, teléfono y email
+-- del que emite el presupuesto. Opcionales, y nunca un comprobante. Lo que
+-- este bloque vigila, y por qué cada cosa falla en silencio si se rompe:
+--
+--   j · LA FORMA. La tabla con RLS; `anon` sin nada; el owner lee, da de
+--       alta y edita SOLO los seis campos (ni el sello, ni el tenant) y no
+--       borra; tres policies y ninguna de borrado; los seis CHECK por su
+--       nombre; el trigger del sello; la puerta, una sola, invoker, y que
+--       `anon` no ejecuta.
+--   a · LA PUERTA NORMALIZA. Recorta, guarda el CUIT en once números
+--       —escrito con guiones, con puntos o pelado—, deja null lo vacío, y
+--       es un upsert de los SEIS campos: una fila por tenant, a nombre de
+--       quien guardó.
+--   b · LOS RECHAZOS. Un CUIT a medias (`cuit_invalido`, el error que el
+--       front dice con el mismo mensaje que en clientes), una condición
+--       que no es de la lista, una clave mal escrita, un dato larguísimo. Y
+--       lo que se saltea la puerta lo frena la tabla.
+--   c · EL SELLO no se escribe desde afuera: lo pone la base.
+--   d · EL AISLAMIENTO. El owner de otro tenant no lee ni escribe —ni por
+--       la puerta, ni por la tabla—, y nadie borra. `anon`, nada.
+--   e · FIDELLI carga los de cualquier lubricentro por la misma puerta, y
+--       tiene que decir cuál.
+--   f · LA PURGA se la lleva con lo operativo del tenant (y la simulación
+--       la cuenta sin tocarla).
+-- ============================================================
+
+-- >>> R45
+create or replace function r45_como(p_uid uuid) returns void language plpgsql as $$
+begin
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', p_uid, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+end $$;
+
+create or replace function r45_anon() returns void language plpgsql as $$
+begin
+  perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+  execute 'set local role anon';
+end $$;
+
+create or replace function r45_postgres() returns void language plpgsql as $$
+begin
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+end $$;
+
+-- Un intento, con el rol que esté puesto. Devuelve 'entro' o el error en
+-- una línea: así cada rechazo se comprueba por su código y su mensaje.
+create or replace function r45_intento(p_sql text) returns text language plpgsql as $$
+begin
+  execute p_sql;
+  return 'entro';
+exception when others then
+  return sqlstate || ' ' || sqlerrm;
+end $$;
+
+-- Los helpers se llaman con el rol que esté puesto, también `anon`, que en
+-- este proyecto no hereda el execute de las funciones nuevas.
+grant execute on function r45_como(uuid), r45_anon(), r45_postgres(), r45_intento(text)
+  to anon, authenticated;
+
+do $$
+declare
+  v_demo   uuid;
+  v_own    uuid;
+  v_super  uuid;
+  v_plan   uuid;
+  v_lub_b  uuid;   -- el tenant de al lado, con sus datos cargados
+  v_lub_c  uuid;   -- otro, sin fila
+  v_fila   datos_empresa;
+  v_b      datos_empresa;
+  v_purga  purgas;
+  v_err    text;
+  v_txt    text;
+  v_n      integer;
+  c        text;
+begin
+  select id into v_demo  from lubricentros where slug = 'demo';
+  select id into v_own   from usuarios where lubricentro_id = v_demo and rol = 'owner' limit 1;
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  select id into v_plan  from planes order by precio_mensual limit 1;
+  if v_demo is null or v_own is null or v_super is null or v_plan is null then
+    raise exception 'R45 SIN PISO: falta el demo, su owner, el superadmin o un plan del seed.';
+  end if;
+
+  -- ---------- j · la forma, antes de tocar nada ----------
+  if to_regclass('public.datos_empresa') is null then
+    raise exception 'R45j no existe la tabla datos_empresa: el presupuesto no tiene de dónde sacar quién lo emite.';
+  end if;
+  if not (select relrowsecurity from pg_class where oid = to_regclass('public.datos_empresa')) then
+    raise exception 'R45j AISLAMIENTO ROTO: datos_empresa no tiene RLS — cualquier owner lee la razón social y el CUIT de todos los lubricentros.';
+  end if;
+  if has_table_privilege('anon', 'public.datos_empresa', 'select')
+     or has_table_privilege('anon', 'public.datos_empresa', 'insert')
+     or has_table_privilege('anon', 'public.datos_empresa', 'update')
+     or has_table_privilege('anon', 'public.datos_empresa', 'delete') then
+    raise exception 'R45j `anon` tiene privilegios sobre datos_empresa. Estos datos salen SOLO en el presupuesto del panel: la página del cliente no los lleva.';
+  end if;
+  if not has_table_privilege('authenticated', 'public.datos_empresa', 'select') then
+    raise exception 'R45j el owner no puede leer los datos de su empresa (falta select para authenticated).';
+  end if;
+  if has_table_privilege('authenticated', 'public.datos_empresa', 'delete') then
+    raise exception 'R45j authenticated puede BORRAR en datos_empresa. No se borra: se vacían los campos.';
+  end if;
+  -- El alta: el tenant y los seis campos. La edición: los seis, y nada más.
+  foreach c in array array['lubricentro_id', 'razon_social', 'cuit', 'condicion_iva', 'domicilio', 'telefono', 'email'] loop
+    if not has_column_privilege('authenticated', 'public.datos_empresa', c, 'insert') then
+      raise exception 'R45j el alta no puede escribir «%»: el upsert de la puerta falla para todos.', c;
+    end if;
+    if c <> 'lubricentro_id' and not has_column_privilege('authenticated', 'public.datos_empresa', c, 'update') then
+      raise exception 'R45j la edición no puede escribir «%»: guardar por segunda vez falla para todos.', c;
+    end if;
+  end loop;
+  foreach c in array array['updated_at', 'actualizado_por'] loop
+    if has_column_privilege('authenticated', 'public.datos_empresa', c, 'insert')
+       or has_column_privilege('authenticated', 'public.datos_empresa', c, 'update') then
+      raise exception 'R45j EL SELLO SE PUEDE ESCRIBIR DESDE AFUERA: authenticated tiene insert o update sobre «%». Cuándo y quién los pone la base.', c;
+    end if;
+  end loop;
+  if has_column_privilege('authenticated', 'public.datos_empresa', 'lubricentro_id', 'update') then
+    raise exception 'R45j authenticated puede cambiar el lubricentro_id de una fila de datos_empresa: una fila no se muda de tenant.';
+  end if;
+
+  select count(*), count(*) filter (where cmd in ('DELETE', 'ALL'))
+    into v_n, v_err from pg_policies where schemaname = 'public' and tablename = 'datos_empresa';
+  if v_n <> 3 or v_err::integer <> 0 then
+    raise exception 'R45j datos_empresa tiene % policies (% de borrado) y tenían que ser 3: lectura, alta y edición. Ninguna de borrado.', v_n, v_err;
+  end if;
+
+  select string_agg(n, ', ' order by n) into v_txt
+    from unnest(array['cuit_formato', 'condicion_iva_valida', 'razon_social_valida',
+                      'domicilio_valido', 'telefono_valido', 'email_valido']) n
+   where not exists (
+     select 1 from pg_constraint
+      where conrelid = 'public.datos_empresa'::regclass and conname = n and contype = 'c');
+  if v_txt is not null then
+    raise exception 'R45j faltan CHECK en datos_empresa: %. Lo que se saltea la puerta (un update por la API) queda sin validar.', v_txt;
+  end if;
+  if not exists (
+    select 1 from pg_trigger
+     where tgrelid = 'public.datos_empresa'::regclass and tgname = 'datos_empresa_sello'
+       and not tgisinternal and tgenabled <> 'D') then
+    raise exception 'R45j falta el trigger datos_empresa_sello: nadie anota cuándo ni quién guardó.';
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.datos_empresa'::regclass and contype = 'f'
+       and confrelid = 'public.lubricentros'::regclass and confdeltype = 'c') then
+    raise exception 'R45j la FK de datos_empresa a lubricentros no es on delete cascade.';
+  end if;
+
+  select count(*), bool_or(prosecdef) into v_n, v_err
+    from pg_proc where pronamespace = 'public'::regnamespace and proname = 'guardar_datos_empresa';
+  if v_n <> 1 then
+    raise exception 'R45j guardar_datos_empresa tiene % firmas y tenía que ser 1: con dos, PostgREST contesta 300 y no guarda nadie.', v_n;
+  end if;
+  if v_err::boolean then
+    raise exception 'R45j guardar_datos_empresa es SECURITY DEFINER. Como definer se saltea la RLS de la tabla, y su único control pasa a ser un `if`: la puerta es invoker a propósito.';
+  end if;
+  if has_function_privilege('anon', 'public.guardar_datos_empresa(jsonb, uuid)', 'execute') then
+    raise exception 'R45j `anon` puede ejecutar guardar_datos_empresa().';
+  end if;
+  if not has_function_privilege('authenticated', 'public.guardar_datos_empresa(jsonb, uuid)', 'execute') then
+    raise exception 'R45j authenticated no puede ejecutar guardar_datos_empresa(): Mi cuenta no guarda.';
+  end if;
+
+  begin
+    -- El tenant de al lado, con sus datos; y un tercero, sin fila. El de al
+    -- lado, cancelado: es el que después se purga.
+    insert into lubricentros (nombre, slug) values ('Vecino R45', 'vecino-r45') returning id into v_lub_b;
+    insert into lubricentros (nombre, slug) values ('Tercero R45', 'tercero-r45') returning id into v_lub_c;
+    insert into suscripciones (lubricentro_id, plan_id, estado, periodo, inicio, vencimiento)
+    values (v_lub_b, v_plan, 'cancelada', 'mensual', current_date - 400, current_date - 370);
+    insert into datos_empresa (lubricentro_id, razon_social, cuit)
+    values (v_lub_b, 'Vecino SRL', '20123456786');
+    delete from datos_empresa where lubricentro_id = v_demo;
+
+    -- ---------- a · la puerta normaliza ----------
+    perform r45_como(v_own);
+    select * into v_fila from guardar_datos_empresa(jsonb_build_object(
+      'razon_social', '  EL CRUCE SERVICIOS SAS  ', 'cuit', '30-71234567-1',
+      'condicion_iva', 'responsable_inscripto', 'domicilio', E' Av. San Martín 1450 \t',
+      'telefono', '351 555 0142', 'email', ' ventas@example.com '));
+    if v_fila.lubricentro_id is distinct from v_demo then
+      raise exception 'R45a la puerta guardó en el lubricentro % y la sesión es del demo: el tenant sale de la sesión, no de lo que se le pase.', v_fila.lubricentro_id;
+    end if;
+    if v_fila.cuit is distinct from '30712345671' then
+      raise exception 'R45a EL CUIT NO QUEDÓ NORMALIZADO: se escribió «30-71234567-1» y quedó «%». Se guarda en once números pelados, igual que clientes.cuit.', v_fila.cuit;
+    end if;
+    if v_fila.razon_social is distinct from 'EL CRUCE SERVICIOS SAS'
+       or v_fila.domicilio is distinct from 'Av. San Martín 1450'
+       or v_fila.email is distinct from 'ventas@example.com'
+       or v_fila.telefono is distinct from '351 555 0142'
+       or v_fila.condicion_iva is distinct from 'responsable_inscripto' then
+      raise exception 'R45a la puerta no recortó o no guardó los datos tal cual: %', to_jsonb(v_fila);
+    end if;
+    if v_fila.actualizado_por is distinct from v_own or v_fila.updated_at is null then
+      raise exception 'R45a EL SELLO NO QUEDÓ: actualizado_por = % (esperaba al owner que guardó), updated_at = %.', v_fila.actualizado_por, v_fila.updated_at;
+    end if;
+
+    -- El upsert es de los SEIS: lo que no viene queda en null. Y el CUIT
+    -- entra igual con puntos y barra. Sigue habiendo UNA fila.
+    select * into v_fila from guardar_datos_empresa(jsonb_build_object(
+      'cuit', '30.712.345/671', 'telefono', '   ', 'email', ''));
+    if v_fila.cuit is distinct from '30712345671' then
+      raise exception 'R45a el CUIT escrito «30.712.345/671» quedó «%»: la puerta le saca todo lo que no es número.', v_fila.cuit;
+    end if;
+    if v_fila.razon_social is not null or v_fila.condicion_iva is not null or v_fila.domicilio is not null then
+      raise exception 'R45a guardar sin la razón social, la condición y el domicilio los dejó como estaban: %. La puerta escribe los seis campos — es el formulario entero, y así se VACÍA un dato.', to_jsonb(v_fila);
+    end if;
+    if v_fila.telefono is not null or v_fila.email is not null then
+      raise exception 'R45a un teléfono de espacios o un email vacío quedaron guardados como texto (%, %): vacío es null.', quote_nullable(v_fila.telefono), quote_nullable(v_fila.email);
+    end if;
+    perform r45_postgres();
+    select count(*) into v_n from datos_empresa where lubricentro_id = v_demo;
+    if v_n <> 1 then
+      raise exception 'R45a el demo tiene % filas en datos_empresa después de guardar dos veces. Es una por tenant.', v_n;
+    end if;
+
+    -- ---------- b · los rechazos ----------
+    perform r45_como(v_own);
+    v_err := r45_intento($q$select guardar_datos_empresa('{"cuit": "30-7123456"}')$q$);
+    if v_err <> 'P0001 cuit_invalido' then
+      raise exception 'R45b UN CUIT A MEDIAS: con diez números la puerta contestó «%» y tenía que ser «cuit_invalido» (el front lo dice con el mismo mensaje que en clientes).', v_err;
+    end if;
+    v_err := r45_intento($q$select guardar_datos_empresa('{"cuit": "30-71234567-11"}')$q$);
+    if v_err <> 'P0001 cuit_invalido' then
+      raise exception 'R45b con doce números la puerta contestó «%» y tenía que ser «cuit_invalido».', v_err;
+    end if;
+    v_err := r45_intento($q$select guardar_datos_empresa('{"condicion_iva": "consumidor_final"}')$q$);
+    if v_err <> 'P0001 condicion_iva_invalida' then
+      raise exception 'R45b una condición frente al IVA que no es de la lista contestó «%» (esperaba condicion_iva_invalida).', v_err;
+    end if;
+    v_err := r45_intento($q$select guardar_datos_empresa('{"razonSocial": "Mal Escrita SA"}')$q$);
+    if v_err <> 'P0001 clave_desconocida' then
+      raise exception 'R45b UNA CLAVE MAL ESCRITA PASÓ: «razonSocial» contestó «%» y tenía que reventar con clave_desconocida. Como lo que no viene se vacía, ignorarla borra la razón social sin avisar.', v_err;
+    end if;
+    v_err := r45_intento(format($q$select guardar_datos_empresa(jsonb_build_object('domicilio', %L))$q$, repeat('a', 161)));
+    if v_err <> 'P0001 dato_demasiado_largo' then
+      raise exception 'R45b un domicilio de 161 caracteres contestó «%» (esperaba dato_demasiado_largo).', v_err;
+    end if;
+    v_err := r45_intento(format($q$select guardar_datos_empresa(jsonb_build_object('domicilio', %L, 'razon_social', %L, 'telefono', %L, 'email', %L))$q$,
+      repeat('a', 160), repeat('b', 120), repeat('1', 40), repeat('c', 120)));
+    if v_err <> 'entro' then
+      raise exception 'R45b los cuatro textos en su tope exacto (160, 120, 40 y 120) no entraron: «%».', v_err;
+    end if;
+    v_err := r45_intento($q$select guardar_datos_empresa('["no", "es", "un", "objeto"]')$q$);
+    if v_err <> 'P0001 datos_invalidos' then
+      raise exception 'R45b un jsonb que no es un objeto contestó «%» (esperaba datos_invalidos).', v_err;
+    end if;
+    -- Los rechazos no dejaron nada a medias: sigue lo último que entró.
+    select * into v_fila from datos_empresa where lubricentro_id = v_demo;
+    if v_fila.domicilio is distinct from repeat('a', 160) then
+      raise exception 'R45b después de los rechazos la fila del demo no es la última que entró.';
+    end if;
+
+    -- Lo que se saltea la puerta —un update por la API— lo frena la tabla.
+    v_err := r45_intento($q$update datos_empresa set cuit = '30-71234567-1'$q$);
+    if v_err not like '23514 %cuit_formato%' then
+      raise exception 'R45b UN CUIT CON GUIONES ENTRÓ POR LA TABLA: «%». El CHECK cuit_formato exige los once números pelados, el mismo criterio que clientes.cuit.', v_err;
+    end if;
+    v_err := r45_intento($q$update datos_empresa set cuit = '3071234567'$q$);
+    if v_err not like '23514 %cuit_formato%' then
+      raise exception 'R45b un CUIT de diez números entró por la tabla: «%».', v_err;
+    end if;
+    v_err := r45_intento($q$update datos_empresa set condicion_iva = 'consumidor_final'$q$);
+    if v_err not like '23514 %condicion_iva_valida%' then
+      raise exception 'R45b una condición frente al IVA inventada entró por la tabla: «%».', v_err;
+    end if;
+    v_err := r45_intento($q$update datos_empresa set razon_social = ''$q$);
+    if v_err not like '23514 %razon_social_valida%' then
+      raise exception 'R45b una razón social vacía ('''') entró por la tabla: «%». Vacío es null.', v_err;
+    end if;
+    v_err := r45_intento($q$update datos_empresa set domicilio = ' con espacios '$q$);
+    if v_err not like '23514 %domicilio_valido%' then
+      raise exception 'R45b un domicilio con espacios a los costados entró por la tabla: «%».', v_err;
+    end if;
+    v_err := r45_intento($q$update datos_empresa set telefono = E'351\n555'$q$);
+    if v_err not like '23514 %telefono_valido%' then
+      raise exception 'R45b un teléfono con un salto de línea entró por la tabla: «%». El encabezado es de un renglón por dato.', v_err;
+    end if;
+    v_err := r45_intento(format($q$update datos_empresa set email = %L$q$, repeat('c', 121)));
+    if v_err not like '23514 %email_valido%' then
+      raise exception 'R45b un email de 121 caracteres entró por la tabla: «%».', v_err;
+    end if;
+
+    -- ---------- c · el sello ----------
+    v_err := r45_intento(format($q$update datos_empresa set actualizado_por = %L$q$, v_super));
+    if v_err not like '42501 %' then
+      raise exception 'R45c EL OWNER FIRMÓ CON OTRO USUARIO: un update de actualizado_por contestó «%» y tenía que ser 42501.', v_err;
+    end if;
+    v_err := r45_intento($q$update datos_empresa set updated_at = '2020-01-01'$q$);
+    if v_err not like '42501 %' then
+      raise exception 'R45c el owner escribió updated_at a mano: «%».', v_err;
+    end if;
+    v_err := r45_intento(format($q$update datos_empresa set lubricentro_id = %L$q$, v_lub_c));
+    if v_err not like '42501 %' then
+      raise exception 'R45c el owner mudó su fila a otro lubricentro: «%».', v_err;
+    end if;
+    -- Ni con privilegios: el trigger pisa lo que venga.
+    perform r45_postgres();
+    update datos_empresa set updated_at = '2020-01-01', actualizado_por = v_super where lubricentro_id = v_demo;
+    select * into v_fila from datos_empresa where lubricentro_id = v_demo;
+    if v_fila.updated_at < now() - interval '1 minute' or v_fila.actualizado_por is not null then
+      raise exception 'R45c EL SELLO SE DEJÓ ESCRIBIR: un update con updated_at = 2020 y otro autor quedó (%, %). Lo pone el trigger: la fecha de ahora y el usuario de la sesión (acá, ninguno).', v_fila.updated_at, v_fila.actualizado_por;
+    end if;
+
+    -- ---------- d · el aislamiento ----------
+    perform r45_como(v_own);
+    select count(*) into v_n from datos_empresa;
+    if v_n <> 1 then
+      raise exception 'R45d AISLAMIENTO ROTO: el owner del demo ve % filas de datos_empresa y tenía que ver solo la suya.', v_n;
+    end if;
+    if exists (select 1 from datos_empresa where lubricentro_id = v_lub_b) then
+      raise exception 'R45d AISLAMIENTO ROTO: el owner del demo lee la razón social y el CUIT del lubricentro de al lado.';
+    end if;
+    v_err := r45_intento(format($q$select guardar_datos_empresa('{"razon_social": "Pisada SA"}', %L)$q$, v_lub_b));
+    if v_err <> '42501 otro_lubricentro' then
+      raise exception 'R45d LA PUERTA NO FRENA A UN OWNER QUE LE PASA OTRO LUBRICENTRO: contestó «%» y tenía que ser 42501 otro_lubricentro. El tenant de un owner es el de su sesión, siempre; que hoy lo ataje además la RLS no es excusa: el día que la puerta sea definer, escribe.', v_err;
+    end if;
+    v_err := r45_intento(format($q$update datos_empresa set razon_social = 'Pisada SA' where lubricentro_id = %L$q$, v_lub_b));
+    v_err := r45_intento(format($q$insert into datos_empresa (lubricentro_id, razon_social) values (%L, 'Colada SA')$q$, v_lub_c));
+    if v_err not like '42501 %' then
+      raise exception 'R45d EL OWNER DIO DE ALTA LA FILA DE OTRO TENANT por la tabla: «%».', v_err;
+    end if;
+    v_err := r45_intento($q$delete from datos_empresa$q$);
+    if v_err not like '42501 %' then
+      raise exception 'R45d el owner borró su fila de datos_empresa: «%». No se borra: se vacían los campos.', v_err;
+    end if;
+    perform r45_postgres();
+    select * into v_b from datos_empresa where lubricentro_id = v_lub_b;
+    if v_b.razon_social is distinct from 'Vecino SRL' or v_b.cuit is distinct from '20123456786' then
+      raise exception 'R45d EL OWNER DEL DEMO LE CAMBIÓ LOS DATOS AL LUBRICENTRO DE AL LADO: quedó %.', to_jsonb(v_b);
+    end if;
+    if exists (select 1 from datos_empresa where lubricentro_id = v_lub_c) then
+      raise exception 'R45d quedó una fila de datos_empresa en un tenant que nadie de ese tenant cargó.';
+    end if;
+
+    perform r45_anon();
+    v_err := r45_intento($q$select count(*) from datos_empresa$q$);
+    if v_err not like '42501 %' then
+      perform r45_postgres();
+      raise exception 'R45d `anon` leyó datos_empresa: «%».', v_err;
+    end if;
+    v_err := r45_intento($q$select guardar_datos_empresa('{"razon_social": "Anon SA"}')$q$);
+    if v_err not like '42501 %' then
+      perform r45_postgres();
+      raise exception 'R45d `anon` ejecutó la puerta: «%».', v_err;
+    end if;
+    perform r45_postgres();
+
+    -- ---------- e · Fidelli ----------
+    perform r45_como(v_super);
+    v_err := r45_intento($q$select guardar_datos_empresa('{"razon_social": "Sin Destino SA"}')$q$);
+    if v_err <> 'P0001 falta_lubricentro' then
+      raise exception 'R45e al superadmin que no dice de qué lubricentro, la puerta le contestó «%» y tenía que ser falta_lubricentro.', v_err;
+    end if;
+    select * into v_fila from guardar_datos_empresa(
+      '{"razon_social": "Tercero SA", "cuit": "30-71234567-1", "condicion_iva": "monotributo"}'::jsonb, v_lub_c);
+    if v_fila.lubricentro_id is distinct from v_lub_c or v_fila.cuit is distinct from '30712345671'
+       or v_fila.actualizado_por is distinct from v_super then
+      raise exception 'R45e Fidelli no cargó los datos del lubricentro que se le pasó, o no quedaron a su nombre: %', to_jsonb(v_fila);
+    end if;
+    select count(*) into v_n from datos_empresa where lubricentro_id in (v_demo, v_lub_b, v_lub_c);
+    if v_n <> 3 then
+      raise exception 'R45e el superadmin ve % de las 3 filas de datos_empresa de la prueba: Fidelli lee las de todos los lubricentros.', v_n;
+    end if;
+    perform r45_postgres();
+    select * into v_fila from datos_empresa where lubricentro_id = v_demo;
+    if v_fila.domicilio is distinct from repeat('a', 160) then
+      raise exception 'R45e cargar los datos de un lubricentro desde /fidelli tocó los de otro.';
+    end if;
+
+    -- ---------- f · la purga ----------
+    select * into v_purga from purgar_tenants_vencidos(true, v_lub_b, 'R45: la simulación cuenta los datos de la empresa');
+    if (v_purga.conteos ->> 'datos_empresa')::integer is distinct from 1 then
+      raise exception 'R45f la simulación de la purga no cuenta datos_empresa: conteos = %', v_purga.conteos;
+    end if;
+    if not exists (select 1 from datos_empresa where lubricentro_id = v_lub_b) then
+      raise exception 'R45f LA SIMULACIÓN BORRÓ los datos de la empresa.';
+    end if;
+    perform purgar_tenants_vencidos(false, v_lub_b, 'R45: la purga se lleva los datos de la empresa');
+    if exists (select 1 from datos_empresa where lubricentro_id = v_lub_b) then
+      raise exception 'R45f LA PURGA DEJÓ LOS DATOS DE LA EMPRESA de un tenant purgado: la razón social y el CUIT de alguien que canceló hace más de un año siguen en la base. La fila de lubricentros no se borra, así que la cascada no alcanza: la purga tiene que nombrar la tabla.';
+    end if;
+    if not exists (select 1 from datos_empresa where lubricentro_id = v_demo)
+       or not exists (select 1 from datos_empresa where lubricentro_id = v_lub_c) then
+      raise exception 'R45f la purga de un tenant se llevó los datos de la empresa de otro.';
+    end if;
+
+    raise exception 'rollback_r45' using errcode = 'P0045';
+  exception
+    when sqlstate 'P0045' then
+      perform r45_postgres();
+  end;
+
+  if exists (select 1 from lubricentros where slug in ('vecino-r45', 'tercero-r45')) then
+    raise exception 'R45 SIN PISO: la subtransacción no deshizo los fixtures.';
+  end if;
+end $$;
+-- <<< R45
