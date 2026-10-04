@@ -93,6 +93,11 @@ planes y precios de lista; fijar overrides de features por tenant; **desbloquear
 trabajo fijado** y **corregir una patente** (las dos únicas escrituras sobre datos del
 cliente, ambas con motivo y auditoría).
 
+**Los datos de la empresa (desde el 04/10/2026).** En la pestaña **Datos** de la ficha, una
+cuarta vista, **Empresa**: el mismo formulario que el dueño tiene en Mi cuenta (razón
+social, CUIT, condición frente al IVA, domicilio, teléfono, email), para cargárselos
+cuando los pasa. Es lo único editable de esa pestaña; queda anotado quién los guardó.
+
 **Pedidos de calcos (desde el 03/10/2026, PR 1).** La ficha gana la pestaña **Calcos**,
 con tres bloques: el **diseño** del calco del tenant (versiones como miniaturas, una
 marcada actual; PNG o PDF de hasta 10 MB en un bucket privado, a la vista por URL
@@ -361,6 +366,13 @@ en el mostrador.
 mostradores cotizando a la vez sacan 47 y 48, nunca 47 y 47. Al editar, **el número no
 cambia nunca**.
 
+**El encabezado dice quién lo emite (desde el 04/10/2026).** Debajo del nombre del
+lubricentro, en letra chica y una línea por dato: la razón social, *"CUIT 30-71234567-1 ·
+IVA Responsable Inscripto"*, el domicilio y *"Tel. … · email"*; después, la sucursal. Cada
+línea sale solo si el dato está cargado (Mi cuenta → Datos de tu empresa); **sin ninguno,
+el presupuesto es el de siempre**. La razón social no se repite si es el nombre del
+lubricentro. Es identificación del emisor: sigue sin ser una factura, y lo dice al pie.
+
 **Lo único obligatorio es un renglón con descripción de ≥2 caracteres.** Elegir un producto
 del catálogo precarga descripción e importe, pero **el importe es una copia de ese momento,
 no queda atado al catálogo**.
@@ -478,7 +490,11 @@ haya quedado por encima del tope tras un downgrade.
 
 Tus datos (nombre editable; email en solo lectura) · **tu marca** (nombre del lubricentro
 y la URL pública con botón "Copiar", más la advertencia de que **la dirección no se puede
-cambiar: es la que está impresa en los QR de las calcos**) · seguridad (cambio de
+cambiar: es la que está impresa en los QR de las calcos**) · **datos de tu empresa**
+(desde el 04/10/2026, solo con Presupuestos en el plan: razón social, CUIT —con sus guiones
+mientras se escribe—, condición frente al IVA, domicilio, teléfono y email; todos
+opcionales, y *"Salen en el encabezado de tus presupuestos. Si los dejás vacíos, el
+presupuesto lleva solo tu nombre y tu logo."*) · seguridad (cambio de
 contraseña) · **tu plan** (plan, período, abono, estado, vencimiento, y **las seis features
 con tilde verde o cruz gris** — lo apagado se muestra, no se esconde — más el historial de
 pagos).
