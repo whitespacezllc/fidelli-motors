@@ -1,6 +1,13 @@
 import type { NextConfig } from "next";
+import { redireccionesDeSlugs } from "./lib/slugs-anteriores";
 
 const nextConfig: NextConfig = {
+  // La dirección vieja de un lubricentro —el slug que quedó impreso en sus
+  // calcos— redirige a la nueva. La lista y sus reglas viven en
+  // lib/slugs-anteriores.ts.
+  async redirects() {
+    return redireccionesDeSlugs();
+  },
   experimental: {
     serverActions: {
       // El logo del lubricentro sube por Server Action para poder validar

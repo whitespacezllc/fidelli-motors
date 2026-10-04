@@ -6,9 +6,10 @@
 //
 // Lo que cubre:
 //   A · Los helpers, sin navegador: lib/adjuntos.ts (el peso, el achicado,
-//       el nombre limpio, el formato por los bytes, la ruta) y los del slug
-//       de lib/texto.ts. Y LAS ROTURAS: cada regla se rompe sobre una
-//       copia, se recompila y la comprobación que la cubre tiene que fallar.
+//       el nombre limpio, el formato por los bytes, la ruta), los del slug
+//       de lib/texto.ts y los slugs viejos de lib/slugs-anteriores.ts. Y
+//       LAS ROTURAS: cada regla se rompe sobre una copia, se recompila y
+//       la comprobación que la cubre tiene que fallar.
 //   B · `anon` no lee nada: ni la tabla, ni la función, ni el bucket, por
 //       la API directa.
 //   C · El detalle de un trabajo FIJADO, en 390 táctil: adjuntar un PDF de
@@ -29,6 +30,10 @@
 //       dejan pasar de 32.
 //   K · Todos los dispositivos (360, 390, 820, 1280): sin scroll
 //       horizontal y con todo lo que se toca de 44 px.
+//   L · La dirección vieja de un lubricentro —el slug que quedó impreso en
+//       sus calcos— contesta 301 a la nueva, con la patente y lo que venga
+//       atrás. Solo necesita el servidor de Next: corre antes de tocar la
+//       base, apenas terminan los helpers.
 //
 // Requiere el stack local con el seed y el servidor de Next:
 //   supabase start && npm run dev
@@ -104,7 +109,7 @@ function hojasDelXlsx(buf) {
 // A · Los helpers
 // ============================================================
 
-// Sin chequeo de tipos ni resolución de imports: los dos módulos no
+// Sin chequeo de tipos ni resolución de imports: los tres módulos no
 // importan nada.
 function cargar(archivo, reemplazos = []) {
   const ts = require(path.join(RAIZ, "node_modules/typescript"));
@@ -203,8 +208,43 @@ function revisarSlug(m) {
   ];
 }
 
+// El slug que un lubricentro tuvo antes y que sigue impreso en sus calcos.
+// Va escrito acá a propósito, además de en la lista: si alguien borra la
+// entrada, esta prueba es lo único que se entera.
+const SLUG_VIEJO = "mecanica-y-lubricentro-deambrossio";
+const SLUG_NUEVO = "deambrossio";
+
+function revisarSlugsAnteriores(m) {
+  if (typeof m.redireccionesDeSlugs !== "function") {
+    return [["lib/slugs-anteriores.ts tiene los slugs viejos", false, "no está: una dirección vieja no redirige en esta rama"]];
+  }
+  const reglas = m.redireccionesDeSlugs();
+  const pares = Object.entries(m.SLUGS_ANTERIORES);
+  const FORMA = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+  return [
+    ["el slug viejo de 34 caracteres sigue en la lista, hacia el nuevo",
+      m.SLUGS_ANTERIORES[SLUG_VIEJO] === SLUG_NUEVO, JSON.stringify(m.SLUGS_ANTERIORES)],
+    ["hay una regla por slug viejo, y toma también lo que cuelga de él",
+      pares.length > 0 && reglas.length === pares.length
+        && pares.every(([viejo], i) => reglas[i].source === `/${viejo}/:resto*`),
+      JSON.stringify(reglas.map((r) => r.source))],
+    ["cada regla lleva al slug nuevo con lo que venga atrás (la patente, el adjunto)",
+      pares.length > 0 && pares.every(([, nuevo], i) => reglas[i]?.destination === `/${nuevo}/:resto*`),
+      JSON.stringify(reglas.map((r) => r.destination))],
+    ["el redirect es un 301, para siempre",
+      reglas.length > 0 && reglas.every((r) => r.statusCode === 301 && !("permanent" in r)),
+      JSON.stringify(reglas.map((r) => r.statusCode))],
+    ["el slug nuevo es válido, entra en el tope de 32 y no es a su vez uno viejo (sin cadenas)",
+      pares.length > 0 && pares.every(([viejo, nuevo]) =>
+        FORMA.test(nuevo) && nuevo.length <= 32 && nuevo !== viejo && !(nuevo in m.SLUGS_ANTERIORES)),
+      JSON.stringify(pares)],
+  ];
+}
+
 titulo("A · Los helpers");
-for (const [archivo, revisar] of [["lib/adjuntos.ts", revisarAdjuntos], ["lib/texto.ts", revisarSlug]]) {
+for (const [archivo, revisar] of [
+  ["lib/adjuntos.ts", revisarAdjuntos], ["lib/texto.ts", revisarSlug], ["lib/slugs-anteriores.ts", revisarSlugsAnteriores],
+]) {
   let filas;
   try {
     filas = revisar(fs.existsSync(path.join(RAIZ, archivo)) ? cargar(archivo) : {});
@@ -263,6 +303,18 @@ if (fs.existsSync(path.join(RAIZ, "lib/adjuntos.ts"))) {
     ["lib/texto.ts", revisarSlug, "el slug propuesto sin recortar",
       [['return slugificar(nombre).slice(0, SLUG_MAXIMO).replace(/-+$/, "");', "return slugificar(nombre);"]],
       "el slug propuesto desde un nombre largo entra en el tope y no termina en guion"],
+    ["lib/slugs-anteriores.ts", revisarSlugsAnteriores, "el slug viejo borrado de la lista",
+      [[`  "${SLUG_VIEJO}": "${SLUG_NUEVO}",\n`, ""]],
+      "el slug viejo de 34 caracteres sigue en la lista, hacia el nuevo"],
+    ["lib/slugs-anteriores.ts", revisarSlugsAnteriores, "el redirect que toma solo la vidriera",
+      [["source: `/${viejo}/:resto*`,", "source: `/${viejo}`,"]],
+      "hay una regla por slug viejo, y toma también lo que cuelga de él"],
+    ["lib/slugs-anteriores.ts", revisarSlugsAnteriores, "el redirect que pierde la patente",
+      [["destination: `/${nuevo}/:resto*`,", "destination: `/${nuevo}`,"]],
+      "cada regla lleva al slug nuevo con lo que venga atrás (la patente, el adjunto)"],
+    ["lib/slugs-anteriores.ts", revisarSlugsAnteriores, "el redirect temporal",
+      [["statusCode: 301,", "statusCode: 302,"]],
+      "el redirect es un 301, para siempre"],
   ];
   for (const [archivo, revisar, nombre, reemplazos, esperada] of ROTURAS) {
     let rojas;
@@ -274,6 +326,42 @@ if (fs.existsSync(path.join(RAIZ, "lib/adjuntos.ts"))) {
     }
     check(`rota: ${nombre}`, rojas.includes(esperada),
       rojas.length ? `se pusieron en rojo otras: ${rojas.join(" | ")}` : "SE ESCAPÓ: ninguna comprobación la vio");
+  }
+}
+
+// ============================================================
+// L · La dirección vieja de un lubricentro
+// ============================================================
+// Va acá arriba y no al final: no necesita la base ni el navegador, solo
+// que el servidor de Next conteste. Lo que mira es el redirect de verdad
+// (next.config.ts), no la lista: un 301 con el Location entero.
+titulo("L · La dirección vieja de un lubricentro redirige a la nueva");
+{
+  const UUID = "00000000-0000-4000-8000-000000000000";
+  const pedir = async (ruta) => {
+    const r = await fetch(`${BASE}${ruta}`, { redirect: "manual" });
+    const location = r.headers.get("location");
+    const u = location ? new URL(location, BASE) : null;
+    return { status: r.status, destino: u ? u.pathname + u.search : null };
+  };
+  for (const [nombre, ruta, esperado] of [
+    ["la vidriera", `/${SLUG_VIEJO}`, `/${SLUG_NUEVO}`],
+    ["el cartón de una patente", `/${SLUG_VIEJO}/AB123CD`, `/${SLUG_NUEVO}/AB123CD`],
+    ["un adjunto", `/${SLUG_VIEJO}/AB123CD/adjunto/${UUID}`, `/${SLUG_NUEVO}/AB123CD/adjunto/${UUID}`],
+    ["la vidriera con su parámetro", `/${SLUG_VIEJO}?nohay=AB123CD`, `/${SLUG_NUEVO}?nohay=AB123CD`],
+  ]) {
+    try {
+      const r = await pedir(ruta);
+      check(`${nombre}: 301 a la dirección nueva`, r.status === 301 && r.destino === esperado, JSON.stringify(r));
+    } catch (e) {
+      check(`${nombre}: 301 a la dirección nueva`, false, String(e.message ?? e).split("\n")[0]);
+    }
+  }
+  try {
+    const r = await pedir(`/${SLUG_NUEVO}`);
+    check("la dirección nueva no redirige a ningún lado", r.status < 300 || r.status >= 400, JSON.stringify(r));
+  } catch (e) {
+    check("la dirección nueva no redirige a ningún lado", false, String(e.message ?? e).split("\n")[0]);
   }
 }
 

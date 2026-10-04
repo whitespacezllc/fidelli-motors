@@ -80,7 +80,9 @@ pestañas Resumen · Suscripción · Datos · Configuración), `/fidelli/precios
 más el slug: el alta y **Editar** avisan desde los 19 caracteres (*"Con más de 18
 caracteres el QR del calco pierde resistencia"*) y no dejan pasar de **32**; la base
 rechaza uno más largo aunque alguien se saltee el campo. El slug que el alta propone desde
-el nombre ya viene dentro del tope.
+el nombre ya viene dentro del tope. El lubricentro que ya tenía calcos con un slug más largo
+conserva su dirección vieja: **redirige a la nueva** (301, con la patente), para que los
+calcos pegados sigan abriendo (`lib/slugs-anteriores.ts`).
 
 **Qué puede hacer:** dar de alta un tenant (dos fases: transacción en Postgres, después
 la invitación por HTTP — si falla la segunda queda un lubricentro "Sin owner" que se
