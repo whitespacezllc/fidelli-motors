@@ -520,14 +520,23 @@ try {
     const motivo = `Taller de cajas automáticas: se le prende el service de caja (regresión ${Date.now()}).`;
     await page.fill("#ov-motivo", motivo);
     await page.getByRole("button", { name: "Guardar overrides" }).click();
-    // Al guardar, el formulario se monta de cero con lo guardado (lleva
-    // `key`): la señal de que terminó es el motivo en el historial de la
-    // ficha, con el override ya elegido en el select.
-    await page.getByText(motivo).first().waitFor({ timeout: 20_000 });
+    // LA SEÑAL DE QUE TERMINÓ ES LA BASE, no un texto de la pantalla. El
+    // motivo «está» en la página apenas se escribe —React copia el valor
+    // de un <textarea> controlado a su contenido—, así que esperarlo daba
+    // la espera por cumplida ANTES de guardar, y con la máquina cargada la
+    // comprobación de abajo llegaba primero que el guardado.
+    const enLaBase = () => sql(`select plan_overrides ->> 'caja' from lubricentros where id = '${LUB}'`) === "true";
+    for (let i = 0; i < 60 && !enLaBase(); i++) await page.waitForTimeout(500);
+    check("el override quedó en la base, por la puerta real", enLaBase());
+    // Y el formulario se monta de cero con lo guardado (lleva `key`): el
+    // motivo ya no está en el campo y sí en el historial de la ficha.
+    await page.waitForFunction((texto) => {
+      const campo = document.querySelector("#ov-motivo");
+      return campo && campo.value === "" && document.body.innerText.includes(texto);
+    }, motivo, { timeout: 30_000 }).catch(() => {});
     check("la ficha queda con el override elegido y el motivo en su historial",
-      (await page.inputValue("#ov-caja")) === "si");
-    check("el override quedó en la base, por la puerta real",
-      sql(`select plan_overrides ->> 'caja' from lubricentros where id = '${LUB}'`) === "true");
+      (await page.inputValue("#ov-caja")) === "si" && (await page.inputValue("#ov-motivo")) === "" &&
+        (await page.locator("body").innerText()).includes(motivo));
     check("y no generó un evento de módulo ni cambió el MRR (no tiene precio)",
       sql(`select count(*) from tenant_eventos where lubricentro_id = '${LUB}' and tipo::text like 'modulo%' and antes ->> 'modulo' = 'caja'`) === "0");
     await ctx.close();
