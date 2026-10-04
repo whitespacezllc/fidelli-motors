@@ -164,6 +164,9 @@ export default async function PaginaCarton({
   const puedeMecanica = featureHabilitada(sesion, "mecanica");
   // El módulo de gomería: pago, aparte del plan, prendido por tenant.
   const puedeNeumaticos = featureHabilitada(sesion, "neumaticos");
+  // El service de caja automática: también por tenant, con el override de
+  // /fidelli, pero sin costo. Sin la feature el segmento «Caja» no existe.
+  const puedeCaja = featureHabilitada(sesion, "caja");
 
   // La sucursal es del dispositivo, no del usuario: en el MVP es probable que
   // el lubricentro comparta una sola cuenta entre sucursales, así que la
@@ -185,6 +188,7 @@ export default async function PaginaCarton({
     service: true,
     mecanica: puedeMecanica,
     neumaticos: puedeNeumaticos,
+    caja: puedeCaja,
   };
   const tipoInicial: TipoTrabajo =
     esTipoTrabajo(tipoRecordado) && puedeTipo[tipoRecordado]
@@ -268,6 +272,7 @@ export default async function PaginaCarton({
             : null,
           puedeMecanica,
           puedeNeumaticos,
+          puedeCaja,
           tipoInicial,
           beneficioVigente,
           puedePendientes: featureHabilitada(sesion, "pendientes"),

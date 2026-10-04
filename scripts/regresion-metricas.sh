@@ -128,6 +128,10 @@ M_IM=supabase/migrations/20261002120000_importado_de.sql
 # las de calcos (PR 2) y otra para ganar `calcos.sin_stock` (PR 3): vive en
 # este archivo y es el que hay que romper.
 M_CA=supabase/migrations/20261003210000_calcos_stock.sql
+# metricas_plataforma() se redefinió OTRA VEZ para ganar las claves del
+# service de caja (cajas_mes, cajas_acumulado y `caja` por punto): vive en
+# este archivo y es el que hay que romper. Los marcadores viajaron intactos.
+M_CJ=supabase/migrations/20261004120100_service_caja.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
 
@@ -228,7 +232,7 @@ correr_marcada "indicadores_tenants() con la ventana de 30 días achicada a 7" i
   "/@trabajos_30/s/current_date - 29/current_date - 6/" R32 "R32e"
 
 echo "── R32f · el pulso cuenta todos los tipos ──"
-correr_marcada "metricas_plataforma() de vuelta con el filtro tipo = 'service'" metricas_plataforma "$M_IM" \
+correr_marcada "metricas_plataforma() de vuelta con el filtro tipo = 'service'" metricas_plataforma "$M_CJ" \
   "/@trabajos_mes/s/where not anulado/where not anulado and tipo = 'service'/" R32 "R32f"
 
 echo "── R32g · el resumen cuenta todos los tipos ──"
@@ -316,9 +320,9 @@ correr_marcada "listado_lubricentros() sin el escalón del plan para el módulo 
   "/@modulo_plan/s/when jsonb_typeof(p.features -> 'neumaticos') = 'boolean'/when false/" R34 "R34g"
 
 echo "── R34h · la serie del pulso cuenta todos los tipos, y sin trabajos está vacía ──"
-correr_marcada "metricas_plataforma() con la serie contando solo service" metricas_plataforma "$M_IM" \
+correr_marcada "metricas_plataforma() con la serie contando solo service" metricas_plataforma "$M_CJ" \
   "/@serie_todos/s/where not s.anulado/where not s.anulado and s.tipo = 'service'/" R34 "R34h"
-correr_marcada "metricas_plataforma() sin la rama «cero trabajos» (30 puntos en cero en una base vacía)" metricas_plataforma "$M_IM" \
+correr_marcada "metricas_plataforma() sin la rama «cero trabajos» (30 puntos en cero en una base vacía)" metricas_plataforma "$M_CJ" \
   "/@sin_trabajos/s/where r.primero is not null/where true/" R34 "R34h SIN NINGÚN TRABAJO"
 
 echo "── R34i · la suscripción vigente y la regla del owner ──"

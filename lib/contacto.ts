@@ -6,10 +6,15 @@ export type EstadoContacto = "vencido" | "urgente" | "proximo";
 
 /**
  * Por qué se contacta: los tres estados del service, el trabajo pendiente,
- * o el retorno de gomería. Es lo que se registra en `contactos` y lo que
- * gobierna el anti-spam — un contacto por motivo.
+ * el retorno de gomería o el próximo service de caja. Es lo que se registra
+ * en `contactos` y lo que gobierna el anti-spam — un contacto por motivo.
+ *
+ * La caja tiene SU motivo y no usa los tres estados, aunque su fila también
+ * esté vencida, urgente o próxima: esos tres son los que
+ * vista_proximos_service compara para tildar la fila del cambio de aceite,
+ * y registrar ahí el aviso de una caja tildaría el service del mismo auto.
  */
-export type MotivoContacto = EstadoContacto | "pendiente" | "neumaticos";
+export type MotivoContacto = EstadoContacto | "pendiente" | "neumaticos" | "caja";
 
 // ============================================================
 // LOS MOTIVOS DEL RETORNO DE GOMERÍA
@@ -172,6 +177,18 @@ export const VARIABLES_MENSAJE_NEUMATICOS: {
   { clave: "vehiculo", descripcion: "marca y modelo del auto" },
   { clave: "patente", descripcion: "la patente" },
   { clave: "motivo", descripcion: "qué le toca: la rotación, la alineación…" },
+];
+
+/** Las variables del mensaje del PRÓXIMO SERVICE DE CAJA: las mismas
+ *  cuatro que las del service. Acá {proximo_km} es el próximo de caja. */
+export const VARIABLES_MENSAJE_CAJA: {
+  clave: keyof VariablesMensaje;
+  descripcion: string;
+}[] = [
+  { clave: "nombre", descripcion: "el nombre del cliente" },
+  { clave: "vehiculo", descripcion: "marca y modelo del auto" },
+  { clave: "patente", descripcion: "la patente" },
+  { clave: "proximo_km", descripcion: "los km del próximo service de caja" },
 ];
 
 // El catálogo de variables, para el editor de mensajes: qué existe y qué

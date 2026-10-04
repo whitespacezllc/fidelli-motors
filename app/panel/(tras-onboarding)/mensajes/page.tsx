@@ -30,6 +30,9 @@ export default async function PaginaMensajes() {
   // La tercera plantilla —el retorno de gomería— se edita solo con el
   // módulo: sin él no hay ningún WhatsApp que la use.
   const puedeNeumaticos = featureHabilitada(sesion, "neumaticos");
+  // Y la cuarta —el próximo service de caja— solo con su feature, por lo
+  // mismo.
+  const puedeCaja = featureHabilitada(sesion, "caja");
 
   // Los mensajes del tenant, y un vehículo real para la vista previa. El
   // primero de próximos services es el mejor ejemplo: es exactamente el
@@ -37,7 +40,9 @@ export default async function PaginaMensajes() {
   const [mensajesRes, previewRes] = await Promise.all([
     supabase
       .from("mensaje_templates")
-      .select("id, tono, contenido, contenido_pendiente, contenido_neumaticos, activo")
+      .select(
+        "id, tono, contenido, contenido_pendiente, contenido_neumaticos, contenido_caja, activo",
+      )
       .order("activo", { ascending: false })
       .order("created_at"),
     supabase
@@ -74,6 +79,7 @@ export default async function PaginaMensajes() {
               ejemplo={ejemplo}
               ejemploEsReal={ejemploEsReal}
               puedeNeumaticos={puedeNeumaticos}
+              puedeCaja={puedeCaja}
             />
           ))}
       </CabeceraSeccion>
@@ -101,6 +107,7 @@ export default async function PaginaMensajes() {
               etiquetaTrigger="+ Crear el primero"
               variante="primario"
               puedeNeumaticos={puedeNeumaticos}
+              puedeCaja={puedeCaja}
             />
           )}
         </EstadoVacio>
@@ -114,6 +121,7 @@ export default async function PaginaMensajes() {
               ejemploEsReal={ejemploEsReal}
               suspendido={suspendido}
               puedeNeumaticos={puedeNeumaticos}
+              puedeCaja={puedeCaja}
             />
           ))}
         </ul>

@@ -1,5 +1,6 @@
 import {
   RENGLONES,
+  RENGLONES_CAJA,
   GRUPOS,
   GRUPOS_CON_ETIQUETA_EN_PAPEL,
   formatearKm,
@@ -183,6 +184,155 @@ function Renglon({
   );
 }
 
+// ---------- La hoja del cartón: la pieza que comparten los dos papeles ----------
+// El cartón de aceite y el del service de caja son EL MISMO papel con otro
+// contenido: troquel, nombre, bajada, las filas de la cabecera, los
+// renglones (agrupados bajo una etiqueta vertical, o sueltos) y la banda
+// del próximo al pie. Lo que cambia entre uno y otro —qué dice la bajada,
+// qué filas, qué renglones, qué próximo— llega armado; el dibujo es uno
+// solo y vive acá. Un cambio de troquel, de grilla o de escala se hace una
+// vez y lo ven los dos.
+type GrupoDeHoja = {
+  /** La clave de React y, si lleva, el texto de la etiqueta vertical. */
+  nombre: string;
+  /** FILTROS y ACEITES la llevan; los líquidos y los sueltos, no. */
+  conEtiqueta: boolean;
+  filas: { tipo: string; papel: string; marcado: RenglonMarcado | undefined }[];
+};
+
+function HojaCarton({
+  lubricentroNombre,
+  colorTenant,
+  colorPapel,
+  escala,
+  bajada,
+  cabecera,
+  grupos,
+  pie,
+  conLeyenda,
+  nombrePapel,
+}: {
+  lubricentroNombre: string;
+  colorTenant: string;
+  colorPapel?: string | null;
+  escala: Escala;
+  /** Nombra LA PIEZA: «Service», «Service de caja». */
+  bajada: string;
+  /** Las filas de arriba: clave a la izquierda, valor a la derecha. */
+  cabecera: [string, string][];
+  grupos: GrupoDeHoja[];
+  /** La banda de cierre: el próximo. */
+  pie: { clave: string; valor: string };
+  /** La letra chica de «✓ se cambió · OK se revisó». */
+  conLeyenda: boolean;
+  /** Para encontrar el papel desde afuera (pruebas y capturas). */
+  nombrePapel?: string;
+}) {
+  const e = ESCALAS[escala];
+
+  // La tinta de la etiqueta vertical no puede ser blanca fija: el lubri
+  // elige su color y podría ser un amarillo, donde el blanco no se lee.
+  const paleta = paletaTenant(colorTenant);
+  const estilo = {
+    "--tn": paleta.primary,
+    "--tn-ink": paleta.ink,
+    // El papel pinta por style y no por clase: viene de la base. Sin
+    // color configurado no se emite nada y manda el bg-base de siempre.
+    ...(colorPapel ? { backgroundColor: colorPapel } : {}),
+  } as React.CSSProperties;
+
+  return (
+    <div
+      style={estilo}
+      data-papel={nombrePapel}
+      className={`rounded-t-[44px] rounded-b-lg border border-line bg-base ${e.caja} shadow-md`}
+    >
+      {/* El troquel del cartón que colgaba del parasol */}
+      <div className="mx-auto mb-3.5 size-11 rounded-full border border-line bg-surface" />
+
+      <div className="mb-3.5 text-center">
+        <p className={`font-brand ${e.nombre} font-bold text-ink`}>
+          {lubricentroNombre}
+        </p>
+        {/* La bajada nombra LA PIEZA, no el negocio —como «Orden de
+            trabajo» en las otras dos—: la mitad de los talleres no son
+            lubricentros. */}
+        <p
+          className={`${e.bajada} font-semibold tracking-[0.14em] uppercase`}
+        >
+          {bajada}
+        </p>
+      </div>
+
+      <div className="border-[1.5px] border-ink tabular-nums">
+        {cabecera.map(([clave, valor]) => (
+          <div key={clave} className="flex items-stretch border-b border-ink">
+            <span
+              className={`${e.primeraColumna} ${e.celda} py-2.5 ${e.claveCabecera} font-semibold tracking-[0.03em] uppercase`}
+            >
+              {clave}
+            </span>
+            <span
+              className={`flex-1 border-l border-ink ${e.celda} py-2.5 text-right ${e.valorCabecera} font-semibold`}
+            >
+              {valor}
+            </span>
+          </div>
+        ))}
+
+        {grupos.map((grupo) => {
+          const filas = grupo.filas.map((r, i) => (
+            <Renglon
+              key={r.tipo}
+              papel={r.papel}
+              marcado={r.marcado}
+              e={e}
+              // Dentro de un grupo con etiqueta, el último renglón no lleva
+              // borde: lo pone el propio grupo.
+              sinBorde={grupo.conEtiqueta && i === grupo.filas.length - 1}
+            />
+          ));
+
+          if (!grupo.conEtiqueta) return <div key={grupo.nombre}>{filas}</div>;
+
+          return (
+            <div key={grupo.nombre} className="flex border-b border-ink">
+              {/* Etiqueta vertical en el color del lubricentro */}
+              <span
+                className={`flex ${e.etiqueta} items-center justify-center bg-[var(--tn)] font-bold tracking-[0.18em] text-[var(--tn-ink)]`}
+                style={{ writingMode: "vertical-rl", rotate: "180deg" }}
+              >
+                {grupo.nombre}
+              </span>
+              <div className="flex-1">{filas}</div>
+            </div>
+          );
+        })}
+
+        <div className="flex items-center bg-[var(--tn)]/10">
+          <span
+            className={`${e.primeraColumna} ${e.celda} py-2.5 ${e.claveCabecera} font-semibold tracking-[0.03em] uppercase`}
+          >
+            {pie.clave}
+          </span>
+          <span
+            className={`flex-1 ${e.celda} py-2.5 text-right ${e.valorCabecera} font-semibold`}
+          >
+            {pie.valor}
+          </span>
+        </div>
+      </div>
+
+      {conLeyenda && (
+        <p className={`mt-2 text-center ${e.detalle} text-ink-60`}>
+          <span className="font-bold text-[var(--tn)]">✓</span> se cambió ·{" "}
+          <span className="font-bold text-ink">OK</span> se revisó y estaba bien
+        </p>
+      )}
+    </div>
+  );
+}
+
 // El cartón como lo ve el cliente: la versión B del hi-fi, homenaje al
 // cartón físico. Troquel arriba, grilla con bordes, etiquetas verticales de
 // grupo en el color del lubricentro y PROX. SERV. KMTS. al pie. Es la única
@@ -194,8 +344,6 @@ export function CartonPapel({
   datos: CartonDatos;
   escala?: Escala;
 }) {
-  const e = ESCALAS[escala];
-
   // La letra chica del papel: solo aparece cuando hay algún "OK" que
   // explicar — un cartón todo de tildes se lee solo, como siempre.
   const hayRevisados = Object.values(datos.marcados).some((m) => !m.cambiado);
@@ -214,126 +362,132 @@ export function CartonPapel({
     (r) => desplegadoPorClase(r, clase) || r.tipo in datos.marcados,
   );
 
-  // La tinta de la etiqueta vertical no puede ser blanca fija: el lubri
-  // elige su color y podría ser un amarillo, donde el blanco no se lee.
-  const paleta = paletaTenant(datos.colorTenant);
-  const estilo = {
-    "--tn": paleta.primary,
-    "--tn-ink": paleta.ink,
-    // El papel pinta por style y no por clase: viene de la base. Sin
-    // color configurado no se emite nada y manda el bg-base de siempre.
-    ...(datos.colorPapel ? { backgroundColor: datos.colorPapel } : {}),
-  } as React.CSSProperties;
+  // Los grupos del papel, en su orden; un grupo sin renglones (LUBRICACIÓN
+  // en un auto) no se imprime. Y al final los renglones sueltos —la
+  // batería—: sin etiqueta vertical ni encabezado, como los líquidos y los
+  // aditivos.
+  const grupos: GrupoDeHoja[] = [
+    ...GRUPOS.map((grupo) => ({
+      nombre: grupo as string,
+      conEtiqueta: GRUPOS_CON_ETIQUETA_EN_PAPEL.includes(grupo),
+      filas: enPapel
+        .filter((r) => r.grupo === grupo)
+        .map((r) => ({
+          tipo: r.tipo as string,
+          papel: etiquetaPapel(r, clase),
+          marcado: datos.marcados[r.tipo],
+        })),
+    })),
+    {
+      nombre: "sueltos",
+      conEtiqueta: false,
+      filas: enPapel
+        .filter((r) => r.grupo === null)
+        .map((r) => ({
+          tipo: r.tipo as string,
+          papel: r.papel,
+          marcado: datos.marcados[r.tipo],
+        })),
+    },
+  ].filter((g) => g.filas.length > 0);
 
   return (
-    <div
-      style={estilo}
-      className={`rounded-t-[44px] rounded-b-lg border border-line bg-base ${e.caja} shadow-md`}
-    >
-      {/* El troquel del cartón que colgaba del parasol */}
-      <div className="mx-auto mb-3.5 size-11 rounded-full border border-line bg-surface" />
+    <HojaCarton
+      lubricentroNombre={datos.lubricentroNombre}
+      colorTenant={datos.colorTenant}
+      colorPapel={datos.colorPapel}
+      escala={escala}
+      bajada="Service"
+      cabecera={[
+        ["Fecha", formatearFecha(datos.fecha)],
+        ["Kilómetros", formatearKm(datos.kilometros)],
+        ["Aceite tipo", datos.aceiteTipo],
+        ...(datos.aceiteNombre
+          ? ([["Aceite marca", datos.aceiteNombre]] as [string, string][])
+          : []),
+      ]}
+      grupos={grupos}
+      pie={{ clave: "Prox. serv. kmts.", valor: formatearKm(datos.proxServiceKm) }}
+      conLeyenda={hayRevisados}
+    />
+  );
+}
 
-      <div className="mb-3.5 text-center">
-        <p className={`font-brand ${e.nombre} font-bold text-ink`}>
-          {datos.lubricentroNombre}
-        </p>
-        {/* La bajada nombra LA PIEZA, no el negocio —como «Orden de
-            trabajo» en las otras dos—: la mitad de los talleres no son
-            lubricentros. */}
-        <p
-          className={`${e.bajada} font-semibold tracking-[0.14em] uppercase`}
-        >
-          Service
-        </p>
-      </div>
+// ============================================================
+// El papel del service de caja automática (04/10/2026)
+//
+// Es LA MISMA hoja que el cartón de aceite (HojaCarton), con otro
+// contenido: bajada «Service de caja», el aceite de caja en la cabecera,
+// los cuatro renglones de la caja bajo la etiqueta vertical CAJA y, al
+// pie, el próximo service DE CAJA. Como el cartón de aceite, imprime sus
+// cuatro renglones siempre —es el papel de referencia— y tilda los que se
+// hicieron, con su detalle a la derecha.
+//
+// Acá ✓ es «hecho», a secas: en un service de caja no existe el «revisado
+// y OK», así que no hay «OK» ni letra chica que lo explique.
+// ============================================================
 
-      <div className="border-[1.5px] border-ink tabular-nums">
-        {[
-          ["Fecha", formatearFecha(datos.fecha)],
-          ["Kilómetros", formatearKm(datos.kilometros)],
-          ["Aceite tipo", datos.aceiteTipo],
-          ...(datos.aceiteNombre ? [["Aceite marca", datos.aceiteNombre]] : []),
-        ].map(([clave, valor]) => (
-          <div key={clave} className="flex items-stretch border-b border-ink">
-            <span
-              className={`${e.primeraColumna} ${e.celda} py-2.5 ${e.claveCabecera} font-semibold tracking-[0.03em] uppercase`}
-            >
-              {clave}
-            </span>
-            <span
-              className={`flex-1 border-l border-ink ${e.celda} py-2.5 text-right ${e.valorCabecera} font-semibold`}
-            >
-              {valor}
-            </span>
-          </div>
-        ))}
+export type CajaDatos = {
+  lubricentroNombre: string;
+  colorTenant: string;
+  colorPapel?: string | null;
+  fecha: string;
+  kilometros: number;
+  /** El aceite de caja: «Dexron VI», «CVT», lo que se haya escrito. */
+  aceiteTipo: string;
+  /** El producto usado. null = sin producto o el lubri apagó «mostrar
+   *  productos»: la fila no se dibuja. */
+  aceiteNombre?: string | null;
+  /** A cuántos km le toca el próximo service de caja. */
+  proxCajaKm: number;
+  /** tipo de renglón (caja_filtro…) → su detalle y cantidad. Ausente = no
+   *  se hizo. `cambiado` no se lee: prendido = hecho. */
+  marcados: Record<string, RenglonMarcado>;
+};
 
-        {GRUPOS.map((grupo) => {
-          const delGrupo = enPapel.filter((r) => r.grupo === grupo);
-          // Un grupo sin renglones (LUBRICACIÓN en un auto) no se imprime.
-          if (delGrupo.length === 0) return null;
-          const conEtiqueta = GRUPOS_CON_ETIQUETA_EN_PAPEL.includes(grupo);
-
-          const filas = delGrupo.map((r, i) => (
-            <Renglon
-              key={r.tipo}
-              papel={etiquetaPapel(r, clase)}
-              marcado={datos.marcados[r.tipo]}
-              e={e}
-              sinBorde={conEtiqueta && i === delGrupo.length - 1}
-            />
-          ));
-
-          if (!conEtiqueta) return <div key={grupo}>{filas}</div>;
-
-          return (
-            <div key={grupo} className="flex border-b border-ink">
-              {/* Etiqueta vertical en el color del lubricentro */}
-              <span
-                className={`flex ${e.etiqueta} items-center justify-center bg-[var(--tn)] font-bold tracking-[0.18em] text-[var(--tn-ink)]`}
-                style={{ writingMode: "vertical-rl", rotate: "180deg" }}
-              >
-                {grupo}
-              </span>
-              <div className="flex-1">{filas}</div>
-            </div>
-          );
-        })}
-
-        {/* Los renglones sueltos —la batería—: sin etiqueta vertical ni
-            encabezado, como los líquidos y los aditivos. */}
-        {enPapel
-          .filter((r) => r.grupo === null)
-          .map((r) => (
-            <Renglon
-              key={r.tipo}
-              papel={r.papel}
-              marcado={datos.marcados[r.tipo]}
-              e={e}
-            />
-          ))}
-
-        <div className="flex items-center bg-[var(--tn)]/10">
-          <span
-            className={`${e.primeraColumna} ${e.celda} py-2.5 ${e.claveCabecera} font-semibold tracking-[0.03em] uppercase`}
-          >
-            Prox. serv. kmts.
-          </span>
-          <span
-            className={`flex-1 ${e.celda} py-2.5 text-right ${e.valorCabecera} font-semibold`}
-          >
-            {formatearKm(datos.proxServiceKm)}
-          </span>
-        </div>
-      </div>
-
-      {hayRevisados && (
-        <p className={`mt-2 text-center ${e.detalle} text-ink-60`}>
-          <span className="font-bold text-[var(--tn)]">✓</span> se cambió ·{" "}
-          <span className="font-bold text-ink">OK</span> se revisó y estaba bien
-        </p>
-      )}
-    </div>
+export function CartonPapelCaja({
+  datos,
+  escala = "panel",
+}: {
+  datos: CajaDatos;
+  escala?: Escala;
+}) {
+  return (
+    <HojaCarton
+      nombrePapel="caja"
+      lubricentroNombre={datos.lubricentroNombre}
+      colorTenant={datos.colorTenant}
+      colorPapel={datos.colorPapel}
+      escala={escala}
+      bajada="Service de caja"
+      cabecera={[
+        ["Fecha", formatearFecha(datos.fecha)],
+        ["Kilómetros", formatearKm(datos.kilometros)],
+        ["Aceite de caja", datos.aceiteTipo],
+        ...(datos.aceiteNombre
+          ? ([["Aceite marca", datos.aceiteNombre]] as [string, string][])
+          : []),
+      ]}
+      grupos={[
+        {
+          nombre: "CAJA",
+          conEtiqueta: true,
+          filas: RENGLONES_CAJA.map((r) => {
+            const marcado = datos.marcados[r.tipo];
+            return {
+              tipo: r.tipo as string,
+              papel: r.papel,
+              marcado: marcado ? { ...marcado, cambiado: true } : undefined,
+            };
+          }),
+        },
+      ]}
+      pie={{
+        clave: "Próx. service caja",
+        valor: `${formatearKm(datos.proxCajaKm)} km`,
+      }}
+      conLeyenda={false}
+    />
   );
 }
 

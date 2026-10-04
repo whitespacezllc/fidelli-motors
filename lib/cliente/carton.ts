@@ -20,7 +20,8 @@ import { esClaseVehiculo } from "@/lib/clase-vehiculo";
 // decisión propia es la del programa apagado (ver `fidelizacion`, abajo).
 
 export type ItemCarton = {
-  /** Uno de los renglones del cartón (lib/renglones), o null: renglón libre de mecánica. */
+  /** Uno de los renglones del cartón o del service de caja (lib/renglones),
+   *  o null: renglón libre de mecánica. */
   tipo: string | null;
   detalle: string | null;
   /** true = se cambió; false = se revisó y estaba bien ("OK"). */
@@ -58,17 +59,20 @@ export type ServiceCarton = {
   fecha: string;
   /** En mecánica es opcional: null si el mecánico no lo anotó. */
   kilometros: number | null;
+  /** En un service, el aceite de motor; en una caja, el aceite de caja. */
   aceiteTipo: string | null;
   aceiteNombre: string | null;
   proxServiceKm: number | null;
+  /** El próximo service de caja. null en todo lo que no es una caja. */
+  proxCajaKm: number | null;
   sucursal: string | null;
   observaciones: string | null;
   /** Venció el plazo de edición (24 horas; 7 días en una mecánica): nadie lo puede retocar. */
   fijado: boolean;
   items: ItemCarton[];
-  /** Gomería: la alineación del vehículo. null en los otros dos tipos. */
+  /** Gomería: la alineación del vehículo. null en los otros tres tipos. */
   alineacion: boolean | null;
-  /** Gomería: una fila por rueda. Vacío en los otros dos tipos. */
+  /** Gomería: una fila por rueda. Vacío en los otros tres tipos. */
   ruedas: RuedaCarton[];
   /** Gomería: rotación y balanceo sin cargo hasta estos km / esta fecha.
    *  null si no aplica o si el taller apagó el beneficio (get_carton ya
@@ -177,6 +181,7 @@ type CartonJson = {
     aceite_tipo: string | null;
     aceite_nombre: string | null;
     prox_service_km: number | null;
+    prox_caja_km?: number | null;
     alineacion?: boolean | null;
     beneficio_hasta_km?: number | null;
     beneficio_hasta_fecha?: string | null;
@@ -291,7 +296,8 @@ export async function obtenerCarton(
       // MISMO created_at (regla 22), así que entre las dos la base no
       // promete orden: el desempate por tipo va acá, estable (a igual fecha
       // y tipo se conserva el orden que vino), con el orden del catálogo
-      // —service, mecánica, neumáticos—, el mismo del listado del panel.
+      // —service, mecánica, neumáticos, caja—, el mismo del listado del
+      // panel.
       services: (json.services ?? []).map((s) => ({
         // Un JSON de antes de la migración no trae la clave: era un service.
         tipo: s.tipo ?? "service",
@@ -301,6 +307,8 @@ export async function obtenerCarton(
         aceiteTipo: s.aceite_tipo,
         aceiteNombre: s.aceite_nombre,
         proxServiceKm: s.prox_service_km,
+        // Un JSON de antes de la migración no trae la clave: null.
+        proxCajaKm: s.prox_caja_km ?? null,
         sucursal: s.sucursal,
         observaciones: s.observaciones,
         fijado: s.fijado,

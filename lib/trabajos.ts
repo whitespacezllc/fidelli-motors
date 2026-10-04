@@ -23,10 +23,18 @@ import { normalizarPatente } from "@/lib/texto";
 // cuarto tipo mañana rompe el build en cada lugar que haya que mirar, que
 // es exactamente lo que se quiere.
 //
+// El cuarto llegó el 04/10/2026: `caja`, el service de caja automática. Se
+// parece a un service en la forma (fecha, km, un aceite, renglones, un
+// próximo) y es OTRO trabajo: otro aceite, otros renglones, otro próximo
+// (`prox_caja_km`) y otro papel. Lo que el compilador NO ve son los
+// ternarios `tipo === "neumaticos" ? … : tipo === "mecanica" ? … : <el
+// cartón de aceite>`: ahí una caja cae en la última rama sin dar error.
+// Esos se buscan a mano.
+//
 // El orden de TIPOS_TRABAJO es el del control de la carga.
 // ============================================================
 
-export const TIPOS_TRABAJO = ["service", "mecanica", "neumaticos"] as const;
+export const TIPOS_TRABAJO = ["service", "mecanica", "neumaticos", "caja"] as const;
 
 export type TipoTrabajo = (typeof TIPOS_TRABAJO)[number];
 
@@ -35,6 +43,7 @@ export const ETIQUETA_TIPO: Record<TipoTrabajo, string> = {
   service: "Service",
   mecanica: "Mecánica",
   neumaticos: "Neumáticos",
+  caja: "Caja",
 };
 
 /** El nombre del trabajo en una oración: "Confirmar {…}". */
@@ -42,14 +51,19 @@ export const NOMBRE_TRABAJO: Record<TipoTrabajo, string> = {
   service: "service",
   mecanica: "trabajo",
   neumaticos: "trabajo",
+  caja: "service de caja",
 };
 
 /** La feature de plan que habilita cada tipo. `service` no tiene: es el
  *  trabajo base y ningún plan lo apaga. */
-export const FEATURE_DE_TIPO: Record<TipoTrabajo, "mecanica" | "neumaticos" | null> = {
+export const FEATURE_DE_TIPO: Record<
+  TipoTrabajo,
+  "mecanica" | "neumaticos" | "caja" | null
+> = {
   service: null,
   mecanica: "mecanica",
   neumaticos: "neumaticos",
+  caja: "caja",
 };
 
 export function esTipoTrabajo(valor: unknown): valor is TipoTrabajo {

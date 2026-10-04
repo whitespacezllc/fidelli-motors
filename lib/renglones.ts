@@ -181,3 +181,133 @@ export const SALTO_RANGO = `Entre ${formatearKm(SALTO_MINIMO)} y ${formatearKm(S
 
 // La misma regla desde el servidor, para un payload que no pasó por el cartón.
 export const SALTO_RANGO_ERROR = `El próximo service tiene que quedar entre ${formatearKm(SALTO_MINIMO)} y ${formatearKm(SALTO_MAXIMO)} km después de los kilómetros de hoy. Elegí un salto o corregí el de Otro.`;
+
+// ============================================================
+// EL SERVICE DE CAJA AUTOMÁTICA (04/10/2026) — el cuarto tipo de trabajo
+//
+// Se parece a un service en la forma y es otro trabajo: otro aceite (un
+// ATF), otros renglones, otro próximo y otro papel. Todo lo suyo vive acá
+// abajo y NADA de esto entra en RENGLONES, en GRUPOS ni en
+// desplegadoPorClase: esos son del cartón de aceite. Los cuatro valores
+// de `item_tipo` de la caja van al final del enum, en el orden de su
+// papel; la base los castea genérico (regla 14) y quien no los mezcla con
+// los 21 de siempre es el front, con estas dos listas.
+// ============================================================
+
+// Los aceites de caja de uso corriente, como chips. Es una CONSTANTE por
+// la misma razón que las viscosidades: son especificaciones de la
+// industria, no una decisión de cada taller. «Otro» abre el texto libre
+// para lo que no esté (un Toyota WS, un ZF Lifeguard).
+export const ATF_COMUNES = [
+  "Dexron III",
+  "Dexron VI",
+  "Mercon V",
+  "ATF+4",
+  "Multi ATF",
+  "CVT",
+  "DCT",
+] as const;
+
+/** El aceite de caja, como se guarda: lo escrito, sin espacios de más.
+ *  NO se normaliza como una viscosidad —«Dexron VI» no es «DEXRONVI»—. */
+export function normalizarAtf(texto: string): string {
+  return texto.trim().replace(/\s+/g, " ");
+}
+
+/** El chip que corresponde a lo escrito, sin importar mayúsculas ni
+ *  espacios de más; null si no es ninguno de la lista. */
+export function atfComun(texto: string): string | null {
+  const buscado = normalizarAtf(texto).toLowerCase();
+  return ATF_COMUNES.find((a) => a.toLowerCase() === buscado) ?? null;
+}
+
+// Los saltos del próximo service de caja: tres atajos y «Otro», con el
+// mismo patrón que SALTOS_FIJOS. Se pide el SALTO y no el kilometraje
+// final, y el salto tiene rango: lo hace cumplir la base (guardar_service
+// rechaza con salto_caja_invalido) y esto es el espejo que pinta el aviso.
+export const SALTOS_CAJA = [60_000, 70_000, 80_000] as const;
+export const SALTO_CAJA_POR_DEFECTO = 80_000;
+export const SALTO_CAJA_MINIMO = 20_000;
+export const SALTO_CAJA_MAXIMO = 200_000;
+
+export function esSaltoCajaValido(salto: number): boolean {
+  return (
+    Number.isInteger(salto) &&
+    salto >= SALTO_CAJA_MINIMO &&
+    salto <= SALTO_CAJA_MAXIMO
+  );
+}
+
+// Bajo el campo de «Otro»: el hecho, sin vueltas.
+export const SALTO_CAJA_RANGO = `Entre ${formatearKm(SALTO_CAJA_MINIMO)} y ${formatearKm(SALTO_CAJA_MAXIMO)} km.`;
+
+// Lo que falta para revisar, y la misma regla desde el servidor.
+export const SALTO_CAJA_RANGO_ERROR = `El próximo tiene que quedar entre ${formatearKm(SALTO_CAJA_MINIMO)} y ${formatearKm(SALTO_CAJA_MAXIMO)} km después de hoy.`;
+
+export type RenglonCaja = {
+  tipo: ItemTipo;
+  /** Como se lee en la carga. */
+  corto: string;
+  /** Como está impreso en el papel de la caja. */
+  papel: string;
+  /** Qué acompaña al renglón cuando está prendido: un producto del
+   *  catálogo con su cantidad (baja stock), o una nota. */
+  lleva: "producto" | "nota";
+};
+
+// Los cuatro renglones, en el orden de su papel (que es el del enum).
+// PRENDIDO = HECHO: en un service de caja no existe el «revisado y OK» del
+// cartón de aceite, así que no hay segundo interruptor y la base guarda
+// `cambiado = true` siempre.
+//
+// `papel` va abreviado, como en el cartón de aceite («Combusti.», «Líq.
+// frenos»): la primera columna del papel mide unos 100 px en el celular
+// del cliente, a 18 px, y la etiqueta vertical CAJA ya dice de qué es el
+// filtro.
+export const RENGLONES_CAJA: RenglonCaja[] = [
+  { tipo: "caja_filtro", corto: "Filtro de caja", papel: "Filtro", lleva: "producto" },
+  { tipo: "caja_aditivo", corto: "Aditivo", papel: "Aditivo", lleva: "producto" },
+  { tipo: "caja_limpieza_carter", corto: "Limpieza de cárter e imanes", papel: "Limpieza cárter", lleva: "nota" },
+  { tipo: "caja_lavado", corto: "Lavado del circuito (máquina)", papel: "Lavado circuito", lleva: "nota" },
+];
+
+/** La carga de un service de caja, validada del lado del servidor para el
+ *  payload que no pasó por el cartón (alta y edición usan la misma).
+ *  Devuelve el mensaje, o null si está bien. La base repite las tres
+ *  reglas con sus errores nombrados; esto llega antes y con el texto. */
+export function validarCaja(payload: {
+  kilometros: number | null;
+  aceiteTipo: string;
+  proxCajaKm?: number | null;
+}): string | null {
+  if (
+    payload.kilometros == null ||
+    !Number.isFinite(payload.kilometros) ||
+    payload.kilometros < 0
+  ) {
+    return "Cargá los kilómetros del odómetro.";
+  }
+  if (normalizarAtf(payload.aceiteTipo).length < 2) {
+    return "Cargá el tipo de aceite de caja.";
+  }
+  if (
+    payload.proxCajaKm == null ||
+    !esSaltoCajaValido(payload.proxCajaKm - payload.kilometros)
+  ) {
+    return SALTO_CAJA_RANGO_ERROR;
+  }
+  return null;
+}
+
+/** Los errores NOMBRADOS de la rama de la caja en guardar_service y
+ *  actualizar_service, en castellano. null si el error es otro. */
+export function errorDeCaja(mensaje: string): string | null {
+  if (/caja_sin_kilometros/.test(mensaje)) {
+    return "Cargá los kilómetros del odómetro.";
+  }
+  if (/aceite_caja_requerido/.test(mensaje)) {
+    return "Cargá el tipo de aceite de caja.";
+  }
+  if (/salto_caja_invalido/.test(mensaje)) return SALTO_CAJA_RANGO_ERROR;
+  return null;
+}

@@ -18,7 +18,37 @@ import {
   hayFiltrosTrabajos,
   queryTrabajos,
   type ParamsTrabajos,
+  type TipoTrabajo,
 } from "@/lib/trabajos";
+
+// De qué se trató el trabajo, en una línea, por tipo: la descripción en
+// mecánica (en una línea: la orden de trabajo la escribe en varias), el
+// resumen de las ruedas en gomería y el aceite de caja en el service de
+// caja. El service no dice nada: su fila muestra al cliente. Es un Record
+// y no un ternario a propósito: con `tipo === "neumaticos" ? … : …` la
+// caja caía en la rama de la mecánica sin dar error.
+type FilaTrabajo = {
+  trabajo_descripcion: string | null;
+  aceite_tipo: string | null;
+  alineacion: boolean | null;
+  service_ruedas: {
+    colocada: boolean;
+    rotada: boolean;
+    balanceada: boolean;
+    reparada: boolean;
+  }[];
+};
+
+const RESUMEN_POR_TIPO: Record<
+  TipoTrabajo,
+  (s: FilaTrabajo) => string | null
+> = {
+  service: () => null,
+  mecanica: (s) => descripcionEnUnaLinea(s.trabajo_descripcion),
+  neumaticos: (s) =>
+    resumenRuedas(s.service_ruedas ?? [], s.alineacion ?? false),
+  caja: (s) => s.aceite_tipo,
+};
 
 export const metadata: Metadata = { title: "Trabajos" };
 
@@ -49,7 +79,7 @@ export default async function PaginaServices({
     .from("services")
     .select(
       `id, tipo, trabajo_descripcion, fecha, created_at, kilometros, anulado,
-       desbloqueado_hasta, alineacion,
+       desbloqueado_hasta, alineacion, aceite_tipo,
        vehiculos!inner(patente, patente_normalizada, marca, modelo, clientes(nombre)),
        sucursales(nombre),
        service_ruedas(colocada, rotada, balanceada, reparada)`,
@@ -77,13 +107,9 @@ export default async function PaginaServices({
   const services = (serviciosRes.data ?? []).map((s) => ({
     id: s.id,
     tipo: s.tipo,
-    // La columna del medio dice de qué se trató el trabajo: la
-    // descripción en mecánica (en una línea: la orden de trabajo la
-    // escribe en varias), el resumen de las ruedas en gomería.
-    descripcion:
-      s.tipo === "neumaticos"
-        ? resumenRuedas(s.service_ruedas ?? [], s.alineacion ?? false)
-        : descripcionEnUnaLinea(s.trabajo_descripcion),
+    // La columna del medio dice de qué se trató el trabajo, y cada tipo
+    // la llena con lo suyo (RESUMEN_POR_TIPO, arriba).
+    descripcion: RESUMEN_POR_TIPO[s.tipo](s),
     creado: s.created_at,
     patente: s.vehiculos.patente,
     vehiculo:

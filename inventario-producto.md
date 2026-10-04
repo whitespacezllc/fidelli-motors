@@ -223,18 +223,35 @@ canje + pendientes + descuento de stock.
 que solo existe con la feature `mecanica` y **no aparece al editar** (el tipo de un trabajo
 guardado no se reescribe).
 
-| | Service | Mecánica |
-|---|---|---|
-| Descripción del trabajo | no existe | **obligatoria**, ≥5 caracteres |
-| Kilómetros | **obligatorios** | opcionales |
-| Aceite (viscosidad, producto, litros) | obligatorio | **no existe** |
-| Los 11 renglones | sí | **no** — en su lugar, la **orden de trabajo**: 42 renglones en 6 grupos que escriben la descripción (tocar uno escribe su línea; tocarlo de nuevo la borra), más los renglones libres de "Repuestos" |
-| Próximo service | sí | **no existe** |
-| Premio | sí | **solo si el premio cuenta "todos los trabajos"** |
-| Papel que se dibuja | cartón de 11 renglones | orden de trabajo |
+| | Service | Mecánica | Caja (04/10/2026) |
+|---|---|---|---|
+| Descripción del trabajo | no existe | **obligatoria**, ≥5 caracteres | no existe |
+| Kilómetros | **obligatorios** | opcionales | **obligatorios** |
+| Aceite (viscosidad, producto, litros) | obligatorio | **no existe** | **el aceite de caja**: 7 chips de ATF (Dexron III · Dexron VI · Mercon V · ATF+4 · Multi ATF · CVT · DCT) más «Otro», obligatorio; producto (categoría «Aceite de caja») y litros, opcionales, **sin litros sugeridos** |
+| Los 11 renglones | sí | **no** — en su lugar, la **orden de trabajo**: 42 renglones en 6 grupos que escriben la descripción (tocar uno escribe su línea; tocarlo de nuevo la borra), más los renglones libres de "Repuestos" | **no** — los **cuatro de la caja**: filtro y aditivo (con producto y cantidad), limpieza de cárter e imanes y lavado del circuito (con una nota). **Un solo toque: prendido = hecho**, sin «¿se cambió?» |
+| Próximo service | sí | **no existe** | **el suyo**, aparte: 60.000 · 70.000 · **80.000** · Otro (de 20.000 a 200.000). El próximo de aceite no se toca |
+| Premio | sí | **solo si el premio cuenta "todos los trabajos"** | ídem mecánica |
+| Plazo de edición | 24 horas | 7 días | 24 horas |
+| Papel que se dibuja | cartón de 11 renglones | orden de trabajo | la misma hoja del cartón, con bajada SERVICE DE CAJA, la etiqueta vertical CAJA y PRÓX. SERVICE CAJA al pie |
 
 **Una mecánica es más barata de cargar que un service:** un solo campo obligatorio contra
 tres.
+
+**El service de caja automática es un cuarto tipo** (con gomería, que esta tabla no
+cubre, son cuatro: el selector pasa a 2 × 2). **No viene con ningún plan y no tiene
+precio:** se prende por lubricentro desde la ficha de `/fidelli` («Service de caja
+automática»), para los talleres que se dedican a cajas. Sin la feature no se puede
+cargar ni aparece en el cartón, en «A quién llamar» ni en el Inicio; solo se la ve
+nombrada, apagada, en «Qué incluye» de Mi cuenta, y como una opción más del filtro de
+tipo del listado (igual que Neumáticos). Lo que suma, además de la carga:
+- **«A quién llamar»** gana la fuente **Caja**: avisa cuando al auto le toca el service
+  de caja, estimando con el odómetro de TODOS sus trabajos (no solo las cajas), con su
+  propio mensaje de WhatsApp por tono y su propio tilde de contactado.
+- **La página del cliente** muestra «Tu próximo service de caja» al lado de «Tu próximo
+  service» (o sola, si el auto solo tiene caja), y el papel de la caja en el historial.
+- **El Inicio** muestra «Services de caja del mes»; el listado, el sello `CAJA`; la
+  exportación, el tipo `Caja` y la columna «Próx. caja» (que solo existe para el
+  lubricentro con la feature, o en un archivo que trae alguna caja).
 
 ### 2.5 · Detalle, edición y anulación
 

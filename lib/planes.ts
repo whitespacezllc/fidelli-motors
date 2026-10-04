@@ -25,6 +25,13 @@ export const FEATURES_PLAN = [
   // plan: la clave ausente cae al tercer escalón de feature_de_tenant() y
   // devuelve false. Se prende por tenant, con el override de /fidelli.
   "neumaticos",
+  // EL SERVICE DE CAJA AUTOMÁTICA (20261004120100). Igual que `neumaticos`
+  // en lo que importa: está en el catálogo para que plan_permite() lo
+  // resuelva, NO figura en el `features` de ningún plan y se prende por
+  // tenant, con el override de /fidelli. La diferencia es que NO es un
+  // módulo pago: no tiene precio ni fila en `modulos`, así que no va en
+  // MODULOS_PAGOS y su motivo es texto libre.
+  "caja",
 ] as const;
 
 export type FeaturePlan = (typeof FEATURES_PLAN)[number];
@@ -60,6 +67,7 @@ export const ETIQUETA_FEATURE: Record<FeaturePlan, string> = {
   personalizacion_pagina: "Personalización de tu página",
   pagina_premium: "Página premium",
   neumaticos: "Gomería — módulo pago",
+  caja: "Service de caja automática",
 };
 
 /**

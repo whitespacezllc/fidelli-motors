@@ -18,9 +18,15 @@ DB="docker exec -i supabase_db_fidelli-motors psql -U postgres -d postgres -X"
 V=supabase/verificaciones.sql
 M=supabase/migrations/20260912100100_neumaticos_retornos.sql
 # get_carton se redefinió después (la clase del vehículo, el plazo de
-# edición por tipo, la suspensión por reloj): la versión vigente vive acá y
-# es la que hay que romper.
-M_CARTON=supabase/migrations/20260926200000_suspension_por_reloj.sql
+# edición por tipo, la suspensión por reloj, el próximo de caja): la
+# versión vigente vive acá y es la que hay que romper.
+M_CARTON=supabase/migrations/20261004120100_service_caja.sql
+# contactos_por_hacer, sembrar_templates y resumen_inicio también se
+# redefinieron ahí (el badge suma la cuarta fuente, la siembra trae la
+# cuarta plantilla y el Inicio cuenta las cajas del mes): las tres roturas
+# que las muerden las sacan de ese archivo. Los textos y los marcadores
+# que rompen viajaron intactos.
+M_CAJA=supabase/migrations/20261004120100_service_caja.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
 
@@ -40,6 +46,10 @@ vista_rota() {
 # Una función de la migración, rota con un sed.
 funcion_rota() {
   bloque "$1" "$M" | sed "s/^create function/create or replace function/" | sed "$2"
+}
+# Ídem, para las tres que hoy viven en la migración de la caja.
+funcion_rota_caja() {
+  bloque "$1" "$M_CAJA" | sed "s/^create function/create or replace function/" | sed "$2"
 }
 carton_roto() {
   bloque get_carton "$M_CARTON" | sed "$1"
@@ -74,7 +84,7 @@ correr "sin invoker" "alter view vista_proximos_neumaticos reset (security_invok
 
 echo "── R16c · el módulo apagado ──"
 correr "vista sin el gate del módulo" "$(vista_rota "/@gate/s/plan_permite('neumaticos')/true/")" R16c "R16c"
-correr "badge que no suma la tercera fuente" "$(funcion_rota contactos_por_hacer "/@badge/s/plan_permite('neumaticos')/false/")" R16c "R16c"
+correr "badge que no suma la tercera fuente" "$(funcion_rota_caja contactos_por_hacer "/@badge/s/plan_permite('neumaticos')/false/")" R16c "R16c"
 
 echo "── R16d · rotación y alineación ──"
 correr "sin rotación" "$(vista_rota "/@rotacion/s/c.mov_fecha is not null/false/")" R16d "R16d"
@@ -91,7 +101,7 @@ correr "fila para cualquier auto" "$(vista_rota "/@ventana/s/x.fecha is not null
 
 echo "── R16g · config y plantillas de todos ──"
 correr "sin el trigger de config" "drop trigger config_neumaticos_alta on lubricentros;" R16g "R16g"
-correr "siembra sin la tercera plantilla" "$(funcion_rota sembrar_templates "s/'{nombre}, a tu {vehiculo} le toca {motivo}. Escribinos y te damos turno.',/null,/")" R16g "R16g"
+correr "siembra sin la tercera plantilla" "$(funcion_rota_caja sembrar_templates "s/'{nombre}, a tu {vehiculo} le toca {motivo}. Escribinos y te damos turno.',/null,/")" R16g "R16g"
 correr "backfill que pisa lo personalizado" "$(funcion_rota completar_templates_neumaticos "/@completar/s/set contenido_neumaticos = case t.tono/set contenido = 'PISADO', contenido_neumaticos = case t.tono/")" R16g "R16g"
 
 echo "── R16h · el anti-spam ──"
@@ -107,7 +117,7 @@ correr "sin el CHECK de rotación" "alter table config_neumaticos drop constrain
 correr "sin RLS" "alter table config_neumaticos disable row level security;" R16j "R16j"
 
 echo "── R16k · resumen_inicio sin el tipo ──"
-correr "ultimos sin tipo" "$(funcion_rota resumen_inicio "/'tipo', u.tipo,/d")" R16k "R16k"
+correr "ultimos sin tipo" "$(funcion_rota_caja resumen_inicio "/'tipo', u.tipo,/d")" R16k "R16k"
 
 echo "── R16l · ritmo solo de gomería ──"
 correr "ritmo de un solo tipo" "$(vista_rota "/@ritmo/s/s.kilometros is not null/s.kilometros is not null and s.tipo = 'neumaticos'/")" R16l "R16l"
