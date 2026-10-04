@@ -2,9 +2,13 @@ import { paletaTenant } from "@/lib/cliente/color";
 import { formatearFecha } from "@/lib/fechas";
 import { sumarDias } from "@/lib/fidelli/plan";
 import { formatearPesos, totalDe, type ItemPresupuesto } from "@/lib/presupuestos";
+import { lineasDeEmpresa, type DatosEmpresa } from "@/lib/datos-empresa";
 
 export type DatosDocumento = {
   lubricentroNombre: string;
+  /** Quién emite: razón social, CUIT, domicilio… Cualquiera puede venir
+   *  null, y sin ninguno el encabezado es el de siempre. */
+  empresa: DatosEmpresa | null;
   logoUrl: string | null;
   colorTenant: string;
   colorPapel: string | null;
@@ -72,6 +76,14 @@ export function DocumentoPresupuesto({ datos }: { datos: DatosDocumento }) {
           <p className="font-brand text-lead font-bold text-ink">
             {datos.lubricentroNombre}
           </p>
+          {/* Los datos de la empresa, debajo del nombre y con el cuerpo de
+              la sucursal: una línea por dato cargado, ninguna si no hay. Es
+              identificación del emisor — esto sigue sin ser una factura. */}
+          {lineasDeEmpresa(datos.empresa, datos.lubricentroNombre).map((linea) => (
+            <p key={linea} data-linea-empresa className="text-label text-ink-60 tabular-nums">
+              {linea}
+            </p>
+          ))}
           {datos.sucursal && (
             <p className="text-label text-ink-60">{datos.sucursal}</p>
           )}

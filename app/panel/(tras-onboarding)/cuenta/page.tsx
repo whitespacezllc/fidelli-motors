@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { clasesBoton } from "@/components/ui/boton";
 import { createClient } from "@/lib/supabase/server";
-import { obtenerSesion, panelSuspendido } from "@/lib/auth/session";
+import { obtenerSesion, panelSuspendido, featureHabilitada } from "@/lib/auth/session";
 import { FEATURES_PLAN, ETIQUETA_FEATURE } from "@/lib/planes";
 import { IconoIncluido, IconoCerrar } from "@/components/iconos";
 import { cerrarSesion } from "@/lib/auth/actions";
@@ -13,9 +13,12 @@ import { CabeceraSeccion } from "@/components/panel/cabecera-seccion";
 import { FormNombre } from "@/components/cuenta/form-nombre";
 import { FormClavePanel } from "@/components/cuenta/form-clave";
 import { CopiarLanding } from "@/components/cuenta/copiar-landing";
+import { FormDatosEmpresa } from "@/components/empresa/form-datos-empresa";
+import { empresaDesdeFila } from "@/lib/datos-empresa";
 import {
   actualizarMiNombre,
   actualizarNombreLubricentro,
+  guardarDatosEmpresa,
 } from "@/app/panel/(tras-onboarding)/cuenta/actions";
 import { formatearFecha } from "@/lib/fechas";
 import {
@@ -33,13 +36,15 @@ export const metadata: Metadata = { title: "Mi cuenta" };
 
 function Bloque({
   titulo,
+  id,
   children,
 }: {
   titulo: string;
+  id?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section>
+    <section id={id}>
       <h2 className="mb-2 px-1 text-label font-semibold tracking-[0.06em] text-ink-40 uppercase">
         {titulo}
       </h2>
@@ -72,10 +77,13 @@ export default async function PaginaCuenta() {
 
   const suspendido = await panelSuspendido();
   const supabase = await createClient();
+  // Los datos de la empresa salen solo en el presupuesto: sin esa función
+  // no hay dónde usarlos, y la tarjeta ni se consulta ni se muestra.
+  const conPresupuestos = featureHabilitada(sesion, "presupuestos");
 
   // Todo lo del bloque de plan en paralelo. RLS filtra al tenant: estas
   // consultas no necesitan (ni llevan) filtro a mano.
-  const [lubriRes, suscripcionRes, pagosRes, origen] = await Promise.all([
+  const [lubriRes, suscripcionRes, pagosRes, origen, empresaRes] = await Promise.all([
     supabase
       .from("lubricentros")
       .select("nombre, slug, calcos_entregadas")
@@ -96,6 +104,12 @@ export default async function PaginaCuenta() {
       .select("id, periodo_desde, periodo_hasta, monto, fecha_pago")
       .order("periodo_hasta", { ascending: false }),
     origenDelSitio(),
+    conPresupuestos
+      ? supabase
+          .from("datos_empresa")
+          .select("razon_social, cuit, condicion_iva, domicilio, telefono, email")
+          .maybeSingle()
+      : null,
   ]);
 
   const lubricentro = lubriRes.data;
@@ -165,6 +179,17 @@ export default async function PaginaCuenta() {
           )}
         </div>
       </Bloque>
+
+      {conPresupuestos && (
+        <Bloque titulo="Datos de tu empresa" id="datos-empresa">
+          <FormDatosEmpresa
+            accion={guardarDatosEmpresa}
+            inicial={empresaDesdeFila(empresaRes?.data)}
+            ayuda="Salen en el encabezado de tus presupuestos. Si los dejás vacíos, el presupuesto lleva solo tu nombre y tu logo."
+            deshabilitado={suspendido}
+          />
+        </Bloque>
+      )}
 
       {/* La puerta a Mi cuenta → Calcos: el calco, pedir más y el historial.
           Va acá y no en el sidebar por lo mismo que «Pagar o renovar»: pedir
