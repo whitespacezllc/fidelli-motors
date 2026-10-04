@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { existeVehiculo } from "@/lib/cliente/landing";
+import { buscarVehiculo } from "@/lib/cliente/landing";
 import { normalizarPatente } from "@/lib/texto";
 
 // La búsqueda de la landing. Siempre termina en un redirect, así que la
@@ -19,7 +19,17 @@ export async function buscarPatente(slug: string, formData: FormData) {
   // el submit vacío llega igual y no tiene sentido registrarlo como lead.
   if (patente.length < 6) redirect(`/${slug}`);
 
-  if (await existeVehiculo(slug, patente)) redirect(`/${slug}/${patente}`);
+  const resultado = await buscarVehiculo(slug, patente);
+
+  if (resultado === "encontrado") redirect(`/${slug}/${patente}`);
+
+  // get_carton no contestó: no se sabe si la patente existe. Ni «no la
+  // encontramos» —sería mentira— ni mandarlo a la pantalla del auto para
+  // que pregunte de nuevo: esa segunda llamada es un reintento a ciegas, y
+  // si la primera llegó a registrarse deja dos búsquedas por una (ver
+  // lib/cliente/puerta.ts). Vuelve a la vidriera con la patente escrita, y
+  // reintentar es tocar el botón.
+  if (resultado === "sin_respuesta") redirect(`/${slug}?reintentar=${patente}`);
 
   redirect(`/${slug}?nohay=${patente}`);
 }
