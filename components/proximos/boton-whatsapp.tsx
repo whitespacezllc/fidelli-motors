@@ -6,6 +6,7 @@ import { IconoWhatsapp } from "@/components/iconos";
 import { registrarContacto } from "@/app/panel/(tras-onboarding)/proximos/actions";
 import type { MotivoContacto } from "@/lib/contacto";
 import { MOTIVO_SUSPENSION } from "@/components/panel/aviso-suspension";
+import { LUGAR_ACCION, LUGAR_MENSAJE } from "@/components/proximos/grilla";
 
 // El contacto en un tap. Es un <a> de verdad, no un botón que abre la
 // ventana después de esperar al servidor: si el link se abriera desde el
@@ -19,8 +20,11 @@ import { MOTIVO_SUSPENSION } from "@/components/panel/aviso-suspension";
 // comunicar estado, que es exactamente lo que la paleta prohíbe: la
 // urgencia ya la dice el badge. La jerarquía la pone el deshabilitado:
 // las filas ya contactadas se apagan, las pendientes quedan al frente.
-// En desktop va solo el ícono (la columna es angosta); en la tarjeta de
-// mobile, ícono con etiqueta. Área táctil de 44px siempre.
+// Desde 1280 va solo el ícono (la columna es angosta); por debajo —la
+// tarjeta de mobile y la tabla de dos renglones—, ícono con etiqueta. Área
+// táctil de 44px siempre. Y desde 1280 el botón y su mensaje son ítems de
+// la grilla de la fila (grilla.ts): el mensaje ocupa un renglón entero
+// debajo, sin estirar la columna ni correr la fila.
 //
 // LA REGLA ANTI-SPAM: contactado en este estado → el botón no funciona.
 // Nunca dos mensajes en el mismo estado; el camino para reintentar es
@@ -58,7 +62,7 @@ export function BotonWhatsapp({
 
   if (bloqueo) {
     return (
-      <span className="inline-flex flex-col items-end gap-1">
+      <span className="inline-flex flex-col items-end gap-1 xl:contents">
         <button
           type="button"
           aria-disabled="true"
@@ -66,13 +70,13 @@ export function BotonWhatsapp({
           title={bloqueo}
           // El motivo también al tocarlo: el title no existe en el táctil.
           onClick={() => setMotivo((v) => !v)}
-          className="inline-flex min-h-11 cursor-not-allowed items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-ui font-semibold text-ink-40 lg:min-w-11 lg:px-2.5"
+          className={`inline-flex min-h-11 cursor-not-allowed items-center justify-center gap-1.5 rounded-md border border-line bg-surface px-3 text-ui font-semibold text-ink-40 xl:min-w-11 xl:px-2.5 ${LUGAR_ACCION}`}
         >
           <IconoWhatsapp aria-hidden className="size-5 shrink-0" />
-          <span className="lg:hidden">WhatsApp</span>
+          <span className="xl:hidden">WhatsApp</span>
         </button>
         {motivo && (
-          <span role="status" className="max-w-52 text-right text-label text-ink-60">
+          <span role="status" className={`max-w-52 text-right text-label text-ink-60 ${LUGAR_MENSAJE}`}>
             {bloqueo}
           </span>
         )}
@@ -90,20 +94,20 @@ export function BotonWhatsapp({
   }
 
   return (
-    <span className="inline-flex flex-col items-end gap-1">
+    <span className="inline-flex flex-col items-end gap-1 xl:contents">
       <a
         href={link}
         target="_blank"
         rel="noopener noreferrer"
         onClick={alTocar}
         aria-label={`Abrir WhatsApp para ${cliente}`}
-        className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md border border-line bg-base px-3 text-ui font-semibold text-ink transition-colors hover:bg-surface lg:min-w-11 lg:px-2.5"
+        className={`inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md border border-line bg-base px-3 text-ui font-semibold text-ink transition-colors hover:bg-surface xl:min-w-11 xl:px-2.5 ${LUGAR_ACCION}`}
       >
         <IconoWhatsapp aria-hidden className="size-5 shrink-0 text-success" />
-        <span className="lg:hidden">{pendiente ? "Abriendo…" : "WhatsApp"}</span>
+        <span className="xl:hidden">{pendiente ? "Abriendo…" : "WhatsApp"}</span>
       </a>
       {error && (
-        <span role="alert" className="max-w-52 text-right text-label text-overdue">
+        <span role="alert" className={`max-w-52 text-right text-label text-overdue ${LUGAR_MENSAJE}`}>
           {error}
         </span>
       )}

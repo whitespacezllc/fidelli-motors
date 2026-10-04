@@ -8,7 +8,11 @@ import { clasesBoton } from "@/components/ui/boton";
 import { IconoReloj, IconoPremio } from "@/components/iconos";
 import { ContadorEstado } from "@/components/proximos/badge-urgencia";
 import { FiltrosProximosServices } from "@/components/proximos/filtros-proximos";
-import { FilaProximo, type ProximoServicio } from "@/components/proximos/fila-proximo";
+import {
+  EncabezadoProximos,
+  FilaProximo,
+  type ProximoServicio,
+} from "@/components/proximos/fila-proximo";
 import {
   esMotivoNeumaticos,
   fraseMotivos,
@@ -496,17 +500,9 @@ export default async function PaginaProximos({
       {todas.length > 0 ? (
         <div className="surface-card">
           {/* La cabecera de columnas solo existe en desktop: en mobile cada
-              fila es una tarjeta que se lee sola. */}
-          <div className="hidden border-b border-line px-5 py-2.5 text-label font-semibold tracking-[0.06em] text-ink-40 uppercase lg:grid lg:grid-cols-[minmax(9rem,1fr)_7.5rem_11rem_6rem_9.5rem_6.5rem_5rem_auto] lg:gap-x-4">
-            <span>Cliente</span>
-            <span>Vehículo</span>
-            <span>Último service</span>
-            <span>Próximo</span>
-            <span>Retorno est.</span>
-            <span>Estado</span>
-            <span className="justify-self-center">Contactado</span>
-            <span />
-          </div>
+              fila es una tarjeta que se lee sola. Vive con la fila y usa su
+              misma plantilla: son dos grillas que tienen que coincidir. */}
+          <EncabezadoProximos />
           <ul>
             {todas.map((f) => (
               <FilaProximo
