@@ -58,6 +58,10 @@ cd "$(dirname "$0")/.."
 DB="docker exec -i supabase_db_fidelli-motors psql -U postgres -d postgres -X"
 V=supabase/verificaciones.sql
 M=supabase/migrations/20261004120100_service_caja.sql
+# get_carton se redefinió después (los adjuntos, 20261004200000): la
+# versión vigente vive ahí y es la que hay que romper. La clave
+# `prox_caja_km` viajó intacta.
+M_CARTON=supabase/migrations/20261004200000_adjuntos_trabajo.sql
 # premio_disponible y ciclos_fidelizacion viven acá desde la importación.
 M_IM=supabase/migrations/20261002120000_importado_de.sql
 # La firma VIEJA de actualizar_service, para probar que no puede convivir.
@@ -261,7 +265,7 @@ correr_marcada "ciclos_fidelizacion contando la caja con alcance services (la co
   "s/(pa.alcance = 'todos' or s.tipo = 'service')/(pa.alcance = 'todos' or s.tipo in ('service', 'caja'))/" R42 "R42g con alcance «services» una caja sumó"
 
 echo "── R42h · el cartón y los contadores ──"
-correr_marcada "get_carton sin el próximo de caja" get_carton "$M" \
+correr_marcada "get_carton sin el próximo de caja" get_carton "$M_CARTON" \
   "/@prox-caja/d" R42 "R42h get_carton devuelve 3 trabajo(s) del auto A y 0 traen la clave"
 correr_marcada "cajas_mes del Inicio contando todos los tipos" resumen_inicio "$M" \
   "/@cajas-mes\$/s/where tipo = 'caja' and not anulado/where not anulado/" R42 "R42h resumen_inicio().cajas_mes subió"

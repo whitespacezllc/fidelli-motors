@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BadgeEstado } from "@/components/services/badge-estado";
+import { IconoClip } from "@/components/iconos";
 import { formatearKm } from "@/lib/renglones";
 import { formatearFechaHora } from "@/lib/fechas";
 import type { EstadoService } from "@/lib/servicios";
@@ -11,6 +12,8 @@ export type ServiceListado = {
   /** De qué se trató: qué se hizo en mecánica, el aceite de caja en un
    *  service de caja. */
   descripcion: string | null;
+  /** Cuántos archivos adjuntos tiene el trabajo (PDF o foto). */
+  adjuntos: number;
   creado: string;
   patente: string;
   vehiculo: string | null;
@@ -48,8 +51,21 @@ export function FilaService({ service }: { service: ServiceListado }) {
         <span className="order-2 text-label text-ink-60 tabular-nums lg:order-none">
           {formatearFechaHora(service.creado)}
         </span>
-        <span className="plate order-1 text-ui text-ink lg:order-none">
-          {service.patente.toUpperCase()}
+        {/* El clip avisa que el trabajo tiene archivos adjuntos (el PDF del
+            escaneo, una foto): se ven en el detalle. */}
+        <span className="order-1 flex items-center gap-1.5 lg:order-none">
+          <span className="plate text-ui text-ink">
+            {service.patente.toUpperCase()}
+          </span>
+          {service.adjuntos > 0 && (
+            <IconoClip
+              role="img"
+              aria-label={
+                service.adjuntos === 1 ? "Tiene 1 adjunto" : `Tiene ${service.adjuntos} adjuntos`
+              }
+              className="size-4 shrink-0 text-ink-60"
+            />
+          )}
         </span>
         <span className="order-3 truncate text-ui text-ink-60 lg:order-none">
           {service.vehiculo ?? "Vehículo"}

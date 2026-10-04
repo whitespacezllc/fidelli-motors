@@ -3,7 +3,8 @@
 import { useActionState, useState, type ReactNode } from "react";
 import { Dialog, DialogTrigger, DialogContenido } from "@/components/ui/dialog";
 import { Boton } from "@/components/ui/boton";
-import { IconoCandado } from "@/components/iconos";
+import { IconoAviso, IconoCandado } from "@/components/iconos";
+import { SLUG_MAXIMO, avisoSlugQr } from "@/lib/texto";
 import { CamposPlan, type ValoresPlan } from "@/components/fidelli/campos-plan";
 import {
   CLASE_AYUDA,
@@ -87,6 +88,10 @@ export function DialogEditar({
   // antes de intentarlo, no para reemplazar aquel chequeo.
   const calcos = datos.calcos_entregadas;
   const slugBloqueado = calcos > 0;
+  // Lo que está escrito en el campo, para avisar del QR mientras se
+  // escribe. El campo sigue sin controlar (defaultValue): esto solo mira.
+  const [slugEscrito, setSlugEscrito] = useState(datos.slug);
+  const avisoQr = slugBloqueado ? null : avisoSlugQr(slugEscrito);
   const id = datos.id;
 
   return (
@@ -131,7 +136,8 @@ export function DialogEditar({
               aria-describedby={slugBloqueado ? `ed-slug-motivo-${id}` : undefined}
               pattern="[a-z0-9]+(-[a-z0-9]+)*"
               minLength={3}
-              maxLength={60}
+              maxLength={SLUG_MAXIMO}
+              onChange={(e) => setSlugEscrito(e.target.value.trim())}
               className={CLASE_CAMPO}
             />
             {slugBloqueado ? (
@@ -149,6 +155,12 @@ export function DialogEditar({
               <p className={CLASE_AYUDA}>
                 {DOMINIO_SITIO}/{datos.slug} — todavía se puede cambiar porque
                 no hay calcos entregadas.
+              </p>
+            )}
+            {avisoQr && (
+              <p className="mt-1.5 flex items-start gap-1.5 text-label text-overdue">
+                <IconoAviso aria-hidden className="mt-px size-3.5 shrink-0" />
+                <span>{avisoQr}</span>
               </p>
             )}
           </div>

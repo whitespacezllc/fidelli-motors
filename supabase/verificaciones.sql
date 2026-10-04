@@ -13323,3 +13323,754 @@ drop function r42_feature(uuid, uuid, boolean);
 drop function r42_postgres();
 drop function r42_como(uuid);
 -- <<< R42
+
+
+-- ============================================================
+-- R43 · ADJUNTOS EN CUALQUIER TRABAJO (20261004200000)
+--
+-- Un PDF o una foto del diagnóstico, colgados de un trabajo. Lo que este
+-- bloque vigila, y por qué cada cosa falla en silencio si se rompe:
+--
+--   j · LA FORMA. La tabla con RLS, el bucket PRIVADO de 2 MB y tres
+--       formatos, los dos triggers, la FK en cascada, y los privilegios:
+--       `anon` sin nada, `authenticated` que solo puede prender y apagar
+--       «Mostrar al cliente», y las dos funciones de servicio que nadie
+--       más ejecuta.
+--   a · EL ALTA. El adjunto nace OCULTO, con el tenant y el usuario que
+--       pone la base (no los que manda el navegador), y su archivo vive en
+--       la carpeta de SU trabajo. Y entra en un trabajo FIJADO hace un
+--       mes: adjuntar no edita el cartón.
+--   b · EL TOPE. Tres por trabajo; el cuarto falla con `tope_adjuntos`,
+--       para cualquiera, y es por trabajo.
+--   c · LO ÚNICO QUE SE EDITA es «Mostrar al cliente».
+--   d · EL AISLAMIENTO. El owner no ve ni toca lo del tenant de al lado,
+--       ni en la tabla ni en el bucket; `anon` no lee ninguno de los dos.
+--   e · LA PUERTA DEL CLIENTE. adjunto_publico() devuelve la ruta solo si
+--       el adjunto existe, está visible, su trabajo no está anulado y es
+--       de ESE vehículo de ESE tenant. Con dos tenants que tienen la misma
+--       patente, el slug decide.
+--   f · get_carton lista los visibles —y nada más que id, nombre, mime y
+--       fecha— y NO perdió `prox_caja_km` (la función se parte de su
+--       última definición, que es la del service de caja).
+--   g · LOS HUÉRFANOS. Un archivo sin fila lo barre el cierre diario,
+--       pero no si se subió hace un rato (la subida en vuelo).
+-- ============================================================
+
+-- >>> R43
+create or replace function r43_como(p_uid uuid) returns void language plpgsql as $$
+begin
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', p_uid, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+end $$;
+
+create or replace function r43_anon() returns void language plpgsql as $$
+begin
+  perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+  execute 'set local role anon';
+end $$;
+
+create or replace function r43_postgres() returns void language plpgsql as $$
+begin
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+end $$;
+
+-- Un intento, con el rol que esté puesto. Devuelve 'entro' o el error en
+-- una línea: así cada rechazo se comprueba por su código y su mensaje.
+create or replace function r43_intento(p_sql text) returns text language plpgsql as $$
+begin
+  execute p_sql;
+  return 'entro';
+exception when others then
+  return sqlstate || ' ' || sqlerrm;
+end $$;
+
+-- El alta de un adjunto como la hace la acción del panel: cinco columnas
+-- y nada más.
+create or replace function r43_alta(
+  p_service uuid, p_nombre text, p_ruta text, p_mime text, p_bytes integer)
+returns text language sql as $$
+  select format(
+    'insert into adjuntos_trabajo (service_id, nombre, ruta, mime, bytes) values (%L, %L, %L, %L, %s)',
+    p_service, p_nombre, p_ruta, p_mime, p_bytes);
+$$;
+
+-- Los helpers se llaman con el rol que esté puesto, también `anon`, que
+-- en este proyecto no hereda el execute de las funciones nuevas.
+grant execute on function r43_como(uuid), r43_anon(), r43_postgres(),
+  r43_intento(text), r43_alta(uuid, text, text, text, integer) to anon, authenticated;
+
+do $$
+declare
+  v_demo    uuid;
+  v_own     uuid;
+  v_super   uuid;
+  v_suc     uuid;
+  v_cli     uuid;
+  v_v1      uuid;   -- el auto con el trabajo fijado y el de hoy
+  v_v2      uuid;   -- otro auto del mismo tenant
+  v_s1      uuid;   -- un service FIJADO hace un mes
+  v_s1b     uuid;   -- un service de hoy, mismo auto
+  v_s2      uuid;   -- el del otro auto
+  v_lub_b   uuid;   -- el tenant de al lado, con la MISMA patente que v_v1
+  v_suc_b   uuid;
+  v_cli_b   uuid;
+  v_veh_b   uuid;
+  v_sb      uuid;
+  v_a1      uuid;
+  v_a2      uuid;
+  v_a3      uuid;
+  v_ab      uuid;
+  v_r1      text;
+  v_r2      text;
+  v_r3      text;
+  v_rb      text;
+  v_carp    text;   -- la carpeta de s1 en el bucket
+  v_fila    record;
+  v_b       record;
+  r         record;
+  v_err     text;
+  v_txt     text;
+  v_n       integer;
+  v_m       integer;
+  v_json    jsonb;
+  v_e1      jsonb;
+  v_e1b     jsonb;
+  v_ids     text[];
+  v_arr     text[];
+  v_hoy     date := current_date;
+begin
+  select id into v_demo  from lubricentros where slug = 'demo';
+  select id into v_own   from usuarios where lubricentro_id = v_demo and rol = 'owner' limit 1;
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  select id into v_suc   from sucursales where lubricentro_id = v_demo and activa order by created_at limit 1;
+  if v_demo is null or v_own is null or v_super is null or v_suc is null then
+    raise exception 'R43 SIN PISO: falta el demo, su owner, su sucursal o el superadmin del seed.';
+  end if;
+
+  -- ---------- j · la forma, antes de tocar nada ----------
+  if to_regclass('public.adjuntos_trabajo') is null then
+    raise exception 'R43j no existe la tabla adjuntos_trabajo: un trabajo no tiene dónde guardar el PDF o la foto del diagnóstico.';
+  end if;
+  if not (select relrowsecurity from pg_class where oid = to_regclass('public.adjuntos_trabajo')) then
+    raise exception 'R43j AISLAMIENTO ROTO: adjuntos_trabajo no tiene RLS — cualquier owner lee los adjuntos de todos los lubricentros.';
+  end if;
+  if has_table_privilege('anon', 'public.adjuntos_trabajo', 'select')
+     or has_table_privilege('anon', 'public.adjuntos_trabajo', 'insert')
+     or has_table_privilege('anon', 'public.adjuntos_trabajo', 'update')
+     or has_table_privilege('anon', 'public.adjuntos_trabajo', 'delete') then
+    raise exception 'R43j `anon` tiene privilegios sobre adjuntos_trabajo. El cliente llega al archivo SOLO por la ruta con adjunto_publico(): la tabla no es suya.';
+  end if;
+  if not has_table_privilege('authenticated', 'public.adjuntos_trabajo', 'select')
+     or not has_table_privilege('authenticated', 'public.adjuntos_trabajo', 'delete') then
+    raise exception 'R43j el owner no puede leer o quitar sus adjuntos (faltan select o delete para authenticated).';
+  end if;
+  -- El alta: seis columnas. Con `visible_cliente` insertable, un adjunto
+  -- podría NACER a la vista del cliente; con `subido_por` o `created_at`,
+  -- mentir quién lo subió y cuándo. (El tenant se puede mandar y no decide
+  -- nada: lo pisa el trigger, y R43a lo comprueba.)
+  select string_agg(a.attname, ', ' order by a.attnum) into v_txt
+  from pg_attribute a
+  where a.attrelid = to_regclass('public.adjuntos_trabajo') and a.attnum > 0 and not a.attisdropped
+    and has_column_privilege('authenticated', a.attrelid, a.attnum, 'insert');
+  if v_txt is distinct from 'service_id, lubricentro_id, nombre, ruta, mime, bytes' then
+    raise exception 'R43j authenticated puede insertar las columnas «%» de adjuntos_trabajo (esperaba service_id, lubricentro_id, nombre, ruta, mime, bytes). «Mostrar al cliente» está apagado por defecto porque NADIE puede mandarlo prendido en el alta.', coalesce(v_txt, 'ninguna');
+  end if;
+  -- La edición: una sola columna.
+  select string_agg(a.attname, ', ' order by a.attnum) into v_txt
+  from pg_attribute a
+  where a.attrelid = to_regclass('public.adjuntos_trabajo') and a.attnum > 0 and not a.attisdropped
+    and has_column_privilege('authenticated', a.attrelid, a.attnum, 'update');
+  if v_txt is distinct from 'visible_cliente' then
+    raise exception 'R43j authenticated puede actualizar las columnas «%» de adjuntos_trabajo (esperaba solo visible_cliente). Un adjunto no se edita: se prende, se apaga o se quita.', coalesce(v_txt, 'ninguna');
+  end if;
+
+  select count(*) into v_n from pg_trigger
+  where tgrelid = to_regclass('public.adjuntos_trabajo') and not tgisinternal
+    and tgname in ('adjuntos_trabajo_tenant', 'adjuntos_trabajo_tope');
+  if v_n <> 2 then
+    raise exception 'R43j faltan triggers de adjuntos_trabajo (hay % de 2: adjuntos_trabajo_tenant y adjuntos_trabajo_tope). Sin el del tope, el cuarto archivo entra: un CHECK no cuenta filas.', v_n;
+  end if;
+  if not exists (
+    select 1 from pg_constraint c
+    where c.conrelid = to_regclass('public.adjuntos_trabajo') and c.contype = 'f'
+      and c.confrelid = 'public.services'::regclass and c.confdeltype = 'c') then
+    raise exception 'R43j la FK de adjuntos_trabajo a services no es ON DELETE CASCADE: borrar un tenant de prueba (o purgar uno) falla por sus adjuntos.';
+  end if;
+
+  select b.public, b.file_size_limit, b.allowed_mime_types into v_b
+  from storage.buckets b where b.id = 'adjuntos';
+  if not found then
+    raise exception 'R43j no existe el bucket «adjuntos».';
+  end if;
+  if v_b.public then
+    raise exception 'R43j EL BUCKET «adjuntos» ES PÚBLICO: cualquiera con la URL baja el diagnóstico de cualquier auto.';
+  end if;
+  if v_b.file_size_limit is distinct from 2097152 then
+    raise exception 'R43j el bucket «adjuntos» tiene un tope de % bytes (esperaba 2.097.152: 2 MB por archivo).', v_b.file_size_limit;
+  end if;
+  if v_b.allowed_mime_types is null
+     or not (v_b.allowed_mime_types @> array['application/pdf', 'image/jpeg', 'image/png']
+             and array_length(v_b.allowed_mime_types, 1) = 3) then
+    raise exception 'R43j el bucket «adjuntos» acepta «%» (esperaba PDF, JPEG y PNG, y nada más).', v_b.allowed_mime_types;
+  end if;
+  -- Ninguna policy del bucket alcanza a anon (ni a public, que lo incluye).
+  select count(*) into v_n from pg_policies
+  where schemaname = 'storage' and tablename = 'objects'
+    and (coalesce(qual, '') || ' ' || coalesce(with_check, '')) like '%adjuntos%'
+    and roles && array['anon', 'public']::name[];
+  if v_n > 0 then
+    raise exception 'R43j % policy(s) del bucket «adjuntos» alcanzan a `anon`. Anon no lee el bucket: la única puerta del cliente es la ruta, con su URL firmada de 60 segundos.', v_n;
+  end if;
+  select count(*) into v_n from pg_policies
+  where schemaname = 'storage' and tablename = 'objects' and policyname like 'adjuntos %';
+  if v_n <> 3 then
+    raise exception 'R43j el bucket «adjuntos» tiene % policy(s) (esperaba 3: lectura, subida y borrado, las tres de la carpeta del propio tenant).', v_n;
+  end if;
+
+  if to_regprocedure('public.adjunto_publico(uuid, text, text)') is null then
+    raise exception 'R43j no existe adjunto_publico(uuid, text, text): la ruta del cliente no tiene con qué verificar.';
+  end if;
+  if not (select prosecdef from pg_proc where oid = to_regprocedure('public.adjunto_publico(uuid, text, text)')) then
+    raise exception 'R43j adjunto_publico() no es SECURITY DEFINER.';
+  end if;
+  if has_function_privilege('anon', 'public.adjunto_publico(uuid, text, text)', 'execute')
+     or has_function_privilege('authenticated', 'public.adjunto_publico(uuid, text, text)', 'execute') then
+    raise exception 'R43j adjunto_publico() la ejecutan `anon` o `authenticated`. Devuelve la ruta del archivo en el bucket: solo la llama la ruta del servidor, con la clave de servicio, que es la que después firma la URL.';
+  end if;
+  if not has_function_privilege('service_role', 'public.adjunto_publico(uuid, text, text)', 'execute') then
+    raise exception 'R43j service_role no puede ejecutar adjunto_publico(): la ruta del cliente devuelve 404 para todo.';
+  end if;
+  if to_regprocedure('public.adjuntos_huerfanos()') is null then
+    raise exception 'R43j no existe adjuntos_huerfanos(): el cierre diario no tiene cómo saber qué archivos barrer.';
+  end if;
+  if has_function_privilege('anon', 'public.adjuntos_huerfanos()', 'execute')
+     or has_function_privilege('authenticated', 'public.adjuntos_huerfanos()', 'execute')
+     or not has_function_privilege('service_role', 'public.adjuntos_huerfanos()', 'execute') then
+    raise exception 'R43j adjuntos_huerfanos() es del cierre diario (service_role) y de nadie más: lista archivos de todos los tenants.';
+  end if;
+
+  begin
+    -- ---------- los fixtures, como postgres ----------
+    insert into clientes (lubricentro_id, nombre, telefono, email)
+    values (v_demo, 'Persona R43', '351 555 0430', 'r43@ejemplo.com') returning id into v_cli;
+    insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+    values (v_demo, v_cli, 'AB143CD', 'Toyota', 'Corolla') returning id into v_v1;
+    insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+    values (v_demo, v_cli, 'AB243CD', 'Honda', 'Fit') returning id into v_v2;
+
+    insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha,
+                          kilometros, aceite_tipo, prox_service_km, observaciones, created_at)
+    values (v_demo, v_suc, v_v1, v_own, 'service', v_hoy - 30, 50000, '5W30', 60000,
+            'R43 fijado', now() - interval '30 days') returning id into v_s1;
+    insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha,
+                          kilometros, aceite_tipo, prox_service_km, observaciones)
+    values (v_demo, v_suc, v_v1, v_own, 'service', v_hoy, 51000, '5W30', 61000, 'R43 de hoy')
+    returning id into v_s1b;
+    insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha,
+                          kilometros, aceite_tipo, prox_service_km, observaciones)
+    values (v_demo, v_suc, v_v2, v_own, 'service', v_hoy, 30000, '10W40', 40000, 'R43 otro auto')
+    returning id into v_s2;
+
+    -- El tenant de al lado, con un auto de la MISMA patente que v_v1.
+    insert into lubricentros (nombre, slug) values ('Adjuntos R43', 'adjuntos-r43') returning id into v_lub_b;
+    insert into sucursales (lubricentro_id, nombre) values (v_lub_b, 'Centro') returning id into v_suc_b;
+    insert into clientes (lubricentro_id, nombre, telefono)
+    values (v_lub_b, 'Vecino R43', '351 555 0431') returning id into v_cli_b;
+    insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+    values (v_lub_b, v_cli_b, 'AB143CD', 'Fiat', 'Cronos') returning id into v_veh_b;
+    insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha,
+                          kilometros, aceite_tipo, prox_service_km, observaciones)
+    values (v_lub_b, v_suc_b, v_veh_b, v_super, 'service', v_hoy, 20000, '10W40', 30000, 'R43 vecino')
+    returning id into v_sb;
+
+    v_carp := v_demo || '/' || v_s1 || '/';
+    v_r1 := v_carp || gen_random_uuid() || '.pdf';
+    v_r2 := v_carp || gen_random_uuid() || '.jpg';
+    v_r3 := v_carp || gen_random_uuid() || '.png';
+    v_rb := v_lub_b || '/' || v_sb || '/' || gen_random_uuid() || '.pdf';
+
+    -- ---------- a · el alta ----------
+    perform r43_como(v_own);
+
+    -- El trabajo está FIJADO: el owner ya no lo puede editar…
+    update services set observaciones = 'R43 retocado' where id = v_s1;
+    get diagnostics v_n = row_count;
+    if v_n <> 0 then
+      raise exception 'R43a SIN PISO: el owner pudo editar un service de hace un mes (el fixture no quedó fijado).';
+    end if;
+    -- …y le adjunta igual. Adjuntar no edita el cartón.
+    v_err := r43_intento(r43_alta(v_s1, 'Escaneo de caja.pdf', v_r1, 'application/pdf', 312000));
+    if v_err <> 'entro' then
+      raise exception 'R43a NO SE PUDO ADJUNTAR A UN TRABAJO FIJADO («%»). Adjuntar nunca edita el cartón: funciona fuera del plazo de edición también.', v_err;
+    end if;
+    select * into v_fila from adjuntos_trabajo where ruta = v_r1;
+    v_a1 := v_fila.id;
+    if v_fila.lubricentro_id is distinct from v_demo then
+      raise exception 'R43a el adjunto no heredó el tenant de su trabajo (quedó con %).', v_fila.lubricentro_id;
+    end if;
+    if v_fila.subido_por is distinct from v_own then
+      raise exception 'R43a el adjunto no quedó a nombre de quien lo subió (subido_por = %).', v_fila.subido_por;
+    end if;
+    if v_fila.visible_cliente then
+      raise exception 'R43a UN ADJUNTO NACIÓ VISIBLE PARA EL CLIENTE. «Mostrar al cliente» está apagado por defecto: lo prende el taller, archivo por archivo.';
+    end if;
+
+    -- Lo que el navegador no puede mandar en el alta: 42501, columna por columna.
+    for r in select unnest(array[
+        format('insert into adjuntos_trabajo (service_id, nombre, ruta, mime, bytes, visible_cliente) values (%L, %L, %L, %L, 1000, true)',
+               v_s1b, 'Visible de entrada.pdf', v_demo || '/' || v_s1b || '/' || gen_random_uuid() || '.pdf', 'application/pdf'),
+        format('insert into adjuntos_trabajo (service_id, nombre, ruta, mime, bytes, subido_por) values (%L, %L, %L, %L, 1000, %L)',
+               v_s1b, 'De otro usuario.pdf', v_demo || '/' || v_s1b || '/' || gen_random_uuid() || '.pdf', 'application/pdf', v_super),
+        format('insert into adjuntos_trabajo (service_id, nombre, ruta, mime, bytes, created_at) values (%L, %L, %L, %L, 1000, now() - interval ''1 year'')',
+               v_s1b, 'Con otra fecha.pdf', v_demo || '/' || v_s1b || '/' || gen_random_uuid() || '.pdf', 'application/pdf')
+      ]) as consulta
+    loop
+      v_err := r43_intento(r.consulta);
+      if left(v_err, 5) <> '42501' then
+        raise exception 'R43a el alta dejó pasar una columna que no es del navegador («%»). Consulta: %', v_err, r.consulta;
+      end if;
+    end loop;
+
+    -- El tenant escrito a mano no decide nada: con el del lubricentro de
+    -- al lado en el insert, el adjunto queda en el tenant de SU trabajo.
+    v_txt := v_demo || '/' || v_s1b || '/' || gen_random_uuid() || '.pdf';
+    v_err := r43_intento(format(
+      'insert into adjuntos_trabajo (service_id, lubricentro_id, nombre, ruta, mime, bytes) values (%L, %L, %L, %L, %L, 1000)',
+      v_s1b, v_lub_b, 'Con el tenant de al lado.pdf', v_txt, 'application/pdf'));
+    if v_err <> 'entro' then
+      raise exception 'R43a con el tenant de al lado escrito a mano, el adjunto no entró («%»): la base tiene que pisarlo con el del trabajo, no rechazarlo ni creerle.', v_err;
+    end if;
+    if not exists (select 1 from adjuntos_trabajo where ruta = v_txt and lubricentro_id = v_demo) then
+      raise exception 'R43a UN ADJUNTO QUEDÓ EN EL TENANT QUE MANDÓ EL NAVEGADOR y no en el de su trabajo.';
+    end if;
+
+    -- Lo que la tabla rechaza por forma (23514), nombrado por su constraint.
+    for r in select * from (values
+        ('el archivo en la carpeta de OTRO trabajo',
+         r43_alta(v_s1b, 'a.pdf', v_demo || '/' || v_s2 || '/' || gen_random_uuid() || '.pdf', 'application/pdf', 1000), 'adjunto_ruta_valida'),
+        ('el archivo en la carpeta de OTRO tenant',
+         r43_alta(v_s1b, 'a.pdf', v_lub_b || '/' || v_s1b || '/' || gen_random_uuid() || '.pdf', 'application/pdf', 1000), 'adjunto_ruta_valida'),
+        ('una ruta que sube de carpeta',
+         r43_alta(v_s1b, 'a.pdf', v_demo || '/' || v_s1b || '/../' || gen_random_uuid() || '.pdf', 'application/pdf', 1000), 'adjunto_ruta_valida'),
+        ('un nombre de archivo que no es un uuid',
+         r43_alta(v_s1b, 'a.pdf', v_demo || '/' || v_s1b || '/diagnostico.pdf', 'application/pdf', 1000), 'adjunto_ruta_valida'),
+        ('la extensión que no es la del formato',
+         r43_alta(v_s1b, 'a.pdf', v_demo || '/' || v_s1b || '/' || gen_random_uuid() || '.png', 'application/pdf', 1000), 'adjunto_ruta_valida'),
+        ('un formato que no es PDF, JPEG ni PNG',
+         r43_alta(v_s1b, 'a.html', v_demo || '/' || v_s1b || '/' || gen_random_uuid() || '.pdf', 'text/html', 1000), 'adjunto_'),
+        ('un archivo vacío',
+         r43_alta(v_s1b, 'a.pdf', v_demo || '/' || v_s1b || '/' || gen_random_uuid() || '.pdf', 'application/pdf', 0), 'adjunto_bytes_validos'),
+        ('un archivo de 2 MB y un byte',
+         r43_alta(v_s1b, 'a.pdf', v_demo || '/' || v_s1b || '/' || gen_random_uuid() || '.pdf', 'application/pdf', 2097153), 'adjunto_bytes_validos'),
+        ('un nombre en blanco',
+         r43_alta(v_s1b, '   ', v_demo || '/' || v_s1b || '/' || gen_random_uuid() || '.pdf', 'application/pdf', 1000), 'adjunto_nombre_valido'),
+        ('un nombre de 121 caracteres',
+         r43_alta(v_s1b, repeat('a', 121), v_demo || '/' || v_s1b || '/' || gen_random_uuid() || '.pdf', 'application/pdf', 1000), 'adjunto_nombre_valido')
+      ) as t(caso, consulta, constraint_esperada)
+    loop
+      v_err := r43_intento(r.consulta);
+      if v_err = 'entro' then
+        raise exception 'R43a ENTRÓ un adjunto con %.', r.caso;
+      end if;
+      if left(v_err, 5) <> '23514' or v_err not like '%' || r.constraint_esperada || '%' then
+        raise exception 'R43a un adjunto con % lo frenó «%» y no el CHECK %.', r.caso, v_err, r.constraint_esperada;
+      end if;
+    end loop;
+
+    -- El borde: exactamente 2 MB entra.
+    v_err := r43_intento(r43_alta(v_s1b, 'Justo dos megas.pdf',
+      v_demo || '/' || v_s1b || '/' || gen_random_uuid() || '.pdf', 'application/pdf', 2097152));
+    if v_err <> 'entro' then
+      raise exception 'R43a un archivo de exactamente 2 MB no entró («%»).', v_err;
+    end if;
+
+    -- A un trabajo del tenant de al lado: no, por donde sea.
+    v_err := r43_intento(r43_alta(v_sb, 'Colado.pdf', v_rb, 'application/pdf', 1000));
+    if v_err = 'entro' then
+      raise exception 'R43a AISLAMIENTO ROTO: un owner le adjuntó un archivo a un trabajo de OTRO lubricentro.';
+    end if;
+    if left(v_err, 5) not in ('42501', '23502') then
+      raise exception 'R43a el adjunto a un trabajo ajeno falló con «%» (esperaba 42501 o 23502).', v_err;
+    end if;
+
+    -- ---------- b · el tope: tres por trabajo ----------
+    v_err := r43_intento(r43_alta(v_s1, 'Foto cárter.jpg', v_r2, 'image/jpeg', 287000));
+    if v_err <> 'entro' then raise exception 'R43b el segundo adjunto no entró («%»).', v_err; end if;
+    v_err := r43_intento(r43_alta(v_s1, 'Informe.png', v_r3, 'image/png', 150000));
+    if v_err <> 'entro' then raise exception 'R43b el tercer adjunto no entró («%»).', v_err; end if;
+    select id into v_a2 from adjuntos_trabajo where ruta = v_r2;
+    select id into v_a3 from adjuntos_trabajo where ruta = v_r3;
+
+    v_err := r43_intento(r43_alta(v_s1, 'El cuarto.pdf', v_carp || gen_random_uuid() || '.pdf', 'application/pdf', 1000));
+    if v_err = 'entro' then
+      raise exception 'R43b EL CUARTO ADJUNTO ENTRÓ. El tope es de 3 por trabajo, y lo hace cumplir un trigger: un CHECK no cuenta filas.';
+    end if;
+    if v_err not like '%tope_adjuntos%' then
+      raise exception 'R43b el cuarto adjunto lo frenó «%» y no tope_adjuntos, que es el error que la pantalla traduce.', v_err;
+    end if;
+    -- El tope es por TRABAJO: el del otro auto recibe el suyo.
+    v_err := r43_intento(r43_alta(v_s2, 'Del otro auto.pdf', v_demo || '/' || v_s2 || '/' || gen_random_uuid() || '.pdf', 'application/pdf', 1000));
+    if v_err <> 'entro' then
+      raise exception 'R43b el tope de un trabajo frenó el adjunto de OTRO trabajo («%»).', v_err;
+    end if;
+    -- Y es para cualquiera: tampoco entra por fuera de la sesión del owner.
+    perform r43_postgres();
+    v_err := r43_intento(r43_alta(v_s1, 'El cuarto, por atrás.pdf', v_carp || gen_random_uuid() || '.pdf', 'application/pdf', 1000));
+    if v_err not like '%tope_adjuntos%' then
+      raise exception 'R43b el cuarto adjunto entró (o falló con otra cosa) fuera de la sesión del owner: «%». El tope no mira el rol.', v_err;
+    end if;
+    -- Al quitar uno, entra otro. Y quitar también funciona en un trabajo fijado.
+    perform r43_como(v_own);
+    delete from adjuntos_trabajo where id = v_a3;
+    get diagnostics v_n = row_count;
+    if v_n <> 1 then
+      raise exception 'R43b el owner no pudo quitar un adjunto de un trabajo fijado (% filas). Quitar un adjunto no edita el cartón.', v_n;
+    end if;
+    v_err := r43_intento(r43_alta(v_s1, 'Informe.png', v_r3, 'image/png', 150000));
+    if v_err <> 'entro' then
+      raise exception 'R43b después de quitar uno, el tercero no volvió a entrar («%»).', v_err;
+    end if;
+    select id into v_a3 from adjuntos_trabajo where ruta = v_r3;
+
+    -- ---------- c · lo único que se edita es «Mostrar al cliente» ----------
+    update adjuntos_trabajo set visible_cliente = true where id = v_a1;
+    get diagnostics v_n = row_count;
+    if v_n <> 1 then
+      raise exception 'R43c el owner no pudo prender «Mostrar al cliente» en un adjunto de un trabajo fijado (% filas).', v_n;
+    end if;
+    for r in select unnest(array[
+        format('update adjuntos_trabajo set nombre = %L where id = %L', 'Otro nombre.pdf', v_a1),
+        format('update adjuntos_trabajo set ruta = %L where id = %L', v_carp || gen_random_uuid() || '.pdf', v_a1),
+        format('update adjuntos_trabajo set mime = %L where id = %L', 'image/png', v_a1),
+        format('update adjuntos_trabajo set bytes = 1 where id = %L', v_a1),
+        format('update adjuntos_trabajo set service_id = %L where id = %L', v_s2, v_a1),
+        format('update adjuntos_trabajo set lubricentro_id = %L where id = %L', v_lub_b, v_a1),
+        format('update adjuntos_trabajo set subido_por = null where id = %L', v_a1),
+        format('update adjuntos_trabajo set created_at = now() where id = %L', v_a1)
+      ]) as consulta
+    loop
+      v_err := r43_intento(r.consulta);
+      if left(v_err, 5) <> '42501' then
+        raise exception 'R43c el owner pudo editar un adjunto, o falló con otra cosa («%»). Consulta: %', v_err, r.consulta;
+      end if;
+    end loop;
+
+    -- ---------- d · el aislamiento ----------
+    perform r43_postgres();
+    insert into adjuntos_trabajo (service_id, nombre, ruta, mime, bytes, visible_cliente)
+    values (v_sb, 'Del vecino.pdf', v_rb, 'application/pdf', 1000, true) returning id into v_ab;
+    -- Los archivos, en el bucket: dos con fila (uno de cada tenant) y uno
+    -- del demo que se subió y nunca se registró.
+    insert into storage.objects (bucket_id, name) values ('adjuntos', v_r1);
+    insert into storage.objects (bucket_id, name) values ('adjuntos', v_rb);
+    insert into storage.objects (bucket_id, name) values ('adjuntos', v_carp || 'r43-sin-registrar.pdf');
+
+    perform r43_como(v_own);
+    select count(*) filter (where lubricentro_id = v_demo),
+           count(*) filter (where lubricentro_id = v_lub_b)
+      into v_n, v_m from adjuntos_trabajo;
+    if v_n < 3 or v_m <> 0 then
+      raise exception 'R43d AISLAMIENTO ROTO: el owner lee % adjunto(s) propios y % del tenant de al lado (tenía que ver los suyos y cero ajenos).', v_n, v_m;
+    end if;
+    update adjuntos_trabajo set visible_cliente = false where id = v_ab;
+    get diagnostics v_n = row_count;
+    delete from adjuntos_trabajo where id = v_ab;
+    get diagnostics v_m = row_count;
+    if v_n <> 0 or v_m <> 0 then
+      raise exception 'R43d AISLAMIENTO ROTO: el owner tocó un adjunto de OTRO lubricentro (% actualizado, % borrado).', v_n, v_m;
+    end if;
+
+    -- El bucket: ve su carpeta y no la ajena.
+    select count(*) filter (where name = v_r1), count(*) filter (where name = v_rb)
+      into v_n, v_m from storage.objects where bucket_id = 'adjuntos';
+    if v_n <> 1 or v_m <> 0 then
+      raise exception 'R43d EN EL BUCKET adjuntos EL OWNER VE % ARCHIVO(S) DE SU CARPETA Y % DE LA AJENA (tenían que ser 1 y 0). La URL firmada del panel se arma con su sesión: sin su carpeta no abre sus archivos, y con la de otro abre los del taller de enfrente.', v_n, v_m;
+    end if;
+    -- Sube a su carpeta, y a la ajena no.
+    v_err := r43_intento(format('insert into storage.objects (bucket_id, name) values (''adjuntos'', %L)', v_carp || 'r43-subida.pdf'));
+    if v_err <> 'entro' then
+      raise exception 'R43d el owner no puede subir a la carpeta de su propio tenant («%»): la URL firmada de subida se pide con su sesión.', v_err;
+    end if;
+    v_err := r43_intento(format('insert into storage.objects (bucket_id, name) values (''adjuntos'', %L)', v_lub_b || '/' || v_sb || '/r43-colado.pdf'));
+    if left(v_err, 5) <> '42501' then
+      raise exception 'R43d AISLAMIENTO ROTO: el owner subió (o falló con otra cosa) a la carpeta de OTRO lubricentro: «%».', v_err;
+    end if;
+    -- Borra de su carpeta lo que NO está registrado, y nada más: un
+    -- archivo con fila no se borra por afuera (dejaría un «Ver» roto), y el
+    -- de otro tenant no existe para él.
+    perform set_config('storage.allow_delete_query', 'true', true);
+    delete from storage.objects where bucket_id = 'adjuntos' and name = v_carp || 'r43-sin-registrar.pdf';
+    get diagnostics v_n = row_count;
+    if v_n <> 1 then
+      raise exception 'R43d el owner no pudo borrar de su carpeta un archivo sin registrar (% filas): la subida que no pasa la validación quedaría para siempre.', v_n;
+    end if;
+    delete from storage.objects where bucket_id = 'adjuntos' and name = v_r1;
+    get diagnostics v_n = row_count;
+    delete from storage.objects where bucket_id = 'adjuntos' and name = v_rb;
+    get diagnostics v_m = row_count;
+    if v_n <> 0 or v_m <> 0 then
+      raise exception 'R43d el owner borró del bucket un archivo REGISTRADO (%) o uno de OTRO tenant (%). El archivo se va cuando se quita el adjunto, no por afuera.', v_n, v_m;
+    end if;
+    perform set_config('storage.allow_delete_query', 'false', true);
+
+    -- anon: ni la tabla, ni el bucket, ni la función.
+    perform r43_anon();
+    v_err := r43_intento('select count(*) from adjuntos_trabajo');
+    if left(v_err, 5) <> '42501' then
+      raise exception 'R43d `anon` LEE adjuntos_trabajo (o falla con otra cosa): «%».', v_err;
+    end if;
+    select count(*) into v_n from storage.objects where bucket_id = 'adjuntos';
+    if v_n <> 0 then
+      raise exception 'R43d `anon` VE % ARCHIVO(S) DEL BUCKET adjuntos. Uno de ellos está marcado visible: aun así, anon no lee el bucket — llega por la ruta, con una URL de 60 segundos.', v_n;
+    end if;
+    v_err := r43_intento(format('insert into storage.objects (bucket_id, name) values (''adjuntos'', %L)', v_carp || 'r43-anon.pdf'));
+    if left(v_err, 5) <> '42501' then
+      raise exception 'R43d `anon` subió al bucket adjuntos (o falló con otra cosa): «%».', v_err;
+    end if;
+    v_err := r43_intento(format('select adjunto_publico(%L, ''demo'', ''AB143CD'')', v_a1));
+    if left(v_err, 5) <> '42501' then
+      raise exception 'R43d `anon` ejecutó adjunto_publico() (o falló con otra cosa): «%».', v_err;
+    end if;
+    perform r43_como(v_own);
+    v_err := r43_intento(format('select adjunto_publico(%L, ''demo'', ''AB143CD'')', v_a1));
+    if left(v_err, 5) <> '42501' then
+      raise exception 'R43d un owner ejecutó adjunto_publico() (o falló con otra cosa): «%».', v_err;
+    end if;
+    v_err := r43_intento('select * from adjuntos_huerfanos()');
+    if left(v_err, 5) <> '42501' then
+      raise exception 'R43d un owner ejecutó adjuntos_huerfanos(), que lista archivos de todos los tenants: «%».', v_err;
+    end if;
+
+    -- ---------- e · la puerta del cliente ----------
+    perform r43_postgres();
+    -- v_a1 está visible (c); v_a2 y v_a3, ocultos; v_ab (el vecino), visible.
+    if adjunto_publico(v_a1, 'demo', 'ab 143 cd') is distinct from v_r1 then
+      raise exception 'R43e adjunto_publico() no devolvió la ruta de un adjunto visible, pedido con la patente como la escribe la gente («ab 143 cd»): devolvió «%».', adjunto_publico(v_a1, 'demo', 'ab 143 cd');
+    end if;
+    if adjunto_publico(v_a2, 'demo', 'AB143CD') is not null then
+      raise exception 'R43e adjunto_publico() ENTREGÓ UN ADJUNTO OCULTO. «Mostrar al cliente» apagado quiere decir que solo lo ve el taller.';
+    end if;
+    if adjunto_publico(v_a1, 'demo', 'AB243CD') is not null then
+      raise exception 'R43e adjunto_publico() entregó un adjunto pedido con la patente de OTRO vehículo del mismo taller.';
+    end if;
+    if adjunto_publico(v_a1, 'adjuntos-r43', 'AB143CD') is not null then
+      raise exception 'R43e adjunto_publico() entregó un adjunto del demo pedido con el slug de OTRO tenant que tiene la misma patente. La patente no alcanza: el slug decide.';
+    end if;
+    if adjunto_publico(v_ab, 'demo', 'AB143CD') is not null then
+      raise exception 'R43e adjunto_publico() entregó el adjunto del tenant de al lado pedido con el slug del demo.';
+    end if;
+    if adjunto_publico(v_ab, 'adjuntos-r43', 'AB143CD') is distinct from v_rb then
+      raise exception 'R43e adjunto_publico() no entregó el adjunto visible del vecino pedido con SU slug.';
+    end if;
+    if adjunto_publico(gen_random_uuid(), 'demo', 'AB143CD') is not null
+       or adjunto_publico(v_a1, 'no-existe', 'AB143CD') is not null
+       or adjunto_publico(v_a1, 'demo', '') is not null
+       or adjunto_publico(null, null, null) is not null then
+      raise exception 'R43e adjunto_publico() devolvió algo para un id que no existe, un slug que no existe, una patente vacía o todo en null.';
+    end if;
+    -- Un trabajo anulado no está en el historial del cliente: su adjunto tampoco.
+    update services set anulado = true where id = v_s1;
+    if adjunto_publico(v_a1, 'demo', 'AB143CD') is not null then
+      raise exception 'R43e adjunto_publico() entregó el adjunto de un trabajo ANULADO, que no aparece en el historial del cliente.';
+    end if;
+    update services set anulado = false where id = v_s1;
+    -- Y al apagarlo, deja de salir.
+    update adjuntos_trabajo set visible_cliente = false where id = v_a1;
+    if adjunto_publico(v_a1, 'demo', 'AB143CD') is not null then
+      raise exception 'R43e adjunto_publico() siguió entregando un adjunto después de apagarle «Mostrar al cliente».';
+    end if;
+    update adjuntos_trabajo set visible_cliente = true where id = v_a1;
+
+    -- ---------- f · get_carton ----------
+    -- Orden estable: a1 primero, a2 después (nacieron en la misma transacción).
+    update adjuntos_trabajo set created_at = now() - interval '2 hours' where id = v_a1;
+    v_json := get_carton('demo', 'AB143CD');
+    select e into v_e1  from jsonb_array_elements(v_json -> 'services') e where (e ->> 'fecha')::date = v_hoy - 30;
+    select e into v_e1b from jsonb_array_elements(v_json -> 'services') e where (e ->> 'fecha')::date = v_hoy;
+    if v_e1 is null or v_e1b is null then
+      raise exception 'R43f SIN PISO: get_carton no devolvió los dos trabajos del auto de prueba.';
+    end if;
+    if not (v_e1 ? 'adjuntos') or not (v_e1b ? 'adjuntos') then
+      raise exception 'R43f get_carton no trae la clave «adjuntos» en cada entrada: el cliente no tiene de dónde ver el diagnóstico.';
+    end if;
+    if not (v_e1 ? 'prox_caja_km') then
+      raise exception 'R43f get_carton PERDIÓ «prox_caja_km». Se redefinió partiendo de una versión vieja: la última vigente es la del service de caja (20261004120100), y de ahí se parte.';
+    end if;
+    select array_agg(a ->> 'id' order by ord) into v_ids
+    from jsonb_array_elements(v_e1 -> 'adjuntos') with ordinality as t(a, ord);
+    if v_ids is distinct from array[v_a1::text] then
+      raise exception 'R43f get_carton lista «%» en el trabajo de prueba (esperaba solo el adjunto visible, %). Los ocultos no viajan: ni el nombre.', v_ids, v_a1;
+    end if;
+    select string_agg(k, ', ' order by k) into v_txt
+    from jsonb_object_keys((v_e1 -> 'adjuntos') -> 0) k;
+    if v_txt is distinct from 'creado, id, mime, nombre' then
+      raise exception 'R43f cada adjunto de get_carton trae «%» (esperaba creado, id, mime, nombre). La ruta del archivo, su peso y quién lo subió no son del cliente.', v_txt;
+    end if;
+    if (v_e1 -> 'adjuntos' -> 0 ->> 'nombre') <> 'Escaneo de caja.pdf'
+       or (v_e1 -> 'adjuntos' -> 0 ->> 'mime') <> 'application/pdf' then
+      raise exception 'R43f el adjunto de get_carton no trae su nombre y su formato: %', v_e1 -> 'adjuntos' -> 0;
+    end if;
+    if jsonb_array_length(v_e1b -> 'adjuntos') <> 0 then
+      raise exception 'R43f get_carton lista % adjunto(s) en un trabajo que solo tiene adjuntos ocultos (esperaba []).', jsonb_array_length(v_e1b -> 'adjuntos');
+    end if;
+    if v_json::text like '%' || split_part(v_r1, '/', 3) || '%' or v_json::text like '%' || v_s1::text || '%' then
+      raise exception 'R43f get_carton deja ver la ruta del archivo o el id del trabajo. Al cliente le llega el id del adjunto y nada más: la URL se firma en la ruta, por 60 segundos.';
+    end if;
+    -- Con dos visibles, en el orden en que se subieron.
+    update adjuntos_trabajo set visible_cliente = true where id = v_a2;
+    v_json := get_carton('demo', 'AB143CD');
+    select e into v_e1 from jsonb_array_elements(v_json -> 'services') e where (e ->> 'fecha')::date = v_hoy - 30;
+    select array_agg(a ->> 'id' order by ord) into v_ids
+    from jsonb_array_elements(v_e1 -> 'adjuntos') with ordinality as t(a, ord);
+    if v_ids is distinct from array[v_a1::text, v_a2::text] then
+      raise exception 'R43f con dos adjuntos visibles get_carton lista «%» (esperaba los dos, en el orden en que se subieron).', v_ids;
+    end if;
+    -- El del tenant de al lado, por su slug: el suyo y solo el suyo.
+    v_json := get_carton('adjuntos-r43', 'AB143CD');
+    select array_agg(a ->> 'id') into v_ids
+    from jsonb_array_elements(v_json -> 'services') e, jsonb_array_elements(e -> 'adjuntos') a;
+    if v_ids is distinct from array[v_ab::text] then
+      raise exception 'R43f AISLAMIENTO ROTO: get_carton del tenant de al lado, con la misma patente, lista «%» (esperaba solo su adjunto).', v_ids;
+    end if;
+
+    -- ---------- g · los huérfanos ----------
+    insert into storage.objects (bucket_id, name, created_at)
+    values ('adjuntos', v_carp || 'r43-huerfano-viejo.pdf', now() - interval '2 days');
+    insert into storage.objects (bucket_id, name, created_at)
+    values ('adjuntos', v_carp || 'r43-recien-subido.pdf', now());
+    insert into storage.objects (bucket_id, name, created_at)
+    values ('calcos', v_demo || '/r43-otro-bucket.png', now() - interval '9 days');
+    update storage.objects set created_at = now() - interval '9 days' where bucket_id = 'adjuntos' and name = v_r1;
+    select array_agg(h) into v_arr from adjuntos_huerfanos() h;
+    if v_arr is null or not (v_carp || 'r43-huerfano-viejo.pdf' = any(v_arr)) then
+      raise exception 'R43g adjuntos_huerfanos() no lista un archivo sin fila de hace dos días: nadie lo va a barrer y queda en el bucket para siempre.';
+    end if;
+    if v_carp || 'r43-recien-subido.pdf' = any(v_arr) then
+      raise exception 'R43g adjuntos_huerfanos() lista un archivo recién subido. Entre la subida y el registro pasan unos segundos: barrerlo ahí le borra el archivo a quien está adjuntando.';
+    end if;
+    if v_r1 = any(v_arr) then
+      raise exception 'R43g adjuntos_huerfanos() LISTA UN ARCHIVO QUE TIENE SU FILA: el cierre diario le borraría el diagnóstico a un trabajo.';
+    end if;
+    if v_demo || '/r43-otro-bucket.png' = any(v_arr) then
+      raise exception 'R43g adjuntos_huerfanos() lista archivos de OTRO bucket: el cierre diario borraría los diseños de los calcos.';
+    end if;
+    -- Al quitar el adjunto, su archivo pasa a ser huérfano (el viejo: ya).
+    delete from adjuntos_trabajo where id = v_a1;
+    select array_agg(h) into v_arr from adjuntos_huerfanos() h;
+    if not (v_r1 = any(v_arr)) then
+      raise exception 'R43g después de quitar el adjunto, su archivo (de hace nueve días) no figura como huérfano.';
+    end if;
+
+    -- Todo lo escrito en este bloque se deshace acá. Cualquier otra
+    -- excepción de arriba NO se atrapa: sube y pone el reset en rojo.
+    raise exception 'rollback_r43' using errcode = 'P0043';
+  exception
+    when sqlstate 'P0043' then
+      execute 'reset role';
+      perform set_config('request.jwt.claims', '{}', true);
+      perform set_config('storage.allow_delete_query', 'false', true);
+  end;
+
+  if exists (select 1 from vehiculos where patente_normalizada = 'AB143CD')
+     or exists (select 1 from clientes where email = 'r43@ejemplo.com')
+     or exists (select 1 from lubricentros where slug = 'adjuntos-r43')
+     or exists (select 1 from storage.objects where name like '%r43-%') then
+    raise exception 'R43 SIN PISO: la subtransacción no deshizo los fixtures.';
+  end if;
+end $$;
+
+drop function r43_alta(uuid, text, text, text, integer);
+drop function r43_intento(text);
+drop function r43_postgres();
+drop function r43_anon();
+drop function r43_como(uuid);
+-- <<< R43
+
+
+-- ============================================================
+-- R44 · EL SLUG ENTRA EN EL QR DEL CALCO (20261004200000)
+--
+-- La dirección del QR es fidellimotors.app/<slug>. Un tenant entró con un
+-- slug de 34 caracteres y el QR no se pudo hacer: con más de 18 pierde
+-- resistencia (se avisa en el alta y en Editar) y con más de 32 no sale.
+-- El tope lo hace cumplir la tabla, y slug_estado() lo dice antes de
+-- escribir.
+-- ============================================================
+
+-- >>> R44
+do $$
+declare
+  v_super uuid;
+  v_id    uuid;
+  v_txt   text;
+  v_32    text := 'r44-' || repeat('a', 28);
+  v_33    text := 'r44-' || repeat('a', 29);
+begin
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  if v_super is null then
+    raise exception 'R44 SIN PISO: falta el superadmin del seed.';
+  end if;
+  if char_length(v_32) <> 32 or char_length(v_33) <> 33 then
+    raise exception 'R44 SIN PISO: los slugs de prueba no miden 32 y 33.';
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.lubricentros'::regclass and conname = 'slug_largo_qr' and contype = 'c') then
+    raise exception 'R44 falta el CHECK slug_largo_qr en lubricentros: un slug de más de 32 caracteres entra, y su QR no se puede hacer.';
+  end if;
+  select string_agg(slug, ', ') into v_txt from lubricentros where char_length(slug) > 32;
+  if v_txt is not null then
+    raise exception 'R44 hay lubricentros con un slug de más de 32 caracteres: %', v_txt;
+  end if;
+
+  begin
+    -- 32 entra.
+    insert into lubricentros (nombre, slug) values ('R44 de 32', v_32) returning id into v_id;
+
+    -- 33 no, y lo frena ESTE check (el de 3 a 60 lo deja pasar).
+    begin
+      insert into lubricentros (nombre, slug) values ('R44 de 33', v_33);
+      raise exception 'R44 ENTRÓ UN SLUG DE 33 CARACTERES por INSERT.';
+    exception when check_violation then
+      get stacked diagnostics v_txt = constraint_name;
+      if v_txt <> 'slug_largo_qr' then
+        raise exception 'R44 el slug de 33 caracteres lo frenó «%» y no slug_largo_qr.', v_txt;
+      end if;
+    end;
+
+    -- Por UPDATE tampoco.
+    begin
+      update lubricentros set slug = v_33 where id = v_id;
+      raise exception 'R44 UN SLUG PASÓ A 33 CARACTERES por UPDATE.';
+    exception when check_violation then null;
+    end;
+
+    -- slug_estado() dice lo mismo que la tabla, antes de escribir.
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    if slug_estado(v_33) <> 'invalido' then
+      raise exception 'R44 slug_estado() contesta «%» para un slug de 33 caracteres (esperaba invalido): el alta diría «Disponible» y fallaría al crear.', slug_estado(v_33);
+    end if;
+    if slug_estado('r44-' || repeat('b', 28)) <> 'disponible' then
+      raise exception 'R44 slug_estado() contesta «%» para un slug libre de 32 caracteres (esperaba disponible).', slug_estado('r44-' || repeat('b', 28));
+    end if;
+    if slug_estado(v_32) <> 'ocupado' then
+      raise exception 'R44 slug_estado() contesta «%» para un slug de 32 caracteres que ya existe (esperaba ocupado).', slug_estado(v_32);
+    end if;
+
+    raise exception 'rollback_r44' using errcode = 'P0044';
+  exception
+    when sqlstate 'P0044' then
+      execute 'reset role';
+      perform set_config('request.jwt.claims', '{}', true);
+  end;
+
+  if exists (select 1 from lubricentros where slug like 'r44-%') then
+    raise exception 'R44 SIN PISO: la subtransacción no deshizo los fixtures.';
+  end if;
+end $$;
+-- <<< R44

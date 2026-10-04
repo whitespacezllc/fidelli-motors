@@ -212,6 +212,16 @@ export default async function PaginaGuardado({
         >
           + Nuevo trabajo
         </Link>
+        {/* El PDF del escaneo o la foto del diagnóstico se suman DESPUÉS de
+            guardar, desde el detalle: adentro de la carga no, que los 90
+            segundos del mecánico no se tocan. Lleva a la sección Adjuntos
+            ya a la vista. */}
+        <Link
+          href={`/panel/services/${service.id}?adjuntar=1#adjuntos`}
+          className={`${clasesBoton("secundario", "md")} w-full`}
+        >
+          Adjuntar el diagnóstico
+        </Link>
         <div className="flex gap-2.5">
           <Link
             href={`/panel/clientes`}

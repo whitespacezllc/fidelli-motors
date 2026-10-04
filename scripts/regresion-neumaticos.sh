@@ -18,9 +18,9 @@ DB="docker exec -i supabase_db_fidelli-motors psql -U postgres -d postgres -X"
 V=supabase/verificaciones.sql
 M=supabase/migrations/20260912100100_neumaticos_retornos.sql
 # get_carton se redefinió después (la clase del vehículo, el plazo de
-# edición por tipo, la suspensión por reloj, el próximo de caja): la
-# versión vigente vive acá y es la que hay que romper.
-M_CARTON=supabase/migrations/20261004120100_service_caja.sql
+# edición por tipo, la suspensión por reloj, el próximo de caja, los
+# adjuntos): la versión vigente vive acá y es la que hay que romper.
+M_CARTON=supabase/migrations/20261004200000_adjuntos_trabajo.sql
 # contactos_por_hacer, sembrar_templates y resumen_inicio también se
 # redefinieron ahí (el badge suma la cuarta fuente, la siembra trae la
 # cuarta plantilla y el Inicio cuenta las cajas del mes): las tres roturas

@@ -25,6 +25,11 @@ import { sumarDias } from "@/lib/fidelli/plan";
 //       detrás, y cerrar_dia() solo está grantada a service_role.
 //   4 · Y vence los pedidos de calcos que llevan más de siete días sin
 //       pagar (vencer_encargos_calcos, también solo de service_role).
+//   5 · Y barre los archivos del bucket `adjuntos` que quedaron sin fila
+//       (adjuntos_huerfanos, también solo de service_role): la subida que
+//       no pasó la validación, el adjunto que se quitó y cuyo archivo no
+//       se pudo borrar, los de un trabajo que ya no existe. Por la API de
+//       Storage: desde SQL no se pueden borrar.
 // ============================================================
 
 export const dynamic = "force-dynamic";
@@ -98,6 +103,27 @@ export async function GET(request: Request) {
     console.error(`[fidelli/cierre-diario] no se pudieron vencer los pedidos de calcos: ${errorCalcos.message}`);
   }
 
+  // ---------- Los adjuntos sin fila se barren ----------
+  // Igual que lo de arriba: antes del tipo de cambio, idempotente, y un
+  // error acá no corta el cierre. La lista ya excluye lo subido en el
+  // último día (la subida en vuelo). Si quedaran más de 500, siguen mañana.
+  let adjuntosBarridos: number | null = 0;
+  const { data: huerfanos, error: errorHuerfanos } = await admin.rpc("adjuntos_huerfanos");
+  if (errorHuerfanos) {
+    adjuntosBarridos = null;
+    console.error(`[fidelli/cierre-diario] no se pudieron listar los adjuntos sin fila: ${errorHuerfanos.message}`);
+  } else if (huerfanos && huerfanos.length > 0) {
+    const { data: borrados, error: errorBarrido } = await admin.storage
+      .from("adjuntos")
+      .remove(huerfanos);
+    if (errorBarrido) {
+      adjuntosBarridos = null;
+      console.error(`[fidelli/cierre-diario] no se pudieron barrer los adjuntos sin fila: ${errorBarrido.message}`);
+    } else {
+      adjuntosBarridos = borrados?.length ?? 0;
+    }
+  }
+
   // El tipo de cambio: el del día, o el último conocido como 'repetido'.
   let tc = await cotizacionOficial();
   if (!tc) {
@@ -139,7 +165,7 @@ export async function GET(request: Request) {
   ]);
 
   console.log(
-    `[fidelli/cierre-diario] ${fecha}: ${resultado} · tc venta ${tc.venta} (${tc.fuente}) · ${count ?? 0} tenants · ${calcosVencidos ?? "?"} pedidos de calcos vencidos`,
+    `[fidelli/cierre-diario] ${fecha}: ${resultado} · tc venta ${tc.venta} (${tc.fuente}) · ${count ?? 0} tenants · ${calcosVencidos ?? "?"} pedidos de calcos vencidos · ${adjuntosBarridos ?? "?"} adjuntos sin fila barridos`,
   );
 
   return NextResponse.json({
@@ -148,6 +174,7 @@ export async function GET(request: Request) {
     tipo_cambio: tc,
     tenants: count ?? 0,
     calcos_vencidos: errorCalcos ? null : (calcosVencidos ?? 0),
+    adjuntos_barridos: adjuntosBarridos,
     snapshot: dia,
   });
 }

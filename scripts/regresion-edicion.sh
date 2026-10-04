@@ -34,10 +34,11 @@ cd "$(dirname "$0")/.."
 DB="docker exec -i supabase_db_fidelli-motors psql -U postgres -d postgres -X"
 V=supabase/verificaciones.sql
 M=supabase/migrations/20260925110000_edicion_mecanica_7_dias.sql
-# get_carton se redefinió después (la suspensión por reloj, 20260926200000,
-# y el próximo de caja, 20261004120100): la versión vigente vive ahí y es
-# la que hay que romper. El sello `@fijado` viaja intacto en esa copia.
-M_CARTON=supabase/migrations/20261004120100_service_caja.sql
+# get_carton se redefinió después (la suspensión por reloj, 20260926200000;
+# el próximo de caja, 20261004120100; y los adjuntos, 20261004200000): la
+# versión vigente vive en el último y es la que hay que romper. El sello
+# `@fijado` viaja intacto en esa copia.
+M_CARTON=supabase/migrations/20261004200000_adjuntos_trabajo.sql
 # plazo_edicion() también se redefinió ahí, para darle su plazo al cuarto
 # tipo (la caja, 24 horas). Las policies siguen en $M.
 M_PLAZO=supabase/migrations/20261004120100_service_caja.sql

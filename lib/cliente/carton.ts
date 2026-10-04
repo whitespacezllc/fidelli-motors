@@ -52,6 +52,17 @@ export type RuedaCarton = {
   presionPsi: number | null;
 };
 
+/** Un adjunto del trabajo que el taller decidió mostrarle al cliente (el
+ *  PDF del escaneo, una foto del diagnóstico). Solo lo justo para escribir
+ *  la línea y armar el enlace: la ruta del archivo no viaja nunca. */
+export type AdjuntoPublico = {
+  id: string;
+  nombre: string;
+  mime: string;
+  /** Cuándo se subió. */
+  creado: string;
+};
+
 export type ServiceCarton = {
   tipo: TipoTrabajo;
   /** Qué se hizo, en mecánica. null en un service: el cartón se describe solo. */
@@ -79,6 +90,9 @@ export type ServiceCarton = {
    *  lo gatea por config_neumaticos.beneficio_km). */
   beneficioHastaKm: number | null;
   beneficioHastaFecha: string | null;
+  /** Los adjuntos marcados «Mostrar al cliente», en el orden en que se
+   *  subieron. Vacío casi siempre: get_carton no manda los ocultos. */
+  adjuntos: AdjuntoPublico[];
 };
 
 export type NotaPublica = {
@@ -189,6 +203,7 @@ type CartonJson = {
     observaciones: string | null;
     fijado: boolean;
     items: ItemCarton[] | null;
+    adjuntos?: { id: string; nombre: string; mime: string; creado: string }[] | null;
     ruedas?:
       | {
           posicion: PosicionRueda;
@@ -316,6 +331,13 @@ export async function obtenerCarton(
         alineacion: s.alineacion ?? null,
         beneficioHastaKm: s.beneficio_hasta_km ?? null,
         beneficioHastaFecha: s.beneficio_hasta_fecha ?? null,
+        // Un JSON de antes de la migración no trae la clave: sin adjuntos.
+        adjuntos: (s.adjuntos ?? []).map((a) => ({
+          id: a.id,
+          nombre: a.nombre,
+          mime: a.mime,
+          creado: a.creado,
+        })),
         // numeric(3,1) viaja como string en el jsonb de Postgres: se
         // convierte una sola vez, acá, para que ninguna vista tenga que
         // acordarse de hacerlo.

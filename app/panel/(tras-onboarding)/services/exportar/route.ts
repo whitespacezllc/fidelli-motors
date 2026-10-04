@@ -254,7 +254,8 @@ export async function GET(request: NextRequest) {
          service_items(item_tipo, detalle, cambiado, cantidad, productos(nombre, marca, unidad)),
          service_ruedas(posicion, colocada, rotada, balanceada, reparada,
                         marca, medida, dot, profundidad_mm,
-                        productos(nombre, marca, unidad))`,
+                        productos(nombre, marca, unidad)),
+         adjuntos_trabajo(count)`,
       );
       return aplicarFiltrosTrabajos(consulta, filtros)
         .order("fecha", { ascending: false })
@@ -311,6 +312,9 @@ export async function GET(request: NextRequest) {
         // aceite queda vacío en una caja, y el de caja en todo lo demás.
         numero(t.prox_service_km),
         ...(conCaja ? [numero(t.prox_caja_km)] : []),
+        // Cuántos archivos tiene adjuntos el trabajo (el PDF del escaneo,
+        // una foto). El número, siempre: 0 también es un dato.
+        numero(t.adjuntos_trabajo[0]?.count ?? 0),
         texto(t.usuarios?.nombre),
         siNo(t.anulado),
         texto(t.id),
@@ -389,6 +393,7 @@ export async function GET(request: NextRequest) {
           "Observaciones",
           "Próximo service (km)",
           ...(conCaja ? ["Próx. caja"] : []),
+          "Adjuntos",
           "Cargado por",
           "Anulado",
           "ID de trabajo",

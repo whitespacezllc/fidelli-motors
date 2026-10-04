@@ -225,7 +225,8 @@ function HojaCarton({
   pie: { clave: string; valor: string };
   /** La letra chica de «✓ se cambió · OK se revisó». */
   conLeyenda: boolean;
-  /** Para encontrar el papel desde afuera (pruebas y capturas). */
+  /** Para encontrar el papel desde afuera (pruebas y capturas): el tipo
+   *  de trabajo. Sin nombre es el cartón de aceite, «service». */
   nombrePapel?: string;
 }) {
   const e = ESCALAS[escala];
@@ -244,7 +245,7 @@ function HojaCarton({
   return (
     <div
       style={estilo}
-      data-papel={nombrePapel}
+      data-papel={nombrePapel ?? "service"}
       className={`rounded-t-[44px] rounded-b-lg border border-line bg-base ${e.caja} shadow-md`}
     >
       {/* El troquel del cartón que colgaba del parasol */}
@@ -534,6 +535,7 @@ export function CartonPapelMecanica({
   return (
     <div
       style={estilo}
+      data-papel="mecanica"
       className={`rounded-t-[44px] rounded-b-lg border border-line bg-base ${e.caja} shadow-md`}
     >
       <div className="mx-auto mb-3.5 size-11 rounded-full border border-line bg-surface" />
@@ -698,6 +700,7 @@ export function CartonPapelNeumaticos({
   return (
     <div
       style={estilo}
+      data-papel="neumaticos"
       className={`rounded-t-[44px] rounded-b-lg border border-line bg-base ${e.caja} shadow-md`}
     >
       <div className="mx-auto mb-3.5 size-11 rounded-full border border-line bg-surface" />

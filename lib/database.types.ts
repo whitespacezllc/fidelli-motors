@@ -73,6 +73,88 @@ export type Database = {
           },
         ]
       }
+      adjuntos_trabajo: {
+        Row: {
+          bytes: number
+          created_at: string
+          id: string
+          lubricentro_id: string
+          mime: string
+          nombre: string
+          ruta: string
+          service_id: string
+          subido_por: string | null
+          visible_cliente: boolean
+        }
+        Insert: {
+          bytes: number
+          created_at?: string
+          id?: string
+          lubricentro_id: string
+          mime: string
+          nombre: string
+          ruta: string
+          service_id: string
+          subido_por?: string | null
+          visible_cliente?: boolean
+        }
+        Update: {
+          bytes?: number
+          created_at?: string
+          id?: string
+          lubricentro_id?: string
+          mime?: string
+          nombre?: string
+          ruta?: string
+          service_id?: string
+          subido_por?: string | null
+          visible_cliente?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "adjuntos_trabajo_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "adjuntos_trabajo_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "adjuntos_trabajo_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_caja"
+            referencedColumns: ["ultimo_service_id"]
+          },
+          {
+            foreignKeyName: "adjuntos_trabajo_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_neumaticos"
+            referencedColumns: ["ultimo_service_id"]
+          },
+          {
+            foreignKeyName: "adjuntos_trabajo_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_service"
+            referencedColumns: ["ultimo_service_id"]
+          },
+          {
+            foreignKeyName: "adjuntos_trabajo_subido_por_fkey"
+            columns: ["subido_por"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cambios_override_plan: {
         Row: {
           cambiado_por: string
@@ -3377,6 +3459,11 @@ export type Database = {
         }
         Returns: undefined
       }
+      adjunto_publico: {
+        Args: { p_id: string; p_patente: string; p_slug: string }
+        Returns: string
+      }
+      adjuntos_huerfanos: { Args: never; Returns: string[] }
       alias_confirmado_por_cresium: { Args: never; Returns: boolean }
       alias_estado: { Args: { p_alias: string }; Returns: string }
       alias_formato_valido: { Args: { p_alias: string }; Returns: boolean }
