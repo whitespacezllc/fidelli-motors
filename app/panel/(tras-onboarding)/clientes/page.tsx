@@ -20,7 +20,6 @@ export default async function PaginaClientes({
 }) {
   const { q } = await searchParams;
   const supabase = await createClient();
-  const suspendido = await panelSuspendido();
 
   // El filtro es compartido con el export a Excel: lo que se ve filtrado
   // es exactamente lo que se exporta.
@@ -36,7 +35,9 @@ export default async function PaginaClientes({
 
   if (filtros) consulta = consulta.or(filtros);
 
-  const { data } = await consulta;
+  // Si la cuenta está suspendida y la lista no dependen una de la otra: van
+  // en el mismo viaje.
+  const [suspendido, { data }] = await Promise.all([panelSuspendido(), consulta]);
 
   // Los tipos generados dan todas las columnas de una vista como nullable:
   // Postgres no puede probar NOT NULL a través de un group by. Se acomodan

@@ -57,21 +57,30 @@ export default async function FichaCliente({
   // ficha abre «Editar datos» sola, que es a lo que vino.
   const { editar } = await searchParams;
   const supabase = await createClient();
-  const sesion = await obtenerSesion();
-  const puedePendientes = featureHabilitada(sesion, "pendientes");
-  const puedePresupuestos = featureHabilitada(sesion, "presupuestos");
 
   // Dos consultas para dos conjuntos distintos, ninguna con N+1: los datos
   // del cliente y sus vehículos, cada una con sus agregados ya resueltos en
   // Postgres por su vista. Si el id no existe, o es de otro lubricentro (RLS
   // lo filtra), o ni siquiera es un uuid, se cae en "no encontrado".
-  const { data: cliente } = await supabase
-    .from("vista_clientes")
-    .select(
-      "id, nombre, telefono, email, cuit, created_at, cantidad_vehiculos, ultimo_service_fecha, ultima_visita_fecha",
-    )
-    .eq("id", id)
-    .maybeSingle();
+  // Los vehículos se piden por el id de la URL, que es el del cliente: así
+  // van en el MISMO viaje que el cliente y que la sesión, y no detrás.
+  const [sesion, { data: cliente }, { data: filasVehiculos }] = await Promise.all([
+    obtenerSesion(),
+    supabase
+      .from("vista_clientes")
+      .select(
+        "id, nombre, telefono, email, cuit, created_at, cantidad_vehiculos, ultimo_service_fecha, ultima_visita_fecha",
+      )
+      .eq("id", id)
+      .maybeSingle(),
+    supabase
+      .from("vista_vehiculos")
+      .select("id, patente, marca, modelo, anio, clase, cantidad_trabajos, ultimo_service_fecha, ultima_visita_fecha")
+      .eq("cliente_id", id)
+      .order("created_at"),
+  ]);
+  const puedePendientes = featureHabilitada(sesion, "pendientes");
+  const puedePresupuestos = featureHabilitada(sesion, "presupuestos");
 
   // Las columnas de una vista llegan tipadas como nullable (Postgres no puede
   // probar NOT NULL a través de un group by): con este chequeo quedan
@@ -88,12 +97,6 @@ export default async function FichaCliente({
       </EstadoVacio>
     );
   }
-
-  const { data: filasVehiculos } = await supabase
-    .from("vista_vehiculos")
-    .select("id, patente, marca, modelo, anio, clase, cantidad_trabajos, ultimo_service_fecha, ultima_visita_fecha")
-    .eq("cliente_id", cliente.id)
-    .order("created_at");
 
   // Igual que con vista_clientes: las columnas de una vista llegan nullable
   // y se acomodan acá, en el borde, en vez de repartir "!" por los componentes.
@@ -115,39 +118,32 @@ export default async function FichaCliente({
       : [],
   );
 
-  // El historial de todos los vehículos del cliente en UNA consulta (sin
-  // N+1); se agrupa por vehículo en memoria. Un cliente tiene pocos autos
-  // y pocos services — esto no necesita paginado.
-  const { data: filasServices } = await supabase
-    .from("services")
-    .select(
-      `id, tipo, trabajo_descripcion, fecha, created_at, kilometros, aceite_tipo,
-       aceite_nombre, anulado, desbloqueado_hasta, vehiculo_id, alineacion,
-       sucursales(nombre),
-       service_ruedas(colocada, rotada, balanceada, reparada)`,
-    )
-    .in(
-      "vehiculo_id",
-      vehiculos.map((v) => v.id),
-    )
-    .order("fecha", { ascending: false })
-    .order("created_at", { ascending: false })
-    // La pareja service + mecánica comparte created_at: el tipo desempata
-    // y el service queda arriba (orden del enum).
-    .order("tipo", { ascending: true });
-
-  const servicesPorVehiculo = new Map<string, typeof filasServices>();
-  for (const s of filasServices ?? []) {
-    const lista = servicesPorVehiculo.get(s.vehiculo_id) ?? [];
-    lista.push(s);
-    servicesPorVehiculo.set(s.vehiculo_id, lista);
-  }
-
-  // La fidelización de cada auto. premio_disponible() es por vehículo y un
-  // cliente tiene uno o dos: se piden en paralelo, no en cascada. Los
-  // canjes y las notas van en una sola consulta para todos.
-  const [premios, canjesRes, notasRes, pendientesRes, marcasRes] =
+  // Todo lo que sigue depende de los vehículos y de nada más: va en UN
+  // viaje. El historial de todos los vehículos del cliente en UNA consulta
+  // (sin N+1), que se agrupa por vehículo en memoria —un cliente tiene pocos
+  // autos y pocos services, esto no necesita paginado—; la fidelización de
+  // cada auto (premio_disponible() es por vehículo y un cliente tiene uno o
+  // dos: en paralelo, no en cascada); y los canjes, las notas y los
+  // pendientes, en una sola consulta para todos.
+  const [{ data: filasServices }, premios, canjesRes, notasRes, pendientesRes, marcasRes] =
     await Promise.all([
+    supabase
+      .from("services")
+      .select(
+        `id, tipo, trabajo_descripcion, fecha, created_at, kilometros, aceite_tipo,
+         aceite_nombre, anulado, desbloqueado_hasta, vehiculo_id, alineacion,
+         sucursales(nombre),
+         service_ruedas(colocada, rotada, balanceada, reparada)`,
+      )
+      .in(
+        "vehiculo_id",
+        vehiculos.map((v) => v.id),
+      )
+      .order("fecha", { ascending: false })
+      .order("created_at", { ascending: false })
+      // La pareja service + mecánica comparte created_at: el tipo desempata
+      // y el service queda arriba (orden del enum).
+      .order("tipo", { ascending: true }),
     Promise.all(
       vehiculos.map((v) =>
         supabase.rpc("premio_disponible", { p_vehiculo_id: v.id }),
@@ -196,6 +192,13 @@ export default async function FichaCliente({
   ]);
 
   const marcas = (marcasRes.data ?? []).map((m) => m.nombre);
+
+  const servicesPorVehiculo = new Map<string, typeof filasServices>();
+  for (const s of filasServices ?? []) {
+    const lista = servicesPorVehiculo.get(s.vehiculo_id) ?? [];
+    lista.push(s);
+    servicesPorVehiculo.set(s.vehiculo_id, lista);
+  }
 
   const pendientesPorVehiculo = new Map<
     string,

@@ -51,9 +51,9 @@ export default async function PaginaService({ params, searchParams }: Props) {
   const { serviceId } = await params;
   const { adjuntar } = await searchParams;
   const supabase = await createClient();
-  const sesion = await obtenerSesion();
-
-  const [serviceRes, configRes, configNeumRes] = await Promise.all([
+  // La sesión y el trabajo no dependen uno del otro: van en el mismo viaje.
+  const [sesion, serviceRes, configRes, configNeumRes] = await Promise.all([
+    obtenerSesion(),
     supabase
       .from("services")
       .select(
@@ -95,46 +95,49 @@ export default async function PaginaService({ params, searchParams }: Props) {
     );
   }
 
-  // La otra mitad de la visita, si este trabajo nació en una carga doble:
-  // el service de una mecánica adjunta, o la mecánica adjunta de un
-  // service. Son dos trabajos con sus plazos (24 horas / 7 días); acá solo
-  // se muestran juntos y el anular avisa del otro.
-  // En las dos direcciones se ignora la mitad anulada: un service anulado
-  // no es «misma visita» de nadie, y el diálogo de anular no puede mandar a
-  // anular lo que ya está anulado.
-  const parejaRes = service.cargado_con_id
-    ? await supabase
-        .from("services")
-        .select("id, tipo, fecha, trabajo_descripcion")
-        .eq("id", service.cargado_con_id)
-        .eq("anulado", false)
-        .maybeSingle()
-    : service.tipo === "service"
-      ? await supabase
-          .from("services")
-          .select("id, tipo, fecha, trabajo_descripcion")
-          .eq("cargado_con_id", service.id)
-          .eq("anulado", false)
-          .order("created_at", { ascending: true })
-          .limit(1)
-          .maybeSingle()
-      : null;
-  const pareja = parejaRes?.data ?? null;
-
   // Los adjuntos, con una URL firmada cada uno para abrirlos desde acá. El
   // bucket es privado: no hay URL pública, y firma quien puede leer (el
   // owner, su carpeta). Si Storage no contesta, el adjunto se lista igual,
   // sin enlace.
   const filasAdjuntos = service.adjuntos_trabajo ?? [];
-  const firmas =
+
+  // La pareja y las firmas dependen del trabajo y no una de la otra: van en
+  // el mismo viaje.
+  const [parejaRes, firmas] = await Promise.all([
+    // La otra mitad de la visita, si este trabajo nació en una carga doble:
+    // el service de una mecánica adjunta, o la mecánica adjunta de un
+    // service. Son dos trabajos con sus plazos (24 horas / 7 días); acá solo
+    // se muestran juntos y el anular avisa del otro.
+    // En las dos direcciones se ignora la mitad anulada: un service anulado
+    // no es «misma visita» de nadie, y el diálogo de anular no puede mandar
+    // a anular lo que ya está anulado.
+    service.cargado_con_id
+      ? supabase
+          .from("services")
+          .select("id, tipo, fecha, trabajo_descripcion")
+          .eq("id", service.cargado_con_id)
+          .eq("anulado", false)
+          .maybeSingle()
+      : service.tipo === "service"
+        ? supabase
+            .from("services")
+            .select("id, tipo, fecha, trabajo_descripcion")
+            .eq("cargado_con_id", service.id)
+            .eq("anulado", false)
+            .order("created_at", { ascending: true })
+            .limit(1)
+            .maybeSingle()
+        : null,
     filasAdjuntos.length > 0
-      ? await supabase.storage
+      ? supabase.storage
           .from("adjuntos")
           .createSignedUrls(
             filasAdjuntos.map((a) => a.ruta),
             UNA_HORA,
           )
-      : null;
+      : null,
+  ]);
+  const pareja = parejaRes?.data ?? null;
   const urlPorRuta = new Map(
     (firmas?.data ?? []).map((f) => [f.path, f.error ? null : f.signedUrl]),
   );
