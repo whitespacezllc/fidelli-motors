@@ -250,6 +250,41 @@ la resuelve.
 - **`get_carton(slug, patente)`** es la única puerta pública. Devuelve el cartón
   completo en un JSON, respeta `campos_visibles` del tenant y registra la búsqueda.
   `anon` no tiene permiso sobre ninguna tabla: solo puede ejecutar esa función.
+- **Una puerta pública que no contesta NO es «no existe» (04/10/2026).**
+  supabase-js no tira cuando una llamada falla: devuelve `{ data: null,
+  error }`, y acá se miraba solo `data`. Con un corte entre Vercel y
+  Supabase, con el `statement_timeout` de `anon` (3 segundos) o con PostgREST
+  sin su schema cache, el dueño del auto que escaneaba el QR veía un 404
+  —«No encontramos ese taller»—, o «No encontramos esa patente» si venía del
+  buscador: las dos cosas, mentira. Las dos llamadas salen de
+  **`lib/cliente/puerta.ts`**, que contesta una de dos cosas: lo que la
+  función devolvió, o que no contestó. «No contestó» es un `error`, un
+  status distinto de 200 (postgrest-js convierte un 404 de cuerpo vacío en
+  `data: null` SIN error) o un `null` de `get_carton`, que contesta siempre
+  un objeto; el `null` de `get_landing` sí es su «no existe». Se ve como
+  `SinRespuesta` (`components/cliente/sin-respuesta.tsx`): «No pudimos
+  cargar el historial. Probá de nuevo en un momento.» y **Reintentar**
+  (`href=""`: la misma URL), pintado con la marca si `get_landing` contesta
+  —se la pide de cortesía: un intento y dos segundos de plazo— y neutro si
+  tampoco —nunca el rojo Motors—; en la vidriera, «No pudimos
+  cargar la página»; y desde el buscador, `?reintentar=` con «No pudimos
+  buscar la patente». Es un **200, noindex y sin caché**: una página de
+  Next no puede contestar 503 (solo el proxy o un route handler; por eso
+  los dos manifests sí contestan 503). **El reintento del servidor tiene
+  una regla y no es de estilo:** `get_landing` no escribe y se repite una
+  vez ante cualquier falla; **`get_carton` REGISTRA la búsqueda en
+  `landing_busquedas` y se repite una vez SOLO si el error trae un código
+  de PostgREST o de Postgres** (`PGRST002`, `57014`…): ahí quien contestó
+  es PostgREST y la transacción no se confirmó, así que no hay fila que
+  duplicar. Un corte de red, un timeout o un 502 del gateway NO se repiten
+  —ni desde el servidor ni mandando al visitante a la pantalla del auto,
+  que es el mismo reintento ciego con otro nombre—: si la primera llamada
+  llegó a correr, la segunda deja dos filas por una visita (y si la
+  patente no existía, dos leads en el Inicio). Las dos salidas quedan en
+  los logs con el prefijo `[cliente]`, sin la patente. Una lectura nueva de
+  una función pública pasa por `puerta.ts`; un `const { data } = await
+  supabase.rpc(…)` en esta superficie es este bug otra vez. Lo vigila
+  `scripts/regresion-sin-respuesta.mjs`.
 - **`recuperados_del_mes(lubricentro_id)`** cuenta los contactados que volvieron
   dentro de los 30 días.
 - **Las patentes se normalizan solas** por trigger. El front manda lo que escribió
@@ -1180,6 +1215,7 @@ node --no-warnings scripts/regresion-avisos-cobranza.mjs   # contra next dev + e
 node --no-warnings scripts/regresion-orden-de-trabajo.mjs  # contra next dev + el seed (Playwright)
 node --no-warnings scripts/regresion-proximos-grilla.mjs   # ídem; toca el demo local por psql y lo restaura
 node --no-warnings scripts/regresion-aceite.mjs            # ídem; toca el demo local por psql y lo restaura
+node --no-warnings scripts/regresion-sin-respuesta.mjs     # levanta SU next dev (3940) y un doble de Supabase (4030): sin otro next dev en el checkout
 node --no-warnings scripts/regresion-calcos.mjs            # contra next dev + la base RECIÉN reseteada (Playwright)
 node --no-warnings scripts/regresion-calcos-tenant.mjs     # ídem; levanta los dobles de Cresium y de Resend
 node --no-warnings scripts/regresion-calcos-stock.mjs      # ídem; levanta el doble de Resend (el stock, el aviso y el cron)

@@ -1,5 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
-import { normalizarPatente } from "@/lib/texto";
+import { preguntarCarton } from "@/lib/cliente/puerta";
 import { hexONull } from "@/lib/cliente/color";
 import { aTema, aTamanoLogo } from "@/lib/cliente/tema";
 import type {
@@ -144,7 +143,9 @@ export type Carton = {
 export type ResultadoCarton =
   | { estado: "ok"; carton: Carton }
   | { estado: "patente_no_encontrada"; lubricentro: Lubricentro }
-  | { estado: "lubricentro_no_encontrado" };
+  | { estado: "lubricentro_no_encontrado" }
+  // get_carton no contestó. NO es que el lubricentro no exista: no se sabe.
+  | { estado: "sin_respuesta" };
 
 type LubricentroJson = {
   nombre?: string;
@@ -245,15 +246,12 @@ export async function obtenerCarton(
   slug: string,
   patente: string,
 ): Promise<ResultadoCarton> {
-  const supabase = await createClient();
-  const { data } = await supabase.rpc("get_carton", {
-    p_slug: slug,
-    p_patente: normalizarPatente(patente),
-  });
+  const respuesta = await preguntarCarton(slug, patente);
+  if (!respuesta.contesto) return { estado: "sin_respuesta" };
 
-  const json = data as CartonJson | null;
+  const json = respuesta.json as CartonJson;
 
-  if (!json || json.error === "lubricentro_no_encontrado") {
+  if (json.error === "lubricentro_no_encontrado") {
     return { estado: "lubricentro_no_encontrado" };
   }
 

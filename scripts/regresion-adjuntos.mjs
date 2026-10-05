@@ -568,21 +568,14 @@ try {
     console.log(`  ◦ captura ${nombre}.png`);
   }
 
-  // La página del cliente sale de UNA llamada a get_carton, y si esa
-  // llamada falla la página contesta 404 (no distingue «no existe» de «no
-  // contestó»). Con el stack recién reseteado o la máquina cargada puede
-  // pasar una vez: se reintenta SOLO ante un status que no es 200, y se
-  // dice. Un 200 sin el adjunto es una falla de verdad y no se reintenta.
-  async function irAlCliente(page, ruta = "/demo/ABC123") {
-    let respuesta = null;
-    for (let intento = 1; intento <= 3; intento++) {
-      respuesta = await page.goto(`${BASE}${ruta}`, { waitUntil: "networkidle" });
-      if (respuesta?.status() === 200) break;
-      console.log(`  ◦ ${ruta} contestó ${respuesta?.status()} (intento ${intento}): se vuelve a pedir`);
-      await page.waitForTimeout(1500);
-    }
-    return respuesta;
-  }
+  // La página del cliente sale de UNA llamada a get_carton. Si esa llamada
+  // falla no se reintenta desde acá: cuando se puede la repite el servidor,
+  // y si no contesta la página lo dice —«No pudimos cargar el historial»—
+  // en vez de un 404 (lib/cliente/puerta.ts; lo vigila
+  // scripts/regresion-sin-respuesta.mjs). Un 200 sin el adjunto es una
+  // falla de verdad.
+  const irAlCliente = (page, ruta = "/demo/ABC123") =>
+    page.goto(`${BASE}${ruta}`, { waitUntil: "networkidle" });
 
   const seccion = (page) => page.locator("section#adjuntos");
   const filas = (page) => seccion(page).locator("li[data-adjunto]");

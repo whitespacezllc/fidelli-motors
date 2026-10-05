@@ -27,6 +27,8 @@ import { AdjuntosCliente } from "@/components/cliente/adjuntos-cliente";
 import { BotonTurno } from "@/components/cliente/boton-turno";
 import { SinHistorial } from "@/components/cliente/sin-historial";
 import { PatenteNoEncontrada } from "@/components/cliente/patente-no-encontrada";
+import { PantallaSinRespuesta } from "@/components/cliente/sin-respuesta";
+import { marcaSiContesta } from "@/lib/cliente/landing";
 import { PieConfianza } from "@/components/cliente/pie-confianza";
 import {
   CartonPapel,
@@ -166,6 +168,26 @@ export default async function PaginaVehiculo({ params }: Props) {
   const resultado = await obtenerCarton(slug, patente);
 
   if (resultado.estado === "lubricentro_no_encontrado") notFound();
+
+  // get_carton no contestó (un corte, un timeout, PostgREST recargando).
+  // NO es un 404: no se sabe si el taller existe —y casi seguro que sí, con
+  // su historial—, y decirle al dueño del auto que no existe es mentirle.
+  // Es «probá de nuevo».
+  //
+  // La marca se le pide a get_landing, que no registra nada: si contesta,
+  // la pantalla va con el color del taller y cómo escribirle; si contesta
+  // que el slug no existe, ahí sí es un 404; y si tampoco contesta, queda
+  // neutra.
+  if (resultado.estado === "sin_respuesta") {
+    const marca = await marcaSiContesta(slug);
+    if (marca.estado === "lubricentro_no_encontrado") notFound();
+    return (
+      <PantallaSinRespuesta
+        titulo="No pudimos cargar el historial"
+        lubricentro={marca.estado === "ok" ? marca.lubricentro : null}
+      />
+    );
+  }
 
   // La patente que no aparece es un lead, no un error: mismo mensaje que en
   // la landing, con el WhatsApp del lubri. Nunca un 404 pelado.

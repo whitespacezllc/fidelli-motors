@@ -1,7 +1,11 @@
 import { obtenerLanding } from "@/lib/cliente/landing";
 import { GRAFITO } from "@/lib/cliente/tema";
 import { formatearPatente, normalizarPatente } from "@/lib/texto";
-import { ICONOS_MARCA, respuestaManifest } from "@/lib/pwa";
+import {
+  ICONOS_MARCA,
+  manifestSinRespuesta,
+  respuestaManifest,
+} from "@/lib/pwa";
 
 // El acceso directo AL CARTÓN DE UN AUTO. Es el que cierra el círculo del
 // producto: el QR del parasol se escanea una vez, y el dueño se guarda el
@@ -18,10 +22,12 @@ export async function GET(
   { params }: { params: Promise<{ slug: string; patente: string }> },
 ) {
   const { slug, patente } = await params;
-  const lubricentro = await obtenerLanding(slug);
-  if (!lubricentro) {
+  const resultado = await obtenerLanding(slug);
+  if (resultado.estado === "sin_respuesta") return manifestSinRespuesta();
+  if (resultado.estado !== "ok") {
     return new Response("No encontrado", { status: 404 });
   }
+  const { lubricentro } = resultado;
 
   const normalizada = normalizarPatente(patente);
   const legible = formatearPatente(patente);
