@@ -451,6 +451,20 @@ pendiente → se celebra**: "Estás al día", en verde.
 - Más de 2s: mensaje con contexto.
 - **El botón de guardar se deshabilita apenas se toca**, con ancho fijo para que
   no salte el layout. Es lo que evita el service duplicado por doble toque.
+- **Cada ruta del panel tiene su `loading.tsx` con la estructura real; una ruta
+  nueva sin él no pasa la prueba** (`scripts/regresion-esqueletos.mjs`, que
+  recorre `app/panel` y `app/fidelli`). Se arma con las piezas de
+  `components/ui/esqueleto.tsx`: la cabecera es la real, con su título; los
+  filtros, las tarjetas y las filas van en gris, con su alto real y las mismas
+  clases de grilla que la pantalla. Sin retrasos ni transiciones propias: el
+  «menos de 300 ms, nada» lo cumple React, que no reemplaza un fallback de
+  Suspense antes de 300 ms desde que lo mostró —un retraso en CSS hacía
+  asomar el gris justo cuando llegaba el contenido—. Una pantalla que no
+  espera a la base (Ayuda) lleva solo la cabecera: con gris, al entrar con
+  la URL escrita, el gris asomaba 30 ms. **El layout del panel no espera más
+  que la sesión**: el número de «A quién llamar» llega por su `<Suspense>`
+  (`components/panel/por-llamar.tsx`), y una consulta nueva en el layout va
+  igual, o frena todas las pantallas.
 
 ---
 
