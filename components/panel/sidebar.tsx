@@ -19,7 +19,6 @@ import {
   IconoCuenta,
   IconoAyuda,
 } from "@/components/iconos";
-import { BadgePorLlamar } from "@/components/panel/badge-por-llamar";
 import { cerrarSesion } from "@/lib/auth/actions";
 import { urlWhatsappSoporte } from "@/lib/config";
 import { MOTIVO_SUSPENSION } from "@/components/panel/aviso-suspension";
@@ -98,7 +97,7 @@ export function Sidebar({
   suspendido = false,
   motivoSuspension = MOTIVO_SUSPENSION,
   features = {},
-  porLlamar = 0,
+  badgePorLlamar,
   bloqueado = false,
   pasosOnboarding = 3,
   desbloqueando = false,
@@ -109,8 +108,9 @@ export function Sidebar({
    *  o Pagar). Lo elige el layout, que sabe si fue a mano o por reloj. */
   motivoSuspension?: string;
   features?: Partial<Record<FeaturePlan, boolean>>;
-  /** Contactos sin hacer en "A quién llamar" — pinta el círculo. */
-  porLlamar?: number;
+  /** El círculo de "A quién llamar", con su propio Suspense: llega
+   *  después que la pantalla (components/panel/por-llamar.tsx). */
+  badgePorLlamar?: React.ReactNode;
   /** El onboarding no terminó: todo con candado salvo Ayuda. */
   bloqueado?: boolean;
   /** Cuántos pasos tiene el onboarding de esta cuenta (2 en Basic). */
@@ -203,7 +203,7 @@ export function Sidebar({
                       sección con una cola de tareas que se vacía. */}
                   {item.href === "/panel/proximos" && (
                     <span className="ml-auto flex">
-                      <BadgePorLlamar cantidad={porLlamar} />
+                      {badgePorLlamar}
                     </span>
                   )}
                   {/* El candado de la bienvenida: nace visible y se va

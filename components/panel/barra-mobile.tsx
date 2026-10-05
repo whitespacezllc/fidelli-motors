@@ -16,7 +16,6 @@ import { MOTIVO_SUSPENSION } from "@/components/panel/aviso-suspension";
 import { motivoBloqueo } from "@/components/panel/bloqueo-onboarding";
 import { ItemBloqueado } from "@/components/panel/item-bloqueado";
 import type { FeaturePlan } from "@/lib/planes";
-import { BadgePorLlamar } from "@/components/panel/badge-por-llamar";
 import { LineaLegal } from "@/components/panel/linea-legal";
 
 // Secciones que no entran en la barra: viven en la hoja "Más". `feature` =
@@ -124,7 +123,7 @@ export function BarraMobile({
   suspendido = false,
   motivoSuspension = MOTIVO_SUSPENSION,
   features = {},
-  porLlamar = 0,
+  badgePorLlamar,
   bloqueado = false,
   pasosOnboarding = 3,
   desbloqueando = false,
@@ -135,8 +134,9 @@ export function BarraMobile({
    *  Pagar). Lo elige el layout, que sabe si fue a mano o por reloj. */
   motivoSuspension?: string;
   features?: Partial<Record<FeaturePlan, boolean>>;
-  /** Contactos sin hacer en "A quién llamar" — pinta el círculo. */
-  porLlamar?: number;
+  /** El círculo de "A quién llamar", con su propio Suspense: llega
+   *  después que la pantalla (components/panel/por-llamar.tsx). */
+  badgePorLlamar?: React.ReactNode;
   /** El onboarding no terminó: todo con candado salvo Ayuda. */
   bloqueado?: boolean;
   pasosOnboarding?: number;
@@ -170,7 +170,7 @@ export function BarraMobile({
       nombre: "Llamar",
       activo: pathname.startsWith("/panel/proximos"),
       icono: <IconoReloj className="size-5" />,
-      badge: <BadgePorLlamar cantidad={porLlamar} />,
+      badge: badgePorLlamar,
     },
     { href: "/panel/clientes", nombre: "Clientes", activo: pathname.startsWith("/panel/clientes"), icono: <IconoClientes className="size-5" /> },
   ];
