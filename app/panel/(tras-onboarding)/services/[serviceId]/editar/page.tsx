@@ -107,44 +107,49 @@ export default async function PaginaEditarService({ params }: Props) {
     redirect(`/panel/services/${serviceId}`);
   }
 
-  // La otra mitad de una carga doble. Editar el SERVICE copia fecha, km y
-  // sucursal a la mecánica adjunta (actualizar_service); editar la MECÁNICA
-  // la separa. En los dos casos el mecánico tiene que saberlo antes.
-  const parejaRes = service.cargado_con_id
-    ? await supabase
-        .from("services")
-        .select("id, tipo, fecha")
-        .eq("id", service.cargado_con_id)
-        .eq("anulado", false)
-        .maybeSingle()
-    : service.tipo === "service"
-      ? await supabase
+  // Las dos consultas que siguen dependen del trabajo y no una de la otra:
+  // van juntas, en un solo viaje.
+  const [parejaRes, anteriorRes] = await Promise.all([
+    // La otra mitad de una carga doble. Editar el SERVICE copia fecha, km y
+    // sucursal a la mecánica adjunta (actualizar_service); editar la
+    // MECÁNICA la separa. En los dos casos el mecánico tiene que saberlo
+    // antes.
+    service.cargado_con_id
+      ? supabase
           .from("services")
           .select("id, tipo, fecha")
-          .eq("cargado_con_id", service.id)
+          .eq("id", service.cargado_con_id)
           .eq("anulado", false)
-          .order("created_at", { ascending: true })
-          .limit(1)
           .maybeSingle()
-      : null;
+      : service.tipo === "service"
+        ? supabase
+            .from("services")
+            .select("id, tipo, fecha")
+            .eq("cargado_con_id", service.id)
+            .eq("anulado", false)
+            .order("created_at", { ascending: true })
+            .limit(1)
+            .maybeSingle()
+        : null,
+    // El service anterior a ESTE, para la advertencia de kilómetros: al
+    // editar no tiene sentido comparar el service contra sí mismo.
+    supabase
+      .from("services")
+      .select("fecha, kilometros")
+      .eq("vehiculo_id", service.vehiculo_id)
+      .eq("anulado", false)
+      // La referencia de km compara contra el último SERVICE: una mecánica
+      // sin odómetro anotado no dice nada del recorrido.
+      .eq("tipo", "service")
+      .neq("id", serviceId)
+      .lte("fecha", service.fecha)
+      .order("fecha", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
   const pareja = parejaRes?.data ?? null;
-
-  // El service anterior a ESTE, para la advertencia de kilómetros: al
-  // editar no tiene sentido comparar el service contra sí mismo.
-  const { data: anterior } = await supabase
-    .from("services")
-    .select("fecha, kilometros")
-    .eq("vehiculo_id", service.vehiculo_id)
-    .eq("anulado", false)
-    // La referencia de km compara contra el último SERVICE: una mecánica
-    // sin odómetro anotado no dice nada del recorrido.
-    .eq("tipo", "service")
-    .neq("id", serviceId)
-    .lte("fecha", service.fecha)
-    .order("fecha", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const anterior = anteriorRes.data;
 
   // El detalle del renglón como lo edita el mecánico: texto. Si el renglón
   // vino con producto del catálogo, el texto es su nombre — al guardar, el

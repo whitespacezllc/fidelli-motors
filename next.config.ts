@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { redireccionesDeSlugs } from "./lib/slugs-anteriores";
+import { cabecerasDeSeguridad } from "./lib/cabeceras";
 
 const nextConfig: NextConfig = {
   // La dirección vieja de un lubricentro —el slug que quedó impreso en sus
@@ -7,6 +8,12 @@ const nextConfig: NextConfig = {
   // lib/slugs-anteriores.ts.
   async redirects() {
     return redireccionesDeSlugs();
+  },
+  // Las cabeceras de seguridad por superficie: lo privado no se embebe, la
+  // landing y la página del cliente llevan su CSP en modo report-only. Las
+  // reglas y el porqué viven en lib/cabeceras.ts.
+  async headers() {
+    return cabecerasDeSeguridad();
   },
   experimental: {
     serverActions: {
