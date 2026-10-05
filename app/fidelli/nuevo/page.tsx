@@ -10,23 +10,26 @@ export const metadata: Metadata = { title: "Nuevo lubricentro" };
 export default async function PaginaAlta() {
   const supabase = await createClient();
 
-  const { data } = await supabase
-    .from("planes")
-    .select(
-      "id, nombre, precio_mensual, descuento_semestral_pct, descuento_anual_pct, features, limites",
-    )
-    // Los heredados no se ofrecen más en el alta: siguen activos (se cobran
-    // y se editan en /fidelli/precios), pero acá no aparecen.
-    .eq("activo", true)
-    .eq("heredado", false)
-    .order("precio_mensual");
+  // Los planes y el interruptor del alias no dependen uno del otro: van en
+  // el mismo viaje.
+  const [{ data }, conAlias] = await Promise.all([
+    supabase
+      .from("planes")
+      .select(
+        "id, nombre, precio_mensual, descuento_semestral_pct, descuento_anual_pct, features, limites",
+      )
+      // Los heredados no se ofrecen más en el alta: siguen activos (se
+      // cobran y se editan en /fidelli/precios), pero acá no aparecen.
+      .eq("activo", true)
+      .eq("heredado", false)
+      .order("precio_mensual"),
+    // Mientras Cresium no confirme el formato, el campo del alias no se
+    // muestra. No es una decisión de diseño: el servidor rechaza cualquier
+    // alias que se mande, así que el campo solo podría frustrar.
+    aliasHabilitado(),
+  ]);
 
   const planes = (data ?? []) as unknown as PlanCompleto[];
-
-  // Mientras Cresium no confirme el formato, el campo del alias no se
-  // muestra. No es una decisión de diseño: el servidor rechaza cualquier
-  // alias que se mande, así que el campo solo podría frustrar.
-  const conAlias = await aliasHabilitado();
 
   return (
     <div className="mx-auto max-w-2xl">

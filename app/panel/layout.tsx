@@ -4,6 +4,7 @@ import { exigirRol, featureHabilitada } from "@/lib/auth/session";
 import { cerrarSesion } from "@/lib/auth/actions";
 import { Sidebar } from "@/components/panel/sidebar";
 import { BarraMobile } from "@/components/panel/barra-mobile";
+import { PorLlamar } from "@/components/panel/por-llamar";
 import {
   AvisoSuspension,
   AvisoSuspensionReloj,
@@ -64,12 +65,20 @@ export default async function LayoutPanel({
   // El badge de "A quién llamar": los contactos que están esperando, como
   // los no leídos de una casilla. Se calcula en la MISMA función que
   // definen las vistas de la pantalla (contactos_por_hacer, R12), así el
-  // número del círculo y las filas sin tildar no pueden divergir. El
-  // layout es dinámico —cada navegación lo re-renderiza— y la acción de
-  // registrar contacto ya revalida /panel, así que el número baja solo
+  // número del círculo y las filas sin tildar no pueden divergir. La acción
+  // de registrar contacto revalida /panel, así que el número baja solo
   // apenas contactás, sin polling ni estado en el cliente.
+  //
+  // Y NO SE ESPERA: la consulta sale acá y la promesa viaja a <PorLlamar>,
+  // que tiene su propio <Suspense>. Esperarla en el layout frenaba el
+  // panel entero detrás de un número (la entrada con la URL escrita, y
+  // cada vez que una acción revalida /panel).
   const supabase = await createClient();
-  const { data: porLlamar } = await supabase.rpc("contactos_por_hacer");
+  const porLlamar = supabase.rpc("contactos_por_hacer").then(
+    ({ data }) => (typeof data === "number" ? data : 0),
+    () => 0,
+  );
+  const badgePorLlamar = <PorLlamar cuenta={porLlamar} />;
 
   return (
     <div className="min-h-dvh bg-surface/40">
@@ -78,7 +87,7 @@ export default async function LayoutPanel({
         suspendido={suspendido}
         motivoSuspension={motivoSuspension}
         features={features}
-        porLlamar={porLlamar ?? 0}
+        badgePorLlamar={badgePorLlamar}
         bloqueado={bloqueado}
         pasosOnboarding={pasosOnboarding}
         desbloqueando={desbloqueando}
@@ -121,7 +130,7 @@ export default async function LayoutPanel({
         suspendido={suspendido}
         motivoSuspension={motivoSuspension}
         features={features}
-        porLlamar={porLlamar ?? 0}
+        badgePorLlamar={badgePorLlamar}
         bloqueado={bloqueado}
         pasosOnboarding={pasosOnboarding}
         desbloqueando={desbloqueando}
