@@ -51,8 +51,10 @@ function origenSupabase(): string | null {
 
 /** La CSP de la landing comercial y de la superficie del cliente, en modo
  *  report-only: lo que hoy cargan esas páginas —gtag.js de GA4 y de Google
- *  Ads, el Píxel de Meta, las miniaturas y el reproductor de YouTube, las
- *  fuentes, Storage— y nada más. `'unsafe-inline'` en scripts y estilos
+ *  Ads con sus colectores, el Píxel de Meta, las miniaturas y el
+ *  reproductor de YouTube, las fuentes, Storage— y nada más. La lista salió
+ *  de recorrer la landing, el blog y la página de un cliente con las
+ *  etiquetas cargadas y mirar qué reportaba. `'unsafe-inline'` en scripts y estilos
  *  porque Next mete su arranque en línea; sacarlo es pasar a nonces, que
  *  vuelve dinámica cada página: es otra decisión, no la de este paso. */
 export function politicaReportOnly(supabase = origenSupabase()): string {
@@ -67,7 +69,7 @@ export function politicaReportOnly(supabase = origenSupabase()): string {
         "https://www.googletagmanager.com",
         "https://www.google-analytics.com",
         "https://www.googleadservices.com",
-        "https://googleads.g.doubleclick.net",
+        "https://*.doubleclick.net",
         "https://connect.facebook.net",
       ],
     ],
@@ -82,7 +84,7 @@ export function politicaReportOnly(supabase = origenSupabase()): string {
         "https://i.ytimg.com",
         "https://www.google-analytics.com",
         "https://www.googletagmanager.com",
-        "https://googleads.g.doubleclick.net",
+        "https://*.doubleclick.net",
         "https://www.google.com",
         "https://www.google.com.ar",
         "https://www.facebook.com",
@@ -96,9 +98,12 @@ export function politicaReportOnly(supabase = origenSupabase()): string {
         ...storage,
         "https://www.google-analytics.com",
         "https://*.google-analytics.com",
+        // El colector de GA4 es el dominio pelado: el comodín no lo cubre.
+        "https://analytics.google.com",
         "https://*.analytics.google.com",
         "https://www.googletagmanager.com",
-        "https://googleads.g.doubleclick.net",
+        // Los colectores de Google Ads (stats.g., ad., googleads.g.).
+        "https://*.doubleclick.net",
         "https://www.google.com",
         "https://connect.facebook.net",
         "https://www.facebook.com",
@@ -106,7 +111,7 @@ export function politicaReportOnly(supabase = origenSupabase()): string {
     ],
     [
       "frame-src",
-      ["https://www.youtube-nocookie.com", "https://td.doubleclick.net", "https://www.googletagmanager.com", "https://www.facebook.com"],
+      ["https://www.youtube-nocookie.com", "https://*.doubleclick.net", "https://www.googletagmanager.com", "https://www.facebook.com"],
     ],
     ["media-src", ["'self'", ...storage]],
     ["object-src", ["'none'"]],
