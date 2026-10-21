@@ -1274,6 +1274,109 @@ export type Database = {
           },
         ]
       }
+      ingresos: {
+        Row: {
+          cliente_id: string | null
+          concepto: string
+          created_at: string
+          fecha: string
+          id: string
+          lubricentro_id: string
+          monto: number
+          presupuesto_id: string | null
+          sucursal_id: string
+          usuario_id: string
+        }
+        Insert: {
+          cliente_id?: string | null
+          concepto: string
+          created_at?: string
+          fecha?: string
+          id?: string
+          lubricentro_id: string
+          monto: number
+          presupuesto_id?: string | null
+          sucursal_id: string
+          usuario_id: string
+        }
+        Update: {
+          cliente_id?: string | null
+          concepto?: string
+          created_at?: string
+          fecha?: string
+          id?: string
+          lubricentro_id?: string
+          monto?: number
+          presupuesto_id?: string | null
+          sucursal_id?: string
+          usuario_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ingresos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ingresos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ingresos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_caja"
+            referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "ingresos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_neumaticos"
+            referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "ingresos_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_service"
+            referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "ingresos_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ingresos_presupuesto_id_fkey"
+            columns: ["presupuesto_id"]
+            isOneToOne: false
+            referencedRelation: "presupuestos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ingresos_sucursal_id_fkey"
+            columns: ["sucursal_id"]
+            isOneToOne: false
+            referencedRelation: "sucursales"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ingresos_usuario_id_fkey"
+            columns: ["usuario_id"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       landing_busquedas: {
         Row: {
           created_at: string
@@ -4043,6 +4146,17 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      guardar_ingreso: {
+        Args: {
+          p_cliente_id?: string
+          p_concepto: string
+          p_fecha?: string
+          p_monto: number
+          p_presupuesto_id?: string
+          p_sucursal_id: string
+        }
+        Returns: string
+      }
       guardar_presupuesto: {
         Args: {
           p_cliente_id?: string
@@ -4289,6 +4403,10 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      r45_anon: { Args: never; Returns: undefined }
+      r45_como: { Args: { p_uid: string }; Returns: undefined }
+      r45_intento: { Args: { p_sql: string }; Returns: string }
+      r45_postgres: { Args: never; Returns: undefined }
       reabrir_contacto_pauta: { Args: { p_id: string }; Returns: undefined }
       reclamar_mail_encargo_calcos: {
         Args: { p_id: string; p_tipo: string }
@@ -4345,6 +4463,7 @@ export type Database = {
         Returns: Json
       }
       resumen_admin: { Args: never; Returns: Json }
+      resumen_ingresos: { Args: never; Returns: Json }
       resumen_inicio: { Args: { p_sucursal_id?: string }; Returns: Json }
       salud_tenants: {
         Args: never

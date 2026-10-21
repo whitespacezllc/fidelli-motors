@@ -7,6 +7,7 @@ import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { clasesBoton } from "@/components/ui/boton";
 import { DocumentoPresupuesto } from "@/components/presupuestos/documento-presupuesto";
 import { AccionesDocumento } from "@/components/presupuestos/acciones-documento";
+import { BotonCobrado } from "@/components/finanzas/boton-cobrado";
 import { formatearFechaHora } from "@/lib/fechas";
 import { empresaDesdeFila, hayDatosDeEmpresa } from "@/lib/datos-empresa";
 
@@ -47,9 +48,11 @@ export default async function PaginaPresupuesto({ params }: Props) {
     return <BloqueoPlan funcion="Presupuestos" />;
   }
   const suspendido = await panelSuspendido();
+  // El botón "cobrado" solo existe con el módulo Finanzas prendido.
+  const tieneFinanzas = featureHabilitada(sesion, "finanzas");
   const supabase = await createClient();
 
-  const [presupuestoRes, configRes, empresaRes] = await Promise.all([
+  const [presupuestoRes, configRes, empresaRes, ingresoRes] = await Promise.all([
     supabase
       .from("presupuestos")
       .select(
@@ -71,6 +74,11 @@ export default async function PaginaPresupuesto({ params }: Props) {
       .from("datos_empresa")
       .select("razon_social, cuit, condicion_iva, domicilio, telefono, email")
       .maybeSingle(),
+    // ¿Ya está cobrado? Un ingreso con este presupuesto_id. Solo se
+    // consulta con el módulo prendido.
+    tieneFinanzas
+      ? supabase.from("ingresos").select("id").eq("presupuesto_id", id).maybeSingle()
+      : Promise.resolve({ data: null }),
   ]);
 
   const p = presupuestoRes.data;
@@ -94,6 +102,8 @@ export default async function PaginaPresupuesto({ params }: Props) {
       cantidad: Number(i.cantidad),
       precioUnitario: Number(i.precio_unitario),
     }));
+
+  const yaCobrado = Boolean(ingresoRes.data);
 
   const logoUrl = configRes.data?.logo_url
     ? await logoComoDataUrl(configRes.data.logo_url)
@@ -169,6 +179,28 @@ export default async function PaginaPresupuesto({ params }: Props) {
           </div>
         )}
       </div>
+
+      {/* Finanzas: cobrar este presupuesto lo registra como ingreso. Solo
+          con el módulo prendido; no toca el papel. */}
+      {tieneFinanzas && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-line bg-surface/60 px-4 py-3 print:hidden">
+          <div>
+            <p className="font-brand text-ui font-bold text-ink">Finanzas</p>
+            <p className="text-label text-ink-60">
+              {yaCobrado
+                ? "Este presupuesto ya figura como cobrado."
+                : "Registrá el cobro como ingreso del día."}
+            </p>
+          </div>
+          {yaCobrado ? (
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-success-soft px-3 py-1.5 text-ui font-semibold text-success">
+              ✓ Cobrado
+            </span>
+          ) : (
+            !suspendido && <BotonCobrado presupuestoId={p.id} />
+          )}
+        </div>
+      )}
 
       {/* El id ancla la impresión y da un objetivo estable en el DOM. El
           PDF no sale de este nodo: lo dibuja AccionesDocumento con los
