@@ -10,6 +10,7 @@ import {
   IconoClientes,
   IconoTrabajos,
   IconoCaja,
+  IconoFinanzas,
   IconoPremio,
   IconoPresupuesto,
   IconoDiseno,
@@ -66,6 +67,9 @@ const GRUPOS: {
       { href: "/panel/productos", nombre: "Productos", Icono: IconoCaja },
       { href: "/panel/fidelizacion", nombre: "Fidelización", feature: "premios", Icono: IconoPremio },
       { href: "/panel/presupuestos", nombre: "Presupuestos", feature: "presupuestos", Icono: IconoPresupuesto },
+      // El módulo Finanzas: add-on pago, solo aparece con el módulo
+      // prendido — igual que Neumáticos. "El día" es el título interno.
+      { href: "/panel/finanzas", nombre: "Finanzas", feature: "finanzas", Icono: IconoFinanzas },
     ],
   },
   {

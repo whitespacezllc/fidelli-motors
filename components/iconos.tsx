@@ -33,6 +33,7 @@ import {
   QuestionIcon,
   PaperclipIcon,
   FilePdfIcon,
+  CoinsIcon,
 } from "@phosphor-icons/react/dist/ssr";
 // Solo tipos: se borran al compilar, así que traerlos del entry principal
 // (que sí lleva "use client") no arrastra nada al bundle.
@@ -61,6 +62,7 @@ export const IconoCerrar = delSistema(XIcon);
 export const IconoBuscar = delSistema(MagnifyingGlassIcon);
 export const IconoCaja = delSistema(PackageIcon);
 export const IconoCheck = delSistema(CheckIcon);
+export const IconoFinanzas = delSistema(CoinsIcon);
 
 // ============================================================
 // LA EXCEPCIÓN DE LUCIDE — ahora documentada en CLAUDE.md
