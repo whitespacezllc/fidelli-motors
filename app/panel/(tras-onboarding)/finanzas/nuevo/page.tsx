@@ -5,7 +5,7 @@ import { obtenerSesion, featureHabilitada, panelSuspendido } from "@/lib/auth/se
 import { BloqueoPlan } from "@/components/panel/bloqueo-plan";
 import { BloqueoSuspension } from "@/components/panel/bloqueo-suspension";
 import { CabeceraSeccion } from "@/components/panel/cabecera-seccion";
-import { FormIngreso } from "@/components/finanzas/form-ingreso";
+import { FormMovimiento } from "@/components/finanzas/form-movimiento";
 import { hoyISO } from "@/lib/fechas";
 import { COOKIE_SUCURSAL } from "@/lib/preferencias";
 
@@ -43,7 +43,8 @@ export default async function PaginaNuevoIngreso() {
   return (
     <div className="mx-auto max-w-2xl">
       <CabeceraSeccion titulo="Nuevo ingreso" />
-      <FormIngreso
+      <FormMovimiento
+        tipo="ingreso"
         sucursales={sucursales}
         sucursalInicial={sucursalInicial}
         hoy={hoyISO()}
