@@ -5,80 +5,80 @@ import { useRouter } from "next/navigation";
 import { Boton } from "@/components/ui/boton";
 import {
   crearIngreso,
-  type ResultadoIngreso,
+  crearEgreso,
+  type ResultadoMovimiento,
 } from "@/app/panel/(tras-onboarding)/finanzas/actions";
 import { recordarSucursal } from "@/lib/preferencias";
+import { MEDIOS_PAGO, ETIQUETA_MEDIO, parsearMonto, type MedioPago } from "@/lib/finanzas";
 
 type Sucursal = { id: string; nombre: string };
 
-const INICIAL: ResultadoIngreso = {};
+const INICIAL: ResultadoMovimiento = {};
 const CLASE_CAMPO =
   "h-12 w-full rounded-md border border-line bg-base px-3.5 text-body text-ink placeholder:text-ink-40";
 const CLASE_LABEL =
   "mb-1.5 block text-label font-semibold tracking-[0.06em] text-ink-60 uppercase";
 
-/** AR: miles con punto, decimales con coma. "12.500,50" → 12500.5 */
-function parsearMonto(texto: string): number {
-  return Number(texto.replace(/\./g, "").replace(",", ".")) || 0;
-}
-
-// El alta de un ingreso: un monto, qué entró y listo. Pensado para el
-// mostrador — nada obligatorio salvo el monto y dos palabras de concepto.
-export function FormIngreso({
+// El alta de un movimiento de caja (ingreso o egreso). Pensado para el
+// mostrador: un monto, qué fue, cómo se pagó y listo.
+export function FormMovimiento({
+  tipo,
   sucursales,
   sucursalInicial,
   hoy,
 }: {
+  tipo: "ingreso" | "egreso";
   sucursales: Sucursal[];
   sucursalInicial: string;
   hoy: string;
 }) {
   const router = useRouter();
+  const esIngreso = tipo === "ingreso";
 
   const [sucursalId, setSucursalId] = useState(sucursalInicial);
   const [fecha, setFecha] = useState(hoy);
   const [monto, setMonto] = useState("");
   const [concepto, setConcepto] = useState("");
+  const [medio, setMedio] = useState<MedioPago>("efectivo");
 
-  const [resultado, enviar, enviando] = useActionState(
-    async (prev: ResultadoIngreso) => {
-      const r = await crearIngreso(prev, {
-        sucursalId,
-        fecha,
-        monto: parsearMonto(monto),
-        concepto,
-      });
-      if (r.id) {
-        router.push("/panel/finanzas");
-        router.refresh();
-      }
-      return r;
-    },
-    INICIAL,
-  );
+  const [resultado, enviar, enviando] = useActionState(async (prev: ResultadoMovimiento) => {
+    const datos = {
+      sucursalId,
+      fecha,
+      monto: parsearMonto(monto),
+      concepto,
+      medio,
+    };
+    const r = esIngreso ? await crearIngreso(prev, datos) : await crearEgreso(prev, datos);
+    if (r.id) {
+      router.push("/panel/finanzas");
+      router.refresh();
+    }
+    return r;
+  }, INICIAL);
 
-  const listo = concepto.trim().length >= 2 && parsearMonto(monto) >= 0 && monto.trim() !== "";
+  const listo = concepto.trim().length >= 2 && monto.trim() !== "" && parsearMonto(monto) >= 0;
 
   return (
     <form action={enviar} className="flex flex-col gap-4">
       <div>
-        <label htmlFor="ing-concepto" className={CLASE_LABEL}>
-          Qué entró
+        <label htmlFor="mov-concepto" className={CLASE_LABEL}>
+          {esIngreso ? "Qué entró" : "Qué salió"}
         </label>
         <input
-          id="ing-concepto"
+          id="mov-concepto"
           value={concepto}
           onChange={(e) => setConcepto(e.target.value)}
-          placeholder="ej: Service Corsa · efectivo"
-          aria-label="Concepto del ingreso"
+          placeholder={esIngreso ? "ej: Service Corsa" : "ej: Compra de filtros"}
+          aria-label={esIngreso ? "Concepto del ingreso" : "Concepto del egreso"}
           className={CLASE_CAMPO}
           autoFocus
         />
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <label htmlFor="ing-monto" className={CLASE_LABEL}>
+          <label htmlFor="mov-monto" className={CLASE_LABEL}>
             Monto
           </label>
           <div className="relative">
@@ -86,7 +86,7 @@ export function FormIngreso({
               $
             </span>
             <input
-              id="ing-monto"
+              id="mov-monto"
               value={monto}
               onChange={(e) => setMonto(e.target.value)}
               inputMode="decimal"
@@ -97,11 +97,31 @@ export function FormIngreso({
           </div>
         </div>
         <div>
-          <label htmlFor="ing-fecha" className={CLASE_LABEL}>
+          <label htmlFor="mov-medio" className={CLASE_LABEL}>
+            Medio
+          </label>
+          <select
+            id="mov-medio"
+            value={medio}
+            onChange={(e) => setMedio(e.target.value as MedioPago)}
+            className={`${CLASE_CAMPO} cursor-pointer`}
+          >
+            {MEDIOS_PAGO.map((m) => (
+              <option key={m} value={m}>
+                {ETIQUETA_MEDIO[m]}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label htmlFor="mov-fecha" className={CLASE_LABEL}>
             Fecha
           </label>
           <input
-            id="ing-fecha"
+            id="mov-fecha"
             type="date"
             value={fecha}
             onChange={(e) => setFecha(e.target.value)}
@@ -109,11 +129,11 @@ export function FormIngreso({
           />
         </div>
         <div>
-          <label htmlFor="ing-sucursal" className={CLASE_LABEL}>
+          <label htmlFor="mov-sucursal" className={CLASE_LABEL}>
             Sucursal
           </label>
           <select
-            id="ing-sucursal"
+            id="mov-sucursal"
             value={sucursalId}
             onChange={(e) => {
               setSucursalId(e.target.value);
@@ -131,17 +151,14 @@ export function FormIngreso({
       </div>
 
       {resultado.error && (
-        <p
-          role="alert"
-          className="rounded-md bg-overdue-soft px-3.5 py-3 text-ui text-overdue"
-        >
+        <p role="alert" className="rounded-md bg-overdue-soft px-3.5 py-3 text-ui text-overdue">
           {resultado.error}
         </p>
       )}
 
       <div className="mt-2 flex justify-end">
         <Boton type="submit" tam="lg" disabled={enviando || !listo} className="min-w-[190px]">
-          {enviando ? "Guardando…" : "Registrar ingreso"}
+          {enviando ? "Guardando…" : esIngreso ? "Registrar ingreso" : "Registrar egreso"}
         </Boton>
       </div>
     </form>
