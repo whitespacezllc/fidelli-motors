@@ -256,6 +256,20 @@ la resuelve.
   el mecánico; la base guarda `AB123CD` para buscar. Se aceptan los cuatro formatos
   argentinos: auto `ABC123` / `AB123CD` y moto `123ABC` / `A123BCD`. La fuente única
   es `patente_formato_valido()`; el front la repite en `lib/texto.ts` solo para avisar.
+- **El buscador de clientes: la forma del término dice qué es (21/10/2026).**
+  `filtroClientes` (`lib/clientes.ts`) es el ÚNICO filtro de clientes y lo
+  usan los cuatro lugares que buscan clientes: el listado, su export a
+  Excel, la ficha del tenant en `/fidelli` y el «¿De quién es?» del alta.
+  Letras y números juntos (hasta 7) son una patente, entera o a medio
+  tipear, y se busca **solo** en `patentes`; solo números, un teléfono —por
+  sus **dígitos**: `telefono_digitos` en `vista_clientes` (desde
+  `20261021120000`), así «351 317-2545» se encuentra escribiendo
+  3513172545— o una patente que arranca con números; solo letras, un nombre
+  o las letras de una patente; lo que no entra en una patente («lopez
+  3515591616»), los tres. Antes los dígitos de la patente se buscaban
+  también adentro de todos los teléfonos y «KXM616» devolvía cuatro
+  clientes en Brothers Oil: el dueño y tres con «616» en el celular. Lo
+  vigilan R46 y `scripts/regresion-busquedas.mjs`.
 
 - **`landing_busquedas` no guarda la patente de una consulta sin resultado**
   (desde `20260922120000`): `patente` es anulable, un trigger la deja en null
@@ -474,6 +488,25 @@ pendiente → se celebra**: "Estás al día", en verde.
 mutaciones en Server Actions. Cliente solo donde hay interactividad real. Menos
 JavaScript en el celular del mecánico.
 
+**La excepción: las dos búsquedas del alta van del navegador a PostgREST**
+(`lib/busqueda-alta.ts`, desde el 21/10/2026): la patente de «Nuevo trabajo»
+y el «¿De quién es?». La razón es el mecánico con el auto en el pozo: como
+Server Actions, cada búsqueda pagaba en serie el POST a Vercel, el
+`getClaims()` del proxy, la sesión otra vez (otro `getClaims()` más
+`usuarios` con sus campos calculados) y recién después una consulta que en
+la base tarda menos de 10 ms; «unos segundos» en el taller. Desde el
+navegador es UN viaje, con el mismo JWT y el mismo RLS
+(`buscar_vehiculo_por_patente` es invoker y `vista_clientes` es
+`security_invoker`): la base recorta igual, y la sesión solo servía para
+redirigir a `/login`. Una lectura nueva que quiera seguir este camino tiene
+que poder decir lo mismo: que no hay nada que el servidor sepa y el
+navegador no. Las escrituras siguen siendo Server Actions. Además, la
+patente válida sale sin esperar los 300 ms del debounce —ninguna patente
+válida es el principio de otra— y `AB123C` no busca nada hasta la D
+(`patenteIncompleta`, `lib/texto.ts`): buscarla sería buscar otra patente y
+abrir «¿De quién es?» a mitad de tipeo. Lo mide `scripts/medir-alta.mjs`,
+local o contra un preview.
+
 **Una consulta por pantalla.** Columnas explícitas, nunca `select *`. Sin N+1.
 El costo de Supabase se controla acá.
 
@@ -582,6 +615,10 @@ muestra una vez por taller (`bienvenida_vista_at`). Lo vigila R14.
   `supabase/seed.sql`, que solo corre en el `db reset` local.
 - Mailpit para ver los mails: `http://127.0.0.1:54324`
 - Studio local: `http://127.0.0.1:54323`
+- Volumen para medir: `scripts/volumen-sintetico.sql` infla el demo a volumen
+  tipo Sassi (3.000 clientes, 3.500 vehículos, 10.000 trabajos) y crea un
+  segundo tenant igual, `zz-volumen`, para que el RLS tenga filas ajenas que
+  descartar. Solo local; se deshace con `supabase db reset`.
 - Proyecto en la nube linkeado: **solo dev.** Producción NO está linkeada a
   propósito — `db push` no puede tocarla por accidente.
 
@@ -618,6 +655,25 @@ que reemplace una vista tiene que terminar con:
 ```sql
 alter view <la_vista> set (security_invoker = on);
 ```
+
+**Las policies preguntan por la sesión UNA vez por consulta, no una vez por
+fila** (desde `20261021230000`). `mi_lubricentro_id()`, `soy_superadmin()` y
+`auth.uid()` van siempre envueltas en un sub-select —`(select
+mi_lubricentro_id())`—: a pelo, Postgres las ejecuta por cada fila que el
+scan mira, incluidas las de los demás tenants, que son justo las que el RLS
+descarta. Con el volumen de un taller `resumen_inicio()` tardaba 1,8 s en
+local, y en producción el Inicio llegaba a veces al `statement_timeout` de
+8 s de `authenticated` y mostraba «No pudimos traer el resumen». Envueltas,
+el planificador las resuelve una vez (un InitPlan) y la misma consulta baja
+a 59 ms; el booleano por fila es el mismo. Es el lint `auth_rls_initplan`
+de Supabase. Una policy nueva se escribe
+`using ((lubricentro_id = (select mi_lubricentro_id())) or (select soy_superadmin()))`;
+lo que se llama adentro de otra función (`plan_permite()`,
+`sucursales_dentro_del_limite()`) no hace falta envolverlo. Lo vigila R47,
+en `public` y en `storage`, y `scripts/regresion-rls-initplan.sh` lo rompe
+a mano. Y si el resumen no llega, el Inicio deja el motivo en los logs
+(`console.error` en `app/panel/(tras-onboarding)/page.tsx`); antes se
+descartaba y en Vercel no quedaba rastro.
 
 **Si insertás a mano en `auth.users`**, fijá en `''` (no `NULL`) las columnas
 `confirmation_token`, `recovery_token`, `email_change_token_new` y `email_change`.
@@ -1163,6 +1219,8 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R43** | Los adjuntos de un trabajo (`20261004200000`): **la forma** (la tabla con RLS; `anon` sin ningún privilegio; el alta de seis columnas —sin `visible_cliente`, `subido_por` ni `created_at`— y la edición de una sola; los dos triggers; la FK en cascada; el bucket privado, de 2 MB y tres formatos, con tres policies y ninguna para `anon`; `adjunto_publico()` definer y solo de `service_role`, igual que `adjuntos_huerfanos()`); **el alta** (entra en un trabajo FIJADO hace un mes, nace oculto, a nombre de quien lo subió y en el tenant de su trabajo aunque el insert mande otro; se rechazan la carpeta de otro trabajo o de otro tenant, la ruta que sube de carpeta, la extensión que no es la del formato, el formato desconocido, el archivo vacío, los 2 MB y un byte, el nombre en blanco o de 121 caracteres —y exactamente 2 MB entra—; y a un trabajo ajeno, nada); **el tope** (el cuarto falla con `tope_adjuntos`, también fuera de la sesión del owner; es por trabajo; al quitar uno entra otro, y quitar funciona en un trabajo fijado); **lo único que se edita** es «Mostrar al cliente», columna por columna; **el aislamiento** (el owner no lee ni toca lo del tenant de al lado, en la tabla ni en el bucket; sube solo a su carpeta y borra solo lo que no está registrado; `anon` no lee la tabla, no ve el bucket, no sube y no ejecuta la función, y un owner tampoco ejecuta las dos de servicio); **la puerta del cliente** (`adjunto_publico()` entrega la ruta solo del visible, con la patente como la escribe la gente; null para el oculto, para otro vehículo, para el slug de OTRO tenant que tiene la misma patente, para el adjunto del vecino, para lo que no existe, para un trabajo anulado y al apagarlo); **`get_carton`** (lista los visibles con `id`, `nombre`, `mime` y `creado` y nada más, en el orden en que se subieron; `[]` donde solo hay ocultos; no deja ver la ruta ni el id del trabajo; **no perdió `prox_caja_km`**; y el tenant de al lado ve solo el suyo); y **los huérfanos** (lista el archivo sin fila de hace dos días; no el recién subido, ni el que tiene su fila, ni los de otro bucket) | Un adjunto nace a la vista del cliente o el taller ya no puede adjuntar al día siguiente, el cuarto archivo entra, un owner le cuelga un archivo al trabajo de otro lubricentro o lee su carpeta, el diagnóstico de un auto se baja sabiendo la patente de otro (o el slug de otro taller), el cliente ve un adjunto oculto o la ruta de un archivo, `get_carton` perdió el próximo de caja al ganar los adjuntos, o el cierre diario le borra el archivo a quien está adjuntando (o no barre nunca) |
 | **R44** | El slug entra en el QR del calco (`20261004200000`): el CHECK `slug_largo_qr` existe y ningún tenant lo viola; 32 caracteres entran y 33 no —por INSERT lo frena ESE check, no el viejo de 3 a 60, y por UPDATE tampoco—; y `slug_estado()` contesta `invalido` para 33, `disponible` para 32 libres y `ocupado` para 32 tomados | Un lubricentro queda con un slug cuyo QR no se puede hacer (pasó con uno de 34), o el alta dice «Disponible» y falla al crear |
 | **R45** | Los datos de la empresa en el presupuesto (`20261004210000`): **la forma** (la tabla con RLS; `anon` sin nada; el owner lee, da de alta y edita SOLO los seis campos —ni el sello ni el tenant— y no borra; tres policies y ninguna de borrado; los seis CHECK por su nombre; el trigger del sello; la FK en cascada; la puerta, una sola firma, invoker, y que `anon` no ejecuta); **la puerta** (recorta, guarda el CUIT en once números —escrito con guiones, con puntos o pelado—, deja null lo vacío, y es un upsert de los SEIS campos: una fila por tenant, a nombre de quien guardó); **los rechazos** (un CUIT de diez o de doce números contesta `cuit_invalido`, una condición de IVA que no es de la lista, una clave mal escrita, un dato más largo que su tope —y los cuatro en el tope exacto entran—; y por la tabla tampoco entran el CUIT con guiones, la condición inventada, la razón social vacía, el domicilio con espacios, el teléfono con un salto de línea ni el email de 121 caracteres); **el sello** (el owner no escribe `actualizado_por`, `updated_at` ni el tenant, y un UPDATE con privilegios tampoco los deja: los pisa el trigger); **el aislamiento** (el owner del demo ve una fila; no lee, no pisa por la puerta ni por la tabla, y no da de alta la del tenant de al lado; nadie borra; `anon` no lee ni ejecuta); **Fidelli** (sin decir el lubricentro, `falta_lubricentro`; con él, guarda a su nombre y no toca a los demás); y **la purga** (la simulación cuenta la fila sin borrarla; la real se la lleva, y solo la de ese tenant) | Un owner lee la razón social y el CUIT de otro lubricentro (o se los cambia), un CUIT a medias sale impreso en un presupuesto, un dato no se puede vaciar, alguien firma la carga con el usuario de otro, Fidelli pisa los datos de un taller cargando los del de al lado, o la razón social de quien canceló hace más de un año sigue en la base |
+| **R46** | El buscador de clientes encuentra el teléfono por sus dígitos (`20261021120000`): `vista_clientes` tiene `telefono_digitos`, «+54 9 351 317-2545» da `5493513172545`, el `like` por dígitos lo encuentra y `telefono` sigue siendo el crudo que se muestra | Un cliente cargado con espacios o guiones en el teléfono no aparece al buscarlo por teléfono |
+| **R47** | Las policies preguntan por la sesión una vez por consulta (`20261021230000`): ninguna policy de `public` ni de `storage` llama a `mi_lubricentro_id()`, `soy_superadmin()` o `auth.uid()` a pelo en su `USING` o su `WITH CHECK` —cada llamada va envuelta en un sub-select—, y el chequeo tiene qué mirar (70 policies de `public` o más las llaman) | Una policy nueva o redefinida volvió a la forma vieja: Postgres la evalúa fila por fila, el Inicio vuelve a tardar segundos y a veces no llega, sin ningún error |
 
 Además, fuera del reset, **las roturas a mano** (regla 13):
 
@@ -1188,6 +1246,7 @@ Además, fuera del reset, **las roturas a mano** (regla 13):
 ./scripts/regresion-caja.sh
 ./scripts/regresion-adjuntos.sh
 ./scripts/regresion-datos-empresa.sh
+./scripts/regresion-rls-initplan.sh
 node --no-warnings scripts/regresion-cresium-orden.mjs
 node --no-warnings scripts/regresion-cobranza-emails.mjs
 node --no-warnings scripts/regresion-avisos-cobranza.mjs   # contra next dev + el doble de Resend
@@ -1201,6 +1260,7 @@ node --no-warnings scripts/regresion-cresium-webhook.mjs   # contra next dev: la
 node --no-warnings scripts/regresion-caja.mjs              # contra next dev + el seed (Playwright); prende la feature en el demo local y lo restaura
 node --no-warnings scripts/regresion-adjuntos.mjs          # ídem; cuelga adjuntos en dos trabajos del demo y los quita (deja un tenant `zza-…`)
 node --no-warnings scripts/regresion-datos-empresa.mjs     # ídem; le carga y le vacía los datos de la empresa al demo y los restaura
+node --no-warnings scripts/regresion-busquedas.mjs         # ídem; seis clientes «Zzbusq» en el demo por psql, restaurados al final (SOLO_A=1: solo la parte sin navegador)
 ```
 
 El primero rompe la vista de retención de dos formas —le saca el filtro de
@@ -1321,6 +1381,19 @@ El decimoctavo rompe R42 (sesenta y nueve roturas) y tiene un compañero con nav
 El decimonoveno rompe R43 y R44 (cincuenta y ocho roturas) y tiene un compañero con navegador. Lo que enseñó al escribirse: **cinco roturas no están porque no rompen nada**, y las cinco por la misma razón —hay una segunda defensa—: la policy de alta abierta (al owner lo frena igual el tenant heredado, que con su sesión no encuentra el trabajo ajeno y queda en null), la edición y el borrado de la tabla sin tenant y el borrado del bucket sin carpeta (para tocar una fila hay que poder LEERLA, y la policy de lectura —que sí se rompe— no deja ver la ajena), y el alta por columnas probada fila por fila (la misma lista de privilegios la comprueba antes R43j, por catálogo). **Una rotura se ve por otro mensaje que el que uno escribiría**: el tope contado por tenant y no por trabajo salta en el intento de adjuntar a un trabajo AJENO, que deja de fallar por RLS y empieza a fallar por `tope_adjuntos`. **Y los helpers del bloque llevan su `grant execute` a `anon`**: en este proyecto `anon` no hereda el execute de las funciones nuevas, y la prueba de que anon no lee nada se llama con el rol de anon. Las demás: la tabla sin RLS, `anon` con lectura, el alta que deja mandar «Mostrar al cliente» o todas las columnas, la edición de todas o del nombre, el trigger del tope borrado, la FK sin cascada, el bucket público, con otro tope o con otro formato, **una policy del bucket para `anon` limitada a los visibles** (el atajo de la regla 25), el bucket sin su policy de subida, `adjunto_publico()` ejecutable por `anon` o sin definer y `adjuntos_huerfanos()` por un owner; el adjunto que nace visible, el que no queda a nombre de quien lo subió, el tenant del insert creído, **el alta, el borrado y el interruptor atados al plazo de edición** (la copia de `ruedas_escritura`), la ruta sin su CHECK o mirando solo la carpeta del tenant, el peso sin CHECK, a 10 MB y con el borde corrido, el formato y el nombre sin CHECK; el tope en 4, en 2, con otro error y salteado fuera de la sesión; la lectura sin tenant, el bucket sin carpeta en la lectura y en la subida, el borrado que no mira si el archivo está registrado y el que no deja borrar lo que no se registró; la puerta del cliente sin cada una de sus cuatro condiciones y con la patente sin normalizar; `get_carton` listando los ocultos, con la ruta, sin la clave, **sin `prox_caja_km`** y en el orden inverso; los huérfanos sin el margen, sin mirar la fila, sin filtrar el bucket y con el margen de un mes; y el slug sin el CHECK, con el tope en 33 y en 31, y `slug_estado()` con el tope viejo y con uno de menos. **`get_carton` vive desde este sprint en `20261004200000`**: la muerden de ahí `regresion-edicion.sh`, `regresion-pesado.sh`, `regresion-neumaticos.sh`, `regresion-cobranza-suspension.sh` y `regresion-caja.sh` (`M_CARTON` en los cinco). El compañero es `scripts/regresion-adjuntos.mjs`: compila `lib/adjuntos.ts` y los helpers del slug con `tsc` y rompe quince reglas sobre una copia; comprueba por la API directa que `anon` no lee la tabla, la función ni el bucket; en el detalle de un trabajo FIJADO, en 390 táctil, adjunta un PDF de 300 KB y una foto de 4 MB generada en el navegador —que sale a menos de 500 KB y el archivo del bucket mide 1600 × 1200—, ve rechazar un PDF de 2,5 MB y un .txt antes de subir y un HTML con nombre de PDF después (por sus bytes, y sin dejar el archivo), adjunta el tercero, y fuerza el cuarto por la pantalla y por la API; prende «Mostrar al cliente» en uno; mira en `/[slug]/[patente]` que el cliente ve solo ese —y uno del historial, a la vista con el papel cerrado—, debajo del papel y nunca adentro, que el HTML no tiene ninguna URL firmada, que la ruta contesta 302 a una URL que vence a los 60 segundos (lee el `exp` del token) y que llega el PDF entero, y 404 para el oculto, para otro auto, para otro lubricentro y para cualquier cosa; quita uno y comprueba que se fue la fila y el archivo; mira el clip del listado y abre el Excel por la columna «Adjuntos»; llega al detalle desde «Adjuntar el diagnóstico» del guardado; sube un archivo sin fila, lo envejece y llama a la ruta del cierre diario de verdad; escribe slugs en el alta y en Editar (y se saltea el tope del campo para ver el rechazo de la base); y recorre 360, 390, 820 y 1280. Se vio en rojo contra el front del service de caja (30 fallas). **Tres cosas que la hicieron fallar sin que el producto tuviera nada**, y quedaron escritas en el script: una corrida que cruza la medianoche compara contra el día en que se subió el adjunto, no contra «hoy»; la página del cliente contesta 404 si `get_carton` no responde —no distingue «no existe» de «no contestó»—, así que con el stack recién reseteado se reintenta SOLO ante un status que no es 200; y con la máquina cargada `next dev` tarda veinte segundos en una página, así que los tiempos de espera son generosos. **Toca el demo local y lo limpia**; lo único que deja es un lubricentro `zza-…` (para el Editar del slug), y `supabase db reset` es la única limpieza. **Y la dirección vieja de un lubricentro** (sección L, más cuatro roturas sobre `lib/slugs-anteriores.ts`: la entrada borrada, el redirect que toma solo la vidriera, el que pierde la patente y el temporal): pide el slug viejo con la vidriera, una patente, un adjunto y un parámetro, y espera el 301 con el `Location` entero. Corre apenas terminan los helpers, antes de tocar la base, porque solo necesita el servidor de Next. Se vio en rojo sin el redirect (404 en las cuatro).
 
 El vigésimo rompe R45 (cuarenta y siete roturas) y tiene un compañero con navegador. Lo que enseñó al escribirse: **una rotura se escapó por la prueba, no por la regla** —con la lectura abierta a todos los tenants saltaba otro renglón (un `select` sin `where` que traía la fila del vecino), así que las lecturas del bloque nombran el tenant—. **Dos roturas no están porque no rompen nada**: la edición sin tenant (para editar una fila hay que poder leerla, y la policy de lectura —que sí se rompe— no deja ver la ajena) y la puerta que le cree el lubricentro al owner sumada a la RLS abierta (es la suma de dos que ya están). **Cuatro se prueban con el error crudo**, porque las frena una segunda defensa: el CUIT sin normalizar (lo rechaza la validación de la propia puerta), los textos sin recortar (el CHECK de la tabla) y las dos policies que se olvidan del superadmin (la RLS, adentro de la puerta). Las demás: la tabla sin RLS, `anon` con lectura, el owner que borra, el sello escribible por tres lados, la fila que se muda de tenant, el alta y la edición que no pueden escribir un campo, una policy de borrado, dos CHECK borrados, el trigger del sello borrado y deshabilitado, la FK sin cascada, y la puerta como definer, ejecutable por `anon` o sin execute; el upsert que conserva lo que no viene y el sello que no se pone; la clave mal escrita ignorada, el CUIT a medias y «al menos once», la condición de IVA y los largos sin validar, el tope corrido y el jsonb que no es un objeto; los seis CHECK aflojados de a uno; el sello que respeta el autor que le mandan y el que no pone la fecha; la lectura y el alta sin tenant y la puerta que le cree al owner; la puerta sin el «falta el lubricentro»; y la purga que no cuenta la tabla y la que no se la lleva. **`purgar_tenants_vencidos()` vive desde este PR en `20261004210000`** (dos líneas más: el conteo y el delete): `regresion-legal-datos.sh` la muerde de ahí (`M_PURGA_FN`). El compañero es `scripts/regresion-datos-empresa.mjs`: compila `lib/datos-empresa.ts` con `tsc` y rompe doce reglas sobre una copia (la razón social que se repite, la condición abreviada, las etiquetas, las líneas vacías, el orden, la máscara); **compara el presupuesto sin datos contra el de antes del cambio** —el stream de la página del PDF, byte a byte, y el HTML de la cabecera, guardados en `scripts/fixtures-presupuesto-sin-datos-empresa.json` con el front de `develop`: regenerar esa base (`GUARDAR_BASE=1`) sobre un cambio del encabezado es firmar ese cambio—; comprueba por la API directa que `anon` no lee ni ejecuta; en Mi cuenta, en 390 táctil, ve la tarjeta y su ayuda, la máscara del CUIT mientras se escribe, el CUIT a medias rechazado con el mismo mensaje que en clientes, el aviso del verificador, y guarda los datos de prueba; abre un presupuesto y lee las cinco líneas en el documento y **en el texto extraído del PDF** (con su posición: en orden, antes de la sucursal, empujando la grilla, sin llegar al bloque «PRESUPUESTO N°»), la razón social igual al nombre que no se repite, el dato suelto y el domicilio larguísimo que envuelve; vacía los datos y vuelve a comparar contra la base; los carga desde la ficha de `/fidelli` y los ve en el panel del tenant; apaga Presupuestos y la tarjeta desaparece; y recorre 360, 390, 820 y 1280. Se vio en rojo contra el front de `develop` (18 fallas). **Toca el demo local y lo restaura.**
+
+El vigesimoprimero rompe R47 (seis roturas) y no tiene compañero con
+navegador: lo que cambia es cuántas veces se pregunta, no qué contesta. Lo
+que enseñó al escribirse: **la rotura es el catálogo, no una consulta
+lenta** —medir el tiempo en una prueba es mentirse: a 50 filas la forma
+vieja también tarda nada—, así que el bloque mira `pg_policies` y las seis
+roturas reescriben una policy a la forma vieja (el `USING` de una tabla del
+tenant, un `WITH CHECK`, `auth.uid()`, una policy nueva escrita como antes,
+una del bucket) o vacían la red (el piso). **Y el bloque se vio en rojo
+antes de la migración de verdad**: 118 expresiones en 85 policies, con la
+base de `develop`. El `alter policy` de cada una es la expresión del
+catálogo con la llamada envuelta y nada más, y se comprobó que el catálogo
+de después, sin el envoltorio, es byte a byte el de antes.
 
 ⚠ Y DOS DE ESTOS SCRIPTS APUNTAN A MÁS DE UNA MIGRACIÓN, porque
 `estado_cobranza`, `reloj_cobranza` y `crear_lubricentro` se redefinieron en

@@ -3220,6 +3220,7 @@ export type Database = {
           patentes: string | null
           patentes_lista: string | null
           telefono: string | null
+          telefono_digitos: string | null
           ultima_visita_fecha: string | null
           ultimo_prox_service_km: number | null
           ultimo_service_fecha: string | null
