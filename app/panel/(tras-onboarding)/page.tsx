@@ -100,6 +100,17 @@ export default async function PaginaInicio({
       : Promise.resolve({ data: null }),
   ]);
 
+  // Si el resumen no llega, el motivo queda en los logs de Vercel. Hasta
+  // acá se descartaba: la pantalla decía «No pudimos traer el resumen» y
+  // no quedaba ningún rastro de por qué (el caso real fue el
+  // statement_timeout de 8 s de `authenticated`, con el RLS evaluando las
+  // funciones de sesión fila por fila).
+  if (resumenRes.error) {
+    console.error(
+      `[panel/inicio] resumen_inicio falló: ${resumenRes.error.code ?? "sin código"} ${resumenRes.error.message}`,
+    );
+  }
+
   const onboarding = onboardingRes.data as { premio_definido?: boolean } | null;
 
   // El total ya formateado, o null. Si la consulta falla o el tenant no
