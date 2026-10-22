@@ -4834,6 +4834,7 @@ export type Database = {
         Args: { p_lubricentro_id: string; p_nombre: string }
         Returns: undefined
       }
+      serie_caja: { Args: never; Returns: Json }
       service_editable: { Args: { p_service_id: string }; Returns: boolean }
       slug_estado: { Args: { p_slug: string }; Returns: string }
       slug_reservado: { Args: { p_slug: string }; Returns: boolean }

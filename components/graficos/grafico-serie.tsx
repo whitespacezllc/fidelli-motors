@@ -57,13 +57,21 @@ export function GraficoSerie({
    *  lubricentro, «trabajo» en el Pulso de /fidelli (que desde el bloque
    *  MÉTRICAS 2 cuenta los tres tipos). */
   nombre = { singular: "service", plural: "services" },
+  formatear,
 }: {
   serie: PuntoSerie[];
   unidad: Granularidad | VistaPanel;
   ultimoEnCurso?: boolean;
   vacio: { sinDatos: string; unSoloPunto: string };
   nombre?: { singular: string; plural: string };
+  /** Cómo se escribe el valor (punto único, tooltip, aria). Por defecto un
+   *  número con separador de miles. Cuando se pasa —p. ej. pesos— el
+   *  tooltip muestra solo el valor formateado, sin el sustantivo: el
+   *  formato ya dice qué es. */
+  formatear?: (n: number) => string;
 }) {
+  const fmt = formatear ?? ((v: number) => v.toLocaleString("es-AR"));
+  const conNombre = !formatear;
   const Nombre = `${nombre.plural.charAt(0).toUpperCase()}${nombre.plural.slice(1)}`;
   const [indice, setIndice] = useState<number | null>(null);
   // El id del gradiente tiene que ser único: dos gráficos en la misma
@@ -85,7 +93,7 @@ export function GraficoSerie({
     return (
       <div className="border-t border-line px-4.5 py-8 text-center">
         <p className="font-brand text-h3 font-bold text-ink tabular-nums">
-          {serie[0].cantidad}
+          {fmt(serie[0].cantidad)}
         </p>
         <p className="mt-0.5 text-ui text-ink-60">
           {etiquetaDePunto(serie[0].inicio, unidad)} — {vacio.unSoloPunto}
@@ -127,9 +135,9 @@ export function GraficoSerie({
         tooltip={(i) => (
           <p className="font-ui text-ui text-ink">
             <span className="font-semibold tabular-nums">
-              {serie[i].cantidad}
-            </span>{" "}
-            {serie[i].cantidad === 1 ? nombre.singular : nombre.plural}
+              {fmt(serie[i].cantidad)}
+            </span>
+            {conNombre ? ` ${serie[i].cantidad === 1 ? nombre.singular : nombre.plural}` : ""}
             <span className="text-ink-60">
               {" "}
               · {etiquetaDePunto(serie[i].inicio, unidad)}
@@ -150,7 +158,7 @@ export function GraficoSerie({
           className="block h-32 w-full sm:h-40 lg:h-[200px]"
           role="img"
           aria-label={`${Nombre} por ${unidad}: ${serie
-            .map((p) => `${etiquetaDePunto(p.inicio, unidad)} ${p.cantidad}`)
+            .map((p) => `${etiquetaDePunto(p.inicio, unidad)} ${fmt(p.cantidad)}`)
             .join(", ")}`}
         >
           <LinearGradient
