@@ -14541,3 +14541,77 @@ begin
   end if;
 end $$;
 -- <<< R46
+
+-- ============================================================
+-- R47 · Las policies preguntan por la sesión una vez por consulta
+-- (20261021230000)
+--
+-- Postgres evalúa el USING y el WITH CHECK de una policy por CADA fila
+-- que el scan mira —también las de los otros tenants, que son justo las
+-- que el RLS descarta—, y `mi_lubricentro_id()`, `soy_superadmin()` o
+-- `auth.uid()` escritas a pelo se ejecutan en cada una. Con el volumen de
+-- un taller, `resumen_inicio()` tardaba 1,6 s en local y en producción el
+-- Inicio llegaba a veces al statement_timeout de 8 s de `authenticated`.
+-- Envueltas en un sub-select —`(select mi_lubricentro_id())`— el
+-- planificador las resuelve una vez por consulta (InitPlan) y compara el
+-- valor. El booleano por fila es el mismo; cambia cuántas veces se
+-- pregunta. Es lo que pide el lint `auth_rls_initplan` de Supabase.
+--
+-- Lo que mira: el catálogo (pg_policies), en public y en storage. Se
+-- borran de cada expresión las llamadas ya envueltas —el catálogo las
+-- muestra como `( SELECT mi_lubricentro_id() AS mi_lubricentro_id)`— y
+-- lo que queda a pelo es la falla. Lo que una policy llama ADENTRO de
+-- otra función (plan_permite(), sucursales_dentro_del_limite()) no es
+-- esta regla y no se mira.
+-- ============================================================
+-- >>> R47
+do $$
+declare
+  v_fallas  text;
+  v_cuantas integer;
+begin
+  with partes as (
+    select schemaname, tablename, policyname, 'USING' as parte, qual as expr
+    from pg_policies
+    where schemaname in ('public', 'storage') and qual is not null
+    union all
+    select schemaname, tablename, policyname, 'WITH CHECK', with_check
+    from pg_policies
+    where schemaname in ('public', 'storage') and with_check is not null
+  ),
+  a_pelo as (
+    select schemaname, tablename, policyname, parte,
+      regexp_replace(expr,
+        '\(\s*select\s+(mi_lubricentro_id|soy_superadmin|auth\.uid)\(\)(\s+as\s+\w+)?\s*\)',
+        '', 'gi') as resto
+    from partes
+  )
+  select count(*),
+         string_agg(format('  · %s.%s «%s», en el %s: %s()', schemaname, tablename, policyname, parte,
+                           (regexp_match(resto, '(mi_lubricentro_id|soy_superadmin|auth\.uid)\(\)'))[1]),
+                    chr(10) order by schemaname, tablename, policyname, parte)
+  into v_cuantas, v_fallas
+  from a_pelo
+  where resto ~ '(^|[^A-Za-z_.])(mi_lubricentro_id|soy_superadmin|auth\.uid)\(\)';
+
+  if v_cuantas > 0 then
+    raise exception
+      E'R47 RLS FILA POR FILA: % expresión(es) de policy llaman a las funciones de sesión a pelo, una vez por fila.\n%',
+      v_cuantas, v_fallas
+      using hint =
+        'Envolvé cada llamada en un sub-select —(select mi_lubricentro_id()), (select soy_superadmin()), '
+        '(select auth.uid())— para que se evalúe una vez por consulta. El resultado por fila es el mismo.';
+  end if;
+
+  -- Y que el chequeo tenga qué mirar: sin policies que llamen a las
+  -- funciones de sesión el bloque pasaría en verde con la red vacía. Hoy
+  -- son 76 en public.
+  select count(*) into v_cuantas
+  from pg_policies
+  where schemaname = 'public'
+    and (coalesce(qual, '') || ' ' || coalesce(with_check, '')) ~ '(mi_lubricentro_id|soy_superadmin|auth\.uid)\(\)';
+  if v_cuantas < 70 then
+    raise exception 'R47 SIN PISO: solo % policies de public llaman a las funciones de sesión (esperaba 70 o más).', v_cuantas;
+  end if;
+end $$;
+-- <<< R47
