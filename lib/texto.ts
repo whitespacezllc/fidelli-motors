@@ -84,6 +84,28 @@ export function esPatenteValida(texto: string): boolean {
   );
 }
 
+// Una patente normalizada tiene 6 (ABC123, 123ABC) o 7 (AB123CD, A123BCD)
+// caracteres. Lo que tenga letras y números y no pase de 7 se trata como
+// patente en las búsquedas; más largo, no puede serlo.
+export const PATENTE_LARGO_MINIMO = 6;
+export const PATENTE_LARGO_MAXIMO = 7;
+
+// Los dos únicos casos de 6 caracteres que todavía pueden terminar siendo
+// una patente de 7: AB123C (→ AB123CD) y A123BC (→ A123BCD). Ninguna
+// patente válida es el principio de otra, así que una válida nunca está
+// incompleta.
+const PREFIJO_MERCOSUR = /^[A-Z]{2}[0-9]{3}[A-Z]$/;
+const PREFIJO_MOTO_MERCOSUR = /^[A-Z][0-9]{3}[A-Z]{2}$/;
+
+/** ¿Le falta el último carácter a una patente Mercosur? Mientras sea así,
+ *  buscar sería buscar otra cosa (y mostrar «¿De quién es?» a mitad de
+ *  tipeo). Lo que tiene menos de 6 también está incompleto. */
+export function patenteIncompleta(texto: string): boolean {
+  const n = normalizarPatente(texto);
+  if (n.length < PATENTE_LARGO_MINIMO) return true;
+  return PREFIJO_MERCOSUR.test(n) || PREFIJO_MOTO_MERCOSUR.test(n);
+}
+
 // Cómo se lee en la chapa: "ABC123" → "ABC 123", "AB123CD" → "AB 123 CD",
 // "123ABC" → "123 ABC", "A123BCD" → "A 123 BCD".
 // Lo que no entra en ningún formato se devuelve tal cual.

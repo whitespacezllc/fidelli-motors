@@ -3056,6 +3056,7 @@ export type Database = {
           patentes: string | null
           patentes_lista: string | null
           telefono: string | null
+          telefono_digitos: string | null
           ultima_visita_fecha: string | null
           ultimo_prox_service_km: number | null
           ultimo_service_fecha: string | null
@@ -4289,6 +4290,10 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      r45_anon: { Args: never; Returns: undefined }
+      r45_como: { Args: { p_uid: string }; Returns: undefined }
+      r45_intento: { Args: { p_sql: string }; Returns: string }
+      r45_postgres: { Args: never; Returns: undefined }
       reabrir_contacto_pauta: { Args: { p_id: string }; Returns: undefined }
       reclamar_mail_encargo_calcos: {
         Args: { p_id: string; p_tipo: string }

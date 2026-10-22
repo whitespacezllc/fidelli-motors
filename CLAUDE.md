@@ -256,6 +256,20 @@ la resuelve.
   el mecánico; la base guarda `AB123CD` para buscar. Se aceptan los cuatro formatos
   argentinos: auto `ABC123` / `AB123CD` y moto `123ABC` / `A123BCD`. La fuente única
   es `patente_formato_valido()`; el front la repite en `lib/texto.ts` solo para avisar.
+- **El buscador de clientes: la forma del término dice qué es (21/10/2026).**
+  `filtroClientes` (`lib/clientes.ts`) es el ÚNICO filtro de clientes y lo
+  usan los cuatro lugares que buscan clientes: el listado, su export a
+  Excel, la ficha del tenant en `/fidelli` y el «¿De quién es?» del alta.
+  Letras y números juntos (hasta 7) son una patente, entera o a medio
+  tipear, y se busca **solo** en `patentes`; solo números, un teléfono —por
+  sus **dígitos**: `telefono_digitos` en `vista_clientes` (desde
+  `20261021120000`), así «351 317-2545» se encuentra escribiendo
+  3513172545— o una patente que arranca con números; solo letras, un nombre
+  o las letras de una patente; lo que no entra en una patente («lopez
+  3515591616»), los tres. Antes los dígitos de la patente se buscaban
+  también adentro de todos los teléfonos y «KXM616» devolvía cuatro
+  clientes en Brothers Oil: el dueño y tres con «616» en el celular. Lo
+  vigilan R46 y `scripts/regresion-busquedas.mjs`.
 
 - **`landing_busquedas` no guarda la patente de una consulta sin resultado**
   (desde `20260922120000`): `patente` es anulable, un trigger la deja en null
@@ -474,6 +488,25 @@ pendiente → se celebra**: "Estás al día", en verde.
 mutaciones en Server Actions. Cliente solo donde hay interactividad real. Menos
 JavaScript en el celular del mecánico.
 
+**La excepción: las dos búsquedas del alta van del navegador a PostgREST**
+(`lib/busqueda-alta.ts`, desde el 21/10/2026): la patente de «Nuevo trabajo»
+y el «¿De quién es?». La razón es el mecánico con el auto en el pozo: como
+Server Actions, cada búsqueda pagaba en serie el POST a Vercel, el
+`getClaims()` del proxy, la sesión otra vez (otro `getClaims()` más
+`usuarios` con sus campos calculados) y recién después una consulta que en
+la base tarda menos de 10 ms; «unos segundos» en el taller. Desde el
+navegador es UN viaje, con el mismo JWT y el mismo RLS
+(`buscar_vehiculo_por_patente` es invoker y `vista_clientes` es
+`security_invoker`): la base recorta igual, y la sesión solo servía para
+redirigir a `/login`. Una lectura nueva que quiera seguir este camino tiene
+que poder decir lo mismo: que no hay nada que el servidor sepa y el
+navegador no. Las escrituras siguen siendo Server Actions. Además, la
+patente válida sale sin esperar los 300 ms del debounce —ninguna patente
+válida es el principio de otra— y `AB123C` no busca nada hasta la D
+(`patenteIncompleta`, `lib/texto.ts`): buscarla sería buscar otra patente y
+abrir «¿De quién es?» a mitad de tipeo. Lo mide `scripts/medir-alta.mjs`,
+local o contra un preview.
+
 **Una consulta por pantalla.** Columnas explícitas, nunca `select *`. Sin N+1.
 El costo de Supabase se controla acá.
 
@@ -582,6 +615,10 @@ muestra una vez por taller (`bienvenida_vista_at`). Lo vigila R14.
   `supabase/seed.sql`, que solo corre en el `db reset` local.
 - Mailpit para ver los mails: `http://127.0.0.1:54324`
 - Studio local: `http://127.0.0.1:54323`
+- Volumen para medir: `scripts/volumen-sintetico.sql` infla el demo a volumen
+  tipo Sassi (3.000 clientes, 3.500 vehículos, 10.000 trabajos) y crea un
+  segundo tenant igual, `zz-volumen`, para que el RLS tenga filas ajenas que
+  descartar. Solo local; se deshace con `supabase db reset`.
 - Proyecto en la nube linkeado: **solo dev.** Producción NO está linkeada a
   propósito — `db push` no puede tocarla por accidente.
 
@@ -1163,6 +1200,7 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R43** | Los adjuntos de un trabajo (`20261004200000`): **la forma** (la tabla con RLS; `anon` sin ningún privilegio; el alta de seis columnas —sin `visible_cliente`, `subido_por` ni `created_at`— y la edición de una sola; los dos triggers; la FK en cascada; el bucket privado, de 2 MB y tres formatos, con tres policies y ninguna para `anon`; `adjunto_publico()` definer y solo de `service_role`, igual que `adjuntos_huerfanos()`); **el alta** (entra en un trabajo FIJADO hace un mes, nace oculto, a nombre de quien lo subió y en el tenant de su trabajo aunque el insert mande otro; se rechazan la carpeta de otro trabajo o de otro tenant, la ruta que sube de carpeta, la extensión que no es la del formato, el formato desconocido, el archivo vacío, los 2 MB y un byte, el nombre en blanco o de 121 caracteres —y exactamente 2 MB entra—; y a un trabajo ajeno, nada); **el tope** (el cuarto falla con `tope_adjuntos`, también fuera de la sesión del owner; es por trabajo; al quitar uno entra otro, y quitar funciona en un trabajo fijado); **lo único que se edita** es «Mostrar al cliente», columna por columna; **el aislamiento** (el owner no lee ni toca lo del tenant de al lado, en la tabla ni en el bucket; sube solo a su carpeta y borra solo lo que no está registrado; `anon` no lee la tabla, no ve el bucket, no sube y no ejecuta la función, y un owner tampoco ejecuta las dos de servicio); **la puerta del cliente** (`adjunto_publico()` entrega la ruta solo del visible, con la patente como la escribe la gente; null para el oculto, para otro vehículo, para el slug de OTRO tenant que tiene la misma patente, para el adjunto del vecino, para lo que no existe, para un trabajo anulado y al apagarlo); **`get_carton`** (lista los visibles con `id`, `nombre`, `mime` y `creado` y nada más, en el orden en que se subieron; `[]` donde solo hay ocultos; no deja ver la ruta ni el id del trabajo; **no perdió `prox_caja_km`**; y el tenant de al lado ve solo el suyo); y **los huérfanos** (lista el archivo sin fila de hace dos días; no el recién subido, ni el que tiene su fila, ni los de otro bucket) | Un adjunto nace a la vista del cliente o el taller ya no puede adjuntar al día siguiente, el cuarto archivo entra, un owner le cuelga un archivo al trabajo de otro lubricentro o lee su carpeta, el diagnóstico de un auto se baja sabiendo la patente de otro (o el slug de otro taller), el cliente ve un adjunto oculto o la ruta de un archivo, `get_carton` perdió el próximo de caja al ganar los adjuntos, o el cierre diario le borra el archivo a quien está adjuntando (o no barre nunca) |
 | **R44** | El slug entra en el QR del calco (`20261004200000`): el CHECK `slug_largo_qr` existe y ningún tenant lo viola; 32 caracteres entran y 33 no —por INSERT lo frena ESE check, no el viejo de 3 a 60, y por UPDATE tampoco—; y `slug_estado()` contesta `invalido` para 33, `disponible` para 32 libres y `ocupado` para 32 tomados | Un lubricentro queda con un slug cuyo QR no se puede hacer (pasó con uno de 34), o el alta dice «Disponible» y falla al crear |
 | **R45** | Los datos de la empresa en el presupuesto (`20261004210000`): **la forma** (la tabla con RLS; `anon` sin nada; el owner lee, da de alta y edita SOLO los seis campos —ni el sello ni el tenant— y no borra; tres policies y ninguna de borrado; los seis CHECK por su nombre; el trigger del sello; la FK en cascada; la puerta, una sola firma, invoker, y que `anon` no ejecuta); **la puerta** (recorta, guarda el CUIT en once números —escrito con guiones, con puntos o pelado—, deja null lo vacío, y es un upsert de los SEIS campos: una fila por tenant, a nombre de quien guardó); **los rechazos** (un CUIT de diez o de doce números contesta `cuit_invalido`, una condición de IVA que no es de la lista, una clave mal escrita, un dato más largo que su tope —y los cuatro en el tope exacto entran—; y por la tabla tampoco entran el CUIT con guiones, la condición inventada, la razón social vacía, el domicilio con espacios, el teléfono con un salto de línea ni el email de 121 caracteres); **el sello** (el owner no escribe `actualizado_por`, `updated_at` ni el tenant, y un UPDATE con privilegios tampoco los deja: los pisa el trigger); **el aislamiento** (el owner del demo ve una fila; no lee, no pisa por la puerta ni por la tabla, y no da de alta la del tenant de al lado; nadie borra; `anon` no lee ni ejecuta); **Fidelli** (sin decir el lubricentro, `falta_lubricentro`; con él, guarda a su nombre y no toca a los demás); y **la purga** (la simulación cuenta la fila sin borrarla; la real se la lleva, y solo la de ese tenant) | Un owner lee la razón social y el CUIT de otro lubricentro (o se los cambia), un CUIT a medias sale impreso en un presupuesto, un dato no se puede vaciar, alguien firma la carga con el usuario de otro, Fidelli pisa los datos de un taller cargando los del de al lado, o la razón social de quien canceló hace más de un año sigue en la base |
+| **R46** | El buscador de clientes encuentra el teléfono por sus dígitos (`20261021120000`): `vista_clientes` tiene `telefono_digitos`, «+54 9 351 317-2545» da `5493513172545`, el `like` por dígitos lo encuentra y `telefono` sigue siendo el crudo que se muestra | Un cliente cargado con espacios o guiones en el teléfono no aparece al buscarlo por teléfono |
 
 Además, fuera del reset, **las roturas a mano** (regla 13):
 
@@ -1201,6 +1239,7 @@ node --no-warnings scripts/regresion-cresium-webhook.mjs   # contra next dev: la
 node --no-warnings scripts/regresion-caja.mjs              # contra next dev + el seed (Playwright); prende la feature en el demo local y lo restaura
 node --no-warnings scripts/regresion-adjuntos.mjs          # ídem; cuelga adjuntos en dos trabajos del demo y los quita (deja un tenant `zza-…`)
 node --no-warnings scripts/regresion-datos-empresa.mjs     # ídem; le carga y le vacía los datos de la empresa al demo y los restaura
+node --no-warnings scripts/regresion-busquedas.mjs         # ídem; seis clientes «Zzbusq» en el demo por psql, restaurados al final (SOLO_A=1: solo la parte sin navegador)
 ```
 
 El primero rompe la vista de retención de dos formas —le saca el filtro de

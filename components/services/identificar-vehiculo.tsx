@@ -1,23 +1,30 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { PanelAlta } from "@/components/services/panel-alta";
 import { CampoPatente, MiniFicha } from "@/components/services/campos-carton";
-import { esPatenteValida, normalizarPatente, PATENTE_FORMATO } from "@/lib/texto";
+import { createClient } from "@/lib/supabase/client";
 import {
-  buscarPorPatente,
+  esPatenteValida,
+  normalizarPatente,
+  patenteIncompleta,
+  PATENTE_FORMATO,
+  PATENTE_LARGO_MINIMO,
+} from "@/lib/texto";
+import {
+  buscarVehiculoPorPatente,
   type VehiculoIdentificado,
-} from "@/app/panel/(tras-onboarding)/services/nuevo/actions";
-
-// Una patente normalizada tiene 6 (ABC123, 123ABC) o 7 (AB123CD, A123BCD)
-// caracteres: recién
-// ahí tiene sentido salir a buscar.
-const LARGO_MINIMO = 6;
+} from "@/lib/busqueda-alta";
 
 // La MiniFicha (caso A: el vehículo ya pasó) y el campo de patente viven en
 // campos-carton.tsx: son los mismos que usa la simulación de la landing.
+//
+// La búsqueda va directo del navegador a PostgREST (lib/busqueda-alta.ts):
+// un viaje, sin pasar por Vercel. Es la consulta que el mecánico está
+// esperando con el auto en el pozo.
 
 export function IdentificarVehiculo({ marcas }: { marcas: string[] }) {
+  const supabase = useMemo(() => createClient(), []);
   const [patente, setPatente] = useState("");
   const [vehiculo, setVehiculo] = useState<VehiculoIdentificado | null>(null);
   const [buscado, setBuscado] = useState(false);
@@ -32,7 +39,7 @@ export function IdentificarVehiculo({ marcas }: { marcas: string[] }) {
   const busqueda = useRef(0);
 
   const normalizada = normalizarPatente(patente);
-  const completa = normalizada.length >= LARGO_MINIMO;
+  const completa = normalizada.length >= PATENTE_LARGO_MINIMO;
   // Validación suave: avisa, pero nunca frena nada. Si la patente es corta o
   // rara igual se puede seguir escribiendo y buscando.
   const formatoRaro =
@@ -48,23 +55,38 @@ export function IdentificarVehiculo({ marcas }: { marcas: string[] }) {
     setQuieto(false);
 
     if (temporizador.current) clearTimeout(temporizador.current);
+    temporizador.current = null;
 
     // Sin useTransition a propósito: el resultado es justamente lo que el
     // mecánico está esperando, así que la actualización va con prioridad
     // urgente y se pinta apenas llega.
     const turno = ++busqueda.current;
-    temporizador.current = setTimeout(async () => {
+    const buscar = async () => {
       setQuieto(true);
-      // Una patente normalizada tiene 6 o 7 caracteres: con menos no hay
-      // nada que buscar, pero el aviso de arriba igual ya se mostró.
-      if (normalizarPatente(enMayusculas).length < LARGO_MINIMO) return;
+      // AB123C todavía va a ser AB123CD: buscarla ahora sería buscar otra
+      // patente y abrir «¿De quién es?» a mitad de tipeo. Con menos de 6
+      // tampoco hay nada que buscar (el aviso de arriba igual ya se mostró).
+      if (patenteIncompleta(enMayusculas)) return;
 
-      const resultado = await buscarPorPatente(enMayusculas);
+      const resultado = await buscarVehiculoPorPatente(supabase, enMayusculas);
       if (turno !== busqueda.current) return;
       setVehiculo(resultado.vehiculo);
       setErrorBusqueda(resultado.error ?? null);
       setBuscado(true);
-    }, 300);
+    };
+
+    // Una patente completa y válida sale YA: ninguna patente válida es el
+    // principio de otra, así que no hay nada que esperar. Son 300 ms menos
+    // en cada carga. Lo que no cierra en ningún formato espera a que deje
+    // de tipear, como siempre.
+    if (esPatenteValida(enMayusculas)) {
+      void buscar();
+    } else {
+      temporizador.current = setTimeout(() => {
+        temporizador.current = null;
+        void buscar();
+      }, 300);
+    }
   }
 
   // No apareció: se despliega el alta en la misma pantalla, sin navegar.

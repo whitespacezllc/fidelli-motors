@@ -3,130 +3,15 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-// buscarPorPatente y buscarClientes SOLO LEEN: son las dos búsquedas del
-// momento 0 de la carga. Un lubricentro suspendido tiene que poder
-// consultarlas —ver sus datos es justamente lo que la suspensión no le
-// quita— así que estas dos usan obtenerSesion a propósito. Las otras dos
-// acciones de este archivo escriben y van por sesionParaEscribir().
-// eslint-disable-next-line no-restricted-imports
-import { sesionParaEscribir, obtenerSesion } from "@/lib/auth/session";
+import { sesionParaEscribir } from "@/lib/auth/session";
 import { CUIT_FORMATO, normalizarCuit } from "@/lib/cuit";
-import {
-  esPatenteValida,
-  normalizar,
-  normalizarPatente,
-  sanitizarBusqueda,
-  PATENTE_FORMATO,
-} from "@/lib/texto";
+import { esPatenteValida, PATENTE_FORMATO } from "@/lib/texto";
 import { hoyISO } from "@/lib/fechas";
 import { esClaseVehiculo } from "@/lib/clase-vehiculo";
 
-export type VehiculoIdentificado = {
-  vehiculoId: string;
-  patente: string;
-  marca: string | null;
-  modelo: string | null;
-  anio: number | null;
-  clienteNombre: string;
-  ultimoServiceFecha: string | null;
-  ultimoServiceKm: number | null;
-  ultimoServiceSucursal: string | null;
-  cantidadServices: number;
-  premioDisponible: boolean;
-  premioDescripcion: string | null;
-};
-
-export type ClienteSugerido = {
-  id: string;
-  nombre: string;
-  telefono: string;
-  cantidadVehiculos: number;
-};
-
-export type ResultadoBusqueda = {
-  vehiculo: VehiculoIdentificado | null;
-  error?: string;
-};
-
-// La búsqueda nunca se bloquea por formato: si la patente es rara igual se
-// consulta, y el aviso lo da la UI aparte. Un formato inesperado no puede
-// dejar al mecánico sin poder buscar.
-export async function buscarPorPatente(
-  patente: string,
-): Promise<ResultadoBusqueda> {
-  const sesion = await obtenerSesion();
-  if (!sesion) redirect("/login");
-
-  const normalizada = normalizarPatente(patente);
-  if (normalizada.length < 6) return { vehiculo: null };
-
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .rpc("buscar_vehiculo_por_patente", { p_patente: normalizada })
-    .maybeSingle();
-
-  if (error) {
-    return {
-      vehiculo: null,
-      error: "No se pudo buscar la patente. Revisá la conexión y probá de nuevo.",
-    };
-  }
-  if (!data?.vehiculo_id) return { vehiculo: null };
-
-  return {
-    vehiculo: {
-      vehiculoId: data.vehiculo_id,
-      patente: data.patente ?? normalizada,
-      marca: data.marca,
-      modelo: data.modelo,
-      anio: data.anio,
-      clienteNombre: data.cliente_nombre ?? "",
-      ultimoServiceFecha: data.ultimo_service_fecha,
-      ultimoServiceKm: data.ultimo_service_km,
-      ultimoServiceSucursal: data.ultimo_service_sucursal,
-      cantidadServices: data.cantidad_services ?? 0,
-      premioDisponible: data.premio_disponible ?? false,
-      premioDescripcion: data.premio_descripcion,
-    },
-  };
-}
-
-// Caso B: "¿de quién es?" — mismo criterio que el buscador de clientes.
-export async function buscarClientes(
-  termino: string,
-): Promise<ClienteSugerido[]> {
-  const sesion = await obtenerSesion();
-  if (!sesion) redirect("/login");
-
-  const limpio = sanitizarBusqueda(termino);
-  if (limpio.length < 2) return [];
-
-  const texto = normalizar(limpio);
-  const soloDigitos = limpio.replace(/\D/g, "");
-  const filtros = [`nombre_busqueda.like.*${texto}*`];
-  if (soloDigitos) filtros.push(`telefono.like.*${soloDigitos}*`);
-
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("vista_clientes")
-    .select("id, nombre, telefono, cantidad_vehiculos")
-    .or(filtros.join(","))
-    .order("nombre")
-    .limit(8);
-
-  return (data ?? []).flatMap((c) =>
-    c.id && c.nombre
-      ? [
-          {
-            id: c.id,
-            nombre: c.nombre,
-            telefono: c.telefono ?? "",
-            cantidadVehiculos: c.cantidad_vehiculos ?? 0,
-          },
-        ]
-      : [],
-  );
-}
+// Las dos búsquedas del momento 0 —la patente y el «¿De quién es?»— ya no
+// son acciones: van del navegador a PostgREST (lib/busqueda-alta.ts). Acá
+// quedan las dos escrituras del alta, que sí pasan por sesionParaEscribir().
 
 export type EstadoAlta = { error?: string };
 
