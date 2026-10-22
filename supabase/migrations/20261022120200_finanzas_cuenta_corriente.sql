@@ -65,23 +65,23 @@ comment on column ingresos.deuda_id is
 alter table deudas enable row level security;
 
 create policy deudas_lectura on deudas for select to authenticated
-  using (lubricentro_id = mi_lubricentro_id() or soy_superadmin());
+  using (lubricentro_id = (select mi_lubricentro_id()) or (select soy_superadmin()));
 
 create policy deudas_alta on deudas for insert to authenticated
   with check (
-    (lubricentro_id = mi_lubricentro_id() and plan_permite('finanzas'))
-    or soy_superadmin()
+    (lubricentro_id = (select mi_lubricentro_id()) and plan_permite('finanzas'))
+    or (select soy_superadmin())
   );
 
 create policy deudas_edicion on deudas for update to authenticated
-  using (lubricentro_id = mi_lubricentro_id() or soy_superadmin())
+  using (lubricentro_id = (select mi_lubricentro_id()) or (select soy_superadmin()))
   with check (
-    (lubricentro_id = mi_lubricentro_id() and plan_permite('finanzas'))
-    or soy_superadmin()
+    (lubricentro_id = (select mi_lubricentro_id()) and plan_permite('finanzas'))
+    or (select soy_superadmin())
   );
 
 create policy deudas_borrado on deudas for delete to authenticated
-  using (soy_superadmin());
+  using ((select soy_superadmin()));
 
 
 -- ---------- 4 · Registrar un fiado ----------

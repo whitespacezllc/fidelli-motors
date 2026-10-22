@@ -103,28 +103,28 @@ alter table ingresos enable row level security;
 -- Lectura: el tenant ve lo suyo; el superadmin ve todo (y filtra en la
 -- consulta, regla del multi-tenant invertido de /fidelli).
 create policy ingresos_lectura on ingresos for select to authenticated
-  using (lubricentro_id = mi_lubricentro_id() or soy_superadmin());
+  using (lubricentro_id = (select mi_lubricentro_id()) or (select soy_superadmin()));
 
 -- Alta: el gating del módulo va en el WITH CHECK, NUNCA en el USING
 -- (regla de oro: se apaga la escritura, no la lectura; un tenant que
 -- pierde el módulo sigue viendo lo que cargó).
 create policy ingresos_alta on ingresos for insert to authenticated
   with check (
-    (lubricentro_id = mi_lubricentro_id() and plan_permite('finanzas'))
-    or soy_superadmin()
+    (lubricentro_id = (select mi_lubricentro_id()) and plan_permite('finanzas'))
+    or (select soy_superadmin())
   );
 
 create policy ingresos_edicion on ingresos for update to authenticated
-  using (lubricentro_id = mi_lubricentro_id() or soy_superadmin())
+  using (lubricentro_id = (select mi_lubricentro_id()) or (select soy_superadmin()))
   with check (
-    (lubricentro_id = mi_lubricentro_id() and plan_permite('finanzas'))
-    or soy_superadmin()
+    (lubricentro_id = (select mi_lubricentro_id()) and plan_permite('finanzas'))
+    or (select soy_superadmin())
   );
 
 -- Sin delete para el owner: un ingreso errado se edita. Solo el superadmin
 -- borra (misma política que presupuestos).
 create policy ingresos_borrado on ingresos for delete to authenticated
-  using (soy_superadmin());
+  using ((select soy_superadmin()));
 
 
 -- ---------- 5 · Guardar un ingreso ----------
