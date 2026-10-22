@@ -8,6 +8,7 @@ import { clasesBoton } from "@/components/ui/boton";
 import { DocumentoPresupuesto } from "@/components/presupuestos/documento-presupuesto";
 import { AccionesDocumento } from "@/components/presupuestos/acciones-documento";
 import { BotonCobrado } from "@/components/finanzas/boton-cobrado";
+import { BotonFiado } from "@/components/finanzas/boton-fiado";
 import { formatearFechaHora } from "@/lib/fechas";
 import { empresaDesdeFila, hayDatosDeEmpresa } from "@/lib/datos-empresa";
 
@@ -52,7 +53,7 @@ export default async function PaginaPresupuesto({ params }: Props) {
   const tieneFinanzas = featureHabilitada(sesion, "finanzas");
   const supabase = await createClient();
 
-  const [presupuestoRes, configRes, empresaRes, ingresoRes] = await Promise.all([
+  const [presupuestoRes, configRes, empresaRes, ingresoRes, deudaRes] = await Promise.all([
     supabase
       .from("presupuestos")
       .select(
@@ -79,6 +80,10 @@ export default async function PaginaPresupuesto({ params }: Props) {
     tieneFinanzas
       ? supabase.from("ingresos").select("id").eq("presupuesto_id", id).maybeSingle()
       : Promise.resolve({ data: null }),
+    // ¿Ya está fiado? Una deuda con este presupuesto_id.
+    tieneFinanzas
+      ? supabase.from("deudas").select("id, cliente_id").eq("presupuesto_id", id).maybeSingle()
+      : Promise.resolve({ data: null }),
   ]);
 
   const p = presupuestoRes.data;
@@ -104,6 +109,8 @@ export default async function PaginaPresupuesto({ params }: Props) {
     }));
 
   const yaCobrado = Boolean(ingresoRes.data);
+  const deuda = deudaRes.data as { id: string; cliente_id: string } | null;
+  const yaFiado = Boolean(deuda);
 
   const logoUrl = configRes.data?.logo_url
     ? await logoComoDataUrl(configRes.data.logo_url)
@@ -189,15 +196,29 @@ export default async function PaginaPresupuesto({ params }: Props) {
             <p className="text-label text-ink-60">
               {yaCobrado
                 ? "Este presupuesto ya figura como cobrado."
-                : "Registrá el cobro como ingreso del día."}
+                : yaFiado
+                  ? "Figura como fiado en la cuenta corriente."
+                  : "Registrá el cobro, o fialo a la cuenta del cliente."}
             </p>
           </div>
           {yaCobrado ? (
             <span className="inline-flex items-center gap-1.5 rounded-md bg-success-soft px-3 py-1.5 text-ui font-semibold text-success">
               ✓ Cobrado
             </span>
+          ) : yaFiado ? (
+            <Link
+              href={`/panel/finanzas/cuenta/${deuda!.cliente_id}`}
+              className="inline-flex items-center gap-1.5 rounded-md bg-success-soft px-3 py-1.5 text-ui font-semibold text-success hover:bg-success-soft/70"
+            >
+              ✓ Fiado — ver cuenta
+            </Link>
           ) : (
-            !suspendido && <BotonCobrado presupuestoId={p.id} />
+            !suspendido && (
+              <div className="flex items-center gap-2.5">
+                <BotonCobrado presupuestoId={p.id} />
+                {p.cliente_id && <BotonFiado presupuestoId={p.id} />}
+              </div>
+            )
           )}
         </div>
       )}

@@ -963,6 +963,109 @@ export type Database = {
           },
         ]
       }
+      deudas: {
+        Row: {
+          cliente_id: string
+          concepto: string
+          created_at: string
+          fecha: string
+          id: string
+          lubricentro_id: string
+          monto: number
+          presupuesto_id: string | null
+          sucursal_id: string
+          usuario_id: string
+        }
+        Insert: {
+          cliente_id: string
+          concepto: string
+          created_at?: string
+          fecha?: string
+          id?: string
+          lubricentro_id: string
+          monto: number
+          presupuesto_id?: string | null
+          sucursal_id: string
+          usuario_id: string
+        }
+        Update: {
+          cliente_id?: string
+          concepto?: string
+          created_at?: string
+          fecha?: string
+          id?: string
+          lubricentro_id?: string
+          monto?: number
+          presupuesto_id?: string | null
+          sucursal_id?: string
+          usuario_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deudas_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deudas_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deudas_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_caja"
+            referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "deudas_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_neumaticos"
+            referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "deudas_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_service"
+            referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "deudas_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deudas_presupuesto_id_fkey"
+            columns: ["presupuesto_id"]
+            isOneToOne: false
+            referencedRelation: "presupuestos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deudas_sucursal_id_fkey"
+            columns: ["sucursal_id"]
+            isOneToOne: false
+            referencedRelation: "sucursales"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deudas_usuario_id_fkey"
+            columns: ["usuario_id"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       disenos_calco: {
         Row: {
           actual: boolean
@@ -1337,6 +1440,7 @@ export type Database = {
           cliente_id: string | null
           concepto: string
           created_at: string
+          deuda_id: string | null
           fecha: string
           id: string
           lubricentro_id: string
@@ -1350,6 +1454,7 @@ export type Database = {
           cliente_id?: string | null
           concepto: string
           created_at?: string
+          deuda_id?: string | null
           fecha?: string
           id?: string
           lubricentro_id: string
@@ -1363,6 +1468,7 @@ export type Database = {
           cliente_id?: string | null
           concepto?: string
           created_at?: string
+          deuda_id?: string | null
           fecha?: string
           id?: string
           lubricentro_id?: string
@@ -1407,6 +1513,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "vista_proximos_service"
             referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "ingresos_deuda_id_fkey"
+            columns: ["deuda_id"]
+            isOneToOne: false
+            referencedRelation: "deudas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ingresos_deuda_id_fkey"
+            columns: ["deuda_id"]
+            isOneToOne: false
+            referencedRelation: "vista_deudas"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "ingresos_lubricentro_id_fkey"
@@ -3236,6 +3356,80 @@ export type Database = {
           },
         ]
       }
+      vista_deudas: {
+        Row: {
+          cliente_id: string | null
+          cliente_nombre: string | null
+          cobrado: number | null
+          concepto: string | null
+          created_at: string | null
+          fecha: string | null
+          id: string | null
+          lubricentro_id: string | null
+          monto: number | null
+          presupuesto_id: string | null
+          saldo: number | null
+          sucursal_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deudas_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deudas_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deudas_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_caja"
+            referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "deudas_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_neumaticos"
+            referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "deudas_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_service"
+            referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "deudas_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deudas_presupuesto_id_fkey"
+            columns: ["presupuesto_id"]
+            isOneToOne: false
+            referencedRelation: "presupuestos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deudas_sucursal_id_fkey"
+            columns: ["sucursal_id"]
+            isOneToOne: false
+            referencedRelation: "sucursales"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       vista_movimientos_caja: {
         Row: {
           concepto: string | null
@@ -3536,6 +3730,60 @@ export type Database = {
             columns: ["vehiculo_id"]
             isOneToOne: false
             referencedRelation: "vista_vehiculos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vista_saldos_cliente: {
+        Row: {
+          cliente_id: string | null
+          cliente_nombre: string | null
+          cobrado: number | null
+          lubricentro_id: string | null
+          saldo: number | null
+          total: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deudas_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deudas_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deudas_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_caja"
+            referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "deudas_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_neumaticos"
+            referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "deudas_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_service"
+            referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "deudas_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
             referencedColumns: ["id"]
           },
         ]
@@ -3903,6 +4151,15 @@ export type Database = {
           vencimiento: string
         }[]
       }
+      cobrar_deuda: {
+        Args: {
+          p_deuda_id: string
+          p_fecha?: string
+          p_medio?: string
+          p_monto: number
+        }
+        Returns: string
+      }
       cohortes_ingresos: {
         Args: { p_desde: string; p_hasta: string }
         Returns: {
@@ -4221,6 +4478,17 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      guardar_deuda: {
+        Args: {
+          p_cliente_id: string
+          p_concepto: string
+          p_fecha?: string
+          p_monto: number
+          p_presupuesto_id?: string
+          p_sucursal_id: string
+        }
+        Returns: string
       }
       guardar_egreso: {
         Args: {
