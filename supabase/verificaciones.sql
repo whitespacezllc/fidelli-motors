@@ -14480,3 +14480,64 @@ begin
   end if;
 end $$;
 -- <<< R45
+
+-- ============================================================
+-- R46 · El buscador de clientes encuentra el teléfono por sus dígitos
+-- (20261021120000)
+--
+-- El teléfono se guarda como lo escribió el mostrador («351 317-2545»),
+-- y el buscador compara solo dígitos. Sin `telefono_digitos` en
+-- vista_clientes, ese cliente no aparece al buscarlo por teléfono. El
+-- resto del arreglo —letras y números juntos son una patente y se busca
+-- SOLO en las patentes— vive en el front (lib/clientes.ts) y lo vigila
+-- scripts/regresion-busquedas.mjs.
+-- ============================================================
+-- >>> R46
+do $$
+declare
+  v_demo uuid;
+  v_id   uuid;
+  v_txt  text;
+begin
+  select id into v_demo from lubricentros where slug = 'demo';
+  if v_demo is null then
+    raise exception 'R46 SIN PISO: falta el lubricentro demo del seed.';
+  end if;
+
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'vista_clientes' and column_name = 'telefono_digitos') then
+    raise exception 'R46 vista_clientes no tiene telefono_digitos: el buscador compara los dígitos tipeados contra el teléfono crudo, y un teléfono cargado con espacios o guiones no aparece al buscarlo.';
+  end if;
+
+  begin
+    insert into clientes (lubricentro_id, nombre, telefono)
+    values (v_demo, 'R46 Espacios', '+54 9 351 317-2545') returning id into v_id;
+
+    select telefono_digitos into v_txt from vista_clientes where id = v_id;
+    if v_txt is distinct from '5493513172545' then
+      raise exception 'R46 telefono_digitos de «+54 9 351 317-2545» es «%» (esperaba 5493513172545).', v_txt;
+    end if;
+
+    -- Tal como busca el front: un like sobre los dígitos.
+    if not exists (select 1 from vista_clientes where id = v_id and telefono_digitos like '%3513172545%') then
+      raise exception 'R46 el like por dígitos no encuentra al cliente cuyo teléfono se cargó con espacios y guiones.';
+    end if;
+
+    -- Y el teléfono crudo sigue siendo el que se muestra: la columna nueva
+    -- no lo reemplaza.
+    select telefono into v_txt from vista_clientes where id = v_id;
+    if v_txt is distinct from '+54 9 351 317-2545' then
+      raise exception 'R46 vista_clientes.telefono cambió: es «%».', v_txt;
+    end if;
+
+    raise exception 'rollback_r46' using errcode = 'P0046';
+  exception
+    when sqlstate 'P0046' then null;
+  end;
+
+  if exists (select 1 from clientes where nombre = 'R46 Espacios') then
+    raise exception 'R46 SIN PISO: la subtransacción no deshizo el fixture.';
+  end if;
+end $$;
+-- <<< R46

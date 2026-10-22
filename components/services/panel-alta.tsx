@@ -1,15 +1,20 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useMemo, useRef, useState } from "react";
 import { Boton } from "@/components/ui/boton";
 import { IconoBuscar } from "@/components/iconos";
 import {
-  buscarClientes,
   crearVehiculoParaCliente,
   crearClienteYVehiculo,
-  type ClienteSugerido,
   type EstadoAlta,
 } from "@/app/panel/(tras-onboarding)/services/nuevo/actions";
+import { createClient } from "@/lib/supabase/client";
+import { sanitizarBusqueda } from "@/lib/texto";
+import {
+  BUSQUEDA_CLIENTES_MINIMO,
+  buscarClientes,
+  type ClienteSugerido,
+} from "@/lib/busqueda-alta";
 import { CamposMarcaModelo } from "@/components/vehiculos/campos-marca-modelo";
 import { SelectorClase } from "@/components/vehiculos/selector-clase";
 
@@ -220,21 +225,26 @@ export function PanelAlta({
   patente: string;
   marcas: string[];
 }) {
+  const supabase = useMemo(() => createClient(), []);
   const [sugerencias, setSugerencias] = useState<ClienteSugerido[]>([]);
   const [buscado, setBuscado] = useState(false);
+  const [errorBusqueda, setErrorBusqueda] = useState<string | null>(null);
   const [elegido, setElegido] = useState<ClienteSugerido | null>(null);
   const [nuevoCliente, setNuevoCliente] = useState(false);
   const temporizador = useRef<ReturnType<typeof setTimeout> | null>(null);
   const busqueda = useRef(0);
 
+  // Directo del navegador a PostgREST, con el mismo filtro que el listado
+  // de Clientes (lib/busqueda-alta.ts). Se espera a que deje de tipear.
   function alEscribir(texto: string) {
     if (temporizador.current) clearTimeout(temporizador.current);
     const turno = ++busqueda.current;
     temporizador.current = setTimeout(async () => {
-      const encontrados = await buscarClientes(texto);
+      const { clientes, error } = await buscarClientes(supabase, texto);
       if (turno !== busqueda.current) return;
-      setSugerencias(encontrados);
-      setBuscado(texto.trim().length >= 2);
+      setSugerencias(clientes);
+      setErrorBusqueda(error ?? null);
+      setBuscado(sanitizarBusqueda(texto).length >= BUSQUEDA_CLIENTES_MINIMO);
     }, 300);
   }
 
@@ -273,8 +283,8 @@ export function PanelAlta({
     <div className="surface-card mt-4 p-5">
       <h2 className="font-brand text-lead font-bold text-ink">¿De quién es?</h2>
       <p className="mt-1 mb-4 text-ui text-ink-60">
-        Buscalo por nombre o teléfono. Si es la primera vez que viene, cargalo
-        nuevo.
+        Buscalo por nombre, teléfono o la patente de otro auto suyo. Si es la
+        primera vez que viene, cargalo nuevo.
       </p>
 
       <div className="relative">
@@ -283,11 +293,17 @@ export function PanelAlta({
           type="search"
           autoFocus
           onChange={(e) => alEscribir(e.target.value)}
-          placeholder="Nombre o teléfono…"
+          placeholder="Nombre, teléfono o patente…"
           aria-label="Buscar cliente"
           className="h-12 w-full rounded-md border border-line bg-base pr-3.5 pl-11 text-body text-ink placeholder:text-ink-40"
         />
       </div>
+
+      {errorBusqueda && (
+        <p role="alert" className="mt-3 rounded-md bg-overdue-soft px-3.5 py-3 text-ui text-overdue">
+          {errorBusqueda}
+        </p>
+      )}
 
       {sugerencias.length > 0 && (
         <ul className="mt-3 flex flex-col">
@@ -317,9 +333,9 @@ export function PanelAlta({
         </ul>
       )}
 
-      {buscado && sugerencias.length === 0 && (
+      {buscado && !errorBusqueda && sugerencias.length === 0 && (
         <p className="mt-3 text-ui text-ink-60">
-          Ningún cliente con ese nombre o teléfono.
+          Ningún cliente con ese nombre, teléfono o patente.
         </p>
       )}
 

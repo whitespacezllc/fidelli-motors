@@ -13,7 +13,7 @@ import {
   formatearKm,
 } from "@/lib/renglones";
 import { normalizar } from "@/lib/texto";
-import type { VehiculoIdentificado } from "@/app/panel/(tras-onboarding)/services/nuevo/actions";
+import type { VehiculoIdentificado } from "@/lib/busqueda-alta";
 
 // ============================================================
 // Los campos del cartón, extraídos para que existan UNA sola vez
