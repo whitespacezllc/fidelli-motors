@@ -57,3 +57,14 @@ export function respuestaManifest(manifest: ManifestPwa): Response {
     },
   });
 }
+
+// No se pudo leer de quién es el manifest (get_landing no contestó). No es
+// un 404 —no se sabe si el lubricentro existe, y casi seguro que sí—: es un
+// 503, y sin caché, para que el próximo pedido vuelva a preguntar en vez de
+// quedarse con esta respuesta.
+export function manifestSinRespuesta(): Response {
+  return new Response("Sin respuesta", {
+    status: 503,
+    headers: { "cache-control": "no-store" },
+  });
+}

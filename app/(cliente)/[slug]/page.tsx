@@ -9,24 +9,35 @@ import { MarcaLubricentro } from "@/components/cliente/marca-lubricentro";
 import { GuiaPasos } from "@/components/cliente/guia-pasos";
 import { BuscadorPatente } from "@/components/cliente/buscador-patente";
 import { PatenteNoEncontrada } from "@/components/cliente/patente-no-encontrada";
+import {
+  PantallaSinRespuesta,
+  SinRespuesta,
+} from "@/components/cliente/sin-respuesta";
 import { PieConfianza } from "@/components/cliente/pie-confianza";
 import { metadataPwa } from "@/lib/pwa";
 
 type Props = {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ nohay?: string }>;
+  searchParams: Promise<{ nohay?: string; reintentar?: string }>;
 };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const lubricentro = await obtenerLanding(slug);
+  const resultado = await obtenerLanding(slug);
 
-  if (!lubricentro) {
+  if (resultado.estado !== "ok") {
     return {
-      title: { absolute: "Taller no encontrado" },
+      // Sin respuesta no se sabe si el taller existe: el título no lo niega.
+      title: {
+        absolute:
+          resultado.estado === "sin_respuesta"
+            ? "No pudimos cargar la página"
+            : "Taller no encontrado",
+      },
       robots: { index: false, follow: false },
     };
   }
+  const { lubricentro } = resultado;
 
   // `absolute` en el título: esta página es la vidriera del LUBRICENTRO,
   // no nuestra — el template "| Fidelli Motors" del layout raíz acá no
@@ -118,7 +129,7 @@ function datosLubricentro(slug: string, lubricentro: Lubricentro) {
 // visita es tráfico y re-exposición de la marca del lubricentro.
 export default async function PaginaLanding({ params, searchParams }: Props) {
   const { slug } = await params;
-  const { nohay } = await searchParams;
+  const { nohay, reintentar } = await searchParams;
 
   // El slug no existe: 404. Ver app/(cliente)/[slug]/not-found.tsx.
   //
@@ -129,13 +140,30 @@ export default async function PaginaLanding({ params, searchParams }: Props) {
   // responde. Es la regla 8 de CLAUDE.md y la vigila R4. Lo único que se
   // apaga con `activo = false` es el premio (acá) y el mensaje al escanear
   // (en get_carton).
-  const lubricentro = await obtenerLanding(slug);
-  if (!lubricentro) notFound();
+  const resultado = await obtenerLanding(slug);
+  if (resultado.estado === "lubricentro_no_encontrado") notFound();
+
+  // get_landing no contestó (un corte, un timeout, PostgREST recargando):
+  // NO es un 404, porque no se sabe si el taller existe —y casi seguro que
+  // sí—. Sin get_landing no hay marca de dónde pintarla: va neutra.
+  if (resultado.estado === "sin_respuesta") {
+    return (
+      <PantallaSinRespuesta
+        titulo="No pudimos cargar la página"
+        lubricentro={null}
+      />
+    );
+  }
+  const { lubricentro } = resultado;
 
   // Llega del redirect de la búsqueda, no de una consulta: mostrar el
   // mensaje no vuelve a llamar a get_carton, así que recargar la pantalla
   // no registra un segundo lead.
   const patenteSinResultado = nohay ? normalizarPatente(nohay) : null;
+  // La búsqueda que no tuvo respuesta (ver la acción): la patente vuelve
+  // escrita, y reintentar es tocar el botón del buscador.
+  const patenteSinRespuesta =
+    !patenteSinResultado && reintentar ? normalizarPatente(reintentar) : null;
 
   const paleta = paletaTenant(lubricentro.colorPrimario, lubricentro.tema);
 
@@ -190,7 +218,7 @@ export default async function PaginaLanding({ params, searchParams }: Props) {
           <div className="mt-8 sm:mt-10">
             <BuscadorPatente
               slug={slug}
-              valorInicial={patenteSinResultado ?? undefined}
+              valorInicial={patenteSinResultado ?? patenteSinRespuesta ?? undefined}
             />
           </div>
 
@@ -200,6 +228,12 @@ export default async function PaginaLanding({ params, searchParams }: Props) {
                 patente={patenteSinResultado}
                 lubricentro={lubricentro}
               />
+            </div>
+          )}
+
+          {patenteSinRespuesta && (
+            <div className="mt-6 sm:mt-8">
+              <SinRespuesta titulo="No pudimos buscar la patente" nivel="h2" />
             </div>
           )}
         </div>

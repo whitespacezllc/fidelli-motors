@@ -1,6 +1,10 @@
 import { obtenerLanding } from "@/lib/cliente/landing";
 import { GRAFITO } from "@/lib/cliente/tema";
-import { ICONOS_MARCA, respuestaManifest } from "@/lib/pwa";
+import {
+  ICONOS_MARCA,
+  manifestSinRespuesta,
+  respuestaManifest,
+} from "@/lib/pwa";
 
 // El acceso directo del CLIENTE FINAL: abre la página del lubricentro que
 // escaneó, no la landing comercial de Fidelli.
@@ -13,10 +17,12 @@ export async function GET(
   { params }: { params: Promise<{ slug: string }> },
 ) {
   const { slug } = await params;
-  const lubricentro = await obtenerLanding(slug);
-  if (!lubricentro) {
+  const resultado = await obtenerLanding(slug);
+  if (resultado.estado === "sin_respuesta") return manifestSinRespuesta();
+  if (resultado.estado !== "ok") {
     return new Response("No encontrado", { status: 404 });
   }
+  const { lubricentro } = resultado;
 
   // El fondo del arranque tiene que ser el fondo real de la página: en
   // oscuro manda el grafito del sistema y color_fondo no se aplica, igual
