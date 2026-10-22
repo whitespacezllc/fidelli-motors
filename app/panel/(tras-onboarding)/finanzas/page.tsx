@@ -10,6 +10,7 @@ import { AccionBloqueada } from "@/components/panel/bloqueo-suspension";
 import { formatearFecha } from "@/lib/fechas";
 import { formatearPesos } from "@/lib/presupuestos";
 import { MEDIOS_PAGO, ETIQUETA_MEDIO } from "@/lib/finanzas";
+import { TabsFinanzas } from "@/components/finanzas/tabs-finanzas";
 
 export const metadata: Metadata = { title: "Finanzas" };
 
@@ -101,6 +102,8 @@ export default async function PaginaFinanzas({
           </div>
         )}
       </CabeceraSeccion>
+
+      <TabsFinanzas activa="dia" />
 
       {/* El día de un vistazo: lo que queda (entró − salió), grande; entró y
           salió, chicos. */}

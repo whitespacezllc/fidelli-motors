@@ -150,3 +150,119 @@ export async function marcarPresupuestoCobrado(
   revalidatePath(`/panel/presupuestos/${presupuestoId}`);
   return { id: data as string };
 }
+
+// ============================================================
+// Cuenta corriente (fiados) — Nivel 2B
+// ============================================================
+
+export type DatosDeuda = {
+  clienteId: string;
+  sucursalId: string;
+  fecha: string;
+  monto: number;
+  concepto: string;
+  presupuestoId?: string | null;
+};
+
+function traducirCuenta(error: { code?: string; message?: string }): string {
+  const m = error.message ?? "";
+  if (error.code === "42501") {
+    return "Finanzas no está activo en tu cuenta. Escribinos si lo querés activar.";
+  }
+  if (/deuda_sin_concepto/.test(m)) return "Escribí de qué es el fiado, aunque sea en dos palabras.";
+  if (/deuda_monto_invalido/.test(m)) return "Revisá el monto: tiene que ser mayor a 0.";
+  if (/deuda_cliente_ajeno/.test(m)) return "Ese cliente no es de tu lubricentro.";
+  if (/deudas_presupuesto_unico_idx|duplicate key/.test(m)) return "Este presupuesto ya figura como fiado.";
+  if (/deuda_inexistente/.test(m)) return "No encontramos ese fiado.";
+  if (/deuda_saldada/.test(m)) return "Ese fiado ya está saldado.";
+  if (/cobro_monto_invalido/.test(m)) return "Revisá el monto del cobro: tiene que ser mayor a 0.";
+  if (/cobro_excede_saldo/.test(m)) return "El cobro no puede ser mayor al saldo que debe.";
+  if (/fetch|network|conexión/i.test(m)) return "Se cortó la conexión. Probá de nuevo cuando vuelva la señal.";
+  return "No se pudo guardar. Probá de nuevo.";
+}
+
+export async function crearDeuda(
+  _prev: ResultadoMovimiento,
+  datos: DatosDeuda,
+): Promise<ResultadoMovimiento> {
+  if (!datos.clienteId) return { error: "Elegí el cliente." };
+  if (!datos.sucursalId) return { error: "Elegí la sucursal." };
+  if (datos.concepto.trim().length < 2) return { error: "Escribí de qué es el fiado, aunque sea en dos palabras." };
+  if (!Number.isFinite(datos.monto) || datos.monto <= 0) return { error: "Revisá el monto: tiene que ser mayor a 0." };
+
+  const supabase = await createClient();
+  const { data, error: err } = await supabase.rpc("guardar_deuda", {
+    p_cliente_id: datos.clienteId,
+    p_sucursal_id: datos.sucursalId,
+    p_monto: datos.monto,
+    p_concepto: datos.concepto.trim(),
+    p_fecha: datos.fecha,
+    p_presupuesto_id: datos.presupuestoId ?? undefined,
+  });
+
+  if (err) return { error: traducirCuenta(err) };
+
+  revalidatePath("/panel/finanzas/cuenta");
+  return { id: data as string };
+}
+
+export async function cobrarDeuda(
+  _prev: ResultadoMovimiento,
+  datos: { deudaId: string; monto: number; medio: MedioPago; fecha: string },
+): Promise<ResultadoMovimiento> {
+  if (!Number.isFinite(datos.monto) || datos.monto <= 0) {
+    return { error: "Revisá el monto del cobro: tiene que ser mayor a 0." };
+  }
+
+  const supabase = await createClient();
+  const { data, error: err } = await supabase.rpc("cobrar_deuda", {
+    p_deuda_id: datos.deudaId,
+    p_monto: datos.monto,
+    p_medio: datos.medio,
+    p_fecha: datos.fecha,
+  });
+
+  if (err) return { error: traducirCuenta(err) };
+
+  revalidatePath("/panel/finanzas");
+  revalidatePath("/panel/finanzas/cuenta");
+  return { id: data as string };
+}
+
+// "Marcar como fiado" desde un presupuesto: crea la deuda contra el cliente
+// vinculado al presupuesto. Requiere cliente con ficha (cliente_id).
+export async function marcarPresupuestoFiado(
+  presupuestoId: string,
+): Promise<ResultadoMovimiento> {
+  const supabase = await createClient();
+
+  const { data: p } = await supabase
+    .from("presupuestos")
+    .select("id, numero, sucursal_id, cliente_id, presupuesto_items(cantidad, precio_unitario)")
+    .eq("id", presupuestoId)
+    .maybeSingle();
+
+  if (!p) return { error: "No encontramos ese presupuesto." };
+  if (!p.cliente_id) {
+    return { error: "Para fiarlo, el presupuesto tiene que estar a nombre de un cliente con ficha." };
+  }
+
+  const total = (p.presupuesto_items ?? []).reduce(
+    (s, i) => s + Number(i.cantidad) * Number(i.precio_unitario),
+    0,
+  );
+
+  const { data, error: err } = await supabase.rpc("guardar_deuda", {
+    p_cliente_id: p.cliente_id,
+    p_sucursal_id: p.sucursal_id,
+    p_monto: total,
+    p_concepto: `Presupuesto N° ${p.numero}`,
+    p_presupuesto_id: p.id,
+  });
+
+  if (err) return { error: traducirCuenta(err) };
+
+  revalidatePath("/panel/finanzas/cuenta");
+  revalidatePath(`/panel/presupuestos/${presupuestoId}`);
+  return { id: data as string };
+}
