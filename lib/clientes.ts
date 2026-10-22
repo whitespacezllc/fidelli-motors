@@ -1,23 +1,77 @@
-import { normalizar, normalizarPatente, sanitizarBusqueda } from "@/lib/texto";
+import {
+  PATENTE_LARGO_MAXIMO,
+  normalizar,
+  normalizarPatente,
+  sanitizarBusqueda,
+} from "@/lib/texto";
 
-// El único buscador del listado de clientes pega contra los tres campos.
-// El filtro vive acá porque lo usan DOS lugares —la pantalla y el export a
-// Excel— y tienen que coincidir siempre: lo que Bruno ve filtrado es
-// exactamente lo que se lleva en el archivo.
-export function filtroClientes(q: string | undefined) {
+// ============================================================
+// El buscador de clientes: LA FORMA DEL TÉRMINO DICE QUÉ ES
+//
+// Pega contra tres campos de vista_clientes —el nombre, el teléfono y las
+// patentes—, pero no contra los tres a la vez. Hasta el 21/10/2026 sí, y
+// «KXM616» devolvía cuatro clientes en Brothers Oil: el dueño del auto y
+// tres cuyo celular tenía «616» adentro, porque los dígitos de la patente
+// se buscaban también en todos los teléfonos.
+//
+//   · Letras y números juntos, hasta 7 («KXM616», «ab 123», «A123BCD»):
+//     una patente, entera o el pedazo que lleva tipeado. Un nombre no trae
+//     números y un teléfono no trae letras. Solo patentes.
+//   · Solo números («616», «3513172545»): un teléfono, o una patente que
+//     arranca con números (123ABC). Las dos.
+//   · Solo letras («gomez», «kxm»): un nombre, o las letras de una patente.
+//     Las dos.
+//   · Letras y números que no entran en una patente («lopez 3515591616»):
+//     los tres campos.
+//
+// El teléfono se compara por sus DÍGITOS (`telefono_digitos`, desde
+// 20261021120000): «351 317-2545» se encuentra escribiendo 3513172545.
+//
+// Vive acá porque lo usan CUATRO lugares —el listado, su export a Excel,
+// la ficha del tenant en /fidelli y el «¿De quién es?» del alta— y tienen
+// que coincidir siempre: lo que Bruno ve filtrado es exactamente lo que se
+// lleva en el archivo, y el alta encuentra lo mismo que el listado.
+// ============================================================
+
+export type FormaDeBusqueda = "patente" | "telefono" | "nombre" | "todo";
+
+export function filtroClientes(q: string | undefined): {
+  termino: string;
+  filtros: string | null;
+  forma: FormaDeBusqueda | null;
+} {
   const termino = sanitizarBusqueda(q ?? "");
-  if (!termino) return { termino: "", filtros: null };
+  if (!termino) return { termino: "", filtros: null, forma: null };
 
-  // El más usado es la patente: el mecánico tiene el auto adelante.
   const texto = normalizar(termino);
   const soloDigitos = termino.replace(/\D/g, "");
   const patente = normalizarPatente(termino);
+  const tieneLetras = /\p{L}/u.test(termino);
+  const tieneNumeros = soloDigitos.length > 0;
 
-  const filtros = [`nombre_busqueda.like.*${texto}*`];
-  if (soloDigitos) filtros.push(`telefono.like.*${soloDigitos}*`);
-  if (patente) filtros.push(`patentes.like.*${patente}*`);
+  const porNombre = `nombre_busqueda.like.*${texto}*`;
+  const porTelefono = `telefono_digitos.like.*${soloDigitos}*`;
+  const porPatente = `patentes.like.*${patente}*`;
 
-  return { termino, filtros: filtros.join(",") };
+  let forma: FormaDeBusqueda;
+  let filtros: string[];
+  if (tieneLetras && tieneNumeros) {
+    if (patente.length <= PATENTE_LARGO_MAXIMO) {
+      forma = "patente";
+      filtros = [porPatente];
+    } else {
+      forma = "todo";
+      filtros = [porNombre, porTelefono, porPatente];
+    }
+  } else if (tieneNumeros) {
+    forma = "telefono";
+    filtros = [porTelefono, porPatente];
+  } else {
+    forma = "nombre";
+    filtros = [porNombre, porPatente];
+  }
+
+  return { termino, filtros: filtros.join(","), forma };
 }
 
 // ============================================================
