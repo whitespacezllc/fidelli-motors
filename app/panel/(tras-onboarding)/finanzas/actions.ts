@@ -114,6 +114,7 @@ export async function crearEgreso(
 // se asume efectivo (el mostrador); el dueño lo puede editar después.
 export async function marcarPresupuestoCobrado(
   presupuestoId: string,
+  medio: MedioPago = "efectivo",
 ): Promise<ResultadoMovimiento> {
   const supabase = await createClient();
 
@@ -139,7 +140,7 @@ export async function marcarPresupuestoCobrado(
     p_sucursal_id: p.sucursal_id,
     p_monto: total,
     p_concepto: concepto,
-    p_medio: "efectivo",
+    p_medio: medio,
     p_presupuesto_id: p.id,
     p_cliente_id: p.cliente_id ?? undefined,
   });

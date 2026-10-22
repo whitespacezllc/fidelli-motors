@@ -9,8 +9,11 @@ import { clasesBoton } from "@/components/ui/boton";
 import { AccionBloqueada } from "@/components/panel/bloqueo-suspension";
 import { formatearFecha } from "@/lib/fechas";
 import { formatearPesos } from "@/lib/presupuestos";
-import { MEDIOS_PAGO, ETIQUETA_MEDIO } from "@/lib/finanzas";
+import { MEDIOS_PAGO, ETIQUETA_MEDIO, type PuntoCaja } from "@/lib/finanzas";
+import { esVistaPanel, type VistaPanel } from "@/lib/series";
 import { TabsFinanzas } from "@/components/finanzas/tabs-finanzas";
+import { GraficoCaja } from "@/components/finanzas/grafico-caja";
+import { BotonExportar } from "@/components/panel/boton-exportar";
 
 export const metadata: Metadata = { title: "Finanzas" };
 
@@ -24,7 +27,7 @@ type Arqueo = Record<string, { ingresos: number; egresos: number }>;
 export default async function PaginaFinanzas({
   searchParams,
 }: {
-  searchParams: Promise<{ pagina?: string }>;
+  searchParams: Promise<{ pagina?: string; vista?: string }>;
 }) {
   const sesion = await obtenerSesion();
   if (!featureHabilitada(sesion, "finanzas")) {
@@ -33,11 +36,14 @@ export default async function PaginaFinanzas({
 
   const params = await searchParams;
   const pagina = Math.max(1, Number(params.pagina) || 1);
+  // Mensual por defecto, como el gráfico del Inicio.
+  const vistaInicial: VistaPanel = esVistaPanel(params.vista) ? params.vista : "mes";
   const suspendido = await panelSuspendido();
   const supabase = await createClient();
 
-  const [resumenRes, listaRes] = await Promise.all([
+  const [resumenRes, serieRes, listaRes] = await Promise.all([
     supabase.rpc("resumen_caja"),
+    supabase.rpc("serie_caja"),
     supabase
       .from("vista_movimientos_caja")
       .select("id, tipo, fecha, concepto, monto, medio, sucursal_nombre", { count: "exact" })
@@ -45,6 +51,15 @@ export default async function PaginaFinanzas({
       .order("created_at", { ascending: false })
       .range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1),
   ]);
+
+  const serieCruda = (serieRes.data ?? {}) as Partial<Record<VistaPanel, PuntoCaja[]>>;
+  const series: Record<VistaPanel, PuntoCaja[]> = {
+    semana: serieCruda.semana ?? [],
+    mes: serieCruda.mes ?? [],
+    trimestre: serieCruda.trimestre ?? [],
+    anio: serieCruda.anio ?? [],
+  };
+  const haySerie = Object.values(series).some((s) => s.length > 0);
 
   const resumen = (resumenRes.data ?? {}) as {
     hoy?: Periodo;
@@ -89,18 +104,22 @@ export default async function PaginaFinanzas({
   return (
     <div>
       <CabeceraSeccion titulo="Finanzas">
-        {suspendido ? (
-          <AccionBloqueada etiqueta="+ Nuevo ingreso" />
-        ) : (
-          <div className="flex gap-2.5">
-            <Link href="/panel/finanzas/nuevo-egreso" className={clasesBoton("secundario", "md")}>
-              + Egreso
-            </Link>
-            <Link href="/panel/finanzas/nuevo" className={clasesBoton("primario", "md")}>
-              + Ingreso
-            </Link>
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Exportar lee, así que va aun suspendido. */}
+          <BotonExportar url="/panel/finanzas/exportar" cantidad={total} filtrando={false} />
+          {suspendido ? (
+            <AccionBloqueada etiqueta="+ Nuevo ingreso" />
+          ) : (
+            <>
+              <Link href="/panel/finanzas/nuevo-egreso" className={clasesBoton("secundario", "md")}>
+                + Egreso
+              </Link>
+              <Link href="/panel/finanzas/nuevo" className={clasesBoton("primario", "md")}>
+                + Ingreso
+              </Link>
+            </>
+          )}
+        </div>
       </CabeceraSeccion>
 
       <TabsFinanzas activa="dia" />
@@ -142,6 +161,9 @@ export default async function PaginaFinanzas({
           </div>
         </div>
       )}
+
+      {/* La evolución de la caja: ingresos / egresos / neto por período. */}
+      {haySerie && <GraficoCaja series={series} vistaInicial={vistaInicial} />}
 
       {filas.length > 0 ? (
         <>

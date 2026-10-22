@@ -23,3 +23,25 @@ export function esMedioPago(valor: string): valor is MedioPago {
 export function parsearMonto(texto: string): number {
   return Number(texto.replace(/\./g, "").replace(",", ".")) || 0;
 }
+
+// Un punto de la serie de la caja: ingresos y egresos de ese período. El
+// neto se calcula en el front. Espejo de lo que devuelve serie_caja().
+export type PuntoCaja = { inicio: string; ingresos: number; egresos: number };
+
+export type MetricaCaja = "ingresos" | "egresos" | "neto";
+
+/** Las tres curvas del gráfico de la caja, en el orden del selector. */
+export const METRICAS_CAJA = [
+  { clave: "ingresos", nombre: "Ingresos" },
+  { clave: "egresos", nombre: "Egresos" },
+  { clave: "neto", nombre: "Neto" },
+] as const satisfies readonly { clave: MetricaCaja; nombre: string }[];
+
+/** El valor de un punto según la métrica elegida. */
+export function valorMetrica(p: PuntoCaja, metrica: MetricaCaja): number {
+  const ingresos = Number(p.ingresos);
+  const egresos = Number(p.egresos);
+  if (metrica === "ingresos") return ingresos;
+  if (metrica === "egresos") return egresos;
+  return ingresos - egresos;
+}
