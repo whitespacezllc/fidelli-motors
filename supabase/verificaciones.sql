@@ -2385,14 +2385,14 @@ drop function r16_lub();
 --       un `case item_tipo when …` o un CHECK con la lista de los once,
 --       esto lo atrapa.
 --
--- Desde 20261004120000 el enum tiene 25 valores: los 21 del cartón de
--- aceite y, AL FINAL, los cuatro renglones del service de caja
--- (caja_filtro, caja_aditivo, caja_limpieza_carter, caja_lavado), en el
--- orden de SU papel. No contradice a (a): la regla «nunca al final» es del
+-- Desde 20261004120000 el enum tiene los 21 del cartón de aceite y, AL
+-- FINAL, los renglones del service de caja en el orden de SU papel: cuatro
+-- (caja_filtro, caja_aditivo, caja_limpieza_carter, caja_lavado) y, desde
+-- 20261026150000, el quinto, caja_dialisis. Son 26 valores. No contradice a (a): la regla «nunca al final» es del
 -- cartón de aceite, y los de caja son otro papel —se dibujan solos, con su
 -- etiqueta vertical CAJA, y el front no los mezcla con los 21
 -- (RENGLONES_CAJA en lib/renglones.ts)—. R17a aprende el orden nuevo,
--- R17b sigue probando los 21 del cartón de aceite, y los cuatro de caja
+-- R17b sigue probando los 21 del cartón de aceite, y los cinco de caja
 -- pasan por el mismo casteo genérico en R42c.
 -- ============================================================
 
@@ -2409,7 +2409,8 @@ declare
     'aditivo_motor', 'aditivo_transmision',
     'engrase', 'bateria',
     -- El papel del service de caja: otro cartón, al final y en su orden.
-    'caja_filtro', 'caja_aditivo', 'caja_limpieza_carter', 'caja_lavado'
+    -- El quinto (la diálisis) entró el 26/10/2026, también al final.
+    'caja_filtro', 'caja_aditivo', 'caja_limpieza_carter', 'caja_lavado', 'caja_dialisis'
   ];
   v_real text[];
 begin
@@ -2422,7 +2423,7 @@ begin
       using hint =
         'Todo valor nuevo del cartón de aceite entra con ADD VALUE … AFTER, anclado a un valor que ya existía '
         '(ver 20260915120000_item_tipo_pesado). Nunca al final: el orden del enum es el del cartón físico, '
-        'y al final van solo los cuatro renglones del service de caja, que son otro papel.';
+        'y al final van solo los cinco renglones del service de caja, que son otro papel.';
   end if;
 end $$;
 -- <<< R17a
@@ -12521,6 +12522,7 @@ begin
         p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => v_hoy,
         p_kilometros => 84300, p_aceite_tipo => '  Dexron VI ', p_prox_service_km => null,
         p_items => jsonb_build_array(
+          jsonb_build_object('tipo', 'caja_dialisis', 'cambiado', false, 'detalle', 'R42 diálisis, 9 litros'),
           jsonb_build_object('tipo', 'caja_lavado', 'cambiado', false, 'detalle', 'R42 con máquina, 12 litros'),
           jsonb_build_object('tipo', 'caja_filtro', 'cambiado', false, 'producto_id', v_filtro),
           jsonb_build_object('tipo', 'caja_aditivo', 'cambiado', false, 'producto_id', v_aditivo, 'cantidad', 2),
@@ -12556,16 +12558,18 @@ begin
     select array_agg(si.item_tipo::text order by si.item_tipo), count(*) filter (where si.cambiado)
       into v_tipos, v_n
     from service_items si where si.service_id = v_caja;
-    if v_tipos is distinct from array['caja_filtro', 'caja_aditivo', 'caja_limpieza_carter', 'caja_lavado'] then
-      raise exception 'R42c los renglones de la caja no son los cuatro, en el orden del papel: %', array_to_string(v_tipos, ' · ');
+    if v_tipos is distinct from array['caja_filtro', 'caja_aditivo', 'caja_limpieza_carter', 'caja_lavado', 'caja_dialisis'] then
+      raise exception 'R42c los renglones de la caja no son los cinco, en el orden del papel: %', array_to_string(v_tipos, ' · ');
     end if;
-    if v_n <> 4 then
-      raise exception 'R42c % de los 4 renglones quedaron como HECHOS. En un service de caja prendido = hecho: `cambiado` se guarda true siempre, venga lo que venga en el jsonb (no existe «revisado y OK»).', v_n;
+    if v_n <> 5 then
+      raise exception 'R42c % de los 5 renglones quedaron como HECHOS. En un service de caja prendido = hecho: `cambiado` se guarda true siempre, venga lo que venga en el jsonb (no existe «revisado y OK»).', v_n;
     end if;
     if not exists (select 1 from service_items where service_id = v_caja and item_tipo = 'caja_aditivo'
                    and producto_id = v_aditivo and cantidad = 2)
        or not exists (select 1 from service_items where service_id = v_caja and item_tipo = 'caja_lavado'
                       and detalle = 'R42 con máquina, 12 litros')
+       or not exists (select 1 from service_items where service_id = v_caja and item_tipo = 'caja_dialisis'
+                      and detalle = 'R42 diálisis, 9 litros' and producto_id is null)
        or not exists (select 1 from service_items where service_id = v_caja and item_tipo = 'caja_filtro'
                       and producto_id = v_filtro and cantidad = 1) then
       raise exception 'R42c un renglón de la caja perdió su producto, su cantidad o su nota.';

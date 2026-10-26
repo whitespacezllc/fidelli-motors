@@ -5,7 +5,7 @@
 //
 // Lo que cubre:
 //   A · Los helpers, sin navegador: lib/renglones.ts (los ATF, los saltos
-//       y su rango, los cuatro renglones, validarCaja, errorDeCaja) y
+//       y su rango, los cinco renglones, validarCaja, errorDeCaja) y
 //       lib/cliente/proximos.ts (qué tarjetas ve el cliente). Y LAS
 //       ROTURAS: cada regla se rompe sobre una copia, se recompila y la
 //       comprobación que la cubre tiene que fallar.
@@ -146,11 +146,13 @@ function revisarCaja(m) {
     ["el salto entra de 20.000 a 200.000, con los dos bordes",
       m.esSaltoCajaValido(20000) && m.esSaltoCajaValido(200000) && !m.esSaltoCajaValido(19999) &&
         !m.esSaltoCajaValido(200001) && !m.esSaltoCajaValido(80000.5)],
-    ["los renglones son los cuatro de la caja, en el orden de su papel",
-      igual(tipos, ["caja_filtro", "caja_aditivo", "caja_limpieza_carter", "caja_lavado"])],
-    ["filtro y aditivo llevan producto; limpieza y lavado, una nota",
+    ["los renglones son los cinco de la caja, en el orden de su papel (la diálisis al final)",
+      igual(tipos, ["caja_filtro", "caja_aditivo", "caja_limpieza_carter", "caja_lavado", "caja_dialisis"])],
+    ["filtro y aditivo llevan producto; limpieza, lavado y diálisis, una nota",
       lleva.caja_filtro === "producto" && lleva.caja_aditivo === "producto" &&
-        lleva.caja_limpieza_carter === "nota" && lleva.caja_lavado === "nota"],
+        lleva.caja_limpieza_carter === "nota" && lleva.caja_lavado === "nota" && lleva.caja_dialisis === "nota"],
+    ["la diálisis se lee entera en la carga y abreviada en el papel",
+      (m.RENGLONES_CAJA ?? []).some((r) => r.tipo === "caja_dialisis" && r.corto === "Servicio por sistema de diálisis" && r.papel === "Diálisis")],
     ["los renglones de la caja no están en el cartón de aceite",
       (m.RENGLONES ?? []).length === 21 && m.RENGLONES.every((r) => !r.tipo.startsWith("caja_"))],
     ["validarCaja: sin kilómetros no pasa",
@@ -232,7 +234,14 @@ if (hayHelpers) {
       "errorDeCaja traduce los tres errores de la base y deja pasar los demás"],
     ["lib/renglones.ts", revisarCaja, "el lavado con producto en vez de nota",
       [['papel: "Lavado circuito", lleva: "nota"', 'papel: "Lavado circuito", lleva: "producto"']],
-      "filtro y aditivo llevan producto; limpieza y lavado, una nota"],
+      "filtro y aditivo llevan producto; limpieza, lavado y diálisis, una nota"],
+    ["lib/renglones.ts", revisarCaja, "la diálisis sacada de la lista (el renglón que pidió Risso)",
+      [['  { tipo: "caja_dialisis", corto: "Servicio por sistema de diálisis", papel: "Diálisis", lleva: "nota" },\n', ""]],
+      "los renglones son los cinco de la caja, en el orden de su papel (la diálisis al final)"],
+    ["lib/renglones.ts", revisarCaja, "la diálisis metida antes del lavado (fuera del orden del enum)",
+      [['  { tipo: "caja_lavado", corto: "Lavado del circuito (máquina)", papel: "Lavado circuito", lleva: "nota" },\n  { tipo: "caja_dialisis", corto: "Servicio por sistema de diálisis", papel: "Diálisis", lleva: "nota" },',
+        '  { tipo: "caja_dialisis", corto: "Servicio por sistema de diálisis", papel: "Diálisis", lleva: "nota" },\n  { tipo: "caja_lavado", corto: "Lavado del circuito (máquina)", papel: "Lavado circuito", lleva: "nota" },']],
+      "los renglones son los cinco de la caja, en el orden de su papel (la diálisis al final)"],
     ["lib/cliente/proximos.ts", revisarProximos, "la tarjeta de caja leída del service",
       [['services.find((s) => s.tipo === "caja")', 'services.find((s) => s.tipo === "service")']],
       "con service y con caja, las dos tarjetas, cada una con lo suyo"],
@@ -601,8 +610,13 @@ try {
     await tocar(renglon(page, "Lavado del circuito (máquina)"));
     await tocar(page.locator("[data-renglones-caja]").getByRole("button", { name: "+ nota" }));
     await page.getByLabel("Nota de Lavado del circuito (máquina)").fill("Con máquina, 12 litros");
-    check("quedan dos renglones prendidos",
-      (await page.locator('[data-renglones-caja] [role=switch][aria-checked="true"]').count()) === 2);
+    // El quinto renglón, el de Risso: se lee entero y lleva una nota.
+    check("el quinto renglón está, con su nombre entero", (await renglon(page, "Servicio por sistema de diálisis").count()) === 1);
+    await tocar(renglon(page, "Servicio por sistema de diálisis"));
+    await tocar(page.locator("[data-renglones-caja]").getByRole("button", { name: "+ nota" }));
+    await page.getByLabel("Nota de Servicio por sistema de diálisis").fill("Diálisis completa, 9 litros");
+    check("quedan tres renglones prendidos",
+      (await page.locator('[data-renglones-caja] [role=switch][aria-checked="true"]').count()) === 3);
     await capturar(page, "carga-390");
 
     // «Otro» en el salto: el rango, y vuelta a 80.000.
@@ -623,8 +637,8 @@ try {
     check("la previsualización es el papel de la caja", (await papel.count()) === 1, textoPapel);
     check("con la bajada SERVICE DE CAJA", /service de caja/i.test(textoPapel));
     check("el aceite de caja y su marca", /Aceite de caja\s*Dexron VI/i.test(textoPapel) && textoPapel.includes(`ATF Dexron VI · ${MARCA_DE_PRUEBA}`), textoPapel);
-    check("los cuatro renglones bajo CAJA, con dos tildes", /CAJA/.test(textoPapel) && (textoPapel.match(/✓/g) ?? []).length === 2, textoPapel);
-    check("el detalle de los dos hechos", textoPapel.includes("Filtro Wega WFC 930") && textoPapel.includes("Con máquina, 12 litros"));
+    check("los cinco renglones bajo CAJA, con tres tildes", /CAJA/.test(textoPapel) && /Diálisis/.test(textoPapel) && (textoPapel.match(/✓/g) ?? []).length === 3, textoPapel);
+    check("el detalle de los tres hechos", textoPapel.includes("Filtro Wega WFC 930") && textoPapel.includes("Con máquina, 12 litros") && textoPapel.includes("Diálisis completa, 9 litros"));
     check("y PRÓX. SERVICE CAJA al pie", new RegExp(`Próx\\. service caja\\s*${fmt(KM + 80000).replace(".", "\\.")} km`, "i").test(textoPapel), textoPapel);
     check("el papel no dice «Prox. serv. kmts.» ni explica el OK", !/Prox\. serv\. kmts/i.test(textoPapel) && (await page.getByText("se revisó y estaba bien").count()) === 0);
     check("el plazo que avisa es de 24 horas", (await page.getByText("Editable por 24 horas").count()) === 1);
@@ -651,8 +665,8 @@ try {
       fila?.tipo === "caja" && fila.kilometros === KM && fila.aceite_tipo === "Dexron VI" &&
         fila.prox_caja_km === KM + 80000 && fila.prox_service_km === null, JSON.stringify(fila));
     check("con el producto y los litros", fila?.aceite_producto_id === ATF && Number(fila?.aceite_litros) === 6.5);
-    check("y los dos renglones, hechos",
-      igual((fila?.items ?? []).map((i) => [i.t, i.c]), [["caja_filtro", true], ["caja_lavado", true]]), JSON.stringify(fila?.items));
+    check("y los tres renglones, hechos, con la diálisis al final (el orden del enum)",
+      igual((fila?.items ?? []).map((i) => [i.t, i.c]), [["caja_filtro", true], ["caja_lavado", true], ["caja_dialisis", true]]), JSON.stringify(fila?.items));
     check("el stock del ATF bajó los 6,5 litros", sql(`select stock from productos where id = '${ATF}'`) === "33.50");
   });
 
@@ -675,9 +689,9 @@ try {
       (await page.getByText("Service de caja — el tipo no se cambia al editar.").count()) === 1);
     check("abre con el ATF guardado marcado",
       (await page.locator('[data-bloque-aceite-caja] [role=group] button[aria-pressed="true"]').innerText()) === "Dexron VI");
-    check("con 80.000 elegido y los dos renglones prendidos",
+    check("con 80.000 elegido y los tres renglones prendidos",
       (await page.locator('[data-proximo-caja] button[aria-pressed="true"]').innerText()) === "80.000" &&
-        (await page.locator('[data-renglones-caja] [role=switch][aria-checked="true"]').count()) === 2);
+        (await page.locator('[data-renglones-caja] [role=switch][aria-checked="true"]').count()) === 3);
     check("y los litros que se guardaron", (await page.inputValue("#atf-litros")).replace(",", ".") === "6.5");
     await page.locator("[data-bloque-aceite-caja]").getByRole("button", { name: "Mercon V", exact: true }).click();
     await page.getByRole("button", { name: "Revisar y confirmar" }).click();
@@ -855,7 +869,7 @@ try {
         && filaAbc[col("Litros de aceite")] === "6.5",
       JSON.stringify(filaAbc));
     check("los renglones de la caja van por su nombre y sin «(cambiado)»",
-      Boolean(filaAbc) && filaAbc.some((c) => /Filtro de caja/.test(c) && /Lavado del circuito/.test(c) && !/\((cambiado|OK)\)/.test(c)),
+      Boolean(filaAbc) && filaAbc.some((c) => /Filtro de caja/.test(c) && /Lavado del circuito/.test(c) && /Servicio por sistema de diálisis/.test(c) && !/\((cambiado|OK)\)/.test(c)),
       JSON.stringify(filaAbc));
     check("la hoja de productos anota el ATF como «Aceite de caja», no como aceite de motor",
       (productos ?? []).some((f) => f.includes("Aceite de caja") && f.includes("ATF Dexron VI"))
