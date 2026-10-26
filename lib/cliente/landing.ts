@@ -1,5 +1,9 @@
-import { createClient } from "@/lib/supabase/server";
-import { normalizarPatente } from "@/lib/texto";
+import { cache } from "react";
+import {
+  preguntarCarton,
+  preguntarLanding,
+  type Contestacion,
+} from "@/lib/cliente/puerta";
 import { hexONull } from "@/lib/cliente/color";
 import { aTema, aTamanoLogo, type TemaCliente, type TamanoLogo } from "@/lib/cliente/tema";
 
@@ -19,6 +23,9 @@ import { aTema, aTamanoLogo, type TemaCliente, type TamanoLogo } from "@/lib/cli
 //
 // Por eso el shell no se pide con get_carton y una patente vacía: dejaría
 // una fila basura por cada visita.
+//
+// Las dos llamadas salen de lib/cliente/puerta.ts, que distingue lo que la
+// función contestó de la función que no contestó. Acá se lee la respuesta.
 
 // La división de responsabilidades, decidida: datos_contacto es el
 // contacto de la MARCA (el WhatsApp al que escribe el cliente, las
@@ -74,33 +81,64 @@ type LandingJson = {
   premio?: { meta_services: number; descripcion: string; alcance?: string } | null;
 };
 
-/** El shell de la landing. `null` = el slug no existe o el lubri está inactivo. */
-export async function obtenerLanding(slug: string): Promise<Lubricentro | null> {
-  const supabase = await createClient();
-  const { data } = await supabase.rpc("get_landing", { p_slug: slug });
+// «No existe» y «no contestó» son dos cosas, y se ven distinto: la primera
+// es un 404, la segunda es «probá de nuevo». get_landing dice que el slug
+// no existe contestando `null`; lo que no es una respuesta suya —un error,
+// un corte— es `sin_respuesta`.
+export type ResultadoLanding =
+  | { estado: "ok"; lubricentro: Lubricentro }
+  | { estado: "lubricentro_no_encontrado" }
+  | { estado: "sin_respuesta" };
 
-  const json = data as LandingJson | null;
-  if (!json?.nombre) return null;
+function leerLanding(respuesta: Contestacion): ResultadoLanding {
+  if (!respuesta.contesto) return { estado: "sin_respuesta" };
+
+  const json = respuesta.json as LandingJson | null;
+  if (!json?.nombre) return { estado: "lubricentro_no_encontrado" };
 
   return {
-    nombre: json.nombre,
-    logoUrl: json.logo_url ?? null,
-    colorPrimario: json.color_primario ?? "#0A0A0A",
-    // Saneados acá, en la única puerta: lo que sigue viaja a un style.
-    colorFondo: hexONull(json.color_fondo),
-    colorCarton: hexONull(json.color_carton),
-    tema: aTema(json.tema),
-    logoTamano: aTamanoLogo(json.logo_tamano),
-    contacto: json.datos_contacto ?? {},
-    sucursales: json.sucursales ?? [],
-    premio: json.premio
-      ? {
-          metaServices: json.premio.meta_services,
-          descripcion: json.premio.descripcion,
-          alcance: json.premio.alcance === "todos" ? "todos" : "services",
-        }
-      : null,
+    estado: "ok",
+    lubricentro: {
+      nombre: json.nombre,
+      logoUrl: json.logo_url ?? null,
+      colorPrimario: json.color_primario ?? "#0A0A0A",
+      // Saneados acá, en la única puerta: lo que sigue viaja a un style.
+      colorFondo: hexONull(json.color_fondo),
+      colorCarton: hexONull(json.color_carton),
+      tema: aTema(json.tema),
+      logoTamano: aTamanoLogo(json.logo_tamano),
+      contacto: json.datos_contacto ?? {},
+      sucursales: json.sucursales ?? [],
+      premio: json.premio
+        ? {
+            metaServices: json.premio.meta_services,
+            descripcion: json.premio.descripcion,
+            alcance: json.premio.alcance === "todos" ? "todos" : "services",
+          }
+        : null,
+    },
   };
+}
+
+/**
+ * El shell de la landing.
+ *
+ * Con `cache`: el título de la página y la página la piden en el mismo
+ * pedido y tienen que leer LA MISMA respuesta. Sin esto eran dos llamadas,
+ * y si fallaba una sola la página decía una cosa y su título otra.
+ */
+export const obtenerLanding = cache(
+  async (slug: string): Promise<ResultadoLanding> =>
+    leerLanding(await preguntarLanding(slug)),
+);
+
+/**
+ * La marca del lubricentro para el estado «sin respuesta» del cartón: de
+ * cortesía, un solo intento y con plazo. Si get_landing tampoco contesta,
+ * esa pantalla queda neutra.
+ */
+export async function marcaSiContesta(slug: string): Promise<ResultadoLanding> {
+  return leerLanding(await preguntarLanding(slug, { deCortesia: true }));
 }
 
 /**
@@ -108,6 +146,10 @@ export async function obtenerLanding(slug: string): Promise<Lubricentro | null> 
  * pantalla del vehículo. La llamada queda registrada en landing_busquedas
  * por la propia función —sin la patente si no la encontró— y acá no hay que
  * agregar nada.
+ *
+ * Son TRES respuestas y no un booleano: si get_carton no contesta, la
+ * patente no es que «no existe» —no se sabe—, y decirle al dueño del auto
+ * «No encontramos esa patente» sería mentirle.
  *
  * BACKLOG · LÍMITE DE INTENTOS — decisión de producto pendiente.
  *
@@ -124,13 +166,13 @@ export async function obtenerLanding(slug: string): Promise<Lubricentro | null> 
  * cliente legítimo que escribe mal la patente dos veces desde el celular, y
  * ese es el usuario que menos tolerancia tiene a que la pantalla lo rechace.
  */
-export async function existeVehiculo(slug: string, patente: string): Promise<boolean> {
-  const supabase = await createClient();
-  const { data } = await supabase.rpc("get_carton", {
-    p_slug: slug,
-    p_patente: normalizarPatente(patente),
-  });
+export async function buscarVehiculo(
+  slug: string,
+  patente: string,
+): Promise<"encontrado" | "no_encontrado" | "sin_respuesta"> {
+  const respuesta = await preguntarCarton(slug, patente);
+  if (!respuesta.contesto) return "sin_respuesta";
 
-  const json = data as { error?: string } | null;
-  return Boolean(json) && !json?.error;
+  const json = respuesta.json as { error?: string };
+  return json.error ? "no_encontrado" : "encontrado";
 }
