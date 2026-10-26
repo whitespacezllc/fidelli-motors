@@ -95,13 +95,38 @@ Una migración sola, `20261026120000_patentes_vecinas.sql`: redefine
 Bolivia y Chile. No carga datos, no toca ninguna fila, es instantánea, y es un
 superconjunto: ningún vehículo existente deja de cumplir el CHECK.
 
-- [ ] **La base primero**: `db push` a dev y a prod desde el workdir aislado
-      (receta de la sección A; `cat <workdir>/supabase/.temp/project-ref` tiene
-      que decir `cutzedfmxyyxxqfjutru` antes del push a prod).
-- [ ] Después el release develop → main y el deploy. Si la app saliera antes
-      que la base, una chapa extranjera recibiría el aviso de formato (el CHECK
-      la rechaza con 23514 y el front lo traduce) y nada se rompería; en el
-      orden correcto nadie nota nada.
+- [x] **La base primero**: `db push` a dev y a prod desde el workdir aislado
+      (26/10, 17:50 y 17:59 UTC; prod 119 → 120, `vehiculos_invalidos = 0`).
+- [x] Después el release develop → main y el deploy (#182, 26/10 18:00 UTC).
 - [ ] Humo en producción con una chapa real de Sassi: cargarla en «Nuevo
       trabajo» y abrir `/[slug]/[patente]`.
+- [x] Nada que cargar a mano.
+
+**Trampa vista el 26/10, para el próximo push a dev.** Dev tiene cuatro
+migraciones `20261022*_finanzas_*` (rama `feat/facturacion-cimientos` de
+Grego, commit `fa2e130`) que no están en develop ni en prod. `db push` a dev
+desde el repo se niega con «Remote migration versions not found in local
+migrations directory» y sugiere `migration repair --status reverted`: **no
+correrlo**, le borraría el historial a finanzas en dev. Lo que anda es un
+workdir aislado linkeado a dev con las migraciones del repo MÁS esas cuatro
+(`git show fa2e130:supabase/migrations/<archivo>`). Y cuando finanzas llegue
+a prod, sus archivos quedan ANTES de `20261026120000` en el orden: el push va
+a pedir `--include-all` o renumerarlas.
+
+## I · El renglón de diálisis en el service de caja (26/10/2026)
+
+Una migración sola, `20261026150000_caja_dialisis.sql`: un valor más en el
+enum `item_tipo` (`caja_dialisis`, al final, después de `caja_lavado`). No
+carga datos y no toca ninguna función.
+
+- [ ] **La base primero**: `db push` a dev y a prod desde el workdir aislado
+      (ver la trampa de la sección H: el workdir de dev lleva las cuatro
+      migraciones de finanzas que develop no tiene).
+- [ ] Después el release develop → main. Al revés no rompe nada a la vista,
+      pero una caja con la diálisis tildada fallaría al guardar con el error
+      crudo del enum («invalid input value for enum item_tipo»), que el front
+      no traduce: no dejar la app adelante de la base.
+- [ ] Humo en producción: en un tenant con la feature `caja` prendida, abrir
+      «Nuevo trabajo» → Caja y ver el quinto renglón; tildarlo con una nota,
+      guardar, y mirar el papel en `/[slug]/[patente]` y el Excel.
 - [ ] Nada que cargar a mano.

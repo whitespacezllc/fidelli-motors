@@ -677,10 +677,10 @@ export function Carton({
         cantidad: Number(cantidadesLibres[i]?.replace(",", ".")) || 1,
       }));
 
-    // Los renglones de la caja: solo los cuatro del tipo, y todos como
+    // Los renglones de la caja: solo los cinco del tipo, y todos como
     // hechos (la base lo fuerza igual). Filtro y aditivo vinculan el
-    // producto si el nombre coincide con uno del catálogo; limpieza y
-    // lavado llevan una nota.
+    // producto si el nombre coincide con uno del catálogo; limpieza,
+    // lavado y diálisis llevan una nota.
     const itemsCaja: ItemCargado[] = RENGLONES_CAJA.filter(
       (r) => r.tipo in hechosCaja,
     ).map((r) => {
@@ -1302,7 +1302,7 @@ export function Carton({
   // de aceite, SIN el segundo toggle: prendido = hecho, porque en una caja
   // no existe el «revisado y OK». Prendido ofrece lo que ese renglón lleva:
   // un producto del catálogo con su cantidad (el filtro, el aditivo), o
-  // una nota (la limpieza, el lavado).
+  // una nota (la limpieza, el lavado, la diálisis).
   function dibujarRenglonCaja(r: RenglonCaja) {
     const encendido = r.tipo in hechosCaja;
     return (
@@ -1831,7 +1831,7 @@ export function Carton({
               )}
             </div>
 
-            {/* Los cuatro renglones de la caja, en el orden de su papel.
+            {/* Los cinco renglones de la caja, en el orden de su papel.
                 SIN overflow-hidden, igual que los grupos del cartón: el
                 panel del combobox se despliega por debajo del borde. */}
             <div
