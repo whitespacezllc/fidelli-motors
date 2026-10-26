@@ -119,13 +119,14 @@ Una migración sola, `20261026150000_caja_dialisis.sql`: un valor más en el
 enum `item_tipo` (`caja_dialisis`, al final, después de `caja_lavado`). No
 carga datos y no toca ninguna función.
 
-- [ ] **La base primero**: `db push` a dev y a prod desde el workdir aislado
-      (ver la trampa de la sección H: el workdir de dev lleva las cuatro
-      migraciones de finanzas que develop no tiene).
-- [ ] Después el release develop → main. Al revés no rompe nada a la vista,
-      pero una caja con la diálisis tildada fallaría al guardar con el error
-      crudo del enum («invalid input value for enum item_tipo»), que el front
-      no traduce: no dejar la app adelante de la base.
+- [x] **La base primero**: `db push` a dev y a prod desde el workdir aislado
+      (26/10, 20:45 y 20:48 UTC; prod 120 → 121, el enum con los cinco de la
+      caja en orden). El workdir de dev llevó las cuatro migraciones de
+      finanzas que develop no tiene (trampa de la sección H).
+- [x] Después el release develop → main (#185, 26/10 20:49 UTC). Al revés no
+      rompe nada a la vista, pero una caja con la diálisis tildada fallaría al
+      guardar con el error crudo del enum («invalid input value for enum
+      item_tipo»), que el front no traduce: no dejar la app adelante de la base.
 - [ ] Humo en producción: en un tenant con la feature `caja` prendida, abrir
       «Nuevo trabajo» → Caja y ver el quinto renglón; tildarlo con una nota,
       guardar, y mirar el papel en `/[slug]/[patente]` y el Excel.
