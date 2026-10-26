@@ -11,6 +11,7 @@ import {
   IconoTrabajos,
   IconoCaja,
   IconoFinanzas,
+  IconoFacturacion,
   IconoPremio,
   IconoPresupuesto,
   IconoDiseno,
@@ -70,6 +71,9 @@ const GRUPOS: {
       // El módulo Finanzas: add-on pago, solo aparece con el módulo
       // prendido — igual que Neumáticos. "El día" es el título interno.
       { href: "/panel/finanzas", nombre: "Finanzas", feature: "finanzas", Icono: IconoFinanzas },
+      // Facturación (Nivel 3): add-on pago, aparece solo con el módulo
+      // prendido, igual que Finanzas y Neumáticos.
+      { href: "/panel/facturacion", nombre: "Facturación", feature: "facturacion", Icono: IconoFacturacion },
     ],
   },
   {

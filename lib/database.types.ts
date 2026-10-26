@@ -471,6 +471,202 @@ export type Database = {
           },
         ]
       }
+      comprobante_items: {
+        Row: {
+          cantidad: number
+          comprobante_id: string
+          descripcion: string
+          id: string
+          importe_neto: number
+          iva_alicuota: number
+          lubricentro_id: string
+          orden: number
+          precio_unitario_neto: number
+        }
+        Insert: {
+          cantidad?: number
+          comprobante_id: string
+          descripcion: string
+          id?: string
+          importe_neto: number
+          iva_alicuota: number
+          lubricentro_id: string
+          orden: number
+          precio_unitario_neto: number
+        }
+        Update: {
+          cantidad?: number
+          comprobante_id?: string
+          descripcion?: string
+          id?: string
+          importe_neto?: number
+          iva_alicuota?: number
+          lubricentro_id?: string
+          orden?: number
+          precio_unitario_neto?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comprobante_items_comprobante_id_fkey"
+            columns: ["comprobante_id"]
+            isOneToOne: false
+            referencedRelation: "comprobantes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comprobante_items_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      comprobantes: {
+        Row: {
+          cae: string | null
+          cae_vencimiento: string | null
+          cliente_id: string | null
+          created_at: string
+          emisor_ref: string | null
+          estado: string
+          exento: number
+          fecha: string
+          id: string
+          iva_105: number
+          iva_21: number
+          lubricentro_id: string
+          neto_gravado: number
+          neto_no_gravado: number
+          numero: number | null
+          presupuesto_id: string | null
+          punto_venta: number | null
+          receptor_condicion: string
+          receptor_cuit: string | null
+          receptor_nombre: string | null
+          sucursal_id: string
+          tipo: string
+          total: number
+          usuario_id: string
+        }
+        Insert: {
+          cae?: string | null
+          cae_vencimiento?: string | null
+          cliente_id?: string | null
+          created_at?: string
+          emisor_ref?: string | null
+          estado?: string
+          exento?: number
+          fecha?: string
+          id?: string
+          iva_105?: number
+          iva_21?: number
+          lubricentro_id: string
+          neto_gravado?: number
+          neto_no_gravado?: number
+          numero?: number | null
+          presupuesto_id?: string | null
+          punto_venta?: number | null
+          receptor_condicion: string
+          receptor_cuit?: string | null
+          receptor_nombre?: string | null
+          sucursal_id: string
+          tipo: string
+          total: number
+          usuario_id: string
+        }
+        Update: {
+          cae?: string | null
+          cae_vencimiento?: string | null
+          cliente_id?: string | null
+          created_at?: string
+          emisor_ref?: string | null
+          estado?: string
+          exento?: number
+          fecha?: string
+          id?: string
+          iva_105?: number
+          iva_21?: number
+          lubricentro_id?: string
+          neto_gravado?: number
+          neto_no_gravado?: number
+          numero?: number | null
+          presupuesto_id?: string | null
+          punto_venta?: number | null
+          receptor_condicion?: string
+          receptor_cuit?: string | null
+          receptor_nombre?: string | null
+          sucursal_id?: string
+          tipo?: string
+          total?: number
+          usuario_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comprobantes_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comprobantes_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comprobantes_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_caja"
+            referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "comprobantes_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_neumaticos"
+            referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "comprobantes_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "vista_proximos_service"
+            referencedColumns: ["cliente_id"]
+          },
+          {
+            foreignKeyName: "comprobantes_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comprobantes_presupuesto_id_fkey"
+            columns: ["presupuesto_id"]
+            isOneToOne: false
+            referencedRelation: "presupuestos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comprobantes_sucursal_id_fkey"
+            columns: ["sucursal_id"]
+            isOneToOne: false
+            referencedRelation: "sucursales"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comprobantes_usuario_id_fkey"
+            columns: ["usuario_id"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       config_experiencia: {
         Row: {
           campos_visibles: Json
@@ -517,6 +713,48 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "config_experiencia_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: true
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      config_facturacion: {
+        Row: {
+          actualizado_por: string | null
+          iva_alicuota_default: number
+          lubricentro_id: string
+          precios_incluyen_iva: boolean
+          punto_venta: number | null
+          updated_at: string
+        }
+        Insert: {
+          actualizado_por?: string | null
+          iva_alicuota_default?: number
+          lubricentro_id: string
+          precios_incluyen_iva?: boolean
+          punto_venta?: number | null
+          updated_at?: string
+        }
+        Update: {
+          actualizado_por?: string | null
+          iva_alicuota_default?: number
+          lubricentro_id?: string
+          precios_incluyen_iva?: boolean
+          punto_venta?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "config_facturacion_actualizado_por_fkey"
+            columns: ["actualizado_por"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "config_facturacion_lubricentro_id_fkey"
             columns: ["lubricentro_id"]
             isOneToOne: true
             referencedRelation: "lubricentros"
@@ -2185,6 +2423,7 @@ export type Database = {
           created_at: string
           id: string
           importado_de: string | null
+          iva_alicuota: number | null
           litros_sugeridos: number | null
           lubricentro_id: string
           marca: string | null
@@ -2200,6 +2439,7 @@ export type Database = {
           created_at?: string
           id?: string
           importado_de?: string | null
+          iva_alicuota?: number | null
           litros_sugeridos?: number | null
           lubricentro_id: string
           marca?: string | null
@@ -2215,6 +2455,7 @@ export type Database = {
           created_at?: string
           id?: string
           importado_de?: string | null
+          iva_alicuota?: number | null
           litros_sugeridos?: number | null
           lubricentro_id?: string
           marca?: string | null
@@ -3961,6 +4202,46 @@ export type Database = {
         Args: { p_cliente_id: string; p_motivo: string }
         Returns: undefined
       }
+      armar_comprobante_desde_presupuesto: {
+        Args: {
+          p_presupuesto_id: string
+          p_receptor_condicion: string
+          p_receptor_cuit?: string
+          p_receptor_nombre?: string
+        }
+        Returns: {
+          cae: string | null
+          cae_vencimiento: string | null
+          cliente_id: string | null
+          created_at: string
+          emisor_ref: string | null
+          estado: string
+          exento: number
+          fecha: string
+          id: string
+          iva_105: number
+          iva_21: number
+          lubricentro_id: string
+          neto_gravado: number
+          neto_no_gravado: number
+          numero: number | null
+          presupuesto_id: string | null
+          punto_venta: number | null
+          receptor_condicion: string
+          receptor_cuit: string | null
+          receptor_nombre: string | null
+          sucursal_id: string
+          tipo: string
+          total: number
+          usuario_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "comprobantes"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       atencion_tenant: { Args: { p_lubricentro_id: string }; Returns: Json }
       autos_que_volvieron: {
         Args: { p_desde: string; p_hasta: string; p_lubricentro_id: string }
@@ -4459,6 +4740,23 @@ export type Database = {
       }
       get_carton: { Args: { p_patente: string; p_slug: string }; Returns: Json }
       get_landing: { Args: { p_slug: string }; Returns: Json }
+      guardar_config_facturacion: {
+        Args: { p_datos: Json; p_lubricentro_id?: string }
+        Returns: {
+          actualizado_por: string | null
+          iva_alicuota_default: number
+          lubricentro_id: string
+          precios_incluyen_iva: boolean
+          punto_venta: number | null
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "config_facturacion"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       guardar_datos_empresa: {
         Args: { p_datos: Json; p_lubricentro_id?: string }
         Returns: {
@@ -4910,6 +5208,10 @@ export type Database = {
       tiene_encargo_calcos_abierto: {
         Args: { p_lubricentro_id: string }
         Returns: boolean
+      }
+      tipo_comprobante_para: {
+        Args: { p_emisor: string; p_receptor: string }
+        Returns: string
       }
       trabajos_por_mes: {
         Args: { p_desde: string; p_hasta: string }
