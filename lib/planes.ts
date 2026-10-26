@@ -36,6 +36,11 @@ export const FEATURES_PLAN = [
   // en `modulos` con precio, entra al monto, se prende por tenant con el
   // override de /fidelli y NO figura en el `features` de ningún plan.
   "finanzas",
+  // FACTURACIÓN (Nivel 3, 20261023120000). MÓDULO PAGO, igual que
+  // `finanzas`: fila en `modulos`, entra al monto, se prende por tenant con
+  // el override y NO figura en el `features` de ningún plan. Independiente
+  // de `finanzas`: un taller puede querer uno sin el otro.
+  "facturacion",
 ] as const;
 
 export type FeaturePlan = (typeof FEATURES_PLAN)[number];
@@ -45,7 +50,7 @@ export type FeaturePlan = (typeof FEATURES_PLAN)[number];
  * por tenant desde /fidelli. No vienen con ningún plan, así que la etiqueta
  * "Plan Pro" no los nombra bien — se nombran con ETIQUETA_MODULO.
  */
-export const MODULOS_PAGOS = ["neumaticos", "finanzas"] as const satisfies readonly FeaturePlan[];
+export const MODULOS_PAGOS = ["neumaticos", "finanzas", "facturacion"] as const satisfies readonly FeaturePlan[];
 
 export type ModuloPago = (typeof MODULOS_PAGOS)[number];
 
@@ -57,6 +62,7 @@ export function esModuloPago(f: string): f is ModuloPago {
 export const ETIQUETA_MODULO: Record<ModuloPago, string> = {
   neumaticos: "Módulo Gomería",
   finanzas: "Módulo Finanzas",
+  facturacion: "Módulo Facturación",
 };
 
 export const LIMITES_PLAN = ["sucursales"] as const;
@@ -74,6 +80,7 @@ export const ETIQUETA_FEATURE: Record<FeaturePlan, string> = {
   neumaticos: "Gomería — módulo pago",
   caja: "Service de caja automática",
   finanzas: "Finanzas — módulo pago",
+  facturacion: "Facturación electrónica — módulo pago",
 };
 
 /**
@@ -91,6 +98,8 @@ export const RUTA_FEATURE: Partial<Record<FeaturePlan, string>> = {
   neumaticos: "/panel/neumaticos",
   // El módulo Finanzas: su pantalla "El día" vive acá.
   finanzas: "/panel/finanzas",
+  // El módulo Facturación: la cola de comprobantes y la config fiscal.
+  facturacion: "/panel/facturacion",
 };
 
 /**

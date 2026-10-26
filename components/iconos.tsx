@@ -24,6 +24,7 @@ import {
   WrenchIcon,
   TireIcon,
   ReceiptIcon,
+  InvoiceIcon,
   PaletteIcon,
   ChatCircleTextIcon,
   UserCircleIcon,
@@ -166,6 +167,9 @@ export const IconoAviso = delSistema(WarningIcon);
 export const IconoTrabajos = delSistema(WrenchIcon);
 export const IconoNeumatico = delSistema(TireIcon);
 export const IconoPresupuesto = delSistema(ReceiptIcon);
+// Facturación: Invoice, distinto del Receipt del presupuesto (un
+// presupuesto no es un comprobante — regla 6).
+export const IconoFacturacion = delSistema(InvoiceIcon);
 // Las dos salidas del presupuesto terminado.
 export const IconoDescargar = delSistema(DownloadSimpleIcon);
 export const IconoImprimir = delSistema(PrinterIcon);

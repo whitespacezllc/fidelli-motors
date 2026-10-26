@@ -51,6 +51,8 @@ export default async function PaginaPresupuesto({ params }: Props) {
   const suspendido = await panelSuspendido();
   // El botón "cobrado" solo existe con el módulo Finanzas prendido.
   const tieneFinanzas = featureHabilitada(sesion, "finanzas");
+  // "Facturar" solo con el módulo Facturación (Nivel 3) prendido.
+  const tieneFacturacion = featureHabilitada(sesion, "facturacion");
   const supabase = await createClient();
 
   const [presupuestoRes, configRes, empresaRes, ingresoRes, deudaRes] = await Promise.all([
@@ -220,6 +222,26 @@ export default async function PaginaPresupuesto({ params }: Props) {
               </div>
             )
           )}
+        </div>
+      )}
+
+      {/* Facturación (Nivel 3): previsualizar y armar el comprobante de este
+          presupuesto. Solo con el módulo prendido; no toca el papel. La regla
+          6 sigue en pie — el comprobante es OTRO documento, no el presupuesto. */}
+      {tieneFacturacion && !suspendido && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-line bg-surface/60 px-4 py-3 print:hidden">
+          <div>
+            <p className="font-brand text-ui font-bold text-ink">Facturación</p>
+            <p className="text-label text-ink-60">
+              Previsualizá el comprobante que corresponde según tu condición y la de tu cliente.
+            </p>
+          </div>
+          <Link
+            href={`/panel/facturacion/desde/${p.id}`}
+            className={clasesBoton("secundario", "md")}
+          >
+            Facturar
+          </Link>
         </div>
       )}
 

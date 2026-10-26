@@ -14615,3 +14615,161 @@ begin
   end if;
 end $$;
 -- <<< R47
+
+
+-- ============================================================
+-- R48 · Facturación (Nivel 3): gating en dos capas, la letra y el IVA
+--
+-- Cuatro invariantes de los cimientos de facturación (20261023120000):
+--   · a · el gating del MÓDULO en dos capas: sin 'facturacion', ni la puerta
+--         armar_comprobante_desde_presupuesto() ni un INSERT directo entran;
+--         con el override, sí. (regla 1/2)
+--   · b · tipo_comprobante_para(): la letra correcta por par emisor/receptor.
+--   · c · el desglose de IVA exacto en los bordes: precios FINALES (el neto
+--         se saca dividiendo), precios NETOS (el IVA se suma encima) y la
+--         Factura C (monotributo/exento: sin IVA).
+--   · d · el borrador nace SIN numeración fiscal ni CAE (eso es la emisión
+--         real, rebanada 2).
+-- Todo sobre el demo, y deja el demo como estaba (override, datos_empresa).
+-- ============================================================
+-- >>> R48
+do $$
+declare
+  v_lub           uuid;
+  v_owner         uuid;
+  v_super         uuid;
+  v_suc           uuid;
+  v_over_orig     jsonb;
+  v_cond_orig     text;
+  v_habia_empresa boolean;
+  v_pres          uuid;
+  v_comp          comprobantes;
+begin
+  select l.id, l.plan_overrides into v_lub, v_over_orig from lubricentros l where l.slug = 'demo';
+  select u.id into v_owner from usuarios u where u.lubricentro_id = v_lub and u.rol = 'owner' limit 1;
+  select u.id into v_super from usuarios u where u.rol = 'superadmin' limit 1;
+  select su.id into v_suc from sucursales su where su.lubricentro_id = v_lub and su.activa limit 1;
+  if v_lub is null or v_owner is null or v_super is null or v_suc is null then
+    raise exception 'R48 SIN PISO: falta demo/owner/superadmin/sucursal en el seed.';
+  end if;
+
+  -- b · la letra, pura. `is distinct from` y no `<>`: una letra rota a NULL
+  -- hace que `null <> 'factura_c'` sea NULL (no true) y el if la dejaría
+  -- pasar — el bug lo encontró la propia rotura de regresión.
+  if tipo_comprobante_para('responsable_inscripto', 'responsable_inscripto') is distinct from 'factura_a'
+     or tipo_comprobante_para('responsable_inscripto', 'consumidor_final') is distinct from 'factura_b'
+     or tipo_comprobante_para('responsable_inscripto', 'monotributo') is distinct from 'factura_b'
+     or tipo_comprobante_para('monotributo', 'responsable_inscripto') is distinct from 'factura_c'
+     or tipo_comprobante_para('exento', 'consumidor_final') is distinct from 'factura_c' then
+    raise exception 'R48b: tipo_comprobante_para devolvió una letra equivocada.';
+  end if;
+
+  -- El emisor con condición RI para el test (guardando lo que había).
+  select condicion_iva, true into v_cond_orig, v_habia_empresa
+    from datos_empresa where lubricentro_id = v_lub;
+  v_habia_empresa := coalesce(v_habia_empresa, false);
+  insert into datos_empresa (lubricentro_id, condicion_iva) values (v_lub, 'responsable_inscripto')
+    on conflict (lubricentro_id) do update set condicion_iva = 'responsable_inscripto';
+
+  -- Un presupuesto de $1210 (un renglón) como owner.
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  v_pres := guardar_presupuesto(p_sucursal_id => v_suc,
+    p_items => '[{"descripcion":"Facturación R48","cantidad":1,"precio_unitario":1210}]'::jsonb);
+
+  -- a · SIN el módulo: la puerta y el INSERT directo fallan (dos capas).
+  begin
+    perform armar_comprobante_desde_presupuesto(v_pres, 'responsable_inscripto', null, 'R48');
+    raise exception 'R48a: un tenant SIN el módulo armó un comprobante — el gating por plan no rige.';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into comprobantes (lubricentro_id, sucursal_id, usuario_id, tipo, receptor_condicion, total)
+      values (v_lub, v_suc, v_owner, 'factura_b', 'consumidor_final', 0);
+    raise exception 'R48a: un INSERT directo de comprobante entró sin el módulo — la capa RLS no sostiene sola.';
+  exception when insufficient_privilege then null;
+  end;
+
+  -- Prender el módulo por la puerta real (fijar_override_plan, superadmin).
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  perform fijar_override_plan(v_lub, '{"facturacion": true}'::jsonb,
+    'Módulo facturación · bonificado — prueba de regresión R48');
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  if not plan_permite('facturacion') then
+    raise exception 'R48a: el override de /fidelli no prendió ''facturacion''.';
+  end if;
+
+  -- c · precios FINALES (default), alícuota 21, RI → RI = Factura A.
+  v_comp := armar_comprobante_desde_presupuesto(v_pres, 'responsable_inscripto', null, 'Cliente R48');
+  if v_comp.tipo <> 'factura_a' then
+    raise exception 'R48c: RI→RI tendría que ser factura_a y es %.', v_comp.tipo;
+  end if;
+  if v_comp.neto_gravado <> 1000.00 or v_comp.iva_21 <> 210.00 or v_comp.total <> 1210.00 then
+    raise exception 'R48c: desglose FINAL 1210@21%% mal: neto=% iva21=% total=% (esperaba 1000/210/1210).',
+      v_comp.neto_gravado, v_comp.iva_21, v_comp.total;
+  end if;
+
+  -- d · el borrador nace sin numeración fiscal ni CAE.
+  if v_comp.estado <> 'borrador' or v_comp.numero is not null or v_comp.cae is not null then
+    raise exception 'R48d: el comprobante nació con numeración o CAE (estado=% numero=% cae=%).',
+      v_comp.estado, v_comp.numero, v_comp.cae;
+  end if;
+
+  -- c2 · precios NETOS: el IVA se suma encima.
+  perform guardar_config_facturacion('{"precios_incluyen_iva": false}'::jsonb);
+  v_comp := armar_comprobante_desde_presupuesto(v_pres, 'responsable_inscripto', null, 'Cliente R48 neto');
+  if v_comp.neto_gravado <> 1210.00 or v_comp.iva_21 <> 254.10 or v_comp.total <> 1464.10 then
+    raise exception 'R48c: desglose NETO 1210@21%% mal: neto=% iva21=% total=% (esperaba 1210/254.10/1464.10).',
+      v_comp.neto_gravado, v_comp.iva_21, v_comp.total;
+  end if;
+
+  -- c3 · Factura C (emisor monotributo): sin IVA, total = la suma.
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+  update datos_empresa set condicion_iva = 'monotributo' where lubricentro_id = v_lub;
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  perform guardar_config_facturacion('{"precios_incluyen_iva": true}'::jsonb);
+  v_comp := armar_comprobante_desde_presupuesto(v_pres, 'consumidor_final', null, 'Cliente R48 C');
+  if v_comp.tipo <> 'factura_c' then
+    raise exception 'R48c: emisor monotributo tendría que dar factura_c y dio %.', v_comp.tipo;
+  end if;
+  if v_comp.iva_21 <> 0 or v_comp.iva_105 <> 0 or v_comp.total <> 1210.00 then
+    raise exception 'R48c: una Factura C no discrimina IVA: iva21=% iva105=% total=% (esperaba 0/0/1210).',
+      v_comp.iva_21, v_comp.iva_105, v_comp.total;
+  end if;
+
+  -- limpieza: dejar el demo como estaba.
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  perform fijar_override_plan(v_lub, coalesce(v_over_orig, '{}'::jsonb),
+    'Módulo facturación · baja de prueba de regresión R48');
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  delete from comprobante_items where comprobante_id in (select id from comprobantes where presupuesto_id = v_pres);
+  delete from comprobantes where presupuesto_id = v_pres;
+  delete from config_facturacion where lubricentro_id = v_lub;
+  delete from presupuesto_items where presupuesto_id = v_pres;
+  delete from presupuestos where id = v_pres;
+  if v_habia_empresa then
+    update datos_empresa set condicion_iva = v_cond_orig where lubricentro_id = v_lub;
+  else
+    delete from datos_empresa where lubricentro_id = v_lub;
+  end if;
+end $$;
+-- <<< R48

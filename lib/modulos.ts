@@ -24,6 +24,7 @@ import type { ModuloPago } from "@/lib/planes";
 export const PREFIJOS_MODULO: Record<ModuloPago, string> = {
   neumaticos: "Módulo gomería",
   finanzas: "Módulo finanzas",
+  facturacion: "Módulo facturación",
 };
 
 /** "pago" o "bonificado": las dos únicas formas de tener un módulo. */
