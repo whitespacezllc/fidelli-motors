@@ -1,0 +1,27 @@
+-- ============================================================
+-- Fidelli Motors · El quinto renglón del service de caja: la diálisis
+--
+-- Lo pidieron Risso (Buenos Aires) y otro lubricentro más: el cambio de
+-- aceite de caja «por sistema de diálisis» —la máquina que recircula y
+-- reemplaza el ATF entero, en vez del drenaje por gravedad— es un trabajo
+-- que cobran aparte y quieren dejar tildado en el papel.
+--
+-- SOLO EL ENUM, en un archivo solo (la misma regla de Postgres de
+-- 20261004120000: un valor nuevo de enum no se puede usar en la
+-- transacción que lo crea). Y nada más hace falta en la base: ninguna
+-- función, CHECK ni policy enumera los renglones de la caja
+-- —guardar_service y actualizar_service castean el jsonb genérico, y
+-- get_carton devuelve los renglones por `order by item_tipo`—, así que el
+-- quinto entra por las mismas puertas que los otros cuatro.
+--
+-- AL FINAL del enum, después de caja_lavado: es el orden del papel de la
+-- caja (filtro, aditivo, limpieza de cárter e imanes, lavado del circuito,
+-- diálisis), y «nunca al final» (regla 14) es del cartón de aceite, no de
+-- este papel (ver 20261004120000). R17a conoce los 26 valores, con los
+-- cinco de la caja al final; R42c carga los cinco y los espera en orden.
+--
+-- El front lo repite en lib/renglones.ts (RENGLONES_CAJA: «Servicio por
+-- sistema de diálisis» en la carga, «Diálisis» en el papel, lleva una
+-- nota) y en la etiqueta de la exportación; los tipos se regeneran.
+-- ============================================================
+alter type item_tipo add value if not exists 'caja_dialisis';

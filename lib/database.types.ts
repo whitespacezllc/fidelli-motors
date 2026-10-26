@@ -4530,6 +4530,7 @@ export type Database = {
         | "caja_aditivo"
         | "caja_limpieza_carter"
         | "caja_lavado"
+        | "caja_dialisis"
       motivo_contacto_fidelli: "trial" | "cobranza"
       motivo_perdida:
         | "precio"
@@ -4757,6 +4758,7 @@ export const Constants = {
         "caja_aditivo",
         "caja_limpieza_carter",
         "caja_lavado",
+        "caja_dialisis",
       ],
       motivo_contacto_fidelli: ["trial", "cobranza"],
       motivo_perdida: [
