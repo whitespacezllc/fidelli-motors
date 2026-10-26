@@ -255,10 +255,13 @@ export type RenglonCaja = {
   lleva: "producto" | "nota";
 };
 
-// Los cuatro renglones, en el orden de su papel (que es el del enum).
+// Los cinco renglones, en el orden de su papel (que es el del enum).
 // PRENDIDO = HECHO: en un service de caja no existe el «revisado y OK» del
 // cartón de aceite, así que no hay segundo interruptor y la base guarda
-// `cambiado = true` siempre.
+// `cambiado = true` siempre. El quinto, la diálisis, entró el 26/10/2026
+// (lo pidieron Risso y otro lubricentro): es la máquina que recircula y
+// reemplaza el ATF entero, un trabajo que cobran aparte; lleva una nota,
+// como el lavado.
 //
 // `papel` va abreviado, como en el cartón de aceite («Combusti.», «Líq.
 // frenos»): la primera columna del papel mide unos 100 px en el celular
@@ -269,6 +272,7 @@ export const RENGLONES_CAJA: RenglonCaja[] = [
   { tipo: "caja_aditivo", corto: "Aditivo", papel: "Aditivo", lleva: "producto" },
   { tipo: "caja_limpieza_carter", corto: "Limpieza de cárter e imanes", papel: "Limpieza cárter", lleva: "nota" },
   { tipo: "caja_lavado", corto: "Lavado del circuito (máquina)", papel: "Lavado circuito", lleva: "nota" },
+  { tipo: "caja_dialisis", corto: "Servicio por sistema de diálisis", papel: "Diálisis", lleva: "nota" },
 ];
 
 /** La carga de un service de caja, validada del lado del servidor para el
