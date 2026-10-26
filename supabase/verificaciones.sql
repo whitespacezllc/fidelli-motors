@@ -878,8 +878,9 @@ begin
 end $$;
 
 -- ---------- R13 · Las patentes de moto entran; lo que no es patente, no ----------
--- Fidelli acepta cuatro formatos: auto ABC123 / AB123CD y moto 123ABC /
--- A123BCD. La fuente única es patente_formato_valido(), que usan el CHECK
+-- Fidelli acepta cuatro formatos argentinos: auto ABC123 / AB123CD y moto
+-- 123ABC / A123BCD (y, desde 20261026120000, los de los países vecinos:
+-- R48). La fuente única es patente_formato_valido(), que usan el CHECK
 -- de vehiculos y corregir_patente(). Este chequeo cubre las dos puertas de
 -- escritura y la puerta pública de lectura, y verifica que lo inválido
 -- siga rechazado: abrir el formato "a cualquier cosa" sería tan grave como
@@ -914,7 +915,9 @@ begin
   end if;
 
   -- 2 · Lo que no es una patente sigue rechazado por el CHECK (23514).
-  foreach v_pat in array array['AB12CD', '12ABC3', 'ABCD123', '1234ABC', 'ZZ1ZZ', 'A12BCD'] loop
+  -- ABCD123 y 1234ABC salieron de esta lista el 26/10/2026: son Paraguay
+  -- y Bolivia, y las cubre R48.
+  foreach v_pat in array array['AB12CD', '12ABC3', 'ZZ1ZZ', 'A12BCD'] loop
     v_rechazo := false;
     begin
       insert into vehiculos (lubricentro_id, cliente_id, patente) values (v_lub, v_cli, v_pat);
@@ -14615,3 +14618,120 @@ begin
   end if;
 end $$;
 -- <<< R47
+
+-- >>> R48
+-- ---------- R48 · Las patentes de los países vecinos entran; lo que quedó afuera, no ----------
+-- Desde 20261026120000 patente_formato_valido() acepta, además de los
+-- cuatro formatos argentinos, nueve de Brasil, Uruguay, Paraguay, Bolivia
+-- y Chile (lo pidió Lubricheck Sassi, que tiene clientes con esas chapas).
+-- El bloque cubre las dos puertas de escritura (el CHECK y
+-- corregir_patente) y la pública de lectura (get_carton), con cada formato
+-- escrito como lo escribe la gente —minúsculas, guiones, espacios, el
+-- punto de la chapa chilena—, y verifica que lo que quedó afuera a
+-- propósito siga afuera: abrir el formato a cualquier cosa sería tan grave
+-- como cerrarlo. El espejo del front (lib/texto.ts) lo compara forma por
+-- forma scripts/regresion-patentes.mjs.
+do $$
+declare
+  v_lub     uuid;
+  v_cli     uuid;
+  v_super   uuid;
+  v_ids     uuid[] := '{}';
+  v_id      uuid;
+  v_json    jsonb;
+  v_rechazo boolean;
+  v_caso    text[];
+  v_pat     text;
+begin
+  select l.id into v_lub from lubricentros l where l.slug = 'demo';
+  select c.id into v_cli from clientes c where c.lubricentro_id = v_lub order by c.created_at limit 1;
+  select u.id into v_super from usuarios u where u.rol = 'superadmin' limit 1;
+  if v_super is null then
+    raise exception 'REGRESIÓN 48: el seed local no dejó ningún superadmin (ver supabase/seed.sql).';
+  end if;
+
+  -- 1 · Los nueve formatos entran, escritos de cualquier manera, y el
+  --     trigger los normaliza como a los argentinos.
+  foreach v_caso slice 1 in array array[
+    ['abc1d23',  'ABC1D23'],  -- Brasil Mercosur (autos y motos)
+    ['ABC-1234', 'ABC1234'],  -- Brasil hasta 2018, y Uruguay
+    ['abcd 123', 'ABCD123'],  -- Paraguay, autos
+    ['123-abcd', '123ABCD'],  -- Paraguay, motos
+    ['1234 ABC', '1234ABC'],  -- Bolivia
+    ['ab 12345', 'AB12345'],  -- Bolivia Mercosur (transporte internacional)
+    ['BCDF·12',  'BCDF12'],   -- Chile, autos 2007→ (la chapa lleva un punto)
+    ['ab-1234',  'AB1234'],   -- Chile, autos 1985-2007
+    ['bbb 12',   'BBB12']     -- Chile, motos 2014→ (la más corta: cinco)
+  ] loop
+    begin
+      insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+      values (v_lub, v_cli, v_caso[1], 'Prueba', 'R48') returning id into v_id;
+    exception when check_violation then
+      raise exception 'REGRESIÓN 48: la base rechazó la patente vecina «%» (%): alguien volvió a cerrar el formato.', v_caso[1], v_caso[2];
+    end;
+    if (select patente_normalizada from vehiculos where id = v_id) <> v_caso[2] then
+      raise exception 'REGRESIÓN 48: «%» no se normalizó como %.', v_caso[1], v_caso[2];
+    end if;
+    v_ids := v_ids || v_id;
+  end loop;
+
+  -- 2 · Lo que quedó afuera a propósito sigue rechazado por el CHECK (23514).
+  foreach v_pat in array array[
+    'AB123',     -- moto chilena anterior a 2014: el principio de toda Mercosur argentina
+    'ABCDE1',    -- Chile 2026, autos: no se emite hasta 2029
+    'ABCD1',     -- Chile 2026, motos: no se emite hasta 2027
+    'A123456',   -- una letra y seis dígitos (Argentina antes de 1995, Paraguay antes de 2000)
+    'ABCD1234',  -- ocho caracteres
+    'ABC1D2',    -- una brasileña a medio tipear
+    '1234AB',    -- una boliviana a medio tipear
+    'AB12CD', 'ZZ1ZZ', '12345', 'ABCDEFG'
+  ] loop
+    v_rechazo := false;
+    begin
+      insert into vehiculos (lubricentro_id, cliente_id, patente) values (v_lub, v_cli, v_pat);
+    exception when check_violation then
+      v_rechazo := true;
+    end;
+    if not v_rechazo then
+      raise exception 'REGRESIÓN 48: la base aceptó «%», que no es una patente de ningún vecino: el formato se abrió de más.', v_pat;
+    end if;
+  end loop;
+
+  -- 3 · La puerta pública encuentra una brasileña (y registra la búsqueda, que se limpia).
+  v_json := get_carton('demo', 'abc-1d23');
+  if v_json->>'error' is not null then
+    raise exception 'REGRESIÓN 48: get_carton no encuentra una patente brasileña cargada (%).', v_json->>'error';
+  end if;
+  delete from landing_busquedas where lubricentro_id = v_lub and patente = 'ABC1D23';
+
+  -- 4 · corregir_patente (superadmin) acepta una vecina y sigue rechazando lo de afuera.
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+
+  perform corregir_patente(v_ids[1], 'XYZ 9876', 'Regresión 48: la chapa era uruguaya, no brasileña');
+  if (select patente_normalizada from vehiculos where id = v_ids[1]) <> 'XYZ9876' then
+    raise exception 'REGRESIÓN 48: corregir_patente no aceptó una patente uruguaya.';
+  end if;
+
+  v_rechazo := false;
+  begin
+    perform corregir_patente(v_ids[2], 'ABCDE1', 'Regresión 48: un formato que todavía no existe');
+  exception when raise_exception then
+    if sqlerrm <> 'patente_formato' then
+      raise;
+    end if;
+    v_rechazo := true;
+  end;
+  if not v_rechazo then
+    raise exception 'REGRESIÓN 48: corregir_patente aceptó ABCDE1, un formato que no se emite todavía.';
+  end if;
+
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  -- limpieza total: los nueve vehículos de prueba no tienen trabajos.
+  delete from correcciones_patente where vehiculo_id = any(v_ids);
+  delete from vehiculos where id = any(v_ids);
+end $$;
+-- <<< R48
