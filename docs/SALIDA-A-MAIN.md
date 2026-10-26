@@ -87,3 +87,21 @@ en producción. Cero emails. El orden de la sección A no es opcional.
 - [ ] Bloque 3 (Santiago, tras un pago real por Cresium):
       `update lubricentros set suspension_automatica = true where slug <> 'demo';`
       y la migración de una línea que pone `bloqueo_de_alta_activo()` en `true`.
+
+## H · Patentes de los países vecinos (26/10/2026)
+
+Una migración sola, `20261026120000_patentes_vecinas.sql`: redefine
+`patente_formato_valido()` con los nueve formatos de Brasil, Uruguay, Paraguay,
+Bolivia y Chile. No carga datos, no toca ninguna fila, es instantánea, y es un
+superconjunto: ningún vehículo existente deja de cumplir el CHECK.
+
+- [ ] **La base primero**: `db push` a dev y a prod desde el workdir aislado
+      (receta de la sección A; `cat <workdir>/supabase/.temp/project-ref` tiene
+      que decir `cutzedfmxyyxxqfjutru` antes del push a prod).
+- [ ] Después el release develop → main y el deploy. Si la app saliera antes
+      que la base, una chapa extranjera recibiría el aviso de formato (el CHECK
+      la rechaza con 23514 y el front lo traduce) y nada se rompería; en el
+      orden correcto nadie nota nada.
+- [ ] Humo en producción con una chapa real de Sassi: cargarla en «Nuevo
+      trabajo» y abrir `/[slug]/[patente]`.
+- [ ] Nada que cargar a mano.

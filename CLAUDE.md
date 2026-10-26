@@ -254,8 +254,19 @@ la resuelve.
   dentro de los 30 días.
 - **Las patentes se normalizan solas** por trigger. El front manda lo que escribió
   el mecánico; la base guarda `AB123CD` para buscar. Se aceptan los cuatro formatos
-  argentinos: auto `ABC123` / `AB123CD` y moto `123ABC` / `A123BCD`. La fuente única
-  es `patente_formato_valido()`; el front la repite en `lib/texto.ts` solo para avisar.
+  argentinos —auto `ABC123` / `AB123CD` y moto `123ABC` / `A123BCD`— y, **desde
+  `20261026120000`, los de los países vecinos** (lo pidió Lubricheck Sassi): Brasil
+  `ABC1D23` y `ABC1234`, Uruguay `ABC1234`, Paraguay `ABCD123` y `123ABCD`, Bolivia
+  `1234ABC` y `AB12345`, Chile `ABCD12`, `AB1234` y `ABC12`. La fuente única es
+  `patente_formato_valido()`; el front la repite en `lib/texto.ts` —una lista de
+  formas escritas como la chapa (`"LL NNN LL"`), de la que salen validar, mostrar
+  con espacios y detectar la patente a medio tipear— solo para avisar, y
+  `scripts/regresion-patentes.mjs` compara las dos listas forma por forma. **No se
+  guarda el país**: la forma clasifica, como auto y moto, y `ABC1234` es Brasil o
+  Uruguay sin manera de distinguirlo. Quedan afuera a propósito las motos chilenas
+  anteriores a 2014 (`AB123`: el principio de toda Mercosur argentina) y los
+  formatos chilenos del decreto de 2026, que no se emiten hasta 2027 y 2029. Lo
+  vigilan R13 y R48.
 - **El buscador de clientes: la forma del término dice qué es (21/10/2026).**
   `filtroClientes` (`lib/clientes.ts`) es el ÚNICO filtro de clientes y lo
   usan los cuatro lugares que buscan clientes: el listado, su export a
@@ -501,11 +512,16 @@ navegador es UN viaje, con el mismo JWT y el mismo RLS
 redirigir a `/login`. Una lectura nueva que quiera seguir este camino tiene
 que poder decir lo mismo: que no hay nada que el servidor sepa y el
 navegador no. Las escrituras siguen siendo Server Actions. Además, la
-patente válida sale sin esperar los 300 ms del debounce —ninguna patente
-válida es el principio de otra— y `AB123C` no busca nada hasta la D
-(`patenteIncompleta`, `lib/texto.ts`): buscarla sería buscar otra patente y
-abrir «¿De quién es?» a mitad de tipeo. Lo mide `scripts/medir-alta.mjs`,
-local o contra un preview.
+patente **argentina** válida sale sin esperar los 300 ms del debounce
+—ninguna patente argentina es el principio de otra argentina
+(`esPatenteArgentina`)—, la de un país vecino espera los 300 ms como
+cualquier cosa que no cierra en un formato argentino (`ABC12`, la moto
+chilena, es el principio de `ABC123`: si una vecina saliera al toque, toda
+patente argentina vieja se buscaría dos veces, con «¿De quién es?» asomando
+en la quinta letra), y `AB123C` o `ABC1D2` no buscan
+nada hasta la última letra (`patenteIncompleta`, `lib/texto.ts`): buscarlas
+sería buscar otra patente y abrir «¿De quién es?» a mitad de tipeo. Lo mide
+`scripts/medir-alta.mjs`, local o contra un preview.
 
 **Una consulta por pantalla.** Columnas explícitas, nunca `select *`. Sin N+1.
 El costo de Supabase se controla acá.
@@ -1220,6 +1236,7 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R44** | El slug entra en el QR del calco (`20261004200000`): el CHECK `slug_largo_qr` existe y ningún tenant lo viola; 32 caracteres entran y 33 no —por INSERT lo frena ESE check, no el viejo de 3 a 60, y por UPDATE tampoco—; y `slug_estado()` contesta `invalido` para 33, `disponible` para 32 libres y `ocupado` para 32 tomados | Un lubricentro queda con un slug cuyo QR no se puede hacer (pasó con uno de 34), o el alta dice «Disponible» y falla al crear |
 | **R45** | Los datos de la empresa en el presupuesto (`20261004210000`): **la forma** (la tabla con RLS; `anon` sin nada; el owner lee, da de alta y edita SOLO los seis campos —ni el sello ni el tenant— y no borra; tres policies y ninguna de borrado; los seis CHECK por su nombre; el trigger del sello; la FK en cascada; la puerta, una sola firma, invoker, y que `anon` no ejecuta); **la puerta** (recorta, guarda el CUIT en once números —escrito con guiones, con puntos o pelado—, deja null lo vacío, y es un upsert de los SEIS campos: una fila por tenant, a nombre de quien guardó); **los rechazos** (un CUIT de diez o de doce números contesta `cuit_invalido`, una condición de IVA que no es de la lista, una clave mal escrita, un dato más largo que su tope —y los cuatro en el tope exacto entran—; y por la tabla tampoco entran el CUIT con guiones, la condición inventada, la razón social vacía, el domicilio con espacios, el teléfono con un salto de línea ni el email de 121 caracteres); **el sello** (el owner no escribe `actualizado_por`, `updated_at` ni el tenant, y un UPDATE con privilegios tampoco los deja: los pisa el trigger); **el aislamiento** (el owner del demo ve una fila; no lee, no pisa por la puerta ni por la tabla, y no da de alta la del tenant de al lado; nadie borra; `anon` no lee ni ejecuta); **Fidelli** (sin decir el lubricentro, `falta_lubricentro`; con él, guarda a su nombre y no toca a los demás); y **la purga** (la simulación cuenta la fila sin borrarla; la real se la lleva, y solo la de ese tenant) | Un owner lee la razón social y el CUIT de otro lubricentro (o se los cambia), un CUIT a medias sale impreso en un presupuesto, un dato no se puede vaciar, alguien firma la carga con el usuario de otro, Fidelli pisa los datos de un taller cargando los del de al lado, o la razón social de quien canceló hace más de un año sigue en la base |
 | **R46** | El buscador de clientes encuentra el teléfono por sus dígitos (`20261021120000`): `vista_clientes` tiene `telefono_digitos`, «+54 9 351 317-2545» da `5493513172545`, el `like` por dígitos lo encuentra y `telefono` sigue siendo el crudo que se muestra | Un cliente cargado con espacios o guiones en el teléfono no aparece al buscarlo por teléfono |
+| **R48** | Las patentes de los países vecinos (`20261026120000`): los nueve formatos nuevos —Brasil `ABC1D23` / `ABC1234`, Paraguay `ABCD123` / `123ABCD`, Bolivia `1234ABC` / `AB12345`, Chile `ABCD12` / `AB1234` / `ABC12`— entran por el CHECK escritos de cualquier manera (minúsculas, guiones, el punto de la chapa chilena) y se normalizan; `get_carton` encuentra una brasileña; `corregir_patente` acepta una uruguaya y rechaza `ABCDE1`; y lo que quedó afuera a propósito sigue afuera (`AB123`, los formatos chilenos de 2026, una letra y seis dígitos, ocho caracteres, una brasileña a medio tipear) | Alguien volvió a cerrar el formato a los argentinos —y Sassi no puede cargar al cliente brasileño—, o lo abrió a cualquier cosa |
 | **R47** | Las policies preguntan por la sesión una vez por consulta (`20261021230000`): ninguna policy de `public` ni de `storage` llama a `mi_lubricentro_id()`, `soy_superadmin()` o `auth.uid()` a pelo en su `USING` o su `WITH CHECK` —cada llamada va envuelta en un sub-select—, y el chequeo tiene qué mirar (70 policies de `public` o más las llaman) | Una policy nueva o redefinida volvió a la forma vieja: Postgres la evalúa fila por fila, el Inicio vuelve a tardar segundos y a veces no llega, sin ningún error |
 
 Además, fuera del reset, **las roturas a mano** (regla 13):
@@ -1261,6 +1278,7 @@ node --no-warnings scripts/regresion-caja.mjs              # contra next dev + e
 node --no-warnings scripts/regresion-adjuntos.mjs          # ídem; cuelga adjuntos en dos trabajos del demo y los quita (deja un tenant `zza-…`)
 node --no-warnings scripts/regresion-datos-empresa.mjs     # ídem; le carga y le vacía los datos de la empresa al demo y los restaura
 node --no-warnings scripts/regresion-busquedas.mjs         # ídem; seis clientes «Zzbusq» en el demo por psql, restaurados al final (SOLO_A=1: solo la parte sin navegador)
+node --no-warnings scripts/regresion-patentes.mjs          # ídem; da de alta «Zzpat Brasil» con una chapa brasileña y lo borra (SOLO_A=1: el espejo con la base y las roturas, sin navegador)
 ```
 
 El primero rompe la vista de retención de dos formas —le saca el filtro de
@@ -1394,6 +1412,36 @@ antes de la migración de verdad**: 118 expresiones en 85 policies, con la
 base de `develop`. El `alter policy` de cada una es la expresión del
 catálogo con la llamada envuelta y nada más, y se comprobó que el catálogo
 de después, sin el envoltorio, es byte a byte el de antes.
+
+El vigesimosegundo (`scripts/regresion-patentes.mjs`) no rompe un bloque
+de SQL: rompe el ESPEJO. Lo que las patentes vecinas tienen de nuevo es que
+la regla vive en dos lugares que no se ven —`patente_formato_valido()` en la
+base y la lista de formas de `lib/texto.ts`— y nada en el build acusa que
+se desvíen: la base aceptaría una chapa que el front rechaza, o al revés, y
+el mecánico vería «no parece una patente» sobre una que la base guardaría
+sin problema. Por eso la sección A2 genera las 224 formas posibles de 5, 6 y
+7 caracteres (letra o número en cada lugar), se las pregunta a la base y al
+front, y exige la misma respuesta forma por forma —y que las aceptadas sean
+exactamente 13—. Las cuatro roturas van sobre una copia de `lib/texto.ts`:
+un vecino sacado de la lista, un vecino metido entre los argentinos (con lo
+que `ABC 1234` saldría sin esperar y `ABC 123` se buscaría a medio tipear),
+el mínimo clavado en 6 (la moto chilena no se busca nunca) y el «principio
+de» sacado (`AB123C` abre «¿De quién es?» antes de la D). Lo que enseñó al
+escribirse: **dos ejemplos de «patente inválida» de R13 (`ABCD123`,
+`1234ABC`) pasaron a ser Paraguay y Bolivia**, y el bloque viejo hubiera
+quedado en rojo con razón; se movieron a R48, que los prueba del otro lado.
+Y una de medición: **`page.type` con `delay` espera ese delay DESPUÉS de la
+última tecla antes de resolver**, así que el instante de la última tecla
+quedaba 70 ms tarde y los 300 ms del debounce se medían como 236; la última
+letra se tipea sin `delay`. El compañero con navegador carga «ABC1D23» en
+«Nuevo trabajo» (ninguna consulta antes de la última tecla, la consulta
+después de los 300 ms, sin aviso), da de alta «Zzpat Brasil» con esa chapa,
+la lee en la base y en `/demo/ABC1D23`, abre el alta con «BBB12» (cinco
+caracteres), comprueba que «ABC123» sigue saliendo antes de los 250 ms —y
+que «ABC12», válida en el medio, no se buscó porque el 3 llegó antes de los
+300 ms— y ve el aviso con «ABCDE1». Se vio en rojo contra el `lib/texto.ts`
+de `develop` (las nueve vecinas inválidas, el mínimo en 6) y contra sus
+cuatro roturas. **Toca el demo local y lo restaura.**
 
 ⚠ Y DOS DE ESTOS SCRIPTS APUNTAN A MÁS DE UNA MIGRACIÓN, porque
 `estado_cobranza`, `reloj_cobranza` y `crear_lubricentro` se redefinieron en
