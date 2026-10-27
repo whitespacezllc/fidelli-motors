@@ -131,3 +131,27 @@ carga datos y no toca ninguna función.
       «Nuevo trabajo» → Caja y ver el quinto renglón; tildarlo con una nota,
       guardar, y mirar el papel en `/[slug]/[patente]` y el Excel.
 - [ ] Nada que cargar a mano.
+
+## J · La tarjeta de WhatsApp de cada tenant (27/10/2026)
+
+Sin migraciones: la salida es solo de la app (#187: `opengraph-image.tsx`
+por tenant, en el modo de su página, sin marca Fidelli; `sharp` como
+dependencia directa). La base no cambia, así que no hay «base primero».
+
+- [x] Los logos de producción: Santi corrió la consulta de #187 (27/10), dio
+      bien. Los tenants sin logo salen con el círculo de su color y las
+      iniciales; son la lista para pedirles el logo en la próxima llamada.
+- [x] PR #187 a develop (27/10), con las dos pruebas en rojo y en verde.
+- [x] Release develop → main (#188, 27/10 16:20 UTC; sin nada que pushear antes).
+- [x] Humo en producción (27/10, 16:25 UTC, un minuto después del deploy):
+      `https://fidellimotors.app/falco-lubricantes-y-servicios` con
+      `og:image` → `/falco-lubricantes-y-servicios/opengraph-image-iw6p63`,
+      1200×630, `og:site_name` = «Falco Lubricantes y Servicios», ninguna
+      `og:*`/`twitter:*` con Fidelli; la imagen es un PNG de 1200×630 en el
+      modo oscuro de Falco, con su logo real. La landing comercial sigue con
+      `/assets/og-image.jpg`.
+- [ ] Avisarle a Darío (Falco): para que WhatsApp muestre la tarjeta nueva en
+      un chat donde el link ya se compartió, hay que agregarle algo a la URL
+      (`?v=1`); WhatsApp cachea la vista previa por su cuenta.
+- [ ] Nada que cargar a mano. La tarjeta se regenera sola una vez por día
+      y al guardar en /panel/experiencia.
