@@ -1,4 +1,5 @@
 import type { Lubricentro } from "@/lib/cliente/landing";
+import { inicialesDe } from "@/lib/cliente/marca";
 import { CLASE_LOGO_LANDING } from "@/lib/cliente/tema";
 
 // La marca es marco, no obstáculo: confirma "estoy en el lugar correcto"
@@ -6,13 +7,8 @@ import { CLASE_LOGO_LANDING } from "@/lib/cliente/tema";
 // tamaño del logo es la única perilla (normal/grande/xl) y viene topado
 // desde lib/cliente/tema: sin tope, el buscador cae abajo del pliegue.
 export function MarcaLubricentro({ lubricentro }: { lubricentro: Lubricentro }) {
-  const iniciales = lubricentro.nombre
-    .split(" ")
-    .filter((p) => p.length > 2)
-    .slice(0, 2)
-    .map((p) => p[0])
-    .join("")
-    .toUpperCase();
+  // La misma regla que la tarjeta de WhatsApp: lib/cliente/marca.ts.
+  const iniciales = inicialesDe(lubricentro.nombre);
 
   return (
     <div className="text-center">

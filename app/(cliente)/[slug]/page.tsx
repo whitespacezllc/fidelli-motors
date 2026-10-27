@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { OG_IMAGEN, SITIO_URL, SLUGS_SIN_INDEXAR } from "@/lib/seo";
+import { SITIO_URL, SLUGS_SIN_INDEXAR } from "@/lib/seo";
 import { obtenerLanding, type Lubricentro } from "@/lib/cliente/landing";
 import { paletaTenant, variablesTenant } from "@/lib/cliente/color";
 import { estilosTema } from "@/lib/cliente/tema";
@@ -48,25 +48,26 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     robots: SLUGS_SIN_INDEXAR.includes(slug)
       ? { index: false, follow: true }
       : { index: true, follow: true },
-    // La imagen es la general de la marca, NO el logo del lubricentro:
-    // la tarjeta grande de WhatsApp exige 1200×630 con dimensiones
-    // declaradas, y un logo cuadrado de tamaño desconocido la degrada a
-    // miniatura. El día que cada lubricentro tenga su propia pieza en esa
-    // proporción, entra acá.
+    // La tarjeta de WhatsApp es la del LUBRICENTRO, generada por tenant en
+    // opengraph-image.tsx (el modo de su página, su logo, su nombre; nada
+    // de Fidelli).
+    // Sin `images` acá ni en twitter: la convención de archivo enlaza sola
+    // la imagen con width, height y type —lo que WhatsApp necesita para la
+    // tarjeta grande— y tiene prioridad sobre lo declarado. Y og:site_name
+    // es el nombre del taller, no el nuestro: en esta superficie la marca
+    // de la plataforma vive solo en el pie de confianza.
     openGraph: {
       title: titulo,
       description: descripcion,
       url: `/${slug}`,
-      siteName: "Fidelli Motors",
+      siteName: lubricentro.nombre,
       locale: "es_AR",
       type: "website",
-      images: [OG_IMAGEN],
     },
     twitter: {
       card: "summary_large_image",
       title: titulo,
       description: descripcion,
-      images: [OG_IMAGEN.url],
     },
     // El manifest del lubricentro: agregar esta página a la pantalla de
     // inicio tiene que abrir SU página, no la landing comercial de
