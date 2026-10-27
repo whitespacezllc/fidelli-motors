@@ -1,4 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
+import { createClient as crearClienteAnonimo, type SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/database.types";
 import { normalizarPatente } from "@/lib/texto";
 import { hexONull } from "@/lib/cliente/color";
 import { aTema, aTamanoLogo, type TemaCliente, type TamanoLogo } from "@/lib/cliente/tema";
@@ -74,9 +76,33 @@ type LandingJson = {
   premio?: { meta_services: number; descripcion: string; alcance?: string } | null;
 };
 
-/** El shell de la landing. `null` = el slug no existe o el lubri está inactivo. */
+/** El shell de la landing. `null` = el slug no existe. (Un lubri suspendido
+ *  responde igual: ver el comentario en la página.) */
 export async function obtenerLanding(slug: string): Promise<Lubricentro | null> {
-  const supabase = await createClient();
+  return landingDesde(await createClient(), slug);
+}
+
+/**
+ * La misma puerta, SIN leer cookies: para lo que se cachea. La tarjeta de
+ * WhatsApp (`[slug]/opengraph-image.tsx`) se regenera una vez por día con
+ * `revalidate`, y una ruta que llama a cookies() se vuelve dinámica y
+ * pierde esa caché. Acá la sesión no cambia la respuesta —get_landing es
+ * definer y anon la ejecuta igual—, así que el cliente anónimo pelado de
+ * @supabase/supabase-js (el mismo que usa el sitemap) alcanza.
+ */
+export async function obtenerLandingSinSesion(slug: string): Promise<Lubricentro | null> {
+  const supabase = crearClienteAnonimo<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { auth: { persistSession: false, autoRefreshToken: false } },
+  );
+  return landingDesde(supabase, slug);
+}
+
+async function landingDesde(
+  supabase: SupabaseClient<Database>,
+  slug: string,
+): Promise<Lubricentro | null> {
   const { data } = await supabase.rpc("get_landing", { p_slug: slug });
 
   const json = data as LandingJson | null;

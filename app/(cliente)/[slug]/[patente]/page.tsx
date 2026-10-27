@@ -40,9 +40,21 @@ type Props = { params: Promise<{ slug: string; patente: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug, patente } = await params;
+  const titulo = `${formatearPatente(patente)} · Tu historial`;
+  // La misma frase del manifest del lubricentro: lo que hace esta pantalla,
+  // sin nombrar a nadie.
+  const descripcion = "Mirá el historial de tu auto y cuándo te toca volver.";
   return {
     // `absolute`: superficie del lubricentro, sin el template de marca.
-    title: { absolute: `${formatearPatente(patente)} · Tu historial` },
+    title: { absolute: titulo },
+    // Es noindex pero se comparte igual (el link del cartón va por
+    // WhatsApp), así que la tarjeta importa. La imagen la HEREDA de
+    // [slug]/opengraph-image.tsx —la del lubricentro, generada—, y por eso
+    // acá no se declara `openGraph` ni `twitter`: declararlos pisa el
+    // objeto entero, imagen heredada incluida. La descripción sí va, porque
+    // sin ella og:description heredaría la comercial del layout raíz; el
+    // og:site_name de la plataforma lo saca el layout de la superficie.
+    description: descripcion,
     // El acceso directo al cartón de ESTE auto: el QR del parasol se
     // escanea una vez y el ícono queda en el teléfono. El manifest se
     // arma solo con la URL —el nombre y el color del lubricentro los
