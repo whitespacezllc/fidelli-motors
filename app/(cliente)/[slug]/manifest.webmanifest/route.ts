@@ -1,5 +1,5 @@
 import { obtenerLanding } from "@/lib/cliente/landing";
-import { GRAFITO } from "@/lib/cliente/tema";
+import { fondoTema } from "@/lib/cliente/tema";
 import { ICONOS_MARCA, respuestaManifest } from "@/lib/pwa";
 
 // El acceso directo del CLIENTE FINAL: abre la página del lubricentro que
@@ -20,11 +20,8 @@ export async function GET(
 
   // El fondo del arranque tiene que ser el fondo real de la página: en
   // oscuro manda el grafito del sistema y color_fondo no se aplica, igual
-  // que en estilosTema().
-  const fondo =
-    lubricentro.tema === "oscuro"
-      ? GRAFITO
-      : (lubricentro.colorFondo ?? "#FFFFFF");
+  // que en estilosTema(). Es la misma regla que usa la tarjeta de WhatsApp.
+  const fondo = fondoTema(lubricentro.tema, lubricentro.colorFondo);
 
   // El logo del tenant primero: es su marca la que tiene que quedar en la
   // pantalla de inicio. Los de Fidelli quedan de respaldo por si el

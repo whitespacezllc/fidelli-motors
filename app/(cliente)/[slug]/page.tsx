@@ -49,7 +49,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       ? { index: false, follow: true }
       : { index: true, follow: true },
     // La tarjeta de WhatsApp es la del LUBRICENTRO, generada por tenant en
-    // opengraph-image.tsx (su color, su logo, su nombre; nada de Fidelli).
+    // opengraph-image.tsx (el modo de su página, su logo, su nombre; nada
+    // de Fidelli).
     // Sin `images` acá ni en twitter: la convención de archivo enlaza sola
     // la imagen con width, height y type —lo que WhatsApp necesita para la
     // tarjeta grande— y tiene prioridad sobre lo declarado. Y og:site_name

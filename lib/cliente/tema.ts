@@ -71,6 +71,27 @@ export function estilosTema(
 }
 
 /**
+ * El fondo de la página en cada modo, como UN color: lo que estilosTema()
+ * deja en el wrapper, para lo que se dibuja fuera del DOM —la pantalla de
+ * arranque de la PWA y la tarjeta de WhatsApp—. En oscuro, el grafito;
+ * en claro, el fondo elegido por el lubri o el blanco de siempre.
+ */
+export function fondoTema(tema: TemaCliente, colorFondo: string | null): string {
+  return tema === "oscuro" ? GRAFITO : (colorFondo ?? "#FFFFFF");
+}
+
+/**
+ * La tinta principal y la secundaria de cada modo, con los mismos valores
+ * que las variables de arriba (y que `ink` / `ink-60` de globals.css en
+ * claro). Para la tarjeta de WhatsApp, que no tiene CSS.
+ */
+export function tintasTema(tema: TemaCliente): { ink: string; ink60: string } {
+  return tema === "oscuro"
+    ? { ink: VARIABLES_OSCURO["--color-ink"], ink60: VARIABLES_OSCURO["--color-ink-60"] }
+    : { ink: "#0A0A0A", ink60: "#4A4A4A" };
+}
+
+/**
  * El cartón es PAPEL y el papel no se apaga: sobre el mostrador oscuro
  * sigue siendo un recibo blanco. Este reset devuelve los tokens claros
  * dentro del subárbol del cartón para que la metáfora no se rompa. En
