@@ -47,7 +47,8 @@ Un error tampoco es rojo de marca. Esta es la regla de oro de la paleta.
 
 **La landing pública es un shell neutro pintado con el color del lubricentro.**
 En `/[slug]` el rojo Motors no aparece nunca — ni un píxel. El color viene de
-`config_experiencia.color_primario`.
+`config_experiencia.color_primario`. También su tarjeta de WhatsApp:
+`opengraph-image.tsx` por tenant, en el modo de su página y sin marca Fidelli.
 
 **Dos tipografías con roles fijos.** Nunito para marca y para todo lo que lee el
 cliente final. Public Sans para el dato operativo del panel. Nunca se mezclan
@@ -1285,6 +1286,8 @@ node --no-warnings scripts/regresion-adjuntos.mjs          # ídem; cuelga adjun
 node --no-warnings scripts/regresion-datos-empresa.mjs     # ídem; le carga y le vacía los datos de la empresa al demo y los restaura
 node --no-warnings scripts/regresion-busquedas.mjs         # ídem; seis clientes «Zzbusq» en el demo por psql, restaurados al final (SOLO_A=1: solo la parte sin navegador)
 node --no-warnings scripts/regresion-patentes.mjs          # ídem; da de alta «Zzpat Brasil» con una chapa brasileña y lo borra (SOLO_A=1: el espejo con la base y las roturas, sin navegador)
+node --no-warnings scripts/regresion-og-tenant.mjs         # contra next dev + el seed (Playwright): la tarjeta de WhatsApp del tenant en el HTML, sin marca Fidelli
+node --no-warnings scripts/og-tenants.mjs                  # ídem; crea cinco tenants zz-og-* (claro y oscuro, con logo PNG/WebP/JPG y sin logo), baja las seis tarjetas a docs/capturas/og/ y los borra
 ```
 
 El primero rompe la vista de retención de dos formas —le saca el filtro de
