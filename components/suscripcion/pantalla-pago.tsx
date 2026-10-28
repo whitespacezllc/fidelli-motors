@@ -363,7 +363,7 @@ export function PantallaPago({ datos, concepto }: Props) {
               {enviando ? "Generando tu cuenta…" : "Quiero pagar"}
             </Boton>
             <p className="mt-2 text-label text-ink-40">
-              Te damos una cuenta tuya para transferir desde tu home banking.
+              Te damos una cuenta para este pago, para transferir desde tu home banking.
             </p>
             {/* EL TITULAR, ANTES DE QUE LO VEA EL BANCO. Dicho de antemano
                 es un dato; descubierto en el home banking a la hora de
@@ -378,8 +378,9 @@ export function PantallaPago({ datos, concepto }: Props) {
                 Transferí desde tu home banking
               </h3>
               <p className="mt-0.5 mb-1 text-ui text-ink-60">
-                La cuenta es tuya y de nadie más: identifica tu pago sin que tengas que
-                avisarnos.
+                Esta cuenta es solo para este pago y vale {DIAS_DE_VIDA_DE_LA_ORDEN} días. No la
+                guardes en tu banco: para el próximo pago volvé a entrar acá, que te damos una
+                nueva.
               </p>
               <Dato k="Alias" v={orden.alias} copiable />
               {orden.cvu && <Dato k="CVU" v={orden.cvu} copiable />}
@@ -532,8 +533,8 @@ function PagoDeUnConcepto({
                 Transferí desde tu home banking
               </h3>
               <p className="mt-0.5 mb-1 text-ui text-ink-60">
-                La cuenta es de este pago y de nada más: lo identifica sin que tengas que
-                avisarnos.
+                La cuenta es solo de este pago: lo identifica sin que tengas que avisarnos. No la
+                guardes en tu banco.
               </p>
               <Dato k="Alias" v={orden.alias} copiable />
               {orden.cvu && <Dato k="CVU" v={orden.cvu} copiable />}

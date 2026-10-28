@@ -87,13 +87,16 @@ const PERIODO: Record<DatosEmail["periodo"], string> = {
 };
 
 // El alias, cuando exista (bloque B del sprint del 17/09). Hoy el pago es
-// por orden —el CVU se crea cuando el tenant abre la pantalla de pago—,
-// así que la frase dice eso. El día que haya alias fijo, el email lo trae
-// y el tenant puede transferir sin loguearse.
+// por orden —el CVU se crea cuando el tenant abre la pantalla de pago y
+// Cresium lo RECICLA entre nuestros tenants al pagarse o vencer—, así que
+// la frase manda al panel y pide que no reusen el alias ni el CVU de la vez
+// anterior: el 27/10/2026 dos tenants pagaron «al alias inválido» que
+// habían guardado en septiembre. El día que haya alias fijo, el email lo
+// trae y el tenant puede transferir sin loguearse.
 function comoSePaga(d: DatosEmail): string {
   return d.alias
     ? `Transferís al alias ${d.alias} y se acredita solo. No hace falta que nos avises ni que mandes el comprobante.`
-    : "Transferís al alias de tu cuenta y se acredita solo. No hace falta que nos avises ni que mandes el comprobante.";
+    : "Entrás al panel, tocás «Quiero pagar» y transferís a la cuenta que te mostramos ahí: se acredita sola, sin avisarnos ni mandar el comprobante. Es una cuenta nueva para cada pago: no uses el alias ni el CVU de la vez anterior.";
 }
 
 const PAGAR = (d: DatosEmail) => ({ texto: "Pagar ahora", href: d.enlaces.pagar });
