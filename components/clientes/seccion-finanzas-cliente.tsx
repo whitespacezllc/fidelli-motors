@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { formatearFecha } from "@/lib/fechas";
 import { formatearPesos } from "@/lib/presupuestos";
+import { etiquetaCategoria } from "@/lib/finanzas";
 
 // Finanzas del cliente en su ficha: lo que debe (saldo de la cuenta
 // corriente) y sus últimos ingresos. El detalle completo —fiados, cobros
@@ -11,6 +12,7 @@ export type IngresoFicha = {
   fecha: string;
   concepto: string;
   monto: number;
+  categoria: string | null;
 };
 
 export function SeccionFinanzasCliente({
@@ -57,7 +59,14 @@ export function SeccionFinanzasCliente({
                 className="flex items-center justify-between gap-3 border-b border-line py-2 last:border-b-0"
               >
                 <span className="min-w-0">
-                  <span className="block truncate text-ui text-ink">{i.concepto}</span>
+                  <span className="flex items-center gap-2">
+                    <span className="truncate text-ui text-ink">{i.concepto}</span>
+                    {etiquetaCategoria(i.categoria) && (
+                      <span className="shrink-0 rounded-sm bg-surface px-1.5 py-0.5 text-label text-ink-60">
+                        {etiquetaCategoria(i.categoria)}
+                      </span>
+                    )}
+                  </span>
                   <span className="block text-label text-ink-60 tabular-nums">
                     {formatearFecha(i.fecha)}
                   </span>

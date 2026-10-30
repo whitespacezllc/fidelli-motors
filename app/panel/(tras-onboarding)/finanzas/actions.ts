@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import type { MedioPago } from "@/lib/finanzas";
+import type { MedioPago, CategoriaIngreso, CategoriaEgreso, Fondos } from "@/lib/finanzas";
 
 export type DatosIngreso = {
   sucursalId: string;
@@ -10,6 +10,8 @@ export type DatosIngreso = {
   monto: number;
   concepto: string;
   medio: MedioPago;
+  /** De qué es la plata: trabajo / repuesto / otro (o null). */
+  categoria?: CategoriaIngreso | null;
   /** Si el ingreso nace de un presupuesto cobrado. */
   presupuestoId?: string | null;
   clienteId?: string | null;
@@ -21,6 +23,10 @@ export type DatosEgreso = {
   monto: number;
   concepto: string;
   medio: MedioPago;
+  /** Categoría del gasto: insumos / sueldos / servicios / otro (o null). */
+  categoria?: CategoriaEgreso | null;
+  /** De qué bolsillo: taller (default) o personal (la plata del dueño). */
+  fondos?: Fondos;
 };
 
 export type ResultadoMovimiento = { error?: string; id?: string };
@@ -77,6 +83,7 @@ export async function crearIngreso(
     p_medio: datos.medio,
     p_presupuesto_id: datos.presupuestoId ?? undefined,
     p_cliente_id: datos.clienteId ?? undefined,
+    p_categoria: datos.categoria ?? undefined,
   });
 
   if (err) return { error: traducir(err, "ingreso") };
@@ -99,6 +106,8 @@ export async function crearEgreso(
     p_concepto: datos.concepto.trim(),
     p_medio: datos.medio,
     p_fecha: datos.fecha,
+    p_categoria: datos.categoria ?? undefined,
+    p_fondos: datos.fondos ?? undefined,
   });
 
   if (err) return { error: traducir(err, "egreso") };
@@ -143,6 +152,8 @@ export async function marcarPresupuestoCobrado(
     p_medio: medio,
     p_presupuesto_id: p.id,
     p_cliente_id: p.cliente_id ?? undefined,
+    // Un presupuesto cobrado es plata de un trabajo.
+    p_categoria: "trabajo",
   });
 
   if (err) return { error: traducir(err, "ingreso") };

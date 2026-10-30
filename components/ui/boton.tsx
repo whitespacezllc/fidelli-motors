@@ -5,8 +5,11 @@
 type Variante = "primario" | "secundario";
 type Tam = "md" | "lg";
 
+// whitespace-nowrap: la etiqueta de un botón nunca se parte en varias líneas.
+// Con alto fijo (h-11/h-12), un texto que envuelve rompe el botón —pasó con
+// «Marcar como fiado» apretado en la barra de Finanzas del presupuesto—.
 const BASE =
-  "inline-flex items-center justify-center gap-1.5 rounded-md transition-colors disabled:opacity-60 disabled:pointer-events-none";
+  "inline-flex items-center justify-center gap-1.5 rounded-md whitespace-nowrap transition-colors disabled:opacity-60 disabled:pointer-events-none";
 
 const VARIANTES: Record<Variante, string> = {
   primario: "bg-brand font-brand font-bold text-white hover:bg-brand-deep",
