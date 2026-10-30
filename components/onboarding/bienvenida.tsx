@@ -1,5 +1,6 @@
 "use client";
 
+import { Logo } from "@/components/marca/logo";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { marcarBienvenidaVista } from "@/app/panel/onboarding/actions";
@@ -63,14 +64,7 @@ export function Bienvenida({ nombre }: { nombre: string }) {
             height={96}
             className="bienvenida-isotipo size-20 shrink-0 sm:size-24"
           />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/assets/logos/logo-negro_bordo.webp"
-            alt="Fidelli Motors"
-            width={1000}
-            height={127}
-            className="bienvenida-wordmark h-7 w-auto sm:h-9"
-          />
+          <Logo tono="auto" className="bienvenida-wordmark h-7 w-auto sm:h-9" />
         </div>
 
         <div className="bienvenida-texto mt-8">

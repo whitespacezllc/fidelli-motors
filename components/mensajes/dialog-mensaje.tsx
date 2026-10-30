@@ -357,7 +357,7 @@ function FormularioMensaje({
           <p className="mb-1.5 text-label font-semibold tracking-[0.06em] text-ink-60 uppercase">
             Así lo recibe {ejemploEsReal ? ejemplo.nombre : "tu cliente"}
           </p>
-          <p className="rounded-md bg-[#E7F8E9] px-3 py-2.5 text-ui leading-relaxed text-ink">
+          <p data-theme="claro" className="rounded-md bg-[#E7F8E9] px-3 py-2.5 text-ui leading-relaxed text-ink">
             {vistaPrevia}
           </p>
           <p className="mt-1.5 text-label text-ink-40">

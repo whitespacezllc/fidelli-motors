@@ -107,7 +107,7 @@ function CasoB({
         <button
           type="button"
           onClick={alVolver}
-          className="min-h-11 shrink-0 px-2 text-ui font-semibold text-brand"
+          className="min-h-11 shrink-0 px-2 text-ui font-semibold text-brand-texto"
         >
           Cambiar
         </button>
@@ -209,7 +209,7 @@ function CasoC({
       <button
         type="button"
         onClick={alVolver}
-        className="min-h-11 text-ui font-semibold text-brand"
+        className="min-h-11 text-ui font-semibold text-brand-texto"
       >
         El cliente ya existe, buscarlo
       </button>

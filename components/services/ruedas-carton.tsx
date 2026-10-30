@@ -409,7 +409,7 @@ function TarjetaPosicion({
       aria-expanded={abierta}
       className={`flex min-h-16 w-full flex-col justify-center rounded-md border px-3 py-2 text-left transition-colors ${
         abierta
-          ? "border-ink bg-ink text-white"
+          ? "border-ink bg-ink text-base"
           : cargada
             ? "border-ink bg-base text-ink"
             : "border-line bg-base text-ink-60 hover:bg-surface"
@@ -422,7 +422,7 @@ function TarjetaPosicion({
       </span>
       <span
         className={`text-label tabular-nums ${
-          abierta ? "text-white/70" : cargada ? "text-ink-60" : "text-ink-40"
+          abierta ? "text-base/70" : cargada ? "text-ink-60" : "text-ink-40"
         }`}
       >
         {resumenTarjeta(rueda)}

@@ -48,13 +48,13 @@ export function SelectorClase({
   }
 
   const CLASE_POR_ESTADO: Record<Estado, string> = {
-    elegida: "border-ink bg-ink text-white",
+    elegida: "border-ink bg-ink text-base",
     // Punteado y en tinta, sin relleno: se lee como propuesta, no como hecho.
     sugerida: "border-dashed border-ink bg-base text-ink hover:bg-surface",
     ninguna: "border-line bg-base text-ink-60 hover:bg-surface",
   };
   const DETALLE_POR_ESTADO: Record<Estado, string> = {
-    elegida: "text-white/70",
+    elegida: "text-base/70",
     sugerida: "text-ink-60",
     ninguna: "text-ink-40",
   };

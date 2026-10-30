@@ -33,6 +33,8 @@ import {
   QuestionIcon,
   PaperclipIcon,
   FilePdfIcon,
+  SunIcon,
+  MoonIcon,
 } from "@phosphor-icons/react/dist/ssr";
 // Solo tipos: se borran al compilar, así que traerlos del entry principal
 // (que sí lleva "use client") no arrastra nada al bundle.
@@ -175,6 +177,9 @@ export const IconoCuenta = delSistema(UserCircleIcon);
 // —relleno sobre el círculo rojo, con `weight="fill"`— y el ítem Ayuda.
 export const IconoReproducir = delSistema(PlayIcon);
 export const IconoAyuda = delSistema(QuestionIcon);
+// El interruptor del modo oscuro (sol = claro, luna = oscuro).
+export const IconoSol = delSistema(SunIcon);
+export const IconoLuna = delSistema(MoonIcon);
 
 // Los adjuntos de un trabajo: el clip que avisa en el listado que el
 // trabajo tiene archivos, y el PDF, que no tiene miniatura que mostrar.

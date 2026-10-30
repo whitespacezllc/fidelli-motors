@@ -1308,7 +1308,7 @@ export function Carton({
                   onClick={() =>
                     setAbiertos((p) => ({ ...p, [r.tipo]: true }))
                   }
-                  className="min-h-11 self-start text-ui font-semibold text-brand"
+                  className="min-h-11 self-start text-ui font-semibold text-brand-texto"
                 >
                   + detalle
                 </button>
@@ -1379,7 +1379,7 @@ export function Carton({
                 onClick={() =>
                   setAbiertosCaja((p) => ({ ...p, [r.tipo]: true }))
                 }
-                className="min-h-11 self-start text-ui font-semibold text-brand"
+                className="min-h-11 self-start text-ui font-semibold text-brand-texto"
               >
                 {r.lleva === "producto" ? "+ producto" : "+ nota"}
               </button>
@@ -1485,7 +1485,7 @@ export function Carton({
           <button
             type="button"
             onClick={() => setLibres((prev) => [...prev, ""])}
-            className="mt-1.5 min-h-11 text-ui font-semibold text-brand"
+            className="mt-1.5 min-h-11 text-ui font-semibold text-brand-texto"
           >
             + Repuesto
           </button>
@@ -1571,7 +1571,7 @@ export function Carton({
                 aria-pressed={tipo === valor}
                 className={`flex h-12 items-center justify-center rounded-md border px-1 font-brand text-body font-bold transition-colors ${
                   tipo === valor
-                    ? "border-ink bg-ink text-white"
+                    ? "border-ink bg-ink text-base"
                     : "border-line bg-base text-ink-60 hover:bg-surface"
                 }`}
               >
@@ -1897,7 +1897,7 @@ export function Carton({
                 <button
                   type="button"
                   onClick={() => abrirAltaAceite("")}
-                  className="inline-flex min-h-11 items-center font-semibold text-brand"
+                  className="inline-flex min-h-11 items-center font-semibold text-brand-texto"
                 >
                   + Agregar el primero
                 </button>
@@ -1919,7 +1919,7 @@ export function Carton({
                         onClick={() => elegirAceite(prendido ? null : p)}
                         className={`flex min-h-11 max-w-full items-center rounded-md border px-3 text-ui font-semibold transition-colors ${
                           prendido
-                            ? "border-ink bg-ink text-white"
+                            ? "border-ink bg-ink text-base"
                             : "border-line bg-base text-ink hover:bg-surface"
                         }`}
                       >
@@ -2186,7 +2186,7 @@ export function Carton({
                 aria-pressed={proxModo === modo}
                 className={`flex h-11 items-center rounded-md border px-3.5 text-ui tabular-nums transition-colors ${
                   proxModo === modo
-                    ? "border-ink bg-ink font-semibold text-white"
+                    ? "border-ink bg-ink font-semibold text-base"
                     : "border-line bg-base text-ink-60 hover:bg-surface"
                 }`}
               >
@@ -2245,7 +2245,7 @@ export function Carton({
                   aria-pressed={proxCajaModo === modo}
                   className={`flex h-11 items-center justify-center rounded-md border px-1 text-ui tabular-nums transition-colors ${
                     proxCajaModo === modo
-                      ? "border-ink bg-ink font-semibold text-white"
+                      ? "border-ink bg-ink font-semibold text-base"
                       : `border-line bg-base text-ink-60 hover:bg-surface ${
                           modo === "otro" ? "border-dashed" : ""
                         }`
@@ -2467,7 +2467,7 @@ export function Carton({
                     { descripcion: "", fecha: "", km: "", visible: false },
                   ])
                 }
-                className="mt-2 min-h-11 text-ui font-semibold text-brand"
+                className="mt-2 min-h-11 text-ui font-semibold text-brand-texto"
               >
                 + Otro pendiente
               </button>

@@ -246,6 +246,7 @@ function HojaCarton({
     <div
       style={estilo}
       data-papel={nombrePapel ?? "service"}
+      data-theme="claro"
       className={`rounded-t-[44px] rounded-b-lg border border-line bg-base ${e.caja} shadow-md`}
     >
       {/* El troquel del cartón que colgaba del parasol */}
@@ -536,6 +537,7 @@ export function CartonPapelMecanica({
     <div
       style={estilo}
       data-papel="mecanica"
+      data-theme="claro"
       className={`rounded-t-[44px] rounded-b-lg border border-line bg-base ${e.caja} shadow-md`}
     >
       <div className="mx-auto mb-3.5 size-11 rounded-full border border-line bg-surface" />
@@ -701,6 +703,7 @@ export function CartonPapelNeumaticos({
     <div
       style={estilo}
       data-papel="neumaticos"
+      data-theme="claro"
       className={`rounded-t-[44px] rounded-b-lg border border-line bg-base ${e.caja} shadow-md`}
     >
       <div className="mx-auto mb-3.5 size-11 rounded-full border border-line bg-surface" />

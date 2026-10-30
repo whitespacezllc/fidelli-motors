@@ -173,7 +173,7 @@ export default async function PaginaPresupuesto({ params }: Props) {
       {/* El id ancla la impresión y da un objetivo estable en el DOM. El
           PDF no sale de este nodo: lo dibuja AccionesDocumento con los
           mismos datos. */}
-      <div id="documento-presupuesto" className="print:shadow-none">
+      <div id="documento-presupuesto" data-theme="claro" className="print:shadow-none">
         <DocumentoPresupuesto datos={datos} />
       </div>
 
