@@ -24,7 +24,7 @@ set -u
 cd "$(dirname "$0")/.."
 DB="docker exec -i supabase_db_fidelli-motors psql -U postgres -d postgres -X"
 V=supabase/verificaciones.sql
-M=supabase/migrations/20261003200000_calcos_pago.sql
+M=supabase/migrations/20261031100000_cvu_dedicado.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
 # La función entera: del `create or replace function nombre(` a su `$$;`.

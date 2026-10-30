@@ -35,6 +35,21 @@ const COMPANY = env.CRESIUM_COMPANY_ID ?? "";
 // una base de datos.
 const ordenes = new Map();
 let proximoId = 7000;
+// Los CVUs dedicados (20261031100000), por número de CVU. Tampoco
+// sobreviven al reinicio.
+const cvus = new Map();
+// Cresium acepta minúsculas, dígitos, puntos y guiones (su ejemplo es
+// `mi-empresa.cliente-01`); nosotros mandamos un subconjunto. 6 a 20.
+const ALIAS_OK = /^[a-z0-9]([a-z0-9.-]{4,18})[a-z0-9]$/;
+function aliasTomado(alias) {
+  if (cvus.has(alias)) return true;
+  for (const c of cvus.values()) if (c.alias === alias) return true;
+  for (const o of ordenes.values()) if (o.alias === alias) return true;
+  return false;
+}
+// A dónde manda el webhook `POST /v3/sandbox/deposit` (la forma del sandbox
+// real, que lo manda a las URLs registradas): la nuestra se configura acá.
+const WEBHOOK_URL = process.env.WEBHOOK_URL ?? "http://localhost:3000/api/cresium/webhook";
 
 function responder(res, status, cuerpo) {
   const t = JSON.stringify(cuerpo);
@@ -100,6 +115,12 @@ const server = http.createServer((req, res) => {
     if (req.method === "POST" && path === "/_simular") {
       const d = JSON.parse(body || "{}");
       try {
+        // Con `cvu` es un depósito a una cuenta FIJA (sin paymentOrder).
+        if (d.cvu) {
+          const r = await simularDepositoDedicado(d.cvu, d.monto, d.webhook, d.intento ?? 1, d.transaccionId);
+          console.log(`  → depósito de $${d.monto} al CVU ${d.cvu} · webhook ${r.status}`);
+          return responder(res, 200, { ok: true, webhook: r.status });
+        }
         const r = await simularDeposito(d.externalId, d.monto, d.webhook, d.intento ?? 1);
         const o = ordenes.get(d.externalId);
         console.log(`  → depósito de $${d.monto} en ${d.externalId} · orden ${o.status} · webhook ${r.status}`);
@@ -173,6 +194,82 @@ const server = http.createServer((req, res) => {
       });
     }
 
+    // ---------- POST /v3/deposit-address/cvu ----------
+    // El CVU dedicado: se emite con el alias y vuelve con el número de CVU
+    // en `value` (el alias no vuelve). Los dos rechazos con nombre de la
+    // doc: INVALID_ALIAS y EXISTING_ALIAS, los dos 400.
+    if (req.method === "POST" && path === "/v3/deposit-address/cvu") {
+      const d = JSON.parse(body || "{}");
+      const alias = typeof d.value === "string" ? d.value : "";
+      if (!ALIAS_OK.test(alias)) {
+        return responder(res, 400, { code: 400, error: "INVALID_ALIAS", message: "Alias format is invalid" });
+      }
+      if (aliasTomado(alias)) {
+        return responder(res, 400, { code: 400, error: "EXISTING_ALIAS", message: "Alias already exists" });
+      }
+      const id = proximoId++;
+      const cuenta = { id, type: "CVU", value: "0000003100" + String(id).padStart(12, "0"), alias, externalId: null, activo: true, cambios: 0 };
+      cvus.set(cuenta.value, cuenta);
+      console.log(`  ✓ CVU dedicado ${cuenta.value} · ${alias}`);
+      return responder(res, 200, { data: {
+        id, type: "CVU", value: cuenta.value, externalId: null,
+        currency: { symbol: "$", code: "ARS", image: "src", decimals: 2 },
+        bankProvider: { name: "BIND", img: null },
+      } });
+    }
+
+    // ---------- GET /v3/deposit-address/ y /{cvu} ----------
+    if (req.method === "GET" && path.startsWith("/v3/deposit-address")) {
+      const resto = decodeURIComponent(path.slice("/v3/deposit-address".length).replace(/^\//, "").split("?")[0]);
+      const publica = (c) => ({ id: c.id, type: c.type, value: c.value, externalId: c.externalId,
+        currency: { symbol: "$", code: "ARS", image: "src", decimals: 2 }, bankProvider: { name: "BIND", img: null } });
+      if (!resto) return responder(res, 200, { data: [...cvus.values()].filter((c) => c.activo).map(publica) });
+      const c = cvus.get(resto);
+      if (!c || !c.activo) return responder(res, 400, { code: 400, error: "NOT_FOUND", message: "deposit address not found" });
+      return responder(res, 200, { data: [publica(c)] });
+    }
+
+    // ---------- PUT /v3/deposit-address/{address} ----------
+    // Cambiar el alias. Con tope de cambios (la doc nombra
+    // TOO_MANY_ALIAS_UPDATES sin decir cuántos; el doble topa en 2).
+    if (req.method === "PUT" && path.startsWith("/v3/deposit-address/")) {
+      const cvu = decodeURIComponent(path.slice("/v3/deposit-address/".length).split("?")[0]);
+      const c = cvus.get(cvu);
+      if (!c || !c.activo) return responder(res, 400, { code: 400, error: "NOT_FOUND", message: "deposit address not found" });
+      const d = JSON.parse(body || "{}");
+      const alias = typeof d.value === "string" ? d.value : "";
+      if (!ALIAS_OK.test(alias)) return responder(res, 400, { code: 400, error: "INVALID_ALIAS", message: "Alias format is invalid" });
+      if (aliasTomado(alias)) return responder(res, 400, { code: 400, error: "EXISTING_ALIAS", message: "Alias already exists" });
+      if (c.cambios >= 2) return responder(res, 400, { code: 400, error: "TOO_MANY_ALIAS_UPDATES", message: "alias update limit reached" });
+      c.alias = alias; c.cambios++;
+      return responder(res, 200, { data: true });
+    }
+
+    // ---------- POST /v3/sandbox/deposit ----------
+    // La forma del sandbox real: un depósito a un CVU de la company que
+    // recorre el circuito entero y manda el webhook. Acá sirve para que una
+    // prueba hable con el doble igual que hablaría con el sandbox.
+    if (req.method === "POST" && path === "/v3/sandbox/deposit") {
+      const d = JSON.parse(body || "{}");
+      const monto = Number(d.amount);
+      if (!d.cvu || !Number.isFinite(monto) || monto <= 0) {
+        return responder(res, 400, { code: 400, error: "BAD_REQUEST", message: "cvu and a positive amount are required" });
+      }
+      const url = d.webhookUrl ?? WEBHOOK_URL;
+      try {
+        if (cvus.has(d.cvu)) {
+          const r = await simularDepositoDedicado(d.cvu, monto, url, 1);
+          return responder(res, 200, { data: { ok: true, webhook: r.status } });
+        }
+        const o = [...ordenes.values()].find((x) => x.cvu === d.cvu);
+        if (!o) return responder(res, 400, { code: 400, error: "ADDRESS_NOT_FOUND", message: "cvu does not belong to the company" });
+        const r = await simularDeposito(o.externalId, monto, url, 1);
+        return responder(res, 200, { data: { ok: true, webhook: r.status } });
+      } catch (e) {
+        return responder(res, 400, { code: 400, error: "BAD_REQUEST", message: String(e.message) });
+      }
+    }
+
     // ---------- GET /v3/payment-order/{externalId} ----------
     if (req.method === "GET" && path.startsWith("/v3/payment-order/")) {
       const ext = decodeURIComponent(path.slice("/v3/payment-order/".length).split("?")[0]);
@@ -240,6 +337,52 @@ export async function simularDeposito(externalId, monto, urlWebhook, intento = 1
       "x-company-id": COMPANY, "x-timestamp": ts, "x-signature": firma,
     },
   });
+}
+
+// El depósito a un CVU DEDICADO: sin paymentOrder, con el CVU en `to` y en
+// `depositAddress` (la doc muestra `depositAddress`; el DEPOSIT real del
+// pago único traía `to`: se mandan los dos). La base lo acredita por monto
+// exacto, así que acá no hay estado que llevar.
+export async function simularDepositoDedicado(cvu, monto, urlWebhook, intento = 1, transaccionId = null) {
+  const c = cvus.get(cvu);
+  if (!c) throw new Error(`no existe el CVU dedicado ${cvu}`);
+  const cuenta = { id: c.id, type: "CVU", value: c.value, bankName: "Cresium", ownerName: "SANTIAGO AFUR" };
+  const payload = {
+    type: "DEPOSIT",
+    retry: intento,
+    data: {
+      transaction: {
+        id: transaccionId ?? 9_000_000 + (Date.now() % 1_000_000),
+        type: "DEPOSIT",
+        status: "SUCCESS",
+        totalAmount: monto,
+        netAmount: monto,
+        currency: { code: "ARS", symbol: "$", decimals: 2 },
+        from: { type: "CVU", value: "0000069709448279620599", bankName: "PayGoal", ownerName: "UN PAGADOR" },
+        to: cuenta,
+        depositAddress: cuenta,
+        amounts: [{ type: "NET_BASE", amount: monto, key: null }],
+      },
+    },
+  };
+  const crudo = JSON.stringify(payload);
+  const ts = String(Date.now());
+  const u = new URL(urlWebhook);
+  const firma = crypto.createHmac("sha256", SECRET)
+    .update(`${ts}|POST|${u.pathname + u.search}|${crudo}`).digest("base64");
+  return fetch(urlWebhook, {
+    method: "POST", body: crudo,
+    headers: {
+      "content-type": "application/json", "x-api-key": API_KEY,
+      "x-company-id": COMPANY, "x-timestamp": ts, "x-signature": firma,
+    },
+  });
+}
+
+// Para las pruebas que arrancan con una cuenta ya emitida en otra corrida
+// (el libro no se borra entre corridas): se la da a conocer al doble.
+export function registrarCvu(cvu, alias, id) {
+  if (!cvus.has(cvu)) cvus.set(cvu, { id, type: "CVU", value: cvu, alias, externalId: null, activo: true, cambios: 0 });
 }
 
 export function arrancar() {

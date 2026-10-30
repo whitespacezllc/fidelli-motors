@@ -65,6 +65,18 @@ solo en elementos flotantes, radios 4/8/12.
 
 **Áreas táctiles de 44px mínimo.** El mecánico tiene los dedos con aceite.
 
+**La barra del celular mide 64 px y marca la pestaña abierta con una
+píldora (30/10/2026).** Íconos de 24 px, la pestaña activa con una píldora
+de 56 × 32 en `line` detrás del ícono y el nombre en negrita; «Nuevo
+trabajo» es un círculo rojo de 52 px levantado sobre la barra con un anillo
+del color de la barra; en oscuro la barra es `surface`, un escalón más clara
+que la página y que las tarjetas, para que se lea como barra; en tablet las
+cinco pestañas se agrupan en 448 px al centro. La hoja «Más» entra y sale
+con una transición de 200 ms (el velo se funde, la hoja sube 16 px) y el
+componente espera `animationend` antes de desmontarla. Antes medía 56 px
+con íconos de 20 y sin indicador: un tenant la describió como «fina, no se
+diferencia del fondo».
+
 **El pie del sidebar es UNA fila, y la hoja «Más» del celular es una grilla
 con íconos (30/10/2026).** El pie lleva «Cerrar sesión» como texto y, a su
 derecha, los dos accesos que no pueden irse lejos como íconos de 40 px con
@@ -107,6 +119,27 @@ igual especificidad gana el último; impreso, todo es claro. Lo vigilan R50,
 `scripts/regresion-tema.sh` y `scripts/regresion-tema.mjs`, que mide el
 contraste de CADA texto visible contra su fondo efectivo en todas las
 pantallas de las dos superficies.
+
+**La pantalla de pago propone el mensual y vende el anual en pesos; con la
+cuenta de cobro no hay botón (30/10/2026).** `/panel/suscripcion` (y la
+cuarta pantalla del onboarding, que es la misma `PantallaPago`): dos
+tarjetas de período —Mensual, elegido por defecto, «se renueva cada 30
+días»; Anual con «Ahorrás $X» y «12 meses al precio de N», calculados
+desde los montos de la BASE (`monto_de_renovacion_en`), nunca con un
+porcentaje escrito a mano—, el desglose del período elegido y, para el
+tenant con cuenta de cobro, la caja «Transferí exactamente $X» con su
+alias y su CVU de siempre, sin «Quiero pagar»: elegir un período registra
+la orden interna sin viajar a Cresium, y el éxito es el pago que acaba de
+entrar (`pagoReciente`, media hora) o la orden PAID. El tenant sin cuenta
+sigue con el pago único: «Quiero pagar» emite el CVU de una sola vez y el
+selector se esconde con la orden abierta. El `concepto` (calcos) no cambia.
+Seleccionado en INK, nunca en rojo. **Mi cuenta son cuatro solapas por
+URL** (`components/cuenta/solapas.tsx`: Cuenta, Plan y pagos, Tu negocio,
+Calcos —esta última es su ruta—): la persona, el contrato, el taller, el
+calco; cada solapa pide a la base solo lo que muestra; el modo oscuro y
+los legales siguen en la primera; la cuenta de cobro, en Plan y pagos. Lo
+vigilan `scripts/regresion-pago-cuenta.mjs` y la sección B de
+`scripts/regresion-cvu-dedicado.mjs`.
 
 **El cartón digital va en versión papel** (la "versión B" del hi-fi): troquel,
 grilla completa con bordes, etiquetas verticales de grupo en el color del tenant,
@@ -445,6 +478,44 @@ la resuelve.
   `lib/fidelli/calcos.ts` tiene el m², el costo y la ganancia, y ninguna
   pantalla del tenant lo importa** (lo vigila `scripts/regresion-calcos-tenant.mjs`,
   recorriendo los imports). Lo vigila R40.
+- **La cuenta de cobro del tenant: un CVU dedicado, y el depósito se
+  acredita por MONTO EXACTO (31/10/2026).** Cresium recicla los CVUs del
+  pago único (un pool de cuatro cuentas cuyo alias cambia con cada orden):
+  el 28/10/2026 varios tenants vieron «alias inválido» y al menos uno pagó a
+  la cuenta de otro. Desde `20261031100000` cada tenant tiene SU cuenta
+  fija: `lubricentros.cresium_alias` + `cresium_cvu` +
+  `cresium_deposit_address_id`, **los tres juntos o ninguno** (CHECK
+  `alias_con_cvu`), escritos por `fijar_cvu_de_tenant()` DESPUÉS de que
+  Cresium emitió la cuenta (`POST /v3/deposit-address/cvu`;
+  `lib/cresium/emision.ts` hace las dos fases, desde la ficha de `/fidelli`
+  → Suscripción → Cuenta de cobro, y como tercera fase del alta). El alias
+  lo propone `aliasSugerido()` (el slug sin las palabras genéricas:
+  `fm.elgarage`, nunca `fm.lubricentroelgar`) y se elige una vez; los tres
+  datos son inmutables. **La renovación ya no viaja a Cresium**: «Quiero
+  pagar» deja una orden INTERNA (`cresium_ordenes.deposit_address_id`,
+  referencia `cvu:<sub>:<hasta>`) con el período y el monto que el dueño
+  vio, y la pantalla le muestra su CVU de siempre con «transferí
+  exactamente $X». **El webhook de un depósito a esa cuenta no trae
+  `paymentOrder`: trae el CVU** (`to` / `depositAddress`), y la rama nueva
+  de `acreditar_deposito_cresium()` acredita SOLO si el monto es el de
+  exactamente UN período que el tenant puede elegir hoy
+  (`montos_ofrecidos()`: mensual, anual, y semestral solo si el plan lo
+  ofrece). Cualquier otro monto —o uno que coincide con dos— queda en
+  **`depositos_cresium`** como «a confirmar», con el motivo y los montos de
+  hoy escritos, y lo decide una persona desde `/fidelli/cobranzas`
+  (`resolver_deposito_cresium()`: acreditar a un período, con la
+  transacción Y quién decidió en la fila de `pagos`, o descartar con nota).
+  **Nada se infiere.** Dos transferencias del mensual son dos meses. El
+  libro no se borra ni se edita (candados en ALWAYS) y el owner lee solo el
+  suyo (la pantalla le dice «recibimos $X, lo estamos revisando»). Una
+  orden interna no vence a los 7 días: vence cuando el precio de su período
+  cambió (`estadoEfectivoDedicado`). **Los pedidos de calcos siguen por
+  pago único** (una orden por pedido, alias derivado), y el tenant que
+  todavía no tiene cuenta también. El interruptor
+  `alias_confirmado_por_cresium()` está prendido desde esta migración.
+  Lo vigilan R25 (reescrito) y R51, con `scripts/regresion-cobranza-alias.sh`,
+  `scripts/regresion-cvu-dedicado.sh` y la sección 7 de
+  `scripts/regresion-cresium-webhook.mjs`.
 - **El stock de calcos y el aviso (03/10/2026).** Cuántas calcos le quedan a
   un lubricentro **no se guarda: se calcula** (`stock_calcos(lubricentro)`,
   mismo criterio que `estado_cobranza`). **El calco se gasta por auto nuevo,
@@ -1103,7 +1174,7 @@ doble y el original no se pueden contrastar contra una llamada real, el
 verde del doble no prueba nada: prueba que dos piezas escritas por la
 misma cabeza están de acuerdo.
 
-**20 · El `externalId` de una orden es único en Cresium PARA SIEMPRE**,
+**20 · El `externalId` de una orden de PAGO ÚNICO es único en Cresium PARA SIEMPRE**,
 también después de `PAID` o `EXPIRED`, y borrar nuestra fila no lo
 libera. Medido el 16/09/2026: la orden de los $390 quedó pagada, se limpió
 `cresium_ordenes` para volver a probar, y el intento siguiente —mismo
@@ -1118,7 +1189,10 @@ avisa cuando una orden vence. Lo vigilan R22e,
 `scripts/regresion-cobranza-cresium.sh` y
 `node --no-warnings scripts/regresion-cresium-orden.mjs`, que además
 sostiene que el doble conteste los bytes reales del rechazo (400 y el
-código, no el 409 que uno escribiría).
+código, no el 409 que uno escribiría). Desde el 31/10/2026 las renovaciones
+de un tenant con cuenta de cobro no emiten pago único: su orden es interna
+(`cvu:…`) y no se quema nada; la regla sigue rigiendo para los pedidos de
+calcos y para los tenants sin cuenta.
 
 Y la que deja el sprint de políticas (septiembre de 2026):
 
@@ -1245,6 +1319,30 @@ migración nueva le borra en silencio lo que agregó la anterior
 (`prox_caja_km`). R43f comprueba que la clave ajena sigue ahí. Lo vigilan
 R43, `scripts/regresion-adjuntos.sh` y `scripts/regresion-adjuntos.mjs`.
 
+Y la del CVU dedicado (octubre de 2026):
+
+**26 · La cuenta de cobro son TRES datos que nacen juntos, y el depósito a
+esa cuenta se acredita por monto EXACTO o lo mira una persona.** Las
+cuatro formas de romperlo, y ninguna da error. **(1) El alias solo.** La
+puerta vieja (`fijar_alias_de_tenant`) escribía el alias sin CVU; con el
+alias puesto, la renovación pedía un pago único con ESE alias y el día que
+se emitiera la cuenta Cresium contestaba `EXISTING_ALIAS`. El CHECK
+`alias_con_cvu` y la puerta cerrada lo impiden; una migración que «ayude»
+a escribir el alias por separado vuelve a abrirlo. **(2) La tolerancia.**
+`where m.total = round(p_monto, 2)` es la regla entera: un `<=`, un `abs()
+<= 1000` o un «si no coincide, el mensual» acreditan plata que nadie
+decidió acreditar, y un monto que coincide con dos períodos se acredita al
+que la consulta devuelva primero. Cero o más de uno es «a confirmar», y a
+confirmar es una fila en `depositos_cresium` que una persona cierra.
+**(3) El semestral ofrecido siempre.** `montos_ofrecidos()` lista el
+semestral solo si `descuento_semestral_pct > 0`, igual que la pantalla:
+sin esa condición el dueño «paga» un semestre que nunca pudo elegir.
+**(4) `paymentOrder` sin prioridad.** Un DEPOSIT con `paymentOrder` es un
+pago único (una renovación vieja o un pedido de calcos) y manda la
+referencia aunque el CVU coincida; la rama dedicada entra solo sin
+`paymentOrder`. Lo vigilan R25, R51, `scripts/regresion-cobranza-alias.sh`
+y `scripts/regresion-cvu-dedicado.sh`.
+
 ---
 
 ## La red de regresión — qué protege cada cosa
@@ -1282,7 +1380,7 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R23** | La pantalla de cobranzas de `/fidelli`: un owner lee CERO filas (la función es definer y cruza `usuarios` y `contactos_fidelli` de toda la plataforma); el monto sale de `monto_de_renovacion_en()`, la misma función que la pantalla de pago del cliente; y quien tiene el plan bonificado no aparece | Un dueño de lubricentro está leyendo el vencimiento, el monto y el teléfono de todos los demás, o el WhatsApp le cotiza un número distinto del que el cliente ve en su pantalla |
 | **R20** | El catálogo de cobranza: `modulos` existe con su precio y su `codigo` coincide con la clave del override; el catálogo local es el de producción (el plan del demo afuera, el semestral en 0); el candado rechaza un `UPDATE` suelto de precio pero NO bloquea `activo`/`features`; el motivo es obligatorio y un guardado que no mueve ningún número no ensucia la auditoría | Un precio se movió sin dejar rastro, el módulo se cobra mal o no se cobra, o el `db reset` volvió a dejar un catálogo que no es el real y el cálculo de plata se prueba contra números que no existen |
 | **R24** | La atención de `/fidelli` exime al 100%: un tenant bonificado no aparece con ninguno de los cuatro estados, en ninguna fecha —tampoco como `trial_vencido`, porque el precio ya es cero— y el listado y la ficha lo dicen igual porque comparten `estado_atencion()`. Con el contracaso en las dos posiciones del caso real: sin descuento, a 4 días y vencido hace 4, los dos estados vuelven | Se está llamando para cobrarle a alguien que no debe nada (el caso Brothers Oil del 20/09/2026), o —peor— la exención se comió la lista entera y la pantalla que trae la plata se vació sola |
-| **R25** | El alias fijo por tenant: el interruptor `alias_confirmado_por_cresium()` está APAGADO y la puerta rechaza incluso un alias con la forma correcta; no hay un solo alias asignado en la base; un alias escrito no se cambia ni por UPDATE directo; la unicidad (puerta e índice, que son dos defensas distintas); el formato y los dos largos con su contracaso; y el alta, que asigna por la MISMA puerta y aborta entera si el alias falla | Se asignó un alias antes de que Cresium confirmara el formato —y no hay vuelta atrás barata, porque el tope de cambios por CVU es un número que todavía no sabemos—, o un tenant terminó con un alias distinto del que ya dejó cargado en su home banking |
+| **R25** | La cuenta de cobro del tenant (`20260917120000` + `20261031100000`): el interruptor `alias_confirmado_por_cresium()` está PRENDIDO y la puerta vieja (el alias solo) rechaza siempre; los tres datos —alias, CVU, id de Cresium— van juntos (CHECK `alias_con_cvu`) y los escribe `fijar_cvu_de_tenant()`, solo Fidelli, normalizados y con fecha; los tres son inmutables (dos candados) y la puerta no reasigna; la unicidad de los tres por la puerta y por el índice, con los nulls conviviendo; el formato y los dos largos del alias y los 22 dígitos del CVU con su contracaso; y el alta con `p_alias` falla entera, y sin alias nace con los tres en null | Un tenant quedó con alias y sin cuenta (y Cresium va a rechazar la emisión como EXISTING_ALIAS), un owner emitió una cuenta, dos tenants comparten alias o CVU (la plata de uno entra al otro), un CVU se «corrigió» por UPDATE y el webhook dejó de reconocer sus depósitos, o un alta a medias |
 | **R26** | El alta prende el reloj y el primer pago define el ciclo: el tenant nuevo nace PAGANDO con `cobranza_desde` escrito y el vencimiento al día siguiente, **y ningún otro tenant entra al reloj por eso**; el primer pago que llega TARDE corre `inicio` y `vencimiento` a la fecha del pago con el largo contratado, y el que llega en plazo —o una renovación— no; las dos puertas del cobro hacen lo mismo; y la marca de la cuarta pantalla del onboarding es definer y se escribe una sola vez | El rollout volvió a ser el UPDATE peligroso contra 17 filas, un tenant que tardó cinco días en terminar el onboarding perdió cinco días de su primer mes, o el cobro manual —el que se va a usar en las primeras altas— quedó fuera del cambio |
 | **R27** | Las páginas legales y la aceptación de los Términos: los cuatro slugs (`terminos`, `privacidad`, `legal`, `condiciones`) reservados por `slug_reservado()` Y por el CHECK; `aceptaciones_terminos` con sus tres candados en `ALWAYS` (delete, update y truncate rechazados); `aceptar_terminos()` escribe el tenant y el usuario DE LA SESIÓN, es idempotente por versión, guarda el historial (la fila de 1.0 sigue tras aceptar 1.1) y un superadmin no acepta; el predicado distingue versiones y exime al demo por slug; y el aislamiento —un owner lee cero filas ajenas y el campo calculado con un composite forjado (regla 18) devuelve vacío— | Un lubricentro puede pisar una página legal, un tenant "aceptó" un texto que nunca vio (o subir `VERSION_LEGAL` dejó de pedir nada), el contrato se puede borrar o editar, o un owner está leyendo las aceptaciones del de al lado |
 | **R28** | Las consultas sin resultado no guardan la patente: cero filas con `not encontrada and patente is not null` tras el seed; el índice de leads no existe; el CHECK y el trigger existen; `get_carton` registra la consulta sin resultado con patente null y la de un auto encontrado con su patente; un insert directo la anula; `resumen_inicio` sigue contando los leads | La vidriera volvió a guardar patentes de gente que no es cliente de nadie —la política promete lo contrario—, o la métrica de escaneo del Inicio se apagó |
@@ -1307,6 +1405,7 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R48** | Las patentes de los países vecinos (`20261026120000`): los nueve formatos nuevos —Brasil `ABC1D23` / `ABC1234`, Paraguay `ABCD123` / `123ABCD`, Bolivia `1234ABC` / `AB12345`, Chile `ABCD12` / `AB1234` / `ABC12`— entran por el CHECK escritos de cualquier manera (minúsculas, guiones, el punto de la chapa chilena) y se normalizan; `get_carton` encuentra una brasileña; `corregir_patente` acepta una uruguaya y rechaza `ABCDE1`; y lo que quedó afuera a propósito sigue afuera (`AB123`, los formatos chilenos de 2026, una letra y seis dígitos, ocho caracteres, una brasileña a medio tipear) | Alguien volvió a cerrar el formato a los argentinos —y Sassi no puede cargar al cliente brasileño—, o lo abrió a cualquier cosa |
 | **R47** | Las policies preguntan por la sesión una vez por consulta (`20261021230000`): ninguna policy de `public` ni de `storage` llama a `mi_lubricentro_id()`, `soy_superadmin()` o `auth.uid()` a pelo en su `USING` o su `WITH CHECK` —cada llamada va envuelta en un sub-select—, y el chequeo tiene qué mirar (70 policies de `public` o más las llaman) | Una policy nueva o redefinida volvió a la forma vieja: Postgres la evalúa fila por fila, el Inicio vuelve a tardar segundos y a veces no llega, sin ningún error |
 | **R49** | Service de caja + mecánica en UNA carga (`20261029200000`): la pareja nace junta desde la caja —`guardar_service` devuelve la caja; la mecánica queda vinculada a ella con la misma fecha, km, sucursal y `created_at`, su descripción recortada y sus renglones libres; la caja conserva su próximo en `prox_caja_km`, sus renglones como hechos y sus observaciones; la mecánica nace sin próximo de caja ni observaciones; los pendientes nuevos y tildados cuelgan de la caja y la mecánica no los duplica—; como owner de un Basic con la feature caja la carga doble falla con 42501 sin dejar NI LA CAJA, y la caja sola del Basic sigue entrando; sin la feature caja la pareja no entra y no queda nada; la pareja vale 0 con alcance `'services'` y UNA visita con `'todos'` en las dos funciones, y con «Aplicar premio» queda UN canje atado a la caja y el ciclo vuelve a 0; corregir fecha, km y sucursal de la CAJA los copia a la mecánica adjunta, con el plan en Basic la caja se corrige igual y la mecánica queda como estaba, y editar la mecánica no toca la caja; el trigger del vínculo acepta una caja como destino y sigue rechazando un trabajo de gomería; anular la caja no anula la mecánica; y `vista_proximos_caja` proyecta lo mismo para un auto con caja sola y uno con caja + mecánica (y su «último» es la caja) | La carga doble desde la caja dejó media visita guardada, un Basic metió una mecánica por la puerta de la caja, la pareja suma dos al premio, un typo corregido en la caja partió la visita en dos fechas (la rama de la caja tiene su propio `return` y la propagación no la alcanzaba), el canje se ató a la mecánica, una mecánica quedó «cargada con» un trabajo de gomería, o la mecánica adjunta movió la proyección de la caja |
+| **R51** | El CVU dedicado (`20261031100000`): el libro `depositos_cresium` con RLS (el owner lee solo lo suyo y no escribe) y sus tres candados en ALWAYS, y la orden interna solo de una renovación; el monto EXACTO del mensual acredita (pago de Cresium sin autor, vencimiento + 1 mes, la orden interna del período PAID y la del otro período CERRADA, el depósito «acreditado» con su pago, la evidencia con el motivo); cinco reintentos, un pago; el anual acredita 12 meses; otro monto queda a confirmar con los montos de hoy en el motivo, sin pago, y su reintento no duplica; el monto solo en `amounts` se suma; el semestral acredita SOLO si el plan lo ofrece; un CVU de nadie sigue con el motivo viejo y un DEPOSIT con `paymentOrder` manda la referencia aunque el CVU coincida; resolver (el owner no; sin período o sin nota no; acreditar deja un pago con la transacción Y quién decidió; dos veces no; descartar no toca pagos); `depositos_cresium_pendientes()` solo para Fidelli, con los montos de hoy y sin los resueltos; y un suspendido a mano con el monto exacto igual acredita | Un depósito con el monto justo no se acreditó (el dueño pagó y sigue viendo la barra), uno con otro monto se acreditó solo (o a un período que nadie eligió), un reintento regaló un mes, el semestral que nunca se ofreció se cobró, un pago único entró por la rama equivocada, un owner se resolvió un depósito, o el libro se vació |
 | **R50** | El modo oscuro del panel, preferencia de la persona (`20261030100000`): `usuarios.tema` existe, nace en claro y tiene su CHECK por nombre; `fijar_mi_tema()` tiene una firma, es definer, `anon` no la ejecuta y `authenticated` sí; como owner, «oscuro» queda en SU fila y en ninguna otra, «azul» y null se rechazan con `tema_invalido`, un UPDATE directo sobre la fila de otro no toca nada, y vuelve a claro; sin sesión contesta `sin_sesion` sin tocar filas; como anon, 42501 | El interruptor no guarda (la función quedó invoker y usuarios no tiene policy de update), un owner le cambia el tema a todos, el panel se pinta con un modo que no existe, o anon escribe en `usuarios` |
 
 Además, fuera del reset, **las roturas a mano** (regla 13):
@@ -1336,6 +1435,7 @@ Además, fuera del reset, **las roturas a mano** (regla 13):
 ./scripts/regresion-adjuntos.sh
 ./scripts/regresion-datos-empresa.sh
 ./scripts/regresion-rls-initplan.sh
+./scripts/regresion-cvu-dedicado.sh
 node --no-warnings scripts/regresion-cresium-orden.mjs
 node --no-warnings scripts/regresion-cobranza-emails.mjs
 node --no-warnings scripts/regresion-avisos-cobranza.mjs   # contra next dev + el doble de Resend
@@ -1345,7 +1445,9 @@ node --no-warnings scripts/regresion-aceite.mjs            # ídem; toca el demo
 node --no-warnings scripts/regresion-calcos.mjs            # contra next dev + la base RECIÉN reseteada (Playwright)
 node --no-warnings scripts/regresion-calcos-tenant.mjs     # ídem; levanta los dobles de Cresium y de Resend
 node --no-warnings scripts/regresion-calcos-stock.mjs      # ídem; levanta el doble de Resend (el stock, el aviso y el cron)
-node --no-warnings scripts/regresion-cresium-webhook.mjs   # contra next dev: la puerta del webhook, renovación y calcos
+node --no-warnings scripts/regresion-cresium-webhook.mjs   # contra next dev: la puerta del webhook, renovación, calcos y el CVU dedicado (su tenant queda)
+node --no-warnings scripts/regresion-cvu-dedicado.mjs      # contra next dev + el seed (Playwright): la cuenta de cobro de punta a punta; levanta el doble de Cresium; deja al demo con cuenta, pagos y libro
+node --no-warnings scripts/regresion-pago-cuenta.mjs       # ídem (sin dobles): la pantalla de pago (mensual por defecto, el anual en pesos) y Mi cuenta en cuatro solapas, a 390 y 1280
 node --no-warnings scripts/regresion-caja.mjs              # contra next dev + el seed (Playwright); prende la feature en el demo local y lo restaura
 node --no-warnings scripts/regresion-caja-mecanica.mjs     # ídem; carga una caja con su mecánica en el ABC 123 del demo y la borra al final
 node --no-warnings scripts/regresion-tema.mjs              # ídem; el modo oscuro: el interruptor y el contraste de cada texto en todas las pantallas (deja a los dos usuarios en claro)
@@ -1523,6 +1625,8 @@ cuatro roturas. **Toca el demo local y lo restaura.**
 El vigesimotercero rompe R49 (doce roturas) y tiene un compañero con navegador. Es el sprint en que la pareja service + mecánica aprendió a nacer también de un service de caja (`20261029200000`; lo pidió un taller con la caja prendida), y lo que enseñó al escribirse: **la rama de la caja en `actualizar_service` termina en su propio `return`**, así que la propagación de fecha, km y sucursal a la mecánica adjunta (`@propaga-visita`, escrita en la rama del service) no la alcanzaba —corregir la caja partía la visita en dos, sin ningún error—; el bloque va copiado en esa rama (`@propaga-visita-caja`) y la rotura que lo acusa es sacarlo. **Dos pruebas de R42 decían lo contrario de la regla nueva** («una caja no lleva adjunta»: R42b por la tabla y R42c por la función): la de la tabla pasó a ser el contracaso, deshecho enseguida para no mover los contadores de más abajo, y la de la función se fue (la pareja entera la prueba R49a). Las demás: la puerta de `p_mecanica` de vuelta a «solo en un service»; la mecánica adjunta con la fecha de hoy, sin el vínculo, con sus renglones ignorados, «ordenada» con `clock_timestamp()` y con los pendientes reenviados (la misma rama que R38, vista desde la caja); las dos policies sin el gate por tipo (un Basic con la feature caja cuela la mecánica adjunta); las dos funciones del premio de vuelta a contar filas (la pareja vale 2 con `'todos'`); y el trigger del vínculo de vuelta a exigir un service como destino (la pareja no nace: `vinculo_invalido`) y sin exigir nada (una mecánica se cuelga de un trabajo de gomería). **Lo que R38 ya rompe sobre la rama compartida no se repite** —es la misma línea de código—, y el CHECK del vínculo abierto a la caja sigue siendo de R42b. **`guardar_service`, `actualizar_service` y `services_validar_vinculo` viven desde este sprint en `20261029200000`** (copiadas textuales, con tres líneas cambiadas y el bloque nuevo): las muerden de ahí `regresion-visita.sh` y `regresion-caja.sh` (`M_PAR`), y las roturas de R38c y R38h cambiaron su `sed` por la línea nueva. Y una del script viejo: **`regresion-caja.sh` esperaba «de los 4 renglones» y con la diálisis son 5**, así que el patrón ya no cuenta. El compañero es `scripts/regresion-caja-mecanica.mjs`: prende la feature por SQL; en 390 táctil comprueba que el cartón de la caja ofrece «¿Se le hizo algo de mecánica?» (y el de una mecánica suelta no), que el teclado de la adjunta no repite el aceite de caja pero sí ofrece batería, líquido de frenos y refrigerante —que en el cartón de aceite se esconden—, que la previsualización muestra los DOS papeles con el plazo de cada uno y «Confirmar service de caja y mecánica», que el guardado dice «Service de caja y mecánica guardados» con «Ver la mecánica», y que en la base la pareja nació junta; a 1280 abre el detalle de las dos mitades («Misma visita» en las dos direcciones, nombrando el service de caja), el diálogo de anular de cada una, Editar la mecánica (el aviso que manda a editar el service de caja) y Editar la caja (corregir los kilómetros los copia a la mecánica); mira el historial del cliente; y a 360, 390, 820 y 1280 abre la pregunta en una caja sin scroll horizontal. Se vio en rojo contra el front de `develop` (el cartón de la caja no ofrecía la pregunta). **Toca el demo local y lo restaura.**
 
 El vigesimocuarto rompe R50 (cuatro roturas) y tiene un compañero con navegador que es, más que una prueba, un instrumento. Las cuatro: `fijar_mi_tema` como invoker (sin policy de update, el interruptor dejaría de guardar), grantada a `anon`, con la validación sacada —«azul» lo frena igual el CHECK de la tabla pero con OTRO error, que el front no traduce, y el bloque lo acusa por eso; el CHECK borrado, solo, lo ve R50a en el catálogo— y sin la guarda de `auth.uid()` (le cambia el tema a TODOS). El compañero es `scripts/regresion-tema.mjs`: primero rompe ocho reglas estáticas sobre una copia del texto (el bloque claro de `globals.css` borrado o movido ANTES del oscuro, la impresión sin volver a claro, el lienzo que no sigue al panel, un `prefers-color-scheme` colado, un `text-white` sobre `bg-ink` de vuelta, el velo de vuelta a `ink/40`, un papel sin su `data-theme="claro"`); después, con el demo, toca el interruptor del sidebar a 1280 (pinta en el acto, la base guarda, al recargar sale oscuro desde la sesión, el logotipo pasa al gris, el lienzo es grafito y los controles nativos siguen), el de la hoja «Más» a 390 y el de la barra de `/fidelli`; y **mide la legibilidad**: en oscuro, a 1280 y a 390, en las 25 pantallas de `/panel` y las 14 de `/fidelli` (más el diálogo de anular y la hoja «Más»), compara cada texto visible con el fondo efectivo que tiene detrás —apilando los fondos con alfa desde el `html`— y exige AA (4,5:1; 3:1 para los grandes; los controles deshabilitados exentos, como en WCAG). Y mira que el cartón del detalle y el presupuesto sigan claros dentro del panel oscuro, y que en impresión el panel entero vuelva a claro. **Es la red de la próxima pantalla**: una tarjeta nueva con un color fijo se ve acá antes que en el celular de un taller. Se vio en rojo contra el front de `develop` (sin interruptor). **Toca el tema de los dos usuarios del demo y los deja en claro.**
+El vigesimoquinto reescribe la rotura de R25 (`regresion-cobranza-alias.sh`, dieciocho roturas) y estrena la de R51 (`regresion-cvu-dedicado.sh`, catorce). Lo que enseñaron al escribirse: **dos mensajes de R25 contenían el token que su propio handler filtra** (`alias_sin_cvu`), así que la puerta vieja escribiendo el alias se veía en VERDE —el `raise` del bloque caía en el `when sqlstate 'P0001'` y se tragaba a sí mismo—; el texto de una afirmación no puede repetir el nombre del error que espera. **Tres roturas las frena una segunda defensa con OTRO error**, y el script espera ese error y no la letra: la puerta que no mira el CVU (el CHECK `cvu_formato`), la idempotencia del libro sacada (el unique de `transaccion_id`) y el resolver que resuelve dos veces (el unique de `pagos.cresium_transaccion_id`). **Y la rotura del `=` no es un `<=`**: con `<=` el anual coincide con dos períodos y R51d se pone en rojo antes de llegar al caso que la rotura quería ver; la que aísla R51e es una tolerancia (`abs(…) <= 1000`). También: una FK de `depositos_cresium.evento_id` hacia `cresium_eventos` rompía R22g (el `truncate` falla por la FK antes de que dispare el candado, el mismo caso que `encargos_calcos.pedido_calcos_id`), así que la columna no tiene FK. **`acreditar_deposito_cresium()` vive desde este sprint en `20261031100000`**: la muerden de ahí `regresion-cobranza-cresium.sh` (R22e) y `regresion-calcos.sh` (`M_CVU`). La sección 7 de `scripts/regresion-cresium-webhook.mjs` manda el DEPOSIT con los bytes reales sin `paymentOrder` y el CVU en `to`; su tenant de prueba QUEDA entre corridas (el libro no se borra) y los ids de transacción salen del reloj. Y el compañero con navegador, `scripts/regresion-cvu-dedicado.mjs`, levanta el doble adentro y hace el camino entero: la ficha emite la cuenta del demo con el alias propuesto (`fm.demo`), a 390 táctil y a 1280 el dueño elige mensual, «Quiero pagar» deja la orden interna (`cvu:…`, sin viajar a Cresium), la tarjeta dice «Transferí exactamente $X» con el alias fijo, el depósito exacto por el doble pasa la pantalla sola a «Al día» y mueve el vencimiento un mes, otro monto deja el aviso «lo estamos revisando»; y en `/fidelli` la alerta del hub, la lista de Cobranzas, acreditar uno a un período y descartar otro con nota. **Deja al demo con cuenta, pagos y filas en el libro**: `supabase db reset` es la única limpieza.
+
 ⚠ Y DOS DE ESTOS SCRIPTS APUNTAN A MÁS DE UNA MIGRACIÓN, porque
 `estado_cobranza`, `reloj_cobranza` y `crear_lubricentro` se redefinieron en
 migraciones posteriores a las que las crearon. Un script que las extrae del

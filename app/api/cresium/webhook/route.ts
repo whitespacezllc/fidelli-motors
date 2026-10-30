@@ -54,9 +54,36 @@ function rechazar(motivo: string, status = 401) {
   return NextResponse.json({ error: "unauthorized" }, { status });
 }
 
+// ============================================================
+// DOS API KEYS DURANTE LA TRANSICIÓN (30/10/2026)
+//
+// El cobro pasa de la key «Develop FM» a la key de producción, y las dos
+// son keys REALES sobre la misma company (ver lib/cresium/cliente.ts: no
+// hay entorno de pruebas). Mientras Cresium tenga el webhook configurado
+// con una y Vercel la otra, los depósitos llegarían firmados con un secret
+// que la ruta no conoce y se rechazarían con 401: la plata entra y el
+// panel se queda «esperando». Por eso la ruta acepta la key vigente y,
+// si están cargadas, la ANTERIOR (CRESIUM_API_KEY_ANTERIOR /
+// CRESIUM_SECRET_ANTERIOR): el `x-api-key` dice cuál firmó, y la firma se
+// verifica con SU secret. Cuando el webhook de cresium.app quede en la
+// key nueva, las dos variables anteriores se borran y esto vuelve a ser
+// una sola key. Aceptar dos no abre nada: las dos son nuestras.
+// ============================================================
+function secretParaLaKey(apiKey: string): { secret: string; vigente: boolean } | null {
+  const vigente = process.env.CRESIUM_API_KEY?.trim();
+  const anterior = process.env.CRESIUM_API_KEY_ANTERIOR?.trim();
+  const secret = process.env.CRESIUM_SECRET?.trim();
+  const secretAnterior = process.env.CRESIUM_SECRET_ANTERIOR?.trim();
+  if (vigente && apiKey === vigente && secret) return { secret, vigente: true };
+  if (anterior && apiKey === anterior && secretAnterior) return { secret: secretAnterior, vigente: false };
+  // Sin CRESIUM_API_KEY cargada (local viejo, o un entorno a medias): se
+  // verifica con el único secret que hay, como siempre.
+  if (!vigente && secret) return { secret, vigente: true };
+  return null;
+}
+
 export async function POST(request: Request) {
-  const secret = process.env.CRESIUM_SECRET;
-  if (!secret) {
+  if (!process.env.CRESIUM_SECRET) {
     // Sin secret no se puede verificar NADA. Fallar cerrado: un 500 hace
     // que Cresium reintente, así que el evento no se pierde mientras se
     // arregla el entorno.
@@ -79,17 +106,23 @@ export async function POST(request: Request) {
   // El webhook lo firma la key que está asociada a su configuración, y
   // `x-api-key` es lo único que dice cuál fue.
   //
-  // Sin este chequeo, un webhook firmado por la otra key llega como
-  // "firma inválida" — un 401 que manda a revisar la construcción del
-  // string, que es donde nunca está el problema. Con el chequeo, el log
-  // dice exactamente qué pasó.
-  const apiKeyEsperada = process.env.CRESIUM_API_KEY?.trim();
-  if (apiKeyEsperada && apiKey.trim() !== apiKeyEsperada) {
+  // Sin este chequeo, un webhook firmado por otra key llega como "firma
+  // inválida" — un 401 que manda a revisar la construcción del string, que
+  // es donde nunca está el problema. Con el chequeo, el log dice
+  // exactamente qué pasó. Y durante la transición de keys, la anterior
+  // también entra, con su secret (ver secretParaLaKey).
+  const clave = secretParaLaKey(apiKey.trim());
+  if (!clave) {
     return rechazar(
       `el webhook lo firmó OTRA API Key de la cuenta: llegó ${huella(apiKey.trim())} ` +
-        `y esperábamos ${huella(apiKeyEsperada)}. Si hay DOS webhooks configurados, ` +
-        "borrá el que no corresponde en cresium.app → Configuración → Desarrolladores.",
+        `y esperábamos ${huella(process.env.CRESIUM_API_KEY?.trim() ?? "")}` +
+        (process.env.CRESIUM_API_KEY_ANTERIOR ? ` (o la anterior, ${huella(process.env.CRESIUM_API_KEY_ANTERIOR.trim())})` : "") +
+        ". Si hay DOS webhooks configurados, borrá el que no corresponde en cresium.app → Configuración → Desarrolladores.",
     );
+  }
+  const secret = clave.secret;
+  if (!clave.vigente) {
+    console.warn(`[cresium/webhook] firmado con la API Key ANTERIOR (${huella(apiKey.trim())}): el webhook de cresium.app todavía apunta a la key vieja.`);
   }
 
   // La ventana ANTES que el HMAC: un replay con firma válida pero vieja
@@ -226,7 +259,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "internal" }, { status: 500 });
   }
 
-  const respuesta = data as { resultado?: string; concepto?: string; encargo?: string } | null;
+  const respuesta = data as {
+    resultado?: string;
+    concepto?: string;
+    encargo?: string;
+    periodo?: string;
+    motivo?: string;
+  } | null;
   const resultado = respuesta?.resultado ?? "desconocido";
 
   // ---------- EL MAIL DE UN PEDIDO DE CALCOS, DESPUÉS DE CONTESTAR ----------
@@ -259,13 +298,24 @@ export async function POST(request: Request) {
       "[cresium/webhook] evento sin data.id (¿un ping de prueba?): guardado como evidencia, sin acreditar",
     );
   } else {
-    console.info(`[cresium/webhook] transacción ${evento.data?.id}: ${resultado}`);
+    console.info(
+      `[cresium/webhook] transacción ${evento.data?.id}: ${resultado}` +
+        (respuesta?.periodo ? ` (${respuesta.periodo})` : "") +
+        (respuesta?.motivo === "a_confirmar" ? " · a confirmar en /fidelli/cobranzas" : ""),
+    );
   }
 
   // 200 para TODOS los caminos que ya no son un error nuestro —acreditado,
   // reintento, PARTIAL, orden ajena—. Si respondiéramos otra cosa, Cresium
   // reintentaría cinco veces un evento que ya entendimos perfectamente.
-  return NextResponse.json({ ok: true, resultado });
+  // El período y el motivo van en la respuesta: son nuestros, no revelan
+  // nada, y son lo que la regresión y el log de Cresium miran.
+  return NextResponse.json({
+    ok: true,
+    resultado,
+    ...(respuesta?.periodo ? { periodo: respuesta.periodo } : {}),
+    ...(respuesta?.motivo ? { motivo: respuesta.motivo } : {}),
+  });
 }
 
 // Cualquier otro método: 405. Sirve para darse cuenta rápido de que el
