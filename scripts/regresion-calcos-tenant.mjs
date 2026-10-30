@@ -349,8 +349,9 @@ titulo("B · Mi cuenta → Calcos: pedir y pagar");
 
 await paso("se llega desde Mi cuenta y desde «Más»", async () => {
   await page.goto(`${BASE}/panel/cuenta`, { waitUntil: "networkidle" });
-  const link = page.getByRole("link", { name: "Ver y pedir calcos" });
-  check("Mi cuenta tiene el link a Calcos", (await link.getAttribute("href").catch(() => null)) === "/panel/cuenta/calcos");
+  // Desde el 30/10/2026 Mi cuenta son cuatro solapas y Calcos es la cuarta.
+  const link = page.getByRole("navigation", { name: "Secciones de Mi cuenta" }).getByRole("link", { name: "Calcos" });
+  check("Mi cuenta tiene la solapa Calcos", (await link.getAttribute("href").catch(() => null)) === "/panel/cuenta/calcos");
   await tocar(page.getByRole("button", { name: "Más" }));
   const enMas = page.getByRole("dialog", { name: "Más secciones" }).getByRole("link", { name: "Calcos" });
   check("la hoja «Más» de la barra mobile también", (await enMas.getAttribute("href").catch(() => null)) === "/panel/cuenta/calcos");
@@ -489,7 +490,12 @@ await paso("la pantalla de la suscripción no se confunde con la orden de calcos
     const texto = await otra.locator("main").innerText();
     const alias = sql(`select alias from cresium_ordenes where encargo_calcos_id = '${p1.id}';`);
     check("no muestra el alias de los calcos", !texto.includes(alias), alias);
-    check("y sigue ofreciendo pagar la suscripción", (await otra.getByRole("button", { name: "Quiero pagar" }).count()) === 1, texto.slice(0, 160));
+    // Con la cuenta de cobro fija (20261031100000) no hay botón: la cuenta y
+    // «Transferí exactamente» están a la vista. Sin cuenta, «Quiero pagar».
+    const conCuenta = sql(`select cresium_cvu is not null from lubricentros where id = '${DEMO}';`) === "t";
+    check("y sigue ofreciendo pagar la suscripción", conCuenta
+      ? (await otra.getByRole("heading", { name: /Transferí exactamente/ }).count()) === 1
+      : (await otra.getByRole("button", { name: "Quiero pagar" }).count()) === 1, texto.slice(0, 160));
     await otra.close();
   } finally {
     sql(`update suscripciones set descuento_pct = ${sub[1]} where id = '${sub[0]}';`);

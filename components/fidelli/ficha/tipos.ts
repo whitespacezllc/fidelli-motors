@@ -14,6 +14,10 @@ export type Tenant = {
   /** De dónde vino (docs/METRICAS.md § 1). Null = todavía no se cargó. */
   origen: OrigenTenant | null;
   origen_detalle: string | null;
+  /** La cuenta de cobro (20261031100000): los tres juntos o los tres null. */
+  cresium_alias: string | null;
+  cresium_cvu: string | null;
+  cresium_alias_asignado_at: string | null;
 };
 
 export type SuscripcionVigente = {

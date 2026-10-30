@@ -43,7 +43,7 @@ function diasDe(t: TenantAlerta): string {
   return `no carga trabajos hace ${t.dias} ${plural(t.dias, "día", "días")}`;
 }
 
-export function armarAlertas(r: ResumenAdmin): Alerta[] {
+export function armarAlertas(r: ResumenAdmin, depositosAConfirmar = 0): Alerta[] {
   const alertas: Alerta[] = [];
 
   // Los pedidos de calcos, primeros. Sin pedidos no hay alerta.
@@ -92,6 +92,17 @@ export function armarAlertas(r: ResumenAdmin): Alerta[] {
       href: DOC_CIERRE,
       accion: "Ver cómo se corre",
       externo: true,
+    });
+  }
+
+  // La plata que entró a una cuenta fija y espera una decisión
+  // (20261031100000): va antes que las órdenes, porque ya está acá.
+  if (depositosAConfirmar > 0) {
+    alertas.push({
+      clave: "depositos",
+      texto: `${depositosAConfirmar} ${plural(depositosAConfirmar, "depósito espera", "depósitos esperan")} que confirmes a qué período va${depositosAConfirmar === 1 ? "" : "n"}.`,
+      href: "/fidelli/cobranzas",
+      accion: "Ir a cobranzas",
     });
   }
 
@@ -161,8 +172,8 @@ export function armarAlertas(r: ResumenAdmin): Alerta[] {
   return alertas;
 }
 
-export function Alertas({ r }: { r: ResumenAdmin }) {
-  const alertas = armarAlertas(r);
+export function Alertas({ r, depositosAConfirmar = 0 }: { r: ResumenAdmin; depositosAConfirmar?: number }) {
+  const alertas = armarAlertas(r, depositosAConfirmar);
 
   return (
     <section className="surface-card overflow-hidden">

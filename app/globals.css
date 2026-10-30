@@ -539,6 +539,33 @@ html:has([data-theme="oscuro"]) {
   }
 }
 
+/* La hoja «Más» de la barra del celular: el velo se funde y la hoja sube
+   16 px asentándose, 200 ms con la curva estándar; al cerrar, lo mismo al
+   revés (el componente espera animationend antes de desmontar). La regla
+   global de reduced-motion las corta solas. */
+@utility animar-velo-entra {
+  animation: velo-entra 180ms var(--ease-standard) both;
+}
+@utility animar-velo-sale {
+  animation: velo-sale 160ms var(--ease-standard) both;
+}
+@utility animar-hoja-entra {
+  animation: hoja-entra 220ms var(--ease-standard) both;
+}
+@utility animar-hoja-sale {
+  animation: hoja-sale 180ms var(--ease-standard) both;
+}
+@keyframes velo-entra { from { opacity: 0; } to { opacity: 1; } }
+@keyframes velo-sale { from { opacity: 1; } to { opacity: 0; } }
+@keyframes hoja-entra {
+  from { opacity: 0; translate: 0 16px; }
+  to { opacity: 1; translate: 0 0; }
+}
+@keyframes hoja-sale {
+  from { opacity: 1; translate: 0 0; }
+  to { opacity: 0; translate: 0 16px; }
+}
+
 /* La aparición de una pantalla o una ficha en la simulación de carga:
    entra desde abajo y se asienta. La regla global de reduced-motion de
    arriba la corta sola (animation-duration 0.01ms). */
