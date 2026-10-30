@@ -63,6 +63,7 @@ import {
   ETIQUETA_TIPO,
   NOMBRE_TRABAJO,
   TIPOS_TRABAJO,
+  admiteMecanicaAdjunta,
   type TipoTrabajo,
 } from "@/lib/trabajos";
 import { POSICIONES, type PosicionRueda } from "@/lib/ruedas";
@@ -406,13 +407,18 @@ export function Carton({
   const [canjear, setCanjear] = useState(false);
 
   // ¿SE LE HIZO ALGO DE MECÁNICA? El tilde del final del cartón de un
-  // service. Apagado por defecto: es la excepción de la visita, no la
-  // regla. Reusa los estados de la mecánica (descripcion, libres,
-  // cantidadesLibres): con el tipo en Service nadie más los usa. Se ofrece
-  // con la misma puerta que el segmento «Mecánica» del selector —la
-  // feature— y solo en el alta.
+  // service y, desde el 29/10/2026, también del de un service de CAJA (lo
+  // pidió un taller de cajas: la mecánica de la misma visita, sin volver a
+  // buscar el auto). Apagado por defecto: es la excepción de la visita,
+  // no la regla. Reusa los estados de la mecánica (descripcion, libres,
+  // cantidadesLibres): con el tipo en Service o en Caja nadie más los
+  // usa. Se ofrece con la misma puerta que el segmento «Mecánica» del
+  // selector —la feature— y solo en el alta. `anfitrion` es el tipo que
+  // la lleva: el teclado de renglones y los textos lo necesitan.
   const [conMecanica, setConMecanica] = useState(false);
-  const ofreceMecanica = esService && Boolean(datos.puedeMecanica) && !edicion;
+  const anfitrion = admiteMecanicaAdjunta(tipo) ? tipo : null;
+  const ofreceMecanica =
+    anfitrion != null && Boolean(datos.puedeMecanica) && !edicion;
   const mecanicaAdjunta = ofreceMecanica && conMecanica;
 
   // Los pendientes que el mecánico tilda porque los hizo EN este trabajo,
@@ -920,12 +926,28 @@ export function Carton({
       (t === "caja" && datos.puedeCaja),
   );
 
+  // La mecánica adjunta, como la va a ver el cliente: el segundo cartón de
+  // la misma fecha, debajo del de aceite o del de la caja. Un solo juego
+  // de datos para las dos previsualizaciones.
+  const datosMecanicaAdjunta = {
+    lubricentroNombre: datos.lubricentroNombre,
+    colorTenant: datos.colorTenant,
+    colorPapel: datos.colorPapel,
+    fecha,
+    kilometros: kmCargado ? kmNum : null,
+    descripcion: descripcion.trim(),
+    renglones: libres.map((l) => l.trim()).filter(Boolean),
+  };
+
   // ---------- Momento 2 ----------
   if (paso === "preview") {
     return (
       <div className="pb-4">
         <h1 className="font-brand text-h3 font-bold text-ink">
-          Revisá el {mecanicaAdjunta ? "service y la mecánica" : NOMBRE_TRABAJO[tipo]}
+          Revisá el{" "}
+          {mecanicaAdjunta
+            ? `${NOMBRE_TRABAJO[tipo]} y la mecánica`
+            : NOMBRE_TRABAJO[tipo]}
         </h1>
         <p className="mt-0.5 mb-4 text-ui text-ink-60">
           Así lo va a ver {datos.clienteNombre.split(" ")[0]} en su celular
@@ -991,8 +1013,9 @@ export function Carton({
                 }}
               />
             ) : esCaja ? (
-              // El papel del service de caja: la misma hoja que el cartón
-              // de aceite, con su bajada, sus cuatro renglones y su próximo.
+              <>
+              {/* El papel del service de caja: la misma hoja que el cartón
+                  de aceite, con su bajada, sus renglones y su próximo. */}
               <CartonPapelCaja
                 datos={{
                   lubricentroNombre: datos.lubricentroNombre,
@@ -1022,6 +1045,14 @@ export function Carton({
                   ),
                 }}
               />
+              {/* La mecánica adjunta a la caja: el segundo cartón de la
+                  misma fecha, debajo del de la caja. */}
+              {mecanicaAdjunta && (
+                <div className="mt-4">
+                  <CartonPapelMecanica datos={datosMecanicaAdjunta} />
+                </div>
+              )}
+              </>
             ) : (
               <>
                 <CartonPapel datos={datosPreview} />
@@ -1029,17 +1060,7 @@ export function Carton({
                     segundo cartón de la misma fecha, debajo del de aceite. */}
                 {mecanicaAdjunta && (
                   <div className="mt-4">
-                    <CartonPapelMecanica
-                      datos={{
-                        lubricentroNombre: datos.lubricentroNombre,
-                        colorTenant: datos.colorTenant,
-                        colorPapel: datos.colorPapel,
-                        fecha,
-                        kilometros: kmCargado ? kmNum : null,
-                        descripcion: descripcion.trim(),
-                        renglones: libres.map((l) => l.trim()).filter(Boolean),
-                      }}
-                    />
+                    <CartonPapelMecanica datos={datosMecanicaAdjunta} />
                   </div>
                 )}
               </>
@@ -1121,19 +1142,19 @@ export function Carton({
         </div>
 
         {/* El plazo es del tipo que se está cargando: 24 horas para un
-            service o un trabajo de gomería, 7 días para una mecánica. Con
-            la mecánica adjunta son dos trabajos y dos plazos: se dicen los
-            dos, porque a las 24 horas el service se fija y la mecánica
-            sigue abierta seis días más. */}
+            service, una caja o un trabajo de gomería, 7 días para una
+            mecánica. Con la mecánica adjunta son dos trabajos y dos plazos:
+            se dicen los dos, porque a las 24 horas el service (o la caja)
+            se fija y la mecánica sigue abierta seis días más. */}
         <div className="rounded-md border border-line bg-surface px-4 py-3.5">
           <p className="font-brand text-ui font-bold text-ink">
             {mecanicaAdjunta
-              ? `Editable por ${plazoEdicionTexto("service")} el service y ${plazoEdicionTexto("mecanica")} la mecánica`
+              ? `Editable por ${plazoEdicionTexto(tipo)} el ${NOMBRE_TRABAJO[tipo]} y ${plazoEdicionTexto("mecanica")} la mecánica`
               : `Editable por ${plazoEdicionTexto(tipo)}`}
           </p>
           <p className="mt-0.5 text-ui text-ink-60">
             {mecanicaAdjunta
-              ? `El service podrá editarse durante ${plazoEdicionConArticulo("service")} posteriores y la mecánica durante ${plazoEdicionConArticulo("mecanica")}. Después quedan fijados en el historial y no se pueden modificar.`
+              ? `El ${NOMBRE_TRABAJO[tipo]} podrá editarse durante ${plazoEdicionConArticulo(tipo)} posteriores y la mecánica durante ${plazoEdicionConArticulo("mecanica")}. Después quedan fijados en el historial y no se pueden modificar.`
               : `Este trabajo podrá editarse solo durante ${plazoEdicionConArticulo(tipo)} posteriores. Después queda fijado en el historial y no se puede modificar.`}
           </p>
         </div>
@@ -1185,7 +1206,7 @@ export function Carton({
               : edicion
                 ? "Guardar cambios"
                 : mecanicaAdjunta
-                  ? "Confirmar service y mecánica"
+                  ? `Confirmar ${NOMBRE_TRABAJO[tipo]} y mecánica`
                   : `Confirmar ${NOMBRE_TRABAJO[tipo]}`}
           </Boton>
         </div>
@@ -1394,7 +1415,7 @@ export function Carton({
           descripcion={descripcion}
           alCambiar={setDescripcion}
           tieneGomeria={Boolean(datos.puedeNeumaticos)}
-          adjunta={mecanicaAdjunta}
+          adjuntaA={mecanicaAdjunta ? anfitrion : null}
         />
 
         <label htmlFor="trabajo" className={`${CLASE_LABEL} mt-4`}>
@@ -2295,14 +2316,15 @@ export function Carton({
       </div>
 
       {/* 8-bis. ¿SE LE HIZO ALGO DE MECÁNICA? — el final del cartón de un
-          service, solo con la feature y solo en el alta. Muchos talleres
-          hacen algo de mecánica en la misma visita del cambio de aceite, y
-          cargarlo eran dos trabajos completos, dos pantallas y dos veces el
-          mismo auto. Tildado, despliega el mismo sub-formulario de la
-          mecánica; al confirmar viajan los dos trabajos en el mismo RPC y
-          nacen juntos, con la misma fecha y los mismos kilómetros. Apagado,
-          no agrega ni un toque al flujo (el cronómetro manda). Va ANTES de
-          los pendientes: primero lo que se hizo, después lo que quedó. */}
+          service o de un service de caja, solo con la feature y solo en el
+          alta. Muchos talleres hacen algo de mecánica en la misma visita
+          del cambio de aceite (o de la caja), y cargarlo eran dos trabajos
+          completos, dos pantallas y dos veces el mismo auto. Tildado,
+          despliega el mismo sub-formulario de la mecánica; al confirmar
+          viajan los dos trabajos en el mismo RPC y nacen juntos, con la
+          misma fecha y los mismos kilómetros. Apagado, no agrega ni un
+          toque al flujo (el cronómetro manda). Va ANTES de los pendientes:
+          primero lo que se hizo, después lo que quedó. */}
       {ofreceMecanica && (
         <div className="mt-4 overflow-hidden rounded-lg border border-line bg-surface/60">
           <button

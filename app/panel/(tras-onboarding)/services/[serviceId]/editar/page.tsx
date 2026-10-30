@@ -18,6 +18,7 @@ import {
   aceitesMasUsados,
   desdeMasUsados,
 } from "@/lib/aceite";
+import { NOMBRE_TRABAJO, admiteMecanicaAdjunta } from "@/lib/trabajos";
 
 export const metadata: Metadata = { title: "Editar trabajo" };
 
@@ -110,10 +111,10 @@ export default async function PaginaEditarService({ params }: Props) {
   // Las dos consultas que siguen dependen del trabajo y no una de la otra:
   // van juntas, en un solo viaje.
   const [parejaRes, anteriorRes] = await Promise.all([
-    // La otra mitad de una carga doble. Editar el SERVICE copia fecha, km y
-    // sucursal a la mecánica adjunta (actualizar_service); editar la
-    // MECÁNICA la separa. En los dos casos el mecánico tiene que saberlo
-    // antes.
+    // La otra mitad de una carga doble. Editar el ANFITRIÓN (el service o
+    // la caja) copia fecha, km y sucursal a la mecánica adjunta
+    // (actualizar_service); editar la MECÁNICA la separa. En los dos casos
+    // el mecánico tiene que saberlo antes.
     service.cargado_con_id
       ? supabase
           .from("services")
@@ -121,7 +122,7 @@ export default async function PaginaEditarService({ params }: Props) {
           .eq("id", service.cargado_con_id)
           .eq("anulado", false)
           .maybeSingle()
-      : service.tipo === "service"
+      : admiteMecanicaAdjunta(service.tipo)
         ? supabase
             .from("services")
             .select("id, tipo, fecha")
@@ -240,7 +241,7 @@ export default async function PaginaEditarService({ params }: Props) {
         <p className="mb-4 rounded-md border border-line bg-surface px-3.5 py-2.5 text-ui text-ink-60">
           {pareja.tipo === "mecanica" ? (
             <>
-              Este service se cargó junto con{" "}
+              Este {NOMBRE_TRABAJO[service.tipo]} se cargó junto con{" "}
               <Link
                 href={`/panel/services/${pareja.id}`}
                 className="font-semibold text-ink underline underline-offset-4"
@@ -257,11 +258,11 @@ export default async function PaginaEditarService({ params }: Props) {
                 href={`/panel/services/${pareja.id}`}
                 className="font-semibold text-ink underline underline-offset-4"
               >
-                el service
+                el {NOMBRE_TRABAJO[pareja.tipo]}
               </Link>{" "}
               de la misma visita. La fecha, los kilómetros y la sucursal son
-              los de la visita: para corregirlos, editá el service y se copian
-              a los dos.
+              los de la visita: para corregirlos, editá el{" "}
+              {NOMBRE_TRABAJO[pareja.tipo]} y se copian a los dos.
             </>
           )}
         </p>

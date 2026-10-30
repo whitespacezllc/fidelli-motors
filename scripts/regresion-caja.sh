@@ -58,6 +58,11 @@ cd "$(dirname "$0")/.."
 DB="docker exec -i supabase_db_fidelli-motors psql -U postgres -d postgres -X"
 V=supabase/verificaciones.sql
 M=supabase/migrations/20261004120100_service_caja.sql
+# guardar_service y actualizar_service se redefinieron DESPUÉS, para que la
+# mecánica adjunta también nazca de una caja (20261029200000): la versión
+# vigente vive ahí y es la que hay que romper (los marcadores `-- @caja-*`
+# viajaron intactos). Lo demás de este sprint sigue en $M.
+M_PAR=supabase/migrations/20261029200000_caja_con_mecanica.sql
 # get_carton se redefinió después (los adjuntos, 20261004200000): la
 # versión vigente vive ahí y es la que hay que romper. La clave
 # `prox_caja_km` viajó intacta.
@@ -154,7 +159,7 @@ correr "services_insercion sin la condición de la caja" \
 correr "services_edicion sin la condición de la caja" \
   "alter policy services_edicion on services with check ((lubricentro_id = mi_lubricentro_id() and (tipo <> 'mecanica' or plan_permite('mecanica')) and (tipo <> 'neumaticos' or plan_permite('neumaticos'))) or soy_superadmin());" \
   R42 "R42a un tenant SIN la feature convirtió un service en caja por UPDATE"
-correr_marcada "guardar_service como security definer" guardar_service "$M" \
+correr_marcada "guardar_service como security definer" guardar_service "$M_PAR" \
   "/@invoker/s/set search_path = public/security definer set search_path = public/" R42 "R42a un tenant SIN la feature cargó un service de caja por la RPC"
 
 echo "── R42b · los CHECK, de a una condición ──"
@@ -172,45 +177,45 @@ correr "el CHECK del vínculo abierto a la caja" \
   R42 "R42b una caja quedó «cargada con» un service"
 
 echo "── R42c · la rama de guardar_service ──"
-correr_marcada "los renglones de la caja con el «cambiado» del jsonb" guardar_service "$M" \
-  "/@caja-hecho/s/jsonb_build_object('cambiado', true)/jsonb_build_object()/" R42 "de los 4 renglones quedaron como HECHOS"
-correr_marcada "el aceite de caja que no baja del stock" guardar_service "$M" \
+correr_marcada "los renglones de la caja con el «cambiado» del jsonb" guardar_service "$M_PAR" \
+  "/@caja-hecho/s/jsonb_build_object('cambiado', true)/jsonb_build_object()/" R42 "renglones quedaron como HECHOS"
+correr_marcada "el aceite de caja que no baja del stock" guardar_service "$M_PAR" \
   "/@caja-stock-aceite/s/where p.id = p_aceite_producto_id/where p.id is null/" R42 "R42c el stock del ATF a granel quedó en 20"
-correr_marcada "el salto sin piso (entra un 19.999)" guardar_service "$M" \
+correr_marcada "el salto sin piso (entra un 19.999)" guardar_service "$M_PAR" \
   "/@caja-salto/s/between 20000 and/between 1 and/" R42 "R42c un salto de 19.999 km no se rechazó"
-correr_marcada "el salto sin techo (entra un 200.001)" guardar_service "$M" \
+correr_marcada "el salto sin techo (entra un 200.001)" guardar_service "$M_PAR" \
   "/@caja-salto/s/and 200000 then/and 9000000 then/" R42 "R42c un salto de 200.001 km no se rechazó"
-correr_marcada "el piso del salto pasado de rosca (20.000 ya no entra)" guardar_service "$M" \
+correr_marcada "el piso del salto pasado de rosca (20.000 ya no entra)" guardar_service "$M_PAR" \
   "/@caja-salto/s/between 20000 and/between 20001 and/" R42 "R42c un salto de 20.000 km clavados fue rechazado"
-correr_marcada "el techo del salto pasado de rosca (200.000 ya no entra)" guardar_service "$M" \
+correr_marcada "el techo del salto pasado de rosca (200.000 ya no entra)" guardar_service "$M_PAR" \
   "/@caja-salto/s/and 200000 then/and 199999 then/" R42 "R42c un salto de 200.000 km clavados fue rechazado"
 # Las dos que siguen las frena la TABLA (caja_coherente y
 # aceite_tipo_no_vacio), pero con un error que el front no traduce: el
 # bloque las acusa porque el error que llega no es el nombrado.
-correr_marcada "la caja sin kilómetros sin su error nombrado" guardar_service "$M" \
+correr_marcada "la caja sin kilómetros sin su error nombrado" guardar_service "$M_PAR" \
   "/@caja-km/s/p_kilometros is null or p_kilometros < 0/false/" R42 "R42c una caja SIN kilómetros no se rechazó con caja_sin_kilometros"
-correr_marcada "el aceite de una letra sin su error nombrado" guardar_service "$M" \
+correr_marcada "el aceite de una letra sin su error nombrado" guardar_service "$M_PAR" \
   "/@caja-aceite/s/< 2 then/< 0 then/" R42 "R42c una caja con el aceite «x» no se rechazó con aceite_caja_requerido"
 # Sin la rama, la caja cae en la del service y nace como un service sin
 # próximo: la frena service_completo, con el error crudo.
-correr_marcada "guardar_service sin la rama de la caja" guardar_service "$M" \
+correr_marcada "guardar_service sin la rama de la caja" guardar_service "$M_PAR" \
   "s/elsif p_tipo = 'caja' then/elsif p_tipo = 'caja' and false then/" R42 "R42a sin la feature, la caja se rechazó con OTRO error"
 
 echo "── R42d · la edición y el plazo ──"
-correr_marcada "al editar, el «cambiado» del jsonb en un renglón que ya estaba" actualizar_service "$M" \
+correr_marcada "al editar, el «cambiado» del jsonb en un renglón que ya estaba" actualizar_service "$M_PAR" \
   "/@caja-edita-hecho\$/s/cambiado    = true,/cambiado    = coalesce((v_item->>'cambiado')::boolean, true),/" R42 "R42d al editar, 0 de los 2 renglones quedaron como HECHOS"
-correr_marcada "al editar, el «cambiado» del jsonb en un renglón nuevo" actualizar_service "$M" \
+correr_marcada "al editar, el «cambiado» del jsonb en un renglón nuevo" actualizar_service "$M_PAR" \
   "/@caja-edita-hecho-nuevo/s/true,/coalesce((v_item->>'cambiado')::boolean, true),/" R42 "R42d un renglón prendido AL EDITAR no quedó como hecho"
-correr_marcada "la edición sin validar el salto" actualizar_service "$M" \
+correr_marcada "la edición sin validar el salto" actualizar_service "$M_PAR" \
   "/@caja-edita-salto/s/between 20000 and/between 1 and/" R42 "R42d la edición aceptó un salto de 10.000 km"
-correr_marcada "la edición que no escribe el próximo de caja" actualizar_service "$M" \
+correr_marcada "la edición que no escribe el próximo de caja" actualizar_service "$M_PAR" \
   "/@caja-edita-proximo/s/= p_prox_caja_km,/= prox_caja_km,/" R42 "R42d actualizar_service no editó la caja"
-correr_marcada "la edición que no sincroniza los renglones" actualizar_service "$M" \
+correr_marcada "la edición que no sincroniza los renglones" actualizar_service "$M_PAR" \
   "/@caja-edita-sincroniza/s/and si.item_tipo not in (/and false and si.item_tipo not in (/" R42 "R42d la edición no sincronizó los renglones por tipo"
 # Las dos que siguen las frena la tabla, con el error crudo.
-correr_marcada "la edición con el aceite de una letra sin su error nombrado" actualizar_service "$M" \
+correr_marcada "la edición con el aceite de una letra sin su error nombrado" actualizar_service "$M_PAR" \
   "/@caja-edita-aceite/s/< 2 then/< 0 then/" R42 "aceite_tipo_no_vacio"
-correr_marcada "la caja editada por la rama del service" actualizar_service "$M" \
+correr_marcada "la caja editada por la rama del service" actualizar_service "$M_PAR" \
   "s/if v_tipo = 'caja' then/if v_tipo = 'caja' and false then/" R42 "caja_coherente"
 correr_marcada "la caja a 7 días (el plazo de la mecánica que se contagia)" plazo_edicion "$M" \
   "/@plazo-caja/s/interval '24 hours'/interval '7 days'/" R42 "R42d plazo_edicion('caja') es 7 days"

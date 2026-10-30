@@ -116,21 +116,30 @@ function revisarCatalogo(m) {
       R.every((r) => r.frase === r.frase.trim() && !/\n|\s{2}/.test(r.frase))],
     ["los 4 compañeros del service son los que son",
       igual(claves(R.filter((r) => r.companeroDeService)), COMPANEROS)],
+    ["el compañero de la caja es el aceite de caja, y nada más",
+      igual(claves(R.filter((r) => r.companeroDeCaja)), ["aceite_caja"])],
     ["los 2 que se van con la gomería son los que son",
       igual(claves(R.filter((r) => r.soloSinGomeria)), SOLO_SIN_GOMERIA)],
 
     ["sin gomería y suelta se ven los 42",
-      m.renglonesVisibles({ tieneGomeria: false, adjunta: false }).length === 42],
+      m.renglonesVisibles({ tieneGomeria: false, adjuntaA: null }).length === 42],
     ["con gomería se van alineación y rotación (40)", (() => {
-      const v = m.renglonesVisibles({ tieneGomeria: true, adjunta: false });
+      const v = m.renglonesVisibles({ tieneGomeria: true, adjuntaA: null });
       return v.length === 40 && !v.some((r) => SOLO_SIN_GOMERIA.includes(r.clave));
     })()],
     ["en la adjunta se van los 4 compañeros (38)", (() => {
-      const v = m.renglonesVisibles({ tieneGomeria: false, adjunta: true });
+      const v = m.renglonesVisibles({ tieneGomeria: false, adjuntaA: "service" });
       return v.length === 38 && !v.some((r) => COMPANEROS.includes(r.clave));
     })()],
     ["adjunta y con gomería: 36",
-      m.renglonesVisibles({ tieneGomeria: true, adjunta: true }).length === 36],
+      m.renglonesVisibles({ tieneGomeria: true, adjuntaA: "service" }).length === 36],
+    ["adjunta a una CAJA se va solo el aceite de caja (41): batería, frenos y refrigerante se ofrecen", (() => {
+      const v = m.renglonesVisibles({ tieneGomeria: false, adjuntaA: "caja" });
+      return v.length === 41 && !v.some((r) => r.clave === "aceite_caja") &&
+        ["bateria", "liquido_frenos", "refrigerante"].every((c) => v.some((r) => r.clave === c));
+    })()],
+    ["adjunta a una caja y con gomería: 39",
+      m.renglonesVisibles({ tieneGomeria: true, adjuntaA: "caja" }).length === 39],
 
     ["tocar sobre el texto vacío deja la frase sola", m.alternarFrase("", pastillas) === pastillas],
     ["tocar agrega la frase como ÚLTIMA línea",
@@ -185,8 +194,14 @@ if (!fs.existsSync(path.join(RAIZ, ARCHIVO))) {
       [['frase: "Cambio de batería", companeroDeService: true', 'frase: "Cambio de batería"']],
       "los 4 compañeros del service son los que son"],
     ["la adjunta muestra los compañeros",
-      [["!(r.companeroDeService && opts.adjunta)", "true"]],
+      [['!(r.companeroDeService && opts.adjuntaA === "service")', "true"]],
       "en la adjunta se van los 4 compañeros (38)"],
+    ["la adjunta a una caja muestra el aceite de caja",
+      [['!(r.companeroDeCaja && opts.adjuntaA === "caja")', "true"]],
+      "adjunta a una CAJA se va solo el aceite de caja (41): batería, frenos y refrigerante se ofrecen"],
+    ["el aceite de caja deja de ser compañero de la caja",
+      [['frase: "Cambio de aceite de caja", companeroDeService: true, companeroDeCaja: true', 'frase: "Cambio de aceite de caja", companeroDeService: true']],
+      "el compañero de la caja es el aceite de caja, y nada más"],
     ["la gomería no oculta nada",
       [["!(r.soloSinGomeria && opts.tieneGomeria)", "true"]],
       "con gomería se van alineación y rotación (40)"],

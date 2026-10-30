@@ -52,6 +52,11 @@ export type RenglonMecanica = {
   /** Se oculta en la mecánica ADJUNTA a un service: ya está en el cartón
    *  de arriba y no se repite. */
   companeroDeService?: true;
+  /** Se oculta en la mecánica ADJUNTA a un service de CAJA: el cambio de
+   *  aceite de caja ES ese trabajo. Los otros compañeros del service
+   *  (batería, líquido de frenos, refrigerante) no están en el cartón de
+   *  la caja, así que ahí sí se ofrecen. */
+  companeroDeCaja?: true;
 };
 
 // Los 42, en el orden de la pantalla. Las frases van tal cual, con tildes,
@@ -91,7 +96,7 @@ export const RENGLONES_MECANICA: RenglonMecanica[] = [
 
   { clave: "embrague", grupo: "Embrague y caja", etiqueta: "Embrague", frase: "Cambio de kit de embrague" },
   { clave: "caja", grupo: "Embrague y caja", etiqueta: "Caja", frase: "Reparación de caja de cambios" },
-  { clave: "aceite_caja", grupo: "Embrague y caja", etiqueta: "Aceite de caja", frase: "Cambio de aceite de caja", companeroDeService: true },
+  { clave: "aceite_caja", grupo: "Embrague y caja", etiqueta: "Aceite de caja", frase: "Cambio de aceite de caja", companeroDeService: true, companeroDeCaja: true },
   { clave: "homocinetica", grupo: "Embrague y caja", etiqueta: "Homocinética", frase: "Cambio de homocinética" },
   { clave: "fuelle_homocinetica", grupo: "Embrague y caja", etiqueta: "Fuelle", frase: "Cambio de fuelle de homocinética" },
 
@@ -153,15 +158,19 @@ export function alternarFrase(texto: string, frase: string): string {
   return quedan.join("\n").trim();
 }
 
-/** Los renglones que esta pantalla muestra. */
+/** Los renglones que esta pantalla muestra. `adjuntaA` es el tipo del
+ *  trabajo al que la mecánica se adjunta (AnfitrionMecanica de
+ *  lib/trabajos, escrito acá como literal para que la prueba compile este
+ *  archivo solo), o null para la mecánica suelta. */
 export function renglonesVisibles(opts: {
   tieneGomeria: boolean;
-  adjunta: boolean;
+  adjuntaA: "service" | "caja" | null;
 }): RenglonMecanica[] {
   return RENGLONES_MECANICA.filter(
     (r) =>
       !(r.soloSinGomeria && opts.tieneGomeria) &&
-      !(r.companeroDeService && opts.adjunta),
+      !(r.companeroDeService && opts.adjuntaA === "service") &&
+      !(r.companeroDeCaja && opts.adjuntaA === "caja"),
   );
 }
 

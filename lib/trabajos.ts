@@ -70,6 +70,23 @@ export function esTipoTrabajo(valor: unknown): valor is TipoTrabajo {
   return (TIPOS_TRABAJO as readonly unknown[]).includes(valor);
 }
 
+/** Los tipos que pueden llevar una mecánica ADJUNTA al final de su cartón
+ *  («¿Se le hizo algo de mecánica?»): el service desde el 29/09/2026 y el
+ *  service de caja desde el 29/10/2026 (lo pidió un taller de cajas). La
+ *  base lo hace cumplir —la puerta de `p_mecanica` en `guardar_service` y
+ *  el trigger del vínculo—; acá se decide qué cartón ofrece la pregunta y
+ *  qué pantallas buscan la pareja. Una mecánica o un trabajo de gomería no
+ *  llevan adjunta. */
+export const ANFITRIONES_MECANICA = ["service", "caja"] as const;
+
+export type AnfitrionMecanica = (typeof ANFITRIONES_MECANICA)[number];
+
+export function admiteMecanicaAdjunta(
+  tipo: TipoTrabajo,
+): tipo is AnfitrionMecanica {
+  return (ANFITRIONES_MECANICA as readonly TipoTrabajo[]).includes(tipo);
+}
+
 export type FiltrosTrabajos = {
   q?: string;
   sucursal?: string;

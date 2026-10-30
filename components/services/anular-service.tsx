@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Dialog, DialogTrigger, DialogContenido } from "@/components/ui/dialog";
 import { Boton, clasesBoton } from "@/components/ui/boton";
 import { anularService } from "@/app/panel/(tras-onboarding)/services/[serviceId]/actions";
+import { NOMBRE_TRABAJO, type TipoTrabajo } from "@/lib/trabajos";
 
 // La confirmación es explícita porque no hay vuelta atrás: el service
 // anulado desaparece del cartón del cliente y deja de contar para la
@@ -20,9 +21,10 @@ export function AnularService({
   serviceId: string;
   fecha: string;
   patente: string;
-  /** La otra mitad de una carga doble (service + mecánica): no se anula
-   *  con esta, y el mecánico tiene que saberlo antes de confirmar. */
-  pareja?: { href: string; esService: boolean } | null;
+  /** La otra mitad de una carga doble (service o caja + mecánica): no se
+   *  anula con esta, y el mecánico tiene que saberlo antes de confirmar.
+   *  `tipo` es el de la OTRA mitad: la mecánica, o su anfitrión. */
+  pareja?: { href: string; tipo: TipoTrabajo } | null;
 }) {
   const router = useRouter();
   const [abierto, setAbierto] = useState(false);
@@ -59,14 +61,18 @@ export function AnularService({
         {pareja && (
           <p className="mt-3 rounded-md bg-surface px-3.5 py-3 text-ui text-ink-60">
             Este trabajo se cargó junto con{" "}
-            {pareja.esService ? "el service" : "una mecánica"} de la misma
-            visita, que no se anula con este. Si el error es de la visita
-            entera, anulá también{" "}
+            {pareja.tipo === "mecanica"
+              ? "una mecánica"
+              : `el ${NOMBRE_TRABAJO[pareja.tipo]}`}{" "}
+            de la misma visita, que no se anula con este. Si el error es de
+            la visita entera, anulá también{" "}
             <Link
               href={pareja.href}
               className="font-semibold text-ink underline underline-offset-4"
             >
-              {pareja.esService ? "el service" : "la mecánica"}
+              {pareja.tipo === "mecanica"
+                ? "la mecánica"
+                : `el ${NOMBRE_TRABAJO[pareja.tipo]}`}
             </Link>
             .
           </p>
