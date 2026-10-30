@@ -1,5 +1,7 @@
 "use client";
 
+import { ToggleTema } from "@/components/tema/toggle-tema";
+import type { TemaPanel } from "@/lib/tema-panel";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -10,31 +12,58 @@ import {
   IconoPlus,
   IconoMas,
   IconoCandado,
+  IconoTrabajos,
+  IconoCaja,
+  IconoPremio,
+  IconoPresupuesto,
+  IconoDiseno,
+  IconoMensajes,
+  IconoNeumatico,
+  IconoLubricentro,
+  IconoCuenta,
+  IconoQR,
+  IconoAyuda,
+  IconoWhatsapp,
+  IconoSalir,
 } from "@/components/iconos";
 import { urlWhatsappSoporte } from "@/lib/config";
 import { MOTIVO_SUSPENSION } from "@/components/panel/aviso-suspension";
 import { motivoBloqueo } from "@/components/panel/bloqueo-onboarding";
 import { ItemBloqueado } from "@/components/panel/item-bloqueado";
 import type { FeaturePlan } from "@/lib/planes";
-import { LineaLegal } from "@/components/panel/linea-legal";
 
-// Secciones que no entran en la barra: viven en la hoja "Más". `feature` =
-// qué tiene que habilitar el plan para que el item exista. "Ayuda" va al
-// final, y es la única que no lleva candado con el onboarding a medias.
-const SECCIONES_MAS: { href: string; nombre: string; feature?: FeaturePlan }[] = [
-  { href: "/panel/services", nombre: "Trabajos" },
-  { href: "/panel/productos", nombre: "Productos" },
-  { href: "/panel/fidelizacion", nombre: "Fidelización", feature: "premios" },
-  { href: "/panel/presupuestos", nombre: "Presupuestos", feature: "presupuestos" },
-  { href: "/panel/experiencia", nombre: "Diseño de experiencia", feature: "personalizacion_pagina" },
-  { href: "/panel/mensajes", nombre: "Mensajes" },
-  { href: "/panel/sucursales", nombre: "Sucursales" },
-  { href: "/panel/cuenta", nombre: "Mi cuenta" },
+// Secciones que no entran en la barra: viven en la hoja "Más", en el
+// mismo orden y CON LOS MISMOS ÍCONOS que el sidebar (desde el 30/10/2026:
+// antes eran texto pelado, y faltaba Neumáticos). `feature` = qué tiene que
+// habilitar el plan para que el item exista. "Ayuda" va al final, y es la
+// única que no lleva candado con el onboarding a medias.
+const SECCIONES_MAS: {
+  href: string;
+  nombre: string;
+  feature?: FeaturePlan;
+  Icono: typeof IconoInicio;
+}[] = [
+  { href: "/panel/services", nombre: "Trabajos", Icono: IconoTrabajos },
+  { href: "/panel/productos", nombre: "Productos", Icono: IconoCaja },
+  { href: "/panel/fidelizacion", nombre: "Fidelización", feature: "premios", Icono: IconoPremio },
+  { href: "/panel/presupuestos", nombre: "Presupuestos", feature: "presupuestos", Icono: IconoPresupuesto },
+  { href: "/panel/experiencia", nombre: "Diseño de experiencia", feature: "personalizacion_pagina", Icono: IconoDiseno },
+  { href: "/panel/mensajes", nombre: "Mensajes", Icono: IconoMensajes },
+  // Los intervalos del módulo de gomería: estaba en el sidebar y no acá.
+  { href: "/panel/neumaticos", nombre: "Neumáticos", feature: "neumaticos", Icono: IconoNeumatico },
+  { href: "/panel/sucursales", nombre: "Sucursales", Icono: IconoLubricentro },
+  { href: "/panel/cuenta", nombre: "Mi cuenta", Icono: IconoCuenta },
   // Pedir calcos vive adentro de Mi cuenta; en el celular tiene su entrada
   // propia para no obligar a dos toques y un scroll.
-  { href: "/panel/cuenta/calcos", nombre: "Calcos" },
-  { href: "/panel/ayuda", nombre: "Ayuda" },
+  { href: "/panel/cuenta/calcos", nombre: "Calcos", Icono: IconoQR },
+  { href: "/panel/ayuda", nombre: "Ayuda", Icono: IconoAyuda },
 ];
+
+// Un acceso de la hoja: ícono + nombre, media hoja de ancho, 48 px o lo
+// que pida el nombre en dos líneas («Diseño de experiencia», «Ayuda por
+// WhatsApp»): nunca se corta con puntos suspensivos.
+const CLASE_ACCESO =
+  "flex min-h-12 items-center gap-2.5 rounded-md px-3 py-2 text-ui leading-tight transition-colors";
 
 const SIEMPRE_ABIERTAS = new Set(["/panel/ayuda"]);
 
@@ -119,6 +148,7 @@ function ItemBarraBloqueado({
 }
 
 export function BarraMobile({
+  tema,
   cerrarSesion,
   suspendido = false,
   motivoSuspension = MOTIVO_SUSPENSION,
@@ -128,6 +158,7 @@ export function BarraMobile({
   pasosOnboarding = 3,
   desbloqueando = false,
 }: {
+  tema: TemaPanel;
   cerrarSesion: () => Promise<void>;
   suspendido?: boolean;
   /** Por qué está suspendido, con la salida que corresponde (WhatsApp o
@@ -250,50 +281,67 @@ export function BarraMobile({
             type="button"
             aria-label="Cerrar"
             onClick={() => setAbierta(false)}
-            className="absolute inset-0 bg-ink/40"
+            className="absolute inset-0 bg-velo"
           />
-          <div className="absolute inset-x-0 bottom-0 rounded-t-lg bg-base p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-            <nav className="flex flex-col">
-              {secciones.map((s) =>
-                bloqueado && !SIEMPRE_ABIERTAS.has(s.href) ? (
+          {/* LA HOJA (30/10/2026): una grilla de dos columnas con ícono y
+              nombre, en vez de diez renglones de texto que llenaban la
+              pantalla. Son las mismas secciones y los mismos íconos que el
+              sidebar; la que está abierta se marca. Abajo, el modo oscuro y
+              las dos salidas —ayuda por WhatsApp y cerrar sesión— en una
+              fila. Los enlaces legales viven en Mi cuenta. */}
+          <div className="absolute inset-x-0 bottom-0 max-h-[88dvh] overflow-y-auto rounded-t-lg bg-base px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))]">
+            <span aria-hidden className="mx-auto mb-3 block h-1 w-9 rounded-full bg-line" />
+            <nav aria-label="Secciones" className="grid grid-cols-2 gap-2">
+              {secciones.map((s) => {
+                const activa = pathname.startsWith(s.href);
+                return bloqueado && !SIEMPRE_ABIERTAS.has(s.href) ? (
                   <ItemBloqueado
                     key={s.href}
                     motivo={motivo}
-                    className="flex h-11 items-center rounded-md px-3 text-body text-ink-40"
+                    className={`${CLASE_ACCESO} bg-surface/60 text-ink-40`}
                   >
-                    {s.nombre}
-                    <IconoCandado aria-hidden className="ml-auto size-4" />
+                    <s.Icono aria-hidden className="size-5 shrink-0" />
+                    <span className="min-w-0">{s.nombre}</span>
+                    <IconoCandado aria-hidden className="ml-auto size-4 shrink-0" />
                   </ItemBloqueado>
                 ) : (
                   <Link
                     key={s.href}
                     href={s.href}
                     onClick={() => setAbierta(false)}
-                    className="flex h-11 items-center rounded-md px-3 text-body text-ink hover:bg-surface"
+                    aria-current={activa ? "page" : undefined}
+                    className={`${CLASE_ACCESO} ${
+                      activa ? "bg-surface font-semibold text-ink" : "bg-surface/60 text-ink hover:bg-surface"
+                    }`}
                   >
-                    {s.nombre}
+                    <s.Icono aria-hidden className="size-5 shrink-0" />
+                    <span className="min-w-0">{s.nombre}</span>
                   </Link>
-                ),
-              )}
+                );
+              })}
             </nav>
-            <div className="mt-2 border-t border-line pt-2">
-              <a
-                href={urlWhatsappSoporte()}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex h-11 items-center rounded-md px-3 text-body text-ink-60 hover:bg-surface"
-              >
-                Ayuda por WhatsApp
-              </a>
-              <form action={cerrarSesion}>
-                <button
-                  type="submit"
-                  className="flex h-11 w-full items-center rounded-md px-3 text-left text-body text-ink-60 hover:bg-surface"
+            <div className="mt-3 border-t border-line pt-3">
+              <ToggleTema tema={tema} />
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                <a
+                  href={urlWhatsappSoporte()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`${CLASE_ACCESO} bg-surface/60 text-ink-60 hover:bg-surface hover:text-ink`}
                 >
-                  Cerrar sesión
-                </button>
-              </form>
-              <LineaLegal className="px-3 pt-2 pb-1" />
+                  <IconoWhatsapp aria-hidden className="size-5 shrink-0" />
+                  <span className="min-w-0">Ayuda por WhatsApp</span>
+                </a>
+                <form action={cerrarSesion} className="contents">
+                  <button
+                    type="submit"
+                    className={`${CLASE_ACCESO} bg-surface/60 text-left text-ink-60 hover:bg-surface hover:text-ink`}
+                  >
+                    <IconoSalir aria-hidden className="size-5 shrink-0" />
+                    <span className="min-w-0">Cerrar sesión</span>
+                  </button>
+                </form>
+              </div>
             </div>
           </div>
         </div>

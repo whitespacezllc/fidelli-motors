@@ -11,7 +11,7 @@ export function BadgePorLlamar({ cantidad }: { cantidad: number }) {
     <>
       <span
         aria-hidden
-        className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-overdue px-1.5 font-ui text-label font-bold text-white tabular-nums"
+        className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-overdue px-1.5 font-ui text-label font-bold text-base tabular-nums"
       >
         {cantidad > 99 ? "99+" : cantidad}
       </span>

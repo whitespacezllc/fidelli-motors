@@ -586,7 +586,7 @@ function EstadoDeLaOrden({
       <div className="mt-4 flex items-start gap-3 rounded-lg border border-urgente bg-urgente-soft px-4 py-3.5">
         <span
           aria-hidden
-          className="mt-0.5 grid size-[22px] shrink-0 place-items-center rounded-full bg-urgente text-label font-bold text-white"
+          className="mt-0.5 grid size-[22px] shrink-0 place-items-center rounded-full bg-urgente text-label font-bold text-base"
         >
           !
         </span>

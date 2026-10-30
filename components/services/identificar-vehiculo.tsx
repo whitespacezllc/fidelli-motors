@@ -137,7 +137,7 @@ export function IdentificarVehiculo({ marcas }: { marcas: string[] }) {
           <button
             type="button"
             onClick={() => setAltaManual(true)}
-            className="font-semibold text-brand"
+            className="font-semibold text-brand-texto"
           >
             Cargar cliente y vehículo
           </button>

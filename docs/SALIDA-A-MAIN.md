@@ -155,3 +155,33 @@ dependencia directa). La base no cambia, así que no hay «base primero».
       (`?v=1`); WhatsApp cachea la vista previa por su cuenta.
 - [ ] Nada que cargar a mano. La tarjeta se regenera sola una vez por día
       y al guardar en /panel/experiencia.
+
+## K · Service de caja + mecánica en una carga (29/10/2026)
+
+Una migración, `20261029200000_caja_con_mecanica.sql` (#191): el trigger del
+vínculo acepta una caja como destino, `guardar_service` abre la puerta de
+`p_mecanica` a la caja y `actualizar_service` propaga también desde la rama
+de la caja. Firmas iguales, sin datos ni variables. **Base primero, app
+después**, como siempre; el front viejo convive con la base nueva (solo se
+abre una puerta).
+
+- [x] `db push` a dev desde un workdir aislado (29/10, 21:50 UTC-3, 125 → 126).
+      Dev tiene además las cuatro migraciones `20261022*` de finanzas de Grego,
+      que no están en develop ni en prod: el workdir las llevó como archivos
+      (sacados de `origin/feat/facturacion-cimientos`) para que el CLI no las
+      diera por faltantes, y el dry-run listó solo `20261029200000`. No se
+      corrió ningún `migration repair`.
+- [x] `db push` a prod desde su workdir (`cutzedfmxyyxxqfjutru`, 121 → 122),
+      dry-run con una sola migración, `.temp/project-ref` verificado antes.
+- [x] Foto de las dos bases por `db query`: una firma de `guardar_service` y de
+      `actualizar_service`, security invoker, los tres cuerpos con las líneas
+      nuevas, `verificar_seguridad_vistas()` sin filas.
+- [x] PR #191 a develop (`f062397`), con el CI (`db reset`) en verde.
+- [x] Release develop → main (#192, `3fe062f`, 30/10 00:40 UTC).
+- [x] Deploy de Vercel en `main` (Production, `3fe062f`, 30/10 00:41 UTC, status
+      `success`) y humo un minuto después: `/`, `/login`, `/demo`, `/demo/ABC123`
+      y `/blog` en 200; `/panel` y `/fidelli` en 307.
+- [ ] De Santi: probar en el celular con el tenant que lo pidió (caja + «¿Se le
+      hizo algo de mecánica?», guardar, mirar las dos tarjetas y el cartón del
+      cliente). La feature `caja` sigue prendiéndose por tenant desde /fidelli.
+- [ ] Nada que cargar a mano.

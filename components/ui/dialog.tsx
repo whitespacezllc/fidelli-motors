@@ -17,7 +17,7 @@ export function DialogContenido({
 }) {
   return (
     <RadixDialog.Portal>
-      <RadixDialog.Overlay className="fixed inset-0 z-50 bg-ink/40" />
+      <RadixDialog.Overlay className="fixed inset-0 z-50 bg-velo" />
       <RadixDialog.Content
         aria-describedby={undefined}
         className="fixed inset-x-0 bottom-0 z-50 max-h-[94dvh] overflow-y-auto rounded-t-lg bg-base p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] focus:outline-none sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:w-full sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border sm:border-line sm:p-6 sm:shadow-lg"

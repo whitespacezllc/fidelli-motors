@@ -1,3 +1,5 @@
+import { ToggleTema } from "@/components/tema/toggle-tema";
+import { LineaLegal } from "@/components/panel/linea-legal";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -148,7 +150,7 @@ export default async function PaginaCuenta() {
                 href={urlWhatsappSoporte()}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="font-semibold text-brand"
+                className="font-semibold text-brand-texto"
               >
                 escribinos
               </a>{" "}
@@ -156,6 +158,13 @@ export default async function PaginaCuenta() {
             </p>
           </Dato>
         </div>
+      </Bloque>
+
+      {/* El modo del panel es de la PERSONA, no del taller: por eso vive
+          acá, junto a su nombre y su clave, y no en Diseño de experiencia
+          (que es la marca que ve el cliente). También está en la navegación. */}
+      <Bloque titulo="Apariencia">
+        <ToggleTema tema={sesion.tema} variante="bloque" />
       </Bloque>
 
       <Bloque titulo="Tu marca">
@@ -329,7 +338,7 @@ export default async function PaginaCuenta() {
                       href={urlWhatsappSoporte()}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="font-semibold text-brand"
+                      className="font-semibold text-brand-texto"
                     >
                       Escribinos
                     </a>{" "}
@@ -372,7 +381,7 @@ export default async function PaginaCuenta() {
                 href={urlWhatsappSoporte()}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="font-semibold text-brand"
+                className="font-semibold text-brand-texto"
               >
                 Escribinos por WhatsApp
               </a>
@@ -385,6 +394,11 @@ export default async function PaginaCuenta() {
           </p>
         )}
       </Bloque>
+
+      {/* Los dos documentos legales, al pie de la cuenta: es donde se
+          buscan (antes estaban en el pie del sidebar y de la hoja «Más»,
+          que desde el 30/10/2026 son una sola fila). */}
+      <LineaLegal className="justify-center px-1 pt-1" />
     </div>
   );
 }

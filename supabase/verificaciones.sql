@@ -15190,3 +15190,167 @@ end $$;
 drop function r49_postgres();
 drop function r49_como(uuid);
 -- <<< R49
+
+
+-- ============================================================
+-- R50 · El modo oscuro del panel: una preferencia de la persona
+--       (20261030100000)
+--
+-- `usuarios.tema` (claro por defecto, dos valores) se escribe SOLO por
+-- `fijar_mi_tema()`, definer con guarda sobre la fila de auth.uid().
+--   a · el catálogo: la columna con su default y su CHECK por nombre; la
+--       función es definer; `anon` no la ejecuta y `authenticated` sí.
+--   b · como owner: 'oscuro' queda en SU fila y en ninguna otra; 'azul'
+--       y null se rechazan con tema_invalido; un UPDATE directo sobre la
+--       fila de otro no toca nada (usuarios no tiene policy de update);
+--       y vuelve a 'claro'.
+--   c · con el rol puesto y sin sesión (auth.uid() null) contesta
+--       sin_sesion y no toca ninguna fila.
+--   d · como anon, 42501.
+-- Todo en una subtransacción que se deshace (P0050).
+-- ============================================================
+-- >>> R50
+do $$
+declare
+  v_demo   uuid;
+  v_own    uuid;
+  v_super  uuid;
+  v_n      integer;
+  v_def    boolean;
+  v_err    text;
+  v_tema   text;
+begin
+  select id into v_demo  from lubricentros where slug = 'demo';
+  select id into v_own   from usuarios where lubricentro_id = v_demo and rol = 'owner' limit 1;
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  if v_own is null or v_super is null then
+    raise exception 'R50 SIN PISO: falta el owner del demo o el superadmin del seed.';
+  end if;
+
+  -- ---------- a · el catálogo ----------
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'usuarios' and column_name = 'tema'
+      and column_default like '%claro%' and is_nullable = 'NO'
+  ) then
+    raise exception 'R50a falta usuarios.tema, o no nace en claro: un usuario nuevo abriría el panel sin modo.';
+  end if;
+  if not exists (
+    select 1 from pg_constraint where conname = 'usuarios_tema_valido' and conrelid = 'usuarios'::regclass
+  ) then
+    raise exception 'R50a falta el CHECK usuarios_tema_valido: un tema inventado entra por la tabla.';
+  end if;
+  select count(*), bool_or(p.prosecdef) into v_n, v_def
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'fijar_mi_tema';
+  if v_n <> 1 then
+    raise exception 'R50a hay % firmas de fijar_mi_tema (esperaba 1).', v_n;
+  end if;
+  if not v_def then
+    raise exception 'R50a fijar_mi_tema no es SECURITY DEFINER: usuarios no tiene policy de update para el owner, así que nadie podría cambiar su tema.';
+  end if;
+  if has_function_privilege('anon', 'fijar_mi_tema(text)', 'execute') then
+    raise exception 'R50a anon ejecuta fijar_mi_tema.';
+  end if;
+  if not has_function_privilege('authenticated', 'fijar_mi_tema(text)', 'execute') then
+    raise exception 'R50a authenticated no ejecuta fijar_mi_tema: el interruptor no guarda nada.';
+  end if;
+
+  begin
+    -- ---------- b · el owner elige SU tema ----------
+    update usuarios set tema = 'claro' where id in (v_own, v_super);
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform fijar_mi_tema('oscuro');
+    begin
+      perform fijar_mi_tema('azul');
+      raise exception 'R50b_entro';
+    exception when others then
+      if sqlerrm = 'R50b_entro' then
+        raise exception 'R50b fijar_mi_tema aceptó «azul»: el panel se pintaría con un modo que no existe.';
+      end if;
+      if sqlerrm not like '%tema_invalido%' then
+        raise exception 'R50b «azul» se rechazó con otro error: %', sqlerrm;
+      end if;
+    end;
+    begin
+      perform fijar_mi_tema(null);
+      raise exception 'R50b_entro';
+    exception when others then
+      if sqlerrm = 'R50b_entro' then
+        raise exception 'R50b fijar_mi_tema aceptó null.';
+      end if;
+      if sqlerrm not like '%tema_invalido%' then
+        raise exception 'R50b null se rechazó con otro error: %', sqlerrm;
+      end if;
+    end;
+    -- Un UPDATE directo sobre la fila de otro: cero filas y sin error.
+    update usuarios set tema = 'oscuro' where id = v_super;
+    get diagnostics v_n = row_count;
+    if v_n <> 0 then
+      raise exception 'R50b un owner le cambió el tema a otro usuario por UPDATE directo (% fila(s)).', v_n;
+    end if;
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    select tema into v_tema from usuarios where id = v_own;
+    if v_tema <> 'oscuro' then
+      raise exception 'R50b el owner eligió oscuro y su fila quedó en «%».', v_tema;
+    end if;
+    select tema into v_tema from usuarios where id = v_super;
+    if v_tema <> 'claro' then
+      raise exception 'R50b fijar_mi_tema tocó la fila de OTRO usuario (el superadmin quedó en «%»): la guarda de auth.uid() no rige.', v_tema;
+    end if;
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    perform fijar_mi_tema('claro');
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    select tema into v_tema from usuarios where id = v_own;
+    if v_tema <> 'claro' then
+      raise exception 'R50b el owner volvió a claro y su fila quedó en «%».', v_tema;
+    end if;
+
+    -- ---------- c · sin sesión ----------
+    perform set_config('request.jwt.claims', '{}', true);
+    execute 'set local role authenticated';
+    begin
+      perform fijar_mi_tema('oscuro');
+      raise exception 'R50c_entro';
+    exception when others then
+      if sqlerrm = 'R50c_entro' then
+        raise exception 'R50c fijar_mi_tema sin sesión no falló.';
+      end if;
+      if sqlerrm not like '%sin_sesion%' then
+        raise exception 'R50c sin sesión falló con otro error: %', sqlerrm;
+      end if;
+    end;
+    execute 'reset role';
+    if exists (select 1 from usuarios where tema = 'oscuro') then
+      raise exception 'R50c sin sesión, alguna fila quedó en oscuro.';
+    end if;
+
+    -- ---------- d · anon ----------
+    execute 'set local role anon';
+    begin
+      perform fijar_mi_tema('oscuro');
+      raise exception 'R50d_entro';
+    exception
+      when insufficient_privilege then null;
+      when others then
+        if sqlerrm = 'R50d_entro' then
+          raise exception 'R50d anon ejecutó fijar_mi_tema.';
+        end if;
+        raise exception 'R50d anon falló con otro error: %', sqlerrm;
+    end;
+    execute 'reset role';
+
+    raise exception 'rollback_r50' using errcode = 'P0050';
+  exception
+    when sqlstate 'P0050' then
+      execute 'reset role';
+      perform set_config('request.jwt.claims', '{}', true);
+  end;
+end $$;
+-- <<< R50

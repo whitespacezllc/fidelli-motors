@@ -239,7 +239,7 @@ export function FormPresupuesto({
         <button
           type="button"
           onClick={() => setFilas((prev) => [...prev, { ...FILA_VACIA }])}
-          className="mt-2.5 min-h-11 text-ui font-semibold text-brand"
+          className="mt-2.5 min-h-11 text-ui font-semibold text-brand-texto"
         >
           + Renglón
         </button>

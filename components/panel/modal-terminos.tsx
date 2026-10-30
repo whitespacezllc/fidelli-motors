@@ -34,7 +34,7 @@ export function ModalTerminos({ taller }: { taller: string }) {
   return (
     <RadixDialog.Root open>
       <RadixDialog.Portal>
-        <RadixDialog.Overlay className="fixed inset-0 z-50 bg-ink/40" />
+        <RadixDialog.Overlay className="fixed inset-0 z-50 bg-velo" />
         <RadixDialog.Content
           aria-describedby={idDescripcion}
           onEscapeKeyDown={(e) => e.preventDefault()}

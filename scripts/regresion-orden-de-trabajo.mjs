@@ -8,7 +8,7 @@
 //
 // Lo que cubre:
 //   A · El catálogo y los helpers de lib/renglones-mecanica.ts, sin
-//       navegador: 42 renglones, 6 grupos, claves y frases únicas, toda
+//       navegador: 49 renglones, 6 grupos, claves y frases únicas, toda
 //       frase con 5 caracteres o más, los 4 compañeros del service y los 2
 //       que se van con la gomería; alternar, reconocer y resumir.
 //       Y LAS ROTURAS: cada regla se rompe sobre una copia del archivo, se
@@ -88,7 +88,7 @@ function compilar(reemplazos = []) {
 }
 
 const COMPANEROS = ["aceite_caja", "bateria", "liquido_frenos", "refrigerante"];
-const SOLO_SIN_GOMERIA = ["alineacion_balanceo", "rotacion_cubiertas"];
+const SOLO_SIN_GOMERIA = ["alineacion", "balanceo", "rotacion_cubiertas"];
 const GRUPOS = ["Frenos", "Suspensión y dirección", "Motor", "Embrague y caja", "Eléctrico", "General"];
 
 // Cada comprobación con su nombre: la corrida normal espera todas en
@@ -100,7 +100,7 @@ function revisarCatalogo(m) {
   const [pastillas, discos, bujias] = [F("pastillas_delanteras"), F("discos"), F("bujias")];
   const tres = `${pastillas}\n${discos}\n${bujias}`;
   return [
-    ["son 42 renglones", R.length === 42, `hay ${R.length}`],
+    ["son 49 renglones", R.length === 49, `hay ${R.length}`],
     ["son 6 grupos, en el orden de la pantalla", igual([...m.GRUPOS_MECANICA], GRUPOS)],
     ["cada renglón está en un grupo que existe y ningún grupo queda vacío",
       R.every((r) => GRUPOS.includes(r.grupo)) && GRUPOS.every((g) => R.some((r) => r.grupo === g))],
@@ -118,28 +118,34 @@ function revisarCatalogo(m) {
       igual(claves(R.filter((r) => r.companeroDeService)), COMPANEROS)],
     ["el compañero de la caja es el aceite de caja, y nada más",
       igual(claves(R.filter((r) => r.companeroDeCaja)), ["aceite_caja"])],
-    ["los 2 que se van con la gomería son los que son",
+    ["los 3 que se van con la gomería son los que son (alineación y balanceo, separados)",
       igual(claves(R.filter((r) => r.soloSinGomeria)), SOLO_SIN_GOMERIA)],
+    ["la junta de tapa son dos renglones: de cilindros y de válvulas",
+      R.some((r) => r.clave === "junta_tapa" && r.etiqueta === "Junta de tapa de cilindros") &&
+        R.some((r) => r.clave === "junta_tapa_valvulas" && /válvulas/.test(r.frase))],
+    ["los cinco del 30/10 están, en Motor, con tilde y diéresis donde van",
+      ["cadena_distribucion", "tensor_poli_v", "rodillos_poli_v", "retenes_levas", "reten_ciguenal"].every((c) => R.some((r) => r.clave === c && r.grupo === "Motor")) &&
+        R.find((r) => r.clave === "reten_ciguenal").frase === "Cambio de retén de cigüeñal"],
 
-    ["sin gomería y suelta se ven los 42",
-      m.renglonesVisibles({ tieneGomeria: false, adjuntaA: null }).length === 42],
-    ["con gomería se van alineación y rotación (40)", (() => {
+    ["sin gomería y suelta se ven los 49",
+      m.renglonesVisibles({ tieneGomeria: false, adjuntaA: null }).length === 49],
+    ["con gomería se van alineación, balanceo y rotación (46)", (() => {
       const v = m.renglonesVisibles({ tieneGomeria: true, adjuntaA: null });
-      return v.length === 40 && !v.some((r) => SOLO_SIN_GOMERIA.includes(r.clave));
+      return v.length === 46 && !v.some((r) => SOLO_SIN_GOMERIA.includes(r.clave));
     })()],
-    ["en la adjunta se van los 4 compañeros (38)", (() => {
+    ["en la adjunta se van los 4 compañeros (45)", (() => {
       const v = m.renglonesVisibles({ tieneGomeria: false, adjuntaA: "service" });
-      return v.length === 38 && !v.some((r) => COMPANEROS.includes(r.clave));
+      return v.length === 45 && !v.some((r) => COMPANEROS.includes(r.clave));
     })()],
-    ["adjunta y con gomería: 36",
-      m.renglonesVisibles({ tieneGomeria: true, adjuntaA: "service" }).length === 36],
-    ["adjunta a una CAJA se va solo el aceite de caja (41): batería, frenos y refrigerante se ofrecen", (() => {
+    ["adjunta y con gomería: 42",
+      m.renglonesVisibles({ tieneGomeria: true, adjuntaA: "service" }).length === 42],
+    ["adjunta a una CAJA se va solo el aceite de caja (48): batería, frenos y refrigerante se ofrecen", (() => {
       const v = m.renglonesVisibles({ tieneGomeria: false, adjuntaA: "caja" });
-      return v.length === 41 && !v.some((r) => r.clave === "aceite_caja") &&
+      return v.length === 48 && !v.some((r) => r.clave === "aceite_caja") &&
         ["bateria", "liquido_frenos", "refrigerante"].every((c) => v.some((r) => r.clave === c));
     })()],
-    ["adjunta a una caja y con gomería: 39",
-      m.renglonesVisibles({ tieneGomeria: true, adjuntaA: "caja" }).length === 39],
+    ["adjunta a una caja y con gomería: 45",
+      m.renglonesVisibles({ tieneGomeria: true, adjuntaA: "caja" }).length === 45],
 
     ["tocar sobre el texto vacío deja la frase sola", m.alternarFrase("", pastillas) === pastillas],
     ["tocar agrega la frase como ÚLTIMA línea",
@@ -189,22 +195,22 @@ if (!fs.existsSync(path.join(RAIZ, ARCHIVO))) {
       "las frases son únicas al normalizar"],
     ["un renglón de menos",
       [['  { clave: "revision_general", grupo: "General", etiqueta: "Revisión general", frase: "Revisión general" },\n', ""]],
-      "son 42 renglones"],
+      "son 49 renglones"],
     ["la batería deja de ser compañera del service",
       [['frase: "Cambio de batería", companeroDeService: true', 'frase: "Cambio de batería"']],
       "los 4 compañeros del service son los que son"],
     ["la adjunta muestra los compañeros",
       [['!(r.companeroDeService && opts.adjuntaA === "service")', "true"]],
-      "en la adjunta se van los 4 compañeros (38)"],
+      "en la adjunta se van los 4 compañeros (45)"],
     ["la adjunta a una caja muestra el aceite de caja",
       [['!(r.companeroDeCaja && opts.adjuntaA === "caja")', "true"]],
-      "adjunta a una CAJA se va solo el aceite de caja (41): batería, frenos y refrigerante se ofrecen"],
+      "adjunta a una CAJA se va solo el aceite de caja (48): batería, frenos y refrigerante se ofrecen"],
     ["el aceite de caja deja de ser compañero de la caja",
       [['frase: "Cambio de aceite de caja", companeroDeService: true, companeroDeCaja: true', 'frase: "Cambio de aceite de caja", companeroDeService: true']],
       "el compañero de la caja es el aceite de caja, y nada más"],
     ["la gomería no oculta nada",
       [["!(r.soloSinGomeria && opts.tieneGomeria)", "true"]],
-      "con gomería se van alineación y rotación (40)"],
+      "con gomería se van alineación, balanceo y rotación (46)"],
     ["la comparación deja de normalizar",
       [["lineasDe(texto).some((l) => normalizarLinea(l) === buscada)", "lineasDe(texto).some((l) => l === frase)"]],
       "reconoce la línea sin tildes y en minúscula"],
@@ -436,7 +442,7 @@ for (const { vista, patente } of RECORRIDOS) {
   await paso(`${w} · 1 · abrir la mecánica`, async () => {
     await irAlCarton(page, patente, "Mecánica");
     seedConGomeria = (await page.getByRole("button", { name: "Neumáticos", exact: true }).count()) > 0;
-    const esperados = 42 - (seedConGomeria ? 2 : 0);
+    const esperados = 49 - (seedConGomeria ? 3 : 0);
     const grupos = await page.locator("[data-grupo-mecanica]").allTextContents();
     check(`${w} · 1 · hay 6 grupos, en orden`, igual(grupos, GRUPOS), grupos.join(" | ") || "ninguno");
     const claves = await page.locator("[data-renglon]").evaluateAll((els) => els.map((e) => e.dataset.renglon));
@@ -557,7 +563,7 @@ for (const { vista, patente } of RECORRIDOS) {
     await page.getByRole("switch", { name: /Se le hizo algo de mecánica/ }).click();
     await page.waitForSelector("#trabajo");
     const claves = await page.locator("[data-renglon]").evaluateAll((els) => els.map((e) => e.dataset.renglon));
-    const esperados = 38 - (seedConGomeria ? 2 : 0);
+    const esperados = 45 - (seedConGomeria ? 3 : 0);
     check(`${w} · 10 · la adjunta tiene ${esperados} renglones`, claves.length === esperados, `hay ${claves.length}`);
     check(`${w} · 10 · sin batería, líquido de frenos, refrigerante ni aceite de caja`,
       claves.length > 0 && !COMPANEROS.some((c) => claves.includes(c)));

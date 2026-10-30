@@ -172,7 +172,7 @@ export function Checklist({
             <span
               className={`flex size-6.5 shrink-0 items-center justify-center rounded-full border font-brand text-label font-bold ${
                 paso.hecho
-                  ? "border-success bg-success text-white"
+                  ? "border-success bg-success text-base"
                   : "border-ink-40 text-ink-40"
               }`}
             >

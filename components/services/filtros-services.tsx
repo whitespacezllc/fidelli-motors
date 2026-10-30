@@ -118,7 +118,7 @@ export function FiltrosServices({
         <button
           type="button"
           onClick={() => router.replace("/panel/services", { scroll: false })}
-          className="h-11 px-2 text-ui font-semibold text-brand"
+          className="h-11 px-2 text-ui font-semibold text-brand-texto"
         >
           Limpiar filtros
         </button>

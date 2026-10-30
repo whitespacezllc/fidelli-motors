@@ -64,7 +64,7 @@ export function ModalVideo({
       }}
     >
       <RadixDialog.Portal>
-        <RadixDialog.Overlay className="fixed inset-0 z-50 bg-ink/40" />
+        <RadixDialog.Overlay className="fixed inset-0 z-50 bg-velo" />
         <RadixDialog.Content className="fixed inset-x-4 top-1/2 z-50 max-h-[92dvh] -translate-y-1/2 overflow-y-auto rounded-lg border border-line bg-base p-4 shadow-lg focus:outline-none sm:inset-x-auto sm:left-1/2 sm:w-[min(calc(100vw-2rem),52rem)] sm:-translate-x-1/2 sm:p-6">
           <div className="mb-4 flex items-start justify-between gap-4">
             <div className="min-w-0">
