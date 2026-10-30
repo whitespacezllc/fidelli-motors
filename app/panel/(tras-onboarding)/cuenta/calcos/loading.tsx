@@ -1,14 +1,20 @@
 import { CampoGris, Esqueleto, Marco, Pieza } from "@/components/ui/esqueleto";
 import { CabeceraSeccion } from "@/components/panel/cabecera-seccion";
 
-// Mi cuenta → Calcos, en gris: la vuelta a Mi cuenta, la tarjeta del stock
+// Mi cuenta → Calcos, en gris: la cabecera con sus solapas, la tarjeta del stock
 // y del diseño, y el pedido de más calcos.
 export default function CargandoCalcosCuenta() {
   return (
     <Esqueleto className="mx-auto flex max-w-2xl flex-col gap-6">
       <div>
-        <Pieza className="mb-2 h-11 w-24 rounded-md" />
-        <CabeceraSeccion titulo="Calcos" />
+        <CabeceraSeccion titulo="Mi cuenta" />
+        <div className="flex gap-1 border-b border-line">
+          {["w-16", "w-24", "w-24", "w-16"].map((w, i) => (
+            <div key={i} className="flex h-11 items-center px-3">
+              <Pieza className={`h-3.5 ${w}`} />
+            </div>
+          ))}
+        </div>
       </div>
       <Marco className="surface-card flex min-h-[344px] flex-wrap gap-5 p-5">
         <Pieza className="aspect-[5/8] w-40 rounded-md" />

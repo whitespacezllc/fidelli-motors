@@ -100,7 +100,7 @@ export async function armarPagoDelTenant(
   lubricentroId: string,
   cobranza: Cobranza | null,
 ): Promise<Suscripcion> {
-  const [{ data: sub }, { data: orden }, { data: enRevision }] = await Promise.all([
+  const [{ data: sub }, { data: orden }, { data: enRevision }, { data: ultimoPago }] = await Promise.all([
     supabase
       .from("suscripciones")
       // La cuenta de cobro del tenant viaja con la suscripción (20261031100000):
@@ -132,6 +132,15 @@ export async function armarPagoDelTenant(
       .eq("lubricentro_id", lubricentroId)
       .eq("estado", "a_confirmar")
       .order("recibido_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    // El último pago: con la cuenta fija no hay orden que diga «pagada», y
+    // el éxito de la pantalla es el pago que acaba de entrar.
+    supabase
+      .from("pagos")
+      .select("monto, created_at")
+      .eq("lubricentro_id", lubricentroId)
+      .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
   ]);
@@ -227,7 +236,12 @@ export async function armarPagoDelTenant(
   // sin ningún botón para pagarlo. Mientras el reloj diga al día (o no
   // corra) el éxito se queda; cuando vuelva a avisar, vuelve el pago.
   const reclamando = cobranza !== null && cobranza.estado !== "al_dia";
-  const pagada = estadoOrden === "PAID" && !reclamando;
+  // Con la cuenta fija el dueño puede transferir sin haber elegido nada en
+  // la pantalla: el pago entra solo. Un pago de la última media hora es el
+  // éxito que la pantalla tiene que mostrar, haya orden o no.
+  const pagoReciente =
+    ultimoPago != null && Date.now() - new Date(ultimoPago.created_at).getTime() < 30 * 60_000;
+  const pagada = !reclamando && (estadoOrden === "PAID" || (cuenta !== null && pagoReciente));
 
   return {
     tipo: "pago",
@@ -265,7 +279,13 @@ export async function armarPagoDelTenant(
         ? { monto: Number(enRevision.monto), fecha: enRevision.recibido_at.slice(0, 10) }
         : null,
       alDiaHasta: pagada ? sub.vencimiento : null,
-      montoCobrado: pagada && orden ? Number(orden.monto_pagado) : null,
+      montoCobrado: pagada
+        ? estadoOrden === "PAID" && orden
+          ? Number(orden.monto_pagado)
+          : ultimoPago
+            ? Number(ultimoPago.monto)
+            : null
+        : null,
     },
   };
 }

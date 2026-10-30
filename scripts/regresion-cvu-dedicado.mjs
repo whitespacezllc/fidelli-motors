@@ -6,11 +6,12 @@
 //       el alias propuesto; se emite contra el doble y la tarjeta muestra
 //       el alias y el CVU (si el demo ya tiene cuenta de una corrida
 //       anterior, se saltea la emisión y se le da la cuenta al doble).
-//   B · /panel/suscripcion (390 táctil y 1280): mensual, «Quiero pagar» no
-//       llama a Cresium, la tarjeta dice «Transferí exactamente $X» con el
-//       alias fijo; un depósito del monto exacto acredita y la pantalla
-//       pasa sola a «Al día»; otro monto deja el aviso «lo estamos
-//       revisando».
+//   B · /panel/suscripcion (390 táctil y 1280): el mensual viene elegido,
+//       el anual vende el ahorro en pesos, no hay botón —la cuenta fija y
+//       «Transferí exactamente $X» están a la vista—; elegir un período
+//       registra la orden interna sin viajar a Cresium; un depósito del
+//       monto exacto acredita y la pantalla pasa sola a «Al día»; otro
+//       monto deja el aviso «lo estamos revisando».
 //   C · /fidelli: la alerta del hub y la lista «Depósitos a confirmar» de
 //       Cobranzas; acreditar uno a un período y descartar otro con nota.
 //
@@ -138,26 +139,47 @@ try {
   const prepararDemo = () => {
     sql(`update suscripciones set vencimiento = current_date + 5 where lubricentro_id='${DEMO}'`);
     sql(`update cresium_ordenes set estado='CERRADA', actualizado_at=now() where lubricentro_id='${DEMO}' and deposit_address_id is not null and estado <> 'CERRADA'`);
+    // Y un pago de hace menos de media hora es el éxito de la pantalla
+    // (pagoReciente): se lo envejece para volver a ver el selector.
+    sql(`update pagos set created_at = created_at - interval '1 hour' where lubricentro_id='${DEMO}' and created_at > now() - interval '30 minutes'`);
   };
   prepararDemo();
 
   // ── B · La pantalla de pago del dueño ────────────────────────────
-  for (const [nombre, vista] of Object.entries(VISTAS)) {
+  for (const vista of Object.values(VISTAS)) {
     console.log(`── B · /panel/suscripcion a ${vista.width} ──`);
     const { ctx, page, tocar } = await abrir(vista, SESION_OWNER);
     await page.goto(`${BASE}/panel/suscripcion`, { waitUntil: "networkidle" });
     check("sin scroll horizontal", await sinHorizontal(page));
-    await tocar(page.getByRole("button", { name: /^Mensual/ }));
-    const ordenesAntes = Number(sql(`select count(*) from cresium_ordenes where lubricentro_id='${DEMO}'`));
-    await tocar(page.getByRole("button", { name: "Quiero pagar" }));
-    await page.getByRole("heading", { name: /Transferí exactamente/ }).waitFor({ timeout: 20_000 });
+    // Con la cuenta fija no hay botón: el mensual viene elegido, la cuenta
+    // y el monto exacto están a la vista desde el primer render.
+    check("el mensual viene elegido por defecto",
+      (await page.getByRole("button", { name: /^Mensual/ }).getAttribute("aria-pressed")) === "true");
+    const textoAnual = (await page.getByRole("button", { name: /^Anual/ }).textContent()) ?? "";
+    check("el anual vende el ahorro en pesos y «12 meses al precio de»",
+      /Ahorrás ARS/.test(textoAnual) && /12 meses al precio de \d+/.test(textoAnual), textoAnual);
+    check("no hay ningún «Quiero pagar»: la cuenta es fija", (await page.getByRole("button", { name: "Quiero pagar" }).count()) === 0);
     const titulo = await page.getByRole("heading", { name: /Transferí exactamente/ }).textContent();
     check("la tarjeta dice el monto exacto del mensual", titulo.replace(/ /g, " ").includes(new Intl.NumberFormat("es-AR").format(mensual)), titulo);
     check("con el alias fijo del tenant", await page.getByText("fm.demo").isVisible());
     check("y el CVU", await page.getByText(CVU).isVisible());
-    const orden = sql(`select external_id || '|' || estado || '|' || coalesce(deposit_address_id::text,'') from cresium_ordenes where lubricentro_id='${DEMO}' order by created_at desc limit 1`);
-    check("la orden es interna (cvu:…, con la cuenta) y no viajó a Cresium", /^cvu:.*\|NOT_PAID\|[0-9]+$/.test(orden) &&
+    // Elegir el anual cambia el monto exacto a la vista y registra la
+    // elección (la orden interna) sin viajar a Cresium.
+    const ordenesAntes = Number(sql(`select count(*) from cresium_ordenes where lubricentro_id='${DEMO}'`));
+    const numero = (n) => new Intl.NumberFormat("es-AR").format(n).replace(/\./g, "\\.");
+    await tocar(page.getByRole("button", { name: /^Anual/ }));
+    await page.getByRole("heading", { name: new RegExp(`Transferí exactamente ARS ${numero(anual)}`) }).waitFor();
+    let orden = "";
+    for (let i = 0; i < 20 && !orden; i++) {
+      // La anual viva recién creada: la última mensual de la vista anterior
+      // también es «del último minuto», pero quedó CERRADA.
+      orden = sql(`select external_id || '|' || estado || '|' || coalesce(deposit_address_id::text,'') || '|' || periodo from cresium_ordenes where lubricentro_id='${DEMO}' and periodo='anual' and estado='NOT_PAID' and created_at > now() - interval '1 minute' order by created_at desc limit 1`);
+      if (!orden) await page.waitForTimeout(250);
+    }
+    check("la elección quedó como orden interna (cvu:…, con la cuenta, anual) y no viajó a Cresium", /^cvu:.*\|NOT_PAID\|[0-9]+\|anual$/.test(orden) &&
       Number(sql(`select count(*) from cresium_ordenes where lubricentro_id='${DEMO}'`)) === ordenesAntes + 1, orden);
+    await tocar(page.getByRole("button", { name: /^Mensual/ }));
+    await page.getByRole("heading", { name: new RegExp(`Transferí exactamente ARS ${numero(mensual)}`) }).waitFor();
     check("sin scroll horizontal con la tarjeta", await sinHorizontal(page));
     await capturar(page, `pago-esperando-${vista.width}`);
 
@@ -166,6 +188,7 @@ try {
     const r = await cresium.simularDepositoDedicado(CVU, mensual, WEBHOOK);
     check("el webhook del depósito exacto → 200", r.status === 200, String(r.status));
     await page.getByText("Tu suscripción está al día hasta el").waitFor({ timeout: 25_000 });
+    check("el éxito dice lo que entró", await page.getByText(`Recibimos ARS ${new Intl.NumberFormat("es-AR").format(mensual)}`).isVisible());
     const esperado = sql(`select to_char((date '${vencAntes}' + interval '1 month')::date, 'YYYY-MM-DD')`);
     check(`el vencimiento se movió un mes (${esperado})`, sql(`select vencimiento from suscripciones where lubricentro_id='${DEMO}'`) === esperado);
     check("la pantalla pasó sola a «Al día»", await page.getByText("Al día").first().isVisible());

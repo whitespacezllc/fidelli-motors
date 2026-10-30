@@ -108,6 +108,27 @@ igual especificidad gana el último; impreso, todo es claro. Lo vigilan R50,
 contraste de CADA texto visible contra su fondo efectivo en todas las
 pantallas de las dos superficies.
 
+**La pantalla de pago propone el mensual y vende el anual en pesos; con la
+cuenta de cobro no hay botón (30/10/2026).** `/panel/suscripcion` (y la
+cuarta pantalla del onboarding, que es la misma `PantallaPago`): dos
+tarjetas de período —Mensual, elegido por defecto, «se renueva cada 30
+días»; Anual con «Ahorrás $X» y «12 meses al precio de N», calculados
+desde los montos de la BASE (`monto_de_renovacion_en`), nunca con un
+porcentaje escrito a mano—, el desglose del período elegido y, para el
+tenant con cuenta de cobro, la caja «Transferí exactamente $X» con su
+alias y su CVU de siempre, sin «Quiero pagar»: elegir un período registra
+la orden interna sin viajar a Cresium, y el éxito es el pago que acaba de
+entrar (`pagoReciente`, media hora) o la orden PAID. El tenant sin cuenta
+sigue con el pago único: «Quiero pagar» emite el CVU de una sola vez y el
+selector se esconde con la orden abierta. El `concepto` (calcos) no cambia.
+Seleccionado en INK, nunca en rojo. **Mi cuenta son cuatro solapas por
+URL** (`components/cuenta/solapas.tsx`: Cuenta, Plan y pagos, Tu negocio,
+Calcos —esta última es su ruta—): la persona, el contrato, el taller, el
+calco; cada solapa pide a la base solo lo que muestra; el modo oscuro y
+los legales siguen en la primera; la cuenta de cobro, en Plan y pagos. Lo
+vigilan `scripts/regresion-pago-cuenta.mjs` y la sección B de
+`scripts/regresion-cvu-dedicado.mjs`.
+
 **El cartón digital va en versión papel** (la "versión B" del hi-fi): troquel,
 grilla completa con bordes, etiquetas verticales de grupo en el color del tenant,
 los renglones en el orden del cartón físico (los 11 de un auto; los de camión y
@@ -1414,6 +1435,7 @@ node --no-warnings scripts/regresion-calcos-tenant.mjs     # ídem; levanta los 
 node --no-warnings scripts/regresion-calcos-stock.mjs      # ídem; levanta el doble de Resend (el stock, el aviso y el cron)
 node --no-warnings scripts/regresion-cresium-webhook.mjs   # contra next dev: la puerta del webhook, renovación, calcos y el CVU dedicado (su tenant queda)
 node --no-warnings scripts/regresion-cvu-dedicado.mjs      # contra next dev + el seed (Playwright): la cuenta de cobro de punta a punta; levanta el doble de Cresium; deja al demo con cuenta, pagos y libro
+node --no-warnings scripts/regresion-pago-cuenta.mjs       # ídem (sin dobles): la pantalla de pago (mensual por defecto, el anual en pesos) y Mi cuenta en cuatro solapas, a 390 y 1280
 node --no-warnings scripts/regresion-caja.mjs              # contra next dev + el seed (Playwright); prende la feature en el demo local y lo restaura
 node --no-warnings scripts/regresion-caja-mecanica.mjs     # ídem; carga una caja con su mecánica en el ABC 123 del demo y la borra al final
 node --no-warnings scripts/regresion-tema.mjs              # ídem; el modo oscuro: el interruptor y el contraste de cada texto en todas las pantallas (deja a los dos usuarios en claro)
