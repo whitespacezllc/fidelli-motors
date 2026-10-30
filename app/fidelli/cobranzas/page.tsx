@@ -7,6 +7,7 @@ import { ESTADOS_COBRANZA, type EstadoCobranza } from "@/lib/auth/cobranza";
 import { linkDeAviso, esAtencion } from "@/lib/fidelli/atencion";
 import { pesos, ETIQUETA_PERIODO, type Periodo } from "@/lib/fidelli/plan";
 import { formatearFecha } from "@/lib/fechas";
+import { DepositosAConfirmar, type DepositoAConfirmar } from "@/components/fidelli/depositos-a-confirmar";
 
 export const metadata: Metadata = { title: "Cobranzas" };
 
@@ -74,8 +75,14 @@ function cuando(dias: number): string {
 
 export default async function PaginaCobranzas() {
   const supabase = await createClient();
-  const { data } = await supabase.rpc("cobranzas_pendientes", { p_dias: DIAS });
+  const [{ data }, { data: depositosData }] = await Promise.all([
+    supabase.rpc("cobranzas_pendientes", { p_dias: DIAS }),
+    // Los depósitos a la cuenta fija que no se acreditaron solos
+    // (20261031100000): van arriba, porque es plata que ya entró.
+    supabase.rpc("depositos_cresium_pendientes"),
+  ]);
   const filas = (data ?? []) as unknown as Fila[];
+  const depositos = (depositosData ?? []) as unknown as DepositoAConfirmar[];
 
   // ============================================================
   // DOS LISTAS, Y EL PRIMER CORTE ES "NUNCA PAGÓ"
@@ -106,6 +113,12 @@ export default async function PaginaCobranzas() {
         calculado y el mensaje armado. No se envía nada solo: el mensaje tuyo convierte
         mejor que cualquier plantilla.
       </p>
+
+      {depositos.length > 0 && (
+        <div className="mb-8">
+          <DepositosAConfirmar depositos={depositos} />
+        </div>
+      )}
 
       {filas.length === 0 ? (
         // Sin trabajo pendiente se celebra, en verde. Es la regla de copy

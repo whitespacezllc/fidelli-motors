@@ -11,6 +11,8 @@ import {
 import { obtenerSesion } from "@/lib/auth/session";
 import { FormPago } from "./form-pago";
 import { FormOverrides } from "./form-overrides";
+import { FormCvu } from "./form-cvu";
+import { sugerirAliasLibre } from "@/lib/cresium/emision";
 import { ETIQUETA_FEATURE, MODULOS_PAGOS, type FeaturePlan } from "@/lib/planes";
 import { PREFIJOS_MODULO, leerMotivoModulo } from "@/lib/modulos";
 import { haceCuanto, hoyISO } from "@/lib/fechas";
@@ -127,6 +129,10 @@ export async function TabSuscripcion({
   };
 
   const pagos = pagosRes.data ?? [];
+
+  // La cuenta de cobro (20261031100000). Sin cuenta, la tarjeta ofrece
+  // emitirla con un alias propuesto desde el slug, libre en nuestra base.
+  const aliasSugerido = tenant.cresium_cvu ? "" : await sugerirAliasLibre(supabase, tenant.slug);
 
   // El período de trial no está en `pagos` —no se cobró— pero es parte del
   // historial: sin él, la primera fila arranca en el aire. Va desde el
@@ -250,7 +256,47 @@ export async function TabSuscripcion({
         )}
       </section>
 
-      <section className="surface-card w-full overflow-hidden lg:w-[380px] lg:shrink-0">
+      <div className="flex w-full flex-col gap-5 lg:w-[380px] lg:shrink-0">
+      {/* ============ La cuenta de cobro ============
+          El CVU dedicado del tenant (20261031100000): el alias que su dueño
+          deja agendado y el número de cuenta. Se emite UNA vez desde acá
+          (o en el alta); sin cuenta, el tenant cobra por pago único. */}
+      <section className={`surface-card overflow-hidden ${tenant.cresium_cvu ? "" : "border-reward"}`}>
+        <div className="border-b border-line px-4.5 py-3">
+          <h2 className="font-brand text-ui font-bold tracking-[0.04em] text-ink-60 uppercase">
+            Cuenta de cobro
+          </h2>
+        </div>
+        <div className="px-4.5 py-4">
+          {tenant.cresium_cvu && tenant.cresium_alias ? (
+            <dl className="flex flex-col gap-3">
+              <div>
+                <dt className="text-label font-semibold tracking-[0.06em] text-ink-60 uppercase">Alias</dt>
+                <dd className="mt-0.5 font-brand text-body font-bold text-ink tabular-nums">{tenant.cresium_alias}</dd>
+              </div>
+              <div>
+                <dt className="text-label font-semibold tracking-[0.06em] text-ink-60 uppercase">CVU</dt>
+                <dd className="mt-0.5 text-body text-ink tabular-nums break-all">{tenant.cresium_cvu}</dd>
+              </div>
+              <p className="text-label text-ink-60">
+                Emitida {tenant.cresium_alias_asignado_at ? `el ${formatearFecha(tenant.cresium_alias_asignado_at.slice(0, 10))}` : ""}.
+                Es siempre la misma: el pago entra solo cuando transfiere el monto
+                exacto de un período; otro monto queda en Cobranzas para confirmar.
+              </p>
+            </dl>
+          ) : (
+            <>
+              <p className="mb-4 text-ui text-ink-60">
+                Todavía cobra por pago único: una cuenta nueva por cada renovación. Con
+                su cuenta de cobro, el alias es fijo y el pago se acredita solo.
+              </p>
+              <FormCvu lubricentroId={tenant.id} sugerido={aliasSugerido} />
+            </>
+          )}
+        </div>
+      </section>
+
+      <section className="surface-card overflow-hidden">
         <div className="border-b border-line px-4.5 py-3">
           <h2 className="font-brand text-ui font-bold tracking-[0.04em] text-ink-60 uppercase">
             Registrar pago
@@ -274,6 +320,7 @@ export async function TabSuscripcion({
           )}
         </div>
       </section>
+      </div>
     </div>
 
     {/* ============ Los módulos pagos ============

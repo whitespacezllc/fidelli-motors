@@ -1,6 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { estadoEfectivo } from "@/lib/cresium/orden";
+import { estadoEfectivo, estadoEfectivoDedicado } from "@/lib/cresium/orden";
 import type { DatosPago, Renglon } from "@/components/suscripcion/pantalla-pago";
 import { pesos, MESES_DEL_PERIODO, type Periodo } from "@/lib/fidelli/plan";
 import { ETIQUETA_MODULO, MODULOS_PAGOS } from "@/lib/planes";
@@ -100,10 +100,12 @@ export async function armarPagoDelTenant(
   lubricentroId: string,
   cobranza: Cobranza | null,
 ): Promise<Suscripcion> {
-  const [{ data: sub }, { data: orden }] = await Promise.all([
+  const [{ data: sub }, { data: orden }, { data: enRevision }] = await Promise.all([
     supabase
       .from("suscripciones")
-      .select("id, vencimiento, periodo, descuento_pct, planes(nombre)")
+      // La cuenta de cobro del tenant viaja con la suscripción (20261031100000):
+      // si tiene CVU dedicado, la pantalla la muestra siempre, con o sin orden.
+      .select("id, vencimiento, periodo, descuento_pct, planes(nombre), lubricentros(cresium_alias, cresium_cvu)")
       .eq("lubricentro_id", lubricentroId)
       .order("inicio", { ascending: false })
       .order("created_at", { ascending: false })
@@ -116,10 +118,20 @@ export async function armarPagoDelTenant(
     // de los CALCOS bajo el título «Tu suscripción».
     supabase
       .from("cresium_ordenes")
-      .select("alias, cvu, estado, monto, monto_pagado, periodo_hasta, periodo, created_at")
+      .select("alias, cvu, estado, monto, monto_pagado, periodo_hasta, periodo, created_at, deposit_address_id")
       .eq("lubricentro_id", lubricentroId)
       .not("suscripcion_id", "is", null)
       .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    // Un depósito a la cuenta fija que no coincidió con ningún período y lo
+    // está mirando Fidelli: el dueño tiene que saber que su plata llegó.
+    supabase
+      .from("depositos_cresium")
+      .select("monto, recibido_at")
+      .eq("lubricentro_id", lubricentroId)
+      .eq("estado", "a_confirmar")
+      .order("recibido_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
   ]);
@@ -170,10 +182,33 @@ export async function armarPagoDelTenant(
       : null,
   };
 
-  // El estado que hay que creerle, no el que quedó escrito: una orden sin
-  // pagar de hace más de siete días está vencida aunque la fila diga
+  // PostgREST devuelve el embed de muchos-a-uno como objeto; el tipo
+  // generado lo da como array. Se aceptan las dos formas.
+  const rel = sub.lubricentros as unknown;
+  const tenant = (Array.isArray(rel) ? rel[0] : rel) as
+    | { cresium_alias: string | null; cresium_cvu: string | null }
+    | null
+    | undefined;
+  const cuenta =
+    tenant?.cresium_alias && tenant.cresium_cvu
+      ? { alias: tenant.cresium_alias, cvu: tenant.cresium_cvu }
+      : null;
+
+  // El estado que hay que creerle, no el que quedó escrito. Un pago único
+  // sin pagar de hace más de siete días está vencido aunque la fila diga
   // NOT_PAID, porque nadie nos avisa del vencimiento (lib/cresium/orden.ts).
-  const estadoOrden = orden ? estadoEfectivo(orden.estado, orden.created_at) : null;
+  // Una orden INTERNA (cuenta fija) no vence por días: vence cuando el
+  // precio de su período ya no es el que el dueño vio.
+  const dedicada = orden?.deposit_address_id != null;
+  const estadoOrden = orden
+    ? dedicada
+      ? estadoEfectivoDedicado(
+          orden.estado,
+          Number(orden.monto),
+          porPeriodo[orden.periodo as Periodo]?.total ?? null,
+        )
+      : estadoEfectivo(orden.estado, orden.created_at)
+    : null;
   const vencida = estadoOrden === "EXPIRED";
   // CERRADA es NUESTRA palabra (20260926200000): la orden viva de un tenant
   // que Fidelli apagó a mano. No se pinta ni se reusa —el dueño reactivado
@@ -220,9 +255,15 @@ export async function armarPagoDelTenant(
               // porque la columna lo es para las órdenes de calcos.
               periodoHasta: orden.periodo_hasta ?? "",
               periodo: orden.periodo as Periodo,
+              dedicada,
             }
           : null,
       ordenVencida: vencida,
+      motivoVencida: vencida ? (dedicada ? "precio" : "dias") : null,
+      cuenta,
+      enRevision: enRevision
+        ? { monto: Number(enRevision.monto), fecha: enRevision.recibido_at.slice(0, 10) }
+        : null,
       alDiaHasta: pagada ? sub.vencimiento : null,
       montoCobrado: pagada && orden ? Number(orden.monto_pagado) : null,
     },
