@@ -35,7 +35,7 @@ export default async function PaginaEditarPresupuesto({ params }: Props) {
   }
 
   const supabase = await createClient();
-  const [presupuestoRes, sucursalesRes, productosRes] = await Promise.all([
+  const [presupuestoRes, sucursalesRes, productosRes, marcasRes] = await Promise.all([
     supabase
       .from("presupuestos")
       .select(
@@ -56,6 +56,7 @@ export default async function PaginaEditarPresupuesto({ params }: Props) {
       .select("nombre, marca, precio_venta")
       .eq("activo", true)
       .order("nombre"),
+    supabase.from("marcas_vehiculo").select("nombre").eq("activa", true).order("orden"),
   ]);
 
   const p = presupuestoRes.data;
@@ -106,6 +107,7 @@ export default async function PaginaEditarPresupuesto({ params }: Props) {
           nombre: [p.nombre, p.marca].filter(Boolean).join(" · "),
           precio: p.precio_venta,
         }))}
+        marcas={(marcasRes.data ?? []).map((m) => m.nombre)}
         inicial={{
           id: p.id,
           fecha: p.fecha,
