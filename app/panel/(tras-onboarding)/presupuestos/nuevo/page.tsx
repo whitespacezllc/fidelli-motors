@@ -45,7 +45,8 @@ export default async function PaginaNuevoPresupuesto({
   const params = await searchParams;
   const supabase = await createClient();
 
-  const [sucursalesRes, productosRes, clienteRes, vehiculoRes, desdeRes] = await Promise.all([
+  const [sucursalesRes, productosRes, marcasRes, clienteRes, vehiculoRes, desdeRes] =
+    await Promise.all([
     supabase
       .from("sucursales")
       .select("id, nombre")
@@ -56,6 +57,8 @@ export default async function PaginaNuevoPresupuesto({
       .select("nombre, marca, precio_venta")
       .eq("activo", true)
       .order("nombre"),
+    // El catálogo de marcas, para cargar un auto nuevo desde el presupuesto.
+    supabase.from("marcas_vehiculo").select("nombre").eq("activa", true).order("orden"),
     params.cliente
       ? supabase
           .from("clientes")
@@ -147,6 +150,7 @@ export default async function PaginaNuevoPresupuesto({
           nombre: [p.nombre, p.marca].filter(Boolean).join(" · "),
           precio: p.precio_venta,
         }))}
+        marcas={(marcasRes.data ?? []).map((m) => m.nombre)}
       />
     </div>
   );

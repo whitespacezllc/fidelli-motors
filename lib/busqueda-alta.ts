@@ -31,6 +31,9 @@ type Cliente = SupabaseClient<Database>;
 
 export type VehiculoIdentificado = {
   vehiculoId: string;
+  /** De quién es el auto. El alta no lo usa; el presupuesto sí, para
+   *  vincular el cliente y poder fiar/seguir. La RPC ya lo devuelve. */
+  clienteId: string;
   patente: string;
   marca: string | null;
   modelo: string | null;
@@ -90,6 +93,7 @@ export async function buscarVehiculoPorPatente(
   return {
     vehiculo: {
       vehiculoId: data.vehiculo_id,
+      clienteId: data.cliente_id ?? "",
       patente: data.patente ?? normalizada,
       marca: data.marca,
       modelo: data.modelo,
