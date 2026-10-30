@@ -12,9 +12,9 @@
 --     ("de tu bolsillo"). NO es una cuenta del dueño con saldo — eso sería
 --     contabilidad, y queda afuera (regla 6 / «retención, no gestión»).
 --
--- Finanzas no tenía regresión: esta tanda la estrena (R49; R48 ya es de
+-- Finanzas no tenía regresión: esta tanda la estrena (R52; R48 ya es de
 -- patentes vecinas). La invariante central: un egreso personal no ensucia el
--- arqueo del taller. Lo vigila R49 y scripts/regresion-finanzas.sh.
+-- arqueo del taller. Lo vigila R52 y scripts/regresion-finanzas.sh.
 -- ============================================================
 
 

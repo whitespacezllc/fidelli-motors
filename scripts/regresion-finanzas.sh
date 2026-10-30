@@ -1,13 +1,13 @@
 #!/bin/bash
-# La rotura a mano de R51 (regla 13): origen de los movimientos y fondos
-# personales. Finanzas estrena su regresión acá. Cada rotura pone R51 en
+# La rotura a mano de R52 (regla 13): origen de los movimientos y fondos
+# personales. Finanzas estrena su regresión acá. Cada rotura pone R52 en
 # ROJO — una prueba que nunca se vio fallar no existe.
 #
-#   R51a · un egreso PERSONAL no ensucia el taller: el arqueo y los totales
+#   R52a · un egreso PERSONAL no ensucia el taller: el arqueo y los totales
 #          del taller lo excluyen. Se rompe sacándole a resumen_caja el
 #          filtro `fondos = 'taller'` (el arqueo, y el total de hoy).
-#   R51b · los CHECK de categoría/fondos: un valor fuera de la lista no entra.
-#   R51c · vista_movimientos_caja sigue siendo security_invoker (regla 4).
+#   R52b · los CHECK de categoría/fondos: un valor fuera de la lista no entra.
+#   R52c · vista_movimientos_caja sigue siendo security_invoker (regla 4).
 #
 # Corre en transacciones con rollback: no deja rastro. Requiere el stack
 # local levantado con el schema al día (supabase db reset). Otro stack:
@@ -50,26 +50,26 @@ correr_marcada() { # $1 = nombre · $2 = marcador · $3 = migración · $4 = sed
   correr "$1" "$roto" "$5" "$6"
 }
 
-echo "── R51a · el personal no ensucia el taller ──"
+echo "── R52a · el personal no ensucia el taller ──"
 correr_marcada "el arqueo contando el egreso personal" resumen_caja "$M" \
-  "/@arqueo-taller/s/ and e.fondos = 'taller'//" R51 "R51a"
+  "/@arqueo-taller/s/ and e.fondos = 'taller'//" R52 "R52a"
 correr_marcada "los egresos de hoy contando el personal" resumen_caja "$M" \
-  "/@egr-hoy/s/ and fondos = 'taller'//" R51 "R51a"
+  "/@egr-hoy/s/ and fondos = 'taller'//" R52 "R52a"
 
-echo "── R51b · los CHECK de categoría/fondos ──"
+echo "── R52b · los CHECK de categoría/fondos ──"
 correr "el CHECK de fondos borrado" \
-  "alter table egresos drop constraint egreso_fondos_valido;" R51 "R51b"
+  "alter table egresos drop constraint egreso_fondos_valido;" R52 "R52b"
 correr "el CHECK de categoría de egreso borrado" \
-  "alter table egresos drop constraint egreso_categoria_valida;" R51 "R51b"
+  "alter table egresos drop constraint egreso_categoria_valida;" R52 "R52b"
 
-echo "── R51c · la vista security_invoker ──"
+echo "── R52c · la vista security_invoker ──"
 correr "la vista sin security_invoker" \
-  "alter view vista_movimientos_caja set (security_invoker = off);" R51 "R51c"
+  "alter view vista_movimientos_caja set (security_invoker = off);" R52 "R52c"
 
 echo ""
 if [ "$fallas" -eq 0 ]; then
-  echo "✓ R51: la red atrapó las $total roturas."
+  echo "✓ R52: la red atrapó las $total roturas."
 else
-  echo "✗ R51: alguna rotura se escapó (de $total)."
+  echo "✗ R52: alguna rotura se escapó (de $total)."
 fi
 exit "$fallas"
