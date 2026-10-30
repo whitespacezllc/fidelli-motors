@@ -19,6 +19,22 @@
   --color-surface: #F5F5F5;
   --color-base: #FFFFFF;
 
+  /* ---------- Los cuatro del modo oscuro (30/10/2026) ----------
+     Lo que antes era un color fijo y en oscuro tiene que cambiar:
+       fondo        el fondo de la página del panel (era surface/40 sobre
+                    base; en oscuro es lo MÁS oscuro: las tarjetas se
+                    despegan hacia arriba, al revés que en claro)
+       velo         el oscurecimiento detrás de un dialog (era ink/40: con
+                    la tinta blanca del oscuro sería un velo blanco)
+       brillo       el reflejo del esqueleto de carga (era #EDEDED fijo)
+       brand-texto  el rojo cuando es TEXTO y no fondo: sobre grafito
+                    #E01F26 da 3,9:1 y no llega a AA; el botón sigue con
+                    el rojo de marca y el blanco encima (4,8:1) */
+  --color-fondo: #FBFBFB;
+  --color-velo: rgba(10, 10, 10, 0.4);
+  --color-brillo: #EDEDED;
+  --color-brand-texto: #E01F26;
+
   /* ---------- Estados — el rojo no participa ---------- */
   --color-overdue: #B45309;   /* vencido */
   --color-urgente: #D97706;   /* llega esta semana */
@@ -99,6 +115,136 @@
   /* ---------- Movimiento ---------- */
   --default-transition-duration: 140ms;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* ============================================================
+   El modo oscuro del panel — una preferencia de la persona
+   ============================================================
+   Desde el 30/10/2026 cada usuario elige el modo de /panel y /fidelli con
+   un interruptor (usuarios.tema). El layout de la superficie pone
+   `data-theme="oscuro"` en su wrapper y acá se redefinen los tokens de
+   color debajo de ese nodo: las utilidades (`bg-base`, `text-ink`…) los
+   leen por var() y se adaptan solas. Nada de prefers-color-scheme (regla
+   7, también acá): el interruptor es una decisión, la media query no.
+
+   LA ESCALA ES LA DE LA SUPERFICIE DEL CLIENTE (lib/cliente/tema.ts), que
+   ya tenía su oscuro: tinta blanca al 100/72/55 %, línea al 14 %, base
+   #141414 y surface #1D1D1D, y el fondo de página en el grafito #0A0A0A.
+   Los estados suben un escalón de luz para pasar AA sobre grafito (los de
+   claro no llegan: overdue #B45309 da 3,7:1 sobre #141414) y sus fondos
+   suaves son el mismo color disuelto al 16 % en la base: el token sigue
+   significando lo mismo en los dos modos. La marca no cambia: el rojo
+   #E01F26 es identidad y acción y sobre grafito sigue siendo el botón.
+   Medido con el contraste WCAG, sobre #141414:
+     ink-60 9,8   ink-40 6,2   overdue 8,6   urgente 11,0   upcoming 7,3
+     success 7,2  reward 9,6   brand-texto 5,1  (y base sobre cada estado
+     ≥ 7,2: por eso los chips sobre estado llevan text-base, no text-white).
+
+   LOS PAPELES NO SE APAGAN. El cartón, los papeles de la mecánica y las
+   ruedas, el presupuesto y la hoja de calcos llevan `data-theme="claro"`
+   en su raíz, y este bloque vuelve a declarar los tokens de siempre
+   debajo (va DESPUÉS del oscuro: a igual especificidad gana el último).
+   Y en impresión todo es claro, haya o no interruptor. */
+
+/* La variante `oscuro:` de Tailwind, para lo poco que no sale solo de los
+   tokens (el logotipo gris, una imagen con dos versiones). */
+@custom-variant oscuro (&:where([data-theme="oscuro"], [data-theme="oscuro"] *));
+
+/* LOS TOKENS VAN EN EL WRAPPER Y EN EL HTML, los dos. Un dialog de Radix
+   (anular, los productos, los videos, los términos) se monta en un portal
+   colgado de <body>, AFUERA del wrapper: con los tokens solo ahí, el
+   diálogo salía blanco en el panel oscuro —se vio en la primera captura—.
+   Declarados en `html:has(...)`, los portales los heredan; el papel
+   (`data-theme="claro"`) los vuelve a pisar en su propio nodo. */
+[data-theme="oscuro"],
+html:has([data-theme="oscuro"]) {
+  color-scheme: dark;
+  --color-ink: #FFFFFF;
+  --color-ink-60: rgba(255, 255, 255, 0.72);
+  --color-ink-40: rgba(255, 255, 255, 0.55);
+  --color-line: rgba(255, 255, 255, 0.14);
+  --color-surface: #1D1D1D;
+  --color-base: #141414;
+  --color-fondo: #0A0A0A;
+  --color-velo: rgba(0, 0, 0, 0.65);
+  --color-brillo: #262626;
+  --color-brand-soft: #351617;
+  --color-brand-texto: #F04C52;
+  --color-overdue: #F59E0B;
+  --color-urgente: #FBBF24;
+  --color-upcoming: #9CA3AF;
+  --color-success: #2FB868;
+  --color-reward: #E5B425;
+  --color-overdue-soft: #382A13;
+  --color-urgente-soft: #392F17;
+  --color-success-soft: #182E21;
+  --color-reward-soft: #352E17;
+  /* `color` se re-declara a propósito (como en lib/cliente/tema.ts): el
+     body lo computa una vez y los hijos heredan el valor resuelto; pisar
+     solo la variable no alcanza para el texto sin clase de color. */
+  color: var(--color-ink);
+}
+
+[data-theme="claro"] {
+  color-scheme: light;
+  --color-ink: #0A0A0A;
+  --color-ink-60: #4A4A4A;
+  --color-ink-40: #8A8A8A;
+  --color-line: #E4E4E4;
+  --color-surface: #F5F5F5;
+  --color-base: #FFFFFF;
+  --color-fondo: #FBFBFB;
+  --color-velo: rgba(10, 10, 10, 0.4);
+  --color-brillo: #EDEDED;
+  --color-brand-soft: #FDECEC;
+  --color-brand-texto: #E01F26;
+  --color-overdue: #B45309;
+  --color-urgente: #D97706;
+  --color-upcoming: #6B7280;
+  --color-success: #15803D;
+  --color-reward: #CA8A04;
+  --color-overdue-soft: #FEF6EC;
+  --color-urgente-soft: #FEF8EE;
+  --color-success-soft: #EFF9F2;
+  --color-reward-soft: #FDF8E7;
+  color: var(--color-ink);
+}
+
+/* El lienzo de la página (lo que asoma al rebotar el scroll) sigue al
+   panel oscuro. */
+html:has([data-theme="oscuro"]) {
+  background: #0A0A0A;
+}
+
+/* Impreso, todo es papel: el modo oscuro no existe en la hoja. */
+@media print {
+  [data-theme="oscuro"],
+  html:has([data-theme="oscuro"]) {
+    color-scheme: light;
+    --color-ink: #0A0A0A;
+    --color-ink-60: #4A4A4A;
+    --color-ink-40: #8A8A8A;
+    --color-line: #E4E4E4;
+    --color-surface: #F5F5F5;
+    --color-base: #FFFFFF;
+    --color-fondo: #FFFFFF;
+    --color-brand-soft: #FDECEC;
+    --color-brand-texto: #E01F26;
+    --color-overdue: #B45309;
+    --color-urgente: #D97706;
+    --color-upcoming: #6B7280;
+    --color-success: #15803D;
+    --color-reward: #CA8A04;
+    --color-overdue-soft: #FEF6EC;
+    --color-urgente-soft: #FEF8EE;
+    --color-success-soft: #EFF9F2;
+    --color-reward-soft: #FDF8E7;
+    color: var(--color-ink);
+  }
+  html:has([data-theme="oscuro"]) {
+    background: #FFFFFF;
+    color-scheme: light;
+  }
 }
 
 /* ============================================================
@@ -422,7 +568,7 @@
   background: linear-gradient(
     90deg,
     var(--color-surface) 25%,
-    #EDEDED 50%,
+    var(--color-brillo) 50%,
     var(--color-surface) 75%
   );
   background-size: 200% 100%;

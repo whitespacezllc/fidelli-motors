@@ -55,7 +55,7 @@ export function FiltrosProductos({
           aria-pressed={!categoria}
           className={`${CLASE_CHIP} ${
             !categoria
-              ? "border-ink bg-ink font-semibold text-white"
+              ? "border-ink bg-ink font-semibold text-base"
               : "border-line bg-base text-ink-60 hover:bg-surface"
           }`}
         >
@@ -71,7 +71,7 @@ export function FiltrosProductos({
               aria-pressed={activa}
               className={`${CLASE_CHIP} ${
                 activa
-                  ? "border-ink bg-ink font-semibold text-white"
+                  ? "border-ink bg-ink font-semibold text-base"
                   : "border-line bg-base text-ink-60 hover:bg-surface"
               }`}
             >

@@ -25,6 +25,8 @@ import { MOTIVO_SUSPENSION } from "@/components/panel/aviso-suspension";
 import { motivoBloqueo } from "@/components/panel/bloqueo-onboarding";
 import type { FeaturePlan } from "@/lib/planes";
 import { LineaLegal } from "@/components/panel/linea-legal";
+import { ToggleTema } from "@/components/tema/toggle-tema";
+import type { TemaPanel } from "@/lib/tema-panel";
 
 // Los grupos y el orden vienen del hi-fi (pantalla 2 · Inicio — panel del lubri).
 // `feature` = qué tiene que habilitar el plan para que el item exista. La
@@ -93,6 +95,7 @@ const CLASE_ITEM =
   "flex h-11 items-center gap-2.5 rounded-md px-3 text-ui transition-colors";
 
 export function Sidebar({
+  tema,
   lubricentroNombre,
   suspendido = false,
   motivoSuspension = MOTIVO_SUSPENSION,
@@ -102,6 +105,7 @@ export function Sidebar({
   pasosOnboarding = 3,
   desbloqueando = false,
 }: {
+  tema: TemaPanel;
   lubricentroNombre: string;
   suspendido?: boolean;
   /** Por qué está suspendido, dicho con la salida que corresponde (WhatsApp
@@ -140,7 +144,7 @@ export function Sidebar({
     // pantalla desde la que se imprime.
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-line bg-base lg:flex print:hidden">
       <div className="px-5 pt-5 pb-4">
-        <Logo className="h-5 w-auto" priority />
+        <Logo tono="auto" className="h-5 w-auto" priority />
         <p className="mt-0.5 truncate text-ui text-ink-60">{lubricentroNombre}</p>
       </div>
 
@@ -220,8 +224,10 @@ export function Sidebar({
         ))}
       </nav>
 
-      {/* El pie del sidebar, como en el hi-fi: ayuda y salida. */}
+      {/* El pie del sidebar, como en el hi-fi: ayuda y salida; y desde el
+          30/10/2026 el modo oscuro, que es de la persona y no del taller. */}
       <div className="border-t border-line px-4 py-2">
+        <ToggleTema tema={tema} />
         <a
           href={urlWhatsappSoporte()}
           target="_blank"

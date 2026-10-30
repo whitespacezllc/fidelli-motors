@@ -65,6 +65,34 @@ solo en elementos flotantes, radios 4/8/12.
 
 **Áreas táctiles de 44px mínimo.** El mecánico tiene los dedos con aceite.
 
+**El modo oscuro del panel es una elección de la PERSONA, con interruptor;
+los papeles no se apagan (30/10/2026).** Claro por defecto. La preferencia
+vive en `usuarios.tema`, viaja con la sesión y se pinta como
+`data-theme="oscuro"` en el wrapper de `/panel` y de `/fidelli`
+(`data-tema-panel` es la marca que el interruptor busca para cambiarlo en
+el acto); `globals.css` redefine ahí los tokens de color y las utilidades
+se adaptan solas. **Nada de `prefers-color-scheme`**, por la misma razón
+que la regla 7: el interruptor es una decisión, la media query no. La
+escala es la de la superficie del cliente (`lib/cliente/tema.ts`): tinta
+blanca al 100/72/55 %, línea al 14 %, base `#141414`, surface `#1D1D1D`,
+página `#0A0A0A`; los estados suben un escalón de luz para pasar AA sobre
+grafito; la marca no cambia. Lo que un color fijo no puede hacer lo hacen
+cuatro tokens nuevos: `fondo` (la página; en oscuro es lo MÁS oscuro y las
+tarjetas se despegan hacia arriba), `velo` (detrás de un dialog; `bg-ink/40`
+sería un velo blanco), `brillo` (el reflejo del esqueleto) y `brand-texto`
+(el rojo cuando es texto: `#E01F26` sobre grafito da 3,9:1). **Sobre
+`bg-ink` y sobre un estado el texto va en `text-base`, nunca `text-white`**:
+en oscuro la tinta es blanca y un chip blanco sobre blanco no se ve. La
+variante `oscuro:` existe para lo poco que no sale de los tokens (el
+logotipo gris, `<Logo tono="auto">`). **Los papeles llevan
+`data-theme="claro"` en su raíz** —el cartón, los papeles de la mecánica y
+de las ruedas, el presupuesto, la hoja de calcos, la burbuja de WhatsApp de
+Mensajes— y el bloque claro de `globals.css` va DESPUÉS del oscuro, porque a
+igual especificidad gana el último; impreso, todo es claro. Lo vigilan R50,
+`scripts/regresion-tema.sh` y `scripts/regresion-tema.mjs`, que mide el
+contraste de CADA texto visible contra su fondo efectivo en todas las
+pantallas de las dos superficies.
+
 **El cartón digital va en versión papel** (la "versión B" del hi-fi): troquel,
 grilla completa con bordes, etiquetas verticales de grupo en el color del tenant,
 los renglones en el orden del cartón físico (los 11 de un auto; los de camión y
@@ -1264,6 +1292,7 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R48** | Las patentes de los países vecinos (`20261026120000`): los nueve formatos nuevos —Brasil `ABC1D23` / `ABC1234`, Paraguay `ABCD123` / `123ABCD`, Bolivia `1234ABC` / `AB12345`, Chile `ABCD12` / `AB1234` / `ABC12`— entran por el CHECK escritos de cualquier manera (minúsculas, guiones, el punto de la chapa chilena) y se normalizan; `get_carton` encuentra una brasileña; `corregir_patente` acepta una uruguaya y rechaza `ABCDE1`; y lo que quedó afuera a propósito sigue afuera (`AB123`, los formatos chilenos de 2026, una letra y seis dígitos, ocho caracteres, una brasileña a medio tipear) | Alguien volvió a cerrar el formato a los argentinos —y Sassi no puede cargar al cliente brasileño—, o lo abrió a cualquier cosa |
 | **R47** | Las policies preguntan por la sesión una vez por consulta (`20261021230000`): ninguna policy de `public` ni de `storage` llama a `mi_lubricentro_id()`, `soy_superadmin()` o `auth.uid()` a pelo en su `USING` o su `WITH CHECK` —cada llamada va envuelta en un sub-select—, y el chequeo tiene qué mirar (70 policies de `public` o más las llaman) | Una policy nueva o redefinida volvió a la forma vieja: Postgres la evalúa fila por fila, el Inicio vuelve a tardar segundos y a veces no llega, sin ningún error |
 | **R49** | Service de caja + mecánica en UNA carga (`20261029200000`): la pareja nace junta desde la caja —`guardar_service` devuelve la caja; la mecánica queda vinculada a ella con la misma fecha, km, sucursal y `created_at`, su descripción recortada y sus renglones libres; la caja conserva su próximo en `prox_caja_km`, sus renglones como hechos y sus observaciones; la mecánica nace sin próximo de caja ni observaciones; los pendientes nuevos y tildados cuelgan de la caja y la mecánica no los duplica—; como owner de un Basic con la feature caja la carga doble falla con 42501 sin dejar NI LA CAJA, y la caja sola del Basic sigue entrando; sin la feature caja la pareja no entra y no queda nada; la pareja vale 0 con alcance `'services'` y UNA visita con `'todos'` en las dos funciones, y con «Aplicar premio» queda UN canje atado a la caja y el ciclo vuelve a 0; corregir fecha, km y sucursal de la CAJA los copia a la mecánica adjunta, con el plan en Basic la caja se corrige igual y la mecánica queda como estaba, y editar la mecánica no toca la caja; el trigger del vínculo acepta una caja como destino y sigue rechazando un trabajo de gomería; anular la caja no anula la mecánica; y `vista_proximos_caja` proyecta lo mismo para un auto con caja sola y uno con caja + mecánica (y su «último» es la caja) | La carga doble desde la caja dejó media visita guardada, un Basic metió una mecánica por la puerta de la caja, la pareja suma dos al premio, un typo corregido en la caja partió la visita en dos fechas (la rama de la caja tiene su propio `return` y la propagación no la alcanzaba), el canje se ató a la mecánica, una mecánica quedó «cargada con» un trabajo de gomería, o la mecánica adjunta movió la proyección de la caja |
+| **R50** | El modo oscuro del panel, preferencia de la persona (`20261030100000`): `usuarios.tema` existe, nace en claro y tiene su CHECK por nombre; `fijar_mi_tema()` tiene una firma, es definer, `anon` no la ejecuta y `authenticated` sí; como owner, «oscuro» queda en SU fila y en ninguna otra, «azul» y null se rechazan con `tema_invalido`, un UPDATE directo sobre la fila de otro no toca nada, y vuelve a claro; sin sesión contesta `sin_sesion` sin tocar filas; como anon, 42501 | El interruptor no guarda (la función quedó invoker y usuarios no tiene policy de update), un owner le cambia el tema a todos, el panel se pinta con un modo que no existe, o anon escribe en `usuarios` |
 
 Además, fuera del reset, **las roturas a mano** (regla 13):
 
@@ -1288,6 +1317,7 @@ Además, fuera del reset, **las roturas a mano** (regla 13):
 ./scripts/regresion-calcos.sh
 ./scripts/regresion-caja.sh
 ./scripts/regresion-caja-mecanica.sh
+./scripts/regresion-tema.sh
 ./scripts/regresion-adjuntos.sh
 ./scripts/regresion-datos-empresa.sh
 ./scripts/regresion-rls-initplan.sh
@@ -1303,6 +1333,7 @@ node --no-warnings scripts/regresion-calcos-stock.mjs      # ídem; levanta el d
 node --no-warnings scripts/regresion-cresium-webhook.mjs   # contra next dev: la puerta del webhook, renovación y calcos
 node --no-warnings scripts/regresion-caja.mjs              # contra next dev + el seed (Playwright); prende la feature en el demo local y lo restaura
 node --no-warnings scripts/regresion-caja-mecanica.mjs     # ídem; carga una caja con su mecánica en el ABC 123 del demo y la borra al final
+node --no-warnings scripts/regresion-tema.mjs              # ídem; el modo oscuro: el interruptor y el contraste de cada texto en todas las pantallas (deja a los dos usuarios en claro)
 node --no-warnings scripts/regresion-adjuntos.mjs          # ídem; cuelga adjuntos en dos trabajos del demo y los quita (deja un tenant `zza-…`)
 node --no-warnings scripts/regresion-datos-empresa.mjs     # ídem; le carga y le vacía los datos de la empresa al demo y los restaura
 node --no-warnings scripts/regresion-busquedas.mjs         # ídem; seis clientes «Zzbusq» en el demo por psql, restaurados al final (SOLO_A=1: solo la parte sin navegador)
@@ -1475,6 +1506,8 @@ cuatro roturas. **Toca el demo local y lo restaura.**
 
 
 El vigesimotercero rompe R49 (doce roturas) y tiene un compañero con navegador. Es el sprint en que la pareja service + mecánica aprendió a nacer también de un service de caja (`20261029200000`; lo pidió un taller con la caja prendida), y lo que enseñó al escribirse: **la rama de la caja en `actualizar_service` termina en su propio `return`**, así que la propagación de fecha, km y sucursal a la mecánica adjunta (`@propaga-visita`, escrita en la rama del service) no la alcanzaba —corregir la caja partía la visita en dos, sin ningún error—; el bloque va copiado en esa rama (`@propaga-visita-caja`) y la rotura que lo acusa es sacarlo. **Dos pruebas de R42 decían lo contrario de la regla nueva** («una caja no lleva adjunta»: R42b por la tabla y R42c por la función): la de la tabla pasó a ser el contracaso, deshecho enseguida para no mover los contadores de más abajo, y la de la función se fue (la pareja entera la prueba R49a). Las demás: la puerta de `p_mecanica` de vuelta a «solo en un service»; la mecánica adjunta con la fecha de hoy, sin el vínculo, con sus renglones ignorados, «ordenada» con `clock_timestamp()` y con los pendientes reenviados (la misma rama que R38, vista desde la caja); las dos policies sin el gate por tipo (un Basic con la feature caja cuela la mecánica adjunta); las dos funciones del premio de vuelta a contar filas (la pareja vale 2 con `'todos'`); y el trigger del vínculo de vuelta a exigir un service como destino (la pareja no nace: `vinculo_invalido`) y sin exigir nada (una mecánica se cuelga de un trabajo de gomería). **Lo que R38 ya rompe sobre la rama compartida no se repite** —es la misma línea de código—, y el CHECK del vínculo abierto a la caja sigue siendo de R42b. **`guardar_service`, `actualizar_service` y `services_validar_vinculo` viven desde este sprint en `20261029200000`** (copiadas textuales, con tres líneas cambiadas y el bloque nuevo): las muerden de ahí `regresion-visita.sh` y `regresion-caja.sh` (`M_PAR`), y las roturas de R38c y R38h cambiaron su `sed` por la línea nueva. Y una del script viejo: **`regresion-caja.sh` esperaba «de los 4 renglones» y con la diálisis son 5**, así que el patrón ya no cuenta. El compañero es `scripts/regresion-caja-mecanica.mjs`: prende la feature por SQL; en 390 táctil comprueba que el cartón de la caja ofrece «¿Se le hizo algo de mecánica?» (y el de una mecánica suelta no), que el teclado de la adjunta no repite el aceite de caja pero sí ofrece batería, líquido de frenos y refrigerante —que en el cartón de aceite se esconden—, que la previsualización muestra los DOS papeles con el plazo de cada uno y «Confirmar service de caja y mecánica», que el guardado dice «Service de caja y mecánica guardados» con «Ver la mecánica», y que en la base la pareja nació junta; a 1280 abre el detalle de las dos mitades («Misma visita» en las dos direcciones, nombrando el service de caja), el diálogo de anular de cada una, Editar la mecánica (el aviso que manda a editar el service de caja) y Editar la caja (corregir los kilómetros los copia a la mecánica); mira el historial del cliente; y a 360, 390, 820 y 1280 abre la pregunta en una caja sin scroll horizontal. Se vio en rojo contra el front de `develop` (el cartón de la caja no ofrecía la pregunta). **Toca el demo local y lo restaura.**
+
+El vigesimocuarto rompe R50 (cuatro roturas) y tiene un compañero con navegador que es, más que una prueba, un instrumento. Las cuatro: `fijar_mi_tema` como invoker (sin policy de update, el interruptor dejaría de guardar), grantada a `anon`, con la validación sacada —«azul» lo frena igual el CHECK de la tabla pero con OTRO error, que el front no traduce, y el bloque lo acusa por eso; el CHECK borrado, solo, lo ve R50a en el catálogo— y sin la guarda de `auth.uid()` (le cambia el tema a TODOS). El compañero es `scripts/regresion-tema.mjs`: primero rompe ocho reglas estáticas sobre una copia del texto (el bloque claro de `globals.css` borrado o movido ANTES del oscuro, la impresión sin volver a claro, el lienzo que no sigue al panel, un `prefers-color-scheme` colado, un `text-white` sobre `bg-ink` de vuelta, el velo de vuelta a `ink/40`, un papel sin su `data-theme="claro"`); después, con el demo, toca el interruptor del sidebar a 1280 (pinta en el acto, la base guarda, al recargar sale oscuro desde la sesión, el logotipo pasa al gris, el lienzo es grafito y los controles nativos siguen), el de la hoja «Más» a 390 y el de la barra de `/fidelli`; y **mide la legibilidad**: en oscuro, a 1280 y a 390, en las 25 pantallas de `/panel` y las 14 de `/fidelli` (más el diálogo de anular y la hoja «Más»), compara cada texto visible con el fondo efectivo que tiene detrás —apilando los fondos con alfa desde el `html`— y exige AA (4,5:1; 3:1 para los grandes; los controles deshabilitados exentos, como en WCAG). Y mira que el cartón del detalle y el presupuesto sigan claros dentro del panel oscuro, y que en impresión el panel entero vuelva a claro. **Es la red de la próxima pantalla**: una tarjeta nueva con un color fijo se ve acá antes que en el celular de un taller. Se vio en rojo contra el front de `develop` (sin interruptor). **Toca el tema de los dos usuarios del demo y los deja en claro.**
 ⚠ Y DOS DE ESTOS SCRIPTS APUNTAN A MÁS DE UNA MIGRACIÓN, porque
 `estado_cobranza`, `reloj_cobranza` y `crear_lubricentro` se redefinieron en
 migraciones posteriores a las que las crearon. Un script que las extrae del

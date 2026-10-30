@@ -1,5 +1,7 @@
 "use client";
 
+import { ToggleTema } from "@/components/tema/toggle-tema";
+import type { TemaPanel } from "@/lib/tema-panel";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -119,6 +121,7 @@ function ItemBarraBloqueado({
 }
 
 export function BarraMobile({
+  tema,
   cerrarSesion,
   suspendido = false,
   motivoSuspension = MOTIVO_SUSPENSION,
@@ -128,6 +131,7 @@ export function BarraMobile({
   pasosOnboarding = 3,
   desbloqueando = false,
 }: {
+  tema: TemaPanel;
   cerrarSesion: () => Promise<void>;
   suspendido?: boolean;
   /** Por qué está suspendido, con la salida que corresponde (WhatsApp o
@@ -250,7 +254,7 @@ export function BarraMobile({
             type="button"
             aria-label="Cerrar"
             onClick={() => setAbierta(false)}
-            className="absolute inset-0 bg-ink/40"
+            className="absolute inset-0 bg-velo"
           />
           <div className="absolute inset-x-0 bottom-0 rounded-t-lg bg-base p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
             <nav className="flex flex-col">
@@ -277,6 +281,7 @@ export function BarraMobile({
               )}
             </nav>
             <div className="mt-2 border-t border-line pt-2">
+              <ToggleTema tema={tema} />
               <a
                 href={urlWhatsappSoporte()}
                 target="_blank"

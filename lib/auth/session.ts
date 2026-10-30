@@ -1,3 +1,4 @@
+import { aTemaPanel, type TemaPanel } from "@/lib/tema-panel";
 import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -13,6 +14,10 @@ export type Sesion = {
   rol: Rol;
   nombre: string;
   email: string;
+  // El modo del panel, elegido por la persona con el interruptor
+  // (usuarios.tema, 20261030100000). Claro por defecto. Lo pinta el layout
+  // de cada superficie privada como `data-theme`.
+  tema: TemaPanel;
   lubricentroId: string | null;
   lubricentroNombre: string | null;
   // El slug del tenant. Lo mira el gate de términos (el demo está exento
@@ -114,7 +119,10 @@ export const obtenerSesion = cache(async (): Promise<Sesion | null> => {
   // repo ya defiende en Inicio con el `?? []` de `series`, pero acá no hay
   // valor por defecto posible: es una clave del select, no del JSON.
   const CAMPOS = (completo: boolean) =>
-    "id, rol, nombre, email, lubricentro_id, plan_capacidades, " +
+    // `tema` (20261030100000) va SOLO en el select completo, como los campos
+    // calculados: si el deploy llega antes que el push, el segundo intento
+    // no la pide y el panel degrada a claro en vez de desloguear a todos.
+    `id, rol, nombre, email, lubricentro_id, plan_capacidades${completo ? ", tema" : ""}, ` +
     `lubricentros(nombre, slug, activo, onboarding_completado_at, bienvenida_vista_at, pago_presentado_at, premio_omitido_at${completo ? ", reloj_cobranza, aceptaciones_legales" : ""})`;
 
   const primero = await supabase
@@ -144,6 +152,7 @@ export const obtenerSesion = cache(async (): Promise<Sesion | null> => {
     email: string;
     lubricentro_id: string | null;
     plan_capacidades: CapacidadesPlan | null;
+    tema?: string | null;
     lubricentros: {
       nombre: string;
       slug: string;
@@ -175,6 +184,8 @@ export const obtenerSesion = cache(async (): Promise<Sesion | null> => {
     nombre: usuario.nombre,
     email: usuario.email,
     lubricentroId: usuario.lubricentro_id,
+    // El tema del panel de ESTA persona (claro si la columna no vino).
+    tema: aTemaPanel(usuario.tema),
     lubricentroNombre: usuario.lubricentros?.nombre ?? null,
     lubricentroSlug: usuario.lubricentros?.slug ?? null,
     // Un superadmin no tiene tenant: nunca está suspendido.

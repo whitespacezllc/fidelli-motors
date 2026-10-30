@@ -74,7 +74,7 @@ export function RenglonesMecanica({
                     // vecino se corre de fila. Lo mide la prueba.
                     className={`flex min-h-11 items-center rounded-md border text-ui font-semibold whitespace-nowrap transition-colors ${
                       prendido
-                        ? "gap-1.5 border-ink bg-ink pr-4 pl-3 text-white"
+                        ? "gap-1.5 border-ink bg-ink pr-4 pl-3 text-base"
                         : "border-line bg-base px-6 text-ink hover:bg-surface"
                     }`}
                   >
