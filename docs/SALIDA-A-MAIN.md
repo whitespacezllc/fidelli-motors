@@ -185,3 +185,33 @@ abre una puerta).
       hizo algo de mecánica?», guardar, mirar las dos tarjetas y el cartón del
       cliente). La feature `caja` sigue prendiéndose por tenant desde /fidelli.
 - [ ] Nada que cargar a mano.
+
+## L · Renglones de la mecánica, modo oscuro, sidebar y hoja «Más» (30/10/2026)
+
+Tres PRs encadenados (#194, #195, #196) y una migración,
+`20261030100000_tema_del_panel.sql` (#195): `usuarios.tema` (claro por
+defecto, CHECK de dos valores) y `fijar_mi_tema()`, definer con guarda
+sobre la fila de `auth.uid()`. Sin datos ni variables. **Base primero, app
+después**; el front viejo convive con la columna nueva (la sesión la pide
+solo en el select «completo» y degrada a claro si no está).
+
+- [x] `db push` a dev desde el workdir aislado (30/10, 126 → 127; las cuatro
+      migraciones `20261022*` de Grego siguen ahí, intactas).
+- [x] `db push` a prod: lo corrió Santi desde el mismo workdir
+      (`cutzedfmxyyxxqfjutru`, 122 → 123) porque el clasificador de auto mode
+      lo frenó esta vez. Foto por `db query`: la columna nace en claro, el
+      CHECK, la función definer, `anon` sin ejecutar, 0 usuarios en oscuro,
+      `verificar_seguridad_vistas()` sin filas.
+- [x] #193 (docs), #194 (renglones), #195 (modo oscuro) y #196 (sidebar y
+      hoja «Más», retargeteado a develop) mergeados a develop en ese orden,
+      con el CI en verde.
+- [x] Release develop → main (#197, lo mergeó Santi el 30/10 a las 01:59 UTC,
+      `9d3f264`); deploy de Vercel en Production a las 02:00 (status `success`
+      02:19) y humo: `/`, `/login`, `/demo`, `/demo/ABC123` y `/blog` en 200;
+      `/panel` y `/fidelli` en 307.
+- [ ] De Santi: entrar al panel, prender el modo oscuro desde el pie del
+      sidebar (o Mi cuenta → Apariencia) y recorrer; en el celular, abrir
+      «Más» y ver los íconos. Confirmar la ortografía «poli V».
+- [ ] Decisión pendiente: `ink-40` (#8A8A8A) sobre blanco da 3,45:1 en
+      claro; subirlo a #767676 lo deja en AA. No se tocó.
+- [ ] Nada que cargar a mano.
