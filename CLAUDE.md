@@ -126,8 +126,12 @@ la resuelve.
   `lib/trabajos.ts`, y de ahí leen el cartón, la acción y las pantallas que
   buscan la pareja. Nunca como segunda llamada desde la acción: ver la
   regla 22. Lo vigilan R38 (desde un service) y R49 (desde una caja).
-- **La orden de trabajo (01/10/2026).** Los 42 renglones de
-  `lib/renglones-mecanica.ts` son un teclado: escriben líneas en
+- **La orden de trabajo (01/10/2026).** Los 49 renglones de
+  `lib/renglones-mecanica.ts` (42 al nacer; el 30/10/2026 la junta de tapa
+  pasó a ser dos —de cilindros y de válvulas—, alineación y balanceo se
+  separaron en dos, y entraron el tensor y los rodillos de la correa
+  poli V, los retenes de levas y de cigüeñal y la cadena de distribución,
+  a pedido de varios talleres) son un teclado: escriben líneas en
   `trabajo_descripcion` y nada más. No crean filas en `service_items` ni
   tocan `item_tipo`. Un renglón está prendido mientras su línea esté tal
   cual (`tieneFrase`, comparación con `normalizar()`). Los lectores que
