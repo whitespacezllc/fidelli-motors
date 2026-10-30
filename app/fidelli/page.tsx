@@ -63,6 +63,7 @@ export default async function PaginaResumen({
     activacionRes,
     volvieronRes,
     primerTenantRes,
+    depositosRes,
   ] = await Promise.all([
     supabase.rpc("resumen_admin"),
     supabase
@@ -79,7 +80,10 @@ export default async function PaginaResumen({
     // (una reconstrucción que arrancó antes, una foto de prueba que quedó)
     // muestran una plataforma sin nadie, y el gráfico del MRR las ignora.
     supabase.from("lubricentros").select("created_at").order("created_at").limit(1),
+    // Los depósitos a la cuenta fija que esperan una decisión (20261031100000).
+    supabase.rpc("depositos_cresium_pendientes"),
   ]);
+  const depositosAConfirmar = Array.isArray(depositosRes.data) ? depositosRes.data.length : 0;
 
   const resumen = leerResumen(resumenRes.data);
   const pauta = leerResumenPauta(pautaRes.data);
@@ -156,7 +160,7 @@ export default async function PaginaResumen({
         granularidadInicial={granularidad}
       />
 
-      <Alertas r={resumen} />
+      <Alertas r={resumen} depositosAConfirmar={depositosAConfirmar} />
     </div>
   );
 }

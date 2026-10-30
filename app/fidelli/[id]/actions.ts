@@ -9,6 +9,7 @@ import { errorMotivoModulo, motivoDeModuloValido } from "@/lib/modulos";
 import type { EstadoSupresion } from "@/lib/clientes";
 import { guardarEmpresa } from "@/lib/datos-empresa-guardar";
 import type { EstadoEmpresa } from "@/lib/datos-empresa";
+import { emitirCuentaDeCobro } from "@/lib/cresium/emision";
 
 async function exigirSuperadmin() {
   const sesion = await obtenerSesion();
@@ -364,4 +365,32 @@ export async function guardarDatosEmpresaFidelli(
     revalidatePath("/panel", "layout");
   }
   return estado;
+}
+
+
+// ============================================================
+// Emitir la cuenta de cobro (20261031100000)
+//
+// El CVU dedicado del tenant: Cresium lo emite con el alias elegido y la
+// base guarda los tres datos juntos. Las dos fases viven en
+// lib/cresium/emision.ts, compartidas con el alta.
+// ============================================================
+export type EstadoCuenta = { error?: string; ok?: string; alias?: string; cvu?: string };
+
+export async function emitirCvuDeTenant(
+  _prev: EstadoCuenta,
+  formData: FormData,
+): Promise<EstadoCuenta> {
+  await exigirSuperadmin();
+  const lubricentroId = String(formData.get("lubricentro_id") ?? "");
+  const alias = String(formData.get("alias") ?? "");
+  if (!lubricentroId) return { error: MENSAJES.no_existe };
+
+  const supabase = await createClient();
+  const r = await emitirCuentaDeCobro(supabase, lubricentroId, alias);
+  if (!r.ok) return { error: r.error };
+
+  revalidatePath(`/fidelli/${lubricentroId}`);
+  revalidatePath("/fidelli/lubricentros");
+  return { ok: `Cuenta emitida: ${r.alias} · CVU ${r.cvu}.`, alias: r.alias, cvu: r.cvu };
 }

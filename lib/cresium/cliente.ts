@@ -10,18 +10,20 @@ import { DIAS_DE_VIDA_DE_LA_ORDEN } from "@/lib/cresium/orden";
 // de acá, para que la construcción del string viva en un lugar y no en
 // cinco.
 //
-// ⚠ NO HAY ENTORNO DE PRUEBAS. Verificado el 16/09/2026 leyendo la spec
-// entera: `develop`, `sandbox`, `staging` y `environment` aparecen CERO
-// veces, el OpenAPI declara un solo server (`api.cresium.app`) y las
-// credenciales se gestionan en un único lugar. `api.develop.cresium.app`
-// existe y sirve la documentación, pero es otro entorno con su propio
-// registro de partners y responde «Partner not found when finding by
-// apiKey» a una key de la cuenta real.
+// ⚠ NUESTRAS CREDENCIALES SON DE PRODUCCIÓN. Hasta el 30/10/2026 la spec
+// no declaraba ningún entorno de pruebas; desde entonces lista un segundo
+// server, «Sandbox» (`api.develop.cresium.app`), con `POST
+// /v3/sandbox/deposit` para simular un depósito que dispara el webhook de
+// verdad. Pero el sandbox tiene SU registro de partners: a nuestra key le
+// contesta «Partner not found when finding by apiKey» (medido el
+// 30/10/2026). El día que Cresium nos dé una key de sandbox, se carga como
+// `CRESIUM_BASE_URL=https://api.develop.cresium.app` en local y las pruebas
+// de punta a punta pueden correr contra ellos; hasta entonces, el doble.
 //
-// CONSECUENCIA PRÁCTICA: cualquier `POST` de este archivo mueve plata de
-// verdad. Las pruebas van contra el doble local
-// (`scripts/regresion-cresium-orden.mjs`), que levanta un servidor que
-// habla como Cresium y verifica la firma igual que ella.
+// CONSECUENCIA PRÁCTICA: cualquier `POST` de este archivo contra la base
+// por defecto mueve plata de verdad. Las pruebas van contra el doble local
+// (`scripts/doble-cresium.mjs`, que también implementa `/v3/sandbox/deposit`
+// con la misma forma), que habla como Cresium y verifica la firma igual.
 // ============================================================
 
 export type Credenciales = {
@@ -324,6 +326,58 @@ export function esAliasTomado(error: unknown): boolean {
     error.cuerpo.includes("EXISTING_ALIAS") ||
     /alias already taken/i.test(error.cuerpo)
   );
+}
+
+/** El texto que Cresium mandó en el cuerpo del error, para el log. */
+export function cuerpoDe(error: unknown): string {
+  return error instanceof ErrorCresium ? `${error.status} ${error.cuerpo.slice(0, 200)}` : String(error);
+}
+
+// ============================================================
+// EL CVU DEDICADO (20261031100000)
+//
+// Un CVU fijo por tenant: se emite UNA vez con el alias que elige Fidelli,
+// no vence, no tiene monto esperado y recibe todo lo que entra. El webhook
+// de un depósito trae el CVU (no un paymentOrder) y la base acredita por
+// monto exacto. Es lo que reemplaza al pago único de las renovaciones: el
+// pool de cuatro CVUs del pago único cambia de alias con cada orden, y el
+// dueño que dejó el alias agendado transfería al mes siguiente a una
+// cuenta que ya no era suya (28/10/2026).
+//
+// ⚠ ESTO CREA UNA CUENTA REAL en la company. Cresium topa en 300 CVUs
+// dedicados activos y la emisión tiene comisión por transacción: se emite
+// desde /fidelli, a mano, una vez por tenant. Las pruebas van contra el
+// doble (scripts/doble-cresium.mjs).
+// ============================================================
+
+export type CvuDedicado = {
+  /** El id interno de la cuenta en Cresium (depositAddress.id). */
+  id: number;
+  type: "CVU" | "CBU" | "ALIAS";
+  /** El número de CVU, 22 dígitos. Es lo que hay que persistir. */
+  value: string;
+  externalId?: string | null;
+};
+
+/**
+ * Emite el CVU dedicado con el alias pedido. La respuesta trae el número
+ * de CVU en `value` y el id en `id`; el alias no vuelve (es el que se
+ * mandó). Errores con nombre: `INVALID_ALIAS` y `EXISTING_ALIAS`.
+ */
+export async function emitirCvuDedicado(alias: string): Promise<CvuDedicado> {
+  return llamar<CvuDedicado>("POST", "/v3/deposit-address/cvu", { value: alias });
+}
+
+/** Los CVUs dedicados de la company. Solo lectura: sirve para conciliar
+ *  lo que Cresium tiene contra lo que guardamos. */
+export async function listarCvusDedicados(): Promise<CvuDedicado[]> {
+  const r = await llamar<CvuDedicado[] | null>("GET", "/v3/deposit-address/");
+  return Array.isArray(r) ? r : [];
+}
+
+/** ¿El rechazo es «ese alias no cumple el formato»? */
+export function esAliasInvalido(error: unknown): boolean {
+  return error instanceof ErrorCresium && error.cuerpo.includes("INVALID_ALIAS");
 }
 
 /**

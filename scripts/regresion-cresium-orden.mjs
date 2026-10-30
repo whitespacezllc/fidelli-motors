@@ -31,9 +31,9 @@ import fs from "node:fs";
 
 process.env.PUERTO = "4017";
 const { arrancar, parar } = await import("./doble-cresium.mjs");
-const { aliasParaLaOrden, conIntentos, externalIdDelIntento, estadoEfectivo, ordenVencida, periodoHastaDeLaOrden, DIAS_DE_VIDA_DE_LA_ORDEN } =
+const { conIntentos, externalIdDelIntento, externalIdDedicado, esOrdenDedicada, estadoEfectivoDedicado, estadoEfectivo, ordenVencida, periodoHastaDeLaOrden, DIAS_DE_VIDA_DE_LA_ORDEN } =
   await import("../lib/cresium/orden.ts");
-const { aliasSugerido, esAliasValido, ALIAS_LARGO_MAXIMO } =
+const { aliasSugerido, aliasConNumero, esAliasValido, ALIAS_LARGO_MAXIMO } =
   await import("../lib/cresium/alias.ts");
 
 const env = Object.fromEntries(
@@ -178,30 +178,23 @@ try {
   const sub = "11111111-1111-1111-1111-111111111111";
   const octubre = externalIdDelIntento(`${sub}:2026-10-16`, 1);
   const noviembre = externalIdDelIntento(`${sub}:2026-11-16`, 1);
-  const octubreIntento2 = externalIdDelIntento(`${sub}:2026-10-16`, 2);
 
-  // --- El tenant CON alias: el alias no se mueve. Es el punto entero.
-  const fijoOct = aliasParaLaOrden("fm.psm", () => derivado("PSM", octubre));
-  const fijoNov = aliasParaLaOrden("fm.psm", () => derivado("PSM", noviembre));
-  const fijoRe = aliasParaLaOrden("fm.psm", () => derivado("PSM", octubreIntento2));
-
-  check("dos órdenes de PERÍODOS distintos dan el mismo alias",
-        fijoOct.alias === fijoNov.alias, `${fijoOct.alias} vs ${fijoNov.alias}`);
-  check("y el REINTENTO de la misma orden también",
-        fijoOct.alias === fijoRe.alias, `${fijoOct.alias} vs ${fijoRe.alias}`);
-  check("el alias fijo es el del tenant, sin tocarlo", fijoOct.alias === "fm.psm", fijoOct.alias);
-  check("y se declara fijo", fijoOct.fijo === true);
-
-  // --- El tenant SIN alias: nada cambia. Es el caso de los 17 de hoy.
-  const sinOct = aliasParaLaOrden(null, () => derivado("PSM", octubre));
-  const sinNov = aliasParaLaOrden(null, () => derivado("PSM", noviembre));
-  check("sin alias asignado, el alias sale de la orden", sinOct.fijo === false);
-  check("y CAMBIA entre períodos, exactamente como hasta hoy",
-        sinOct.alias !== sinNov.alias, `${sinOct.alias} / ${sinNov.alias}`);
-  check("con la forma de siempre", /^fm\.[a-z0-9]{1,8}\.[0-9a-f]{6}$/.test(sinOct.alias), sinOct.alias);
-  check("una cadena vacía NO cuenta como alias asignado",
-        aliasParaLaOrden("", () => "derivado").fijo === false);
-  check("ni una de solo espacios", aliasParaLaOrden("   ", () => "derivado").fijo === false);
+  // --- La orden INTERNA del CVU dedicado (20261031100000): su referencia no
+  //     viaja a Cresium, lleva el prefijo `cvu:` y el número de intento como
+  //     las demás; y no vence por días, vence cuando el precio cambió.
+  const interna = externalIdDedicado(sub, "2026-10-16");
+  check("la referencia de una orden interna lleva el prefijo cvu:", interna === `cvu:${sub}:2026-10-16`, interna);
+  check("y el segundo intento, el sufijo", externalIdDedicado(sub, "2026-10-16", 2) === `${interna}:2`);
+  check("se reconoce como interna", esOrdenDedicada(interna) && !esOrdenDedicada(octubre));
+  check("una orden interna con el monto de hoy sigue viva", estadoEfectivoDedicado("NOT_PAID", 49000, 49000) === "NOT_PAID");
+  check("con el precio cambiado, vence (el dueño transferiría el monto viejo)", estadoEfectivoDedicado("NOT_PAID", 49000, 52000) === "EXPIRED");
+  check("sin monto de hoy (sin suscripción) no se decide: sigue como está", estadoEfectivoDedicado("NOT_PAID", 49000, null) === "NOT_PAID");
+  check("y una PAID no vence nunca", estadoEfectivoDedicado("PAID", 49000, 52000) === "PAID");
+  // El alias derivado sigue siendo el de TODO pago único (renovación de un
+  // tenant sin cuenta, pedido de calcos): cambia entre períodos.
+  check("el alias derivado CAMBIA entre períodos, exactamente como siempre",
+        derivado("PSM", octubre) !== derivado("PSM", noviembre));
+  check("con la forma de siempre", /^fm\.[a-z0-9]{1,8}\.[0-9a-f]{6}$/.test(derivado("PSM", octubre)), derivado("PSM", octubre));
 
   // --- La sugerencia del formulario, contra los slugs reales y el borde.
   //     El techo NO es 29 (`lubricentro-y-gomeria-el-colo`): slug_estado()
@@ -222,6 +215,25 @@ try {
           `largo ${propuesto.length}, válido ${esAliasValido(propuesto)}`);
   }
   check("un slug vacío no sugiere nada", aliasSugerido("") === "");
+  // La regla del 30/10/2026: las palabras genéricas se van si queda nombre,
+  // entran palabras enteras mientras quepan, y solo una palabra que no
+  // entra sola se corta.
+  for (const [slug, esperado] of [
+    ["lubricentro-el-garage", "fm.elgarage"],
+    ["pg-taller-lubricentro", "fm.pgtaller"],
+    ["shaddai-mecanica-general", "fm.shaddaigeneral"],
+    ["lubricentro-y-gomeria-el-colo", "fm.gomeriaelcolo"],
+    ["capuzzi-neumaticos-y-servicios", "fm.capuzzineumaticos"],
+    ["loprestimotorsport", "fm.loprestimotorspor"],
+    ["lubricantes-de-sa", "fm.lubricantesdesa"],
+    ["f-f-lubricentro", "fm.fflubricentro"],
+    ["psm", "fm.psm"],
+  ]) {
+    check(`«${slug}» → ${esperado}`, aliasSugerido(slug) === esperado, aliasSugerido(slug));
+  }
+  check("con número, para el que choca", aliasConNumero("fm.shaddai", 2) === "fm.shaddai2");
+  check("el número entra aunque el alias esté en el máximo",
+        aliasConNumero("fm.capuzzineumaticos", 2) === "fm.capuzzineumatico2" && aliasConNumero("fm.capuzzineumaticos", 2).length === 20);
   // El camino viejo BORRA los acentos («Gomería» → «Gomera»); la sugerencia
   // los translitera. Es la diferencia que no se puede descubrir después de
   // asignar: un alias es lo que alguien tipea en su home banking.

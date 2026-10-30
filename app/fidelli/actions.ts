@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { ALIAS_FORMATO, esEstadoAlias, type EstadoAlias } from "@/lib/cresium/alias";
+import { emitirCuentaDeCobro, sugerirAliasLibre } from "@/lib/cresium/emision";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { obtenerSesion } from "@/lib/auth/session";
@@ -51,11 +52,11 @@ const MENSAJES: Record<string, string> = {
     "Se guardaron los datos de la marca pero no la suscripción. Volvé a abrir la ficha y revisá el plan.",
   // El candado del sprint del alias: no es un error del que carga el alta,
   // es una espera. El mensaje lo dice sin códigos y sin culpar a nadie.
-  alias_sin_confirmar:
-    "Todavía no asignamos alias: falta que Cresium confirme el formato y el tope de cambios. El lubricentro se cobra igual, con el alias que se genera en cada orden.",
+  alias_sin_cvu:
+    "El alias se asigna junto con la cuenta de cobro, desde la ficha: el alta ya no lo trae.",
   alias_ya_asignado:
-    "Este lubricentro ya tiene alias, y el alias no se cambia: es el que su dueño dejó cargado en el home banking.",
-  alias_vacio: "Escribí el alias, o dejalo vacío para asignarlo después.",
+    "Este lubricentro ya tiene su cuenta de cobro, y no se cambia: es la que su dueño deja agendada en el home banking.",
+  alias_vacio: "Escribí el alias de la cuenta.",
   alias_largo: ALIAS_FORMATO,
   alias_formato: ALIAS_FORMATO,
   // Suspender con motivo (20260922201000) y el origen (20260922200000).
@@ -136,19 +137,6 @@ export async function verificarAlias(alias: string): Promise<EstadoAlias> {
   return data;
 }
 
-/**
- * ¿Ya se pueden asignar alias?
- *
- * Es `alias_confirmado_por_cresium()`, que hoy devuelve false porque faltan
- * el largo máximo, el formato exacto y el tope de cambios. Mientras sea
- * false el wizard no muestra el campo: un campo que el servidor va a
- * rechazar siempre es peor que ningún campo.
- */
-export async function aliasHabilitado(): Promise<boolean> {
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("alias_confirmado_por_cresium");
-  return !error && data === true;
-}
 
 // ============================================================
 // La invitación del owner — la fase 2, y la única que usa service_role
@@ -190,11 +178,6 @@ export type DatosAlta = {
   planId: string;
   periodo: Periodo;
   descuentoPct: number;
-  /** El alias elegido, o "" si el campo no se mostró (que es el caso
-   *  mientras Cresium no confirme el formato). Cadena vacía viaja como
-   *  null a la base y el tenant nace sin alias, cobrando por el camino de
-   *  siempre. */
-  alias: string;
   /** De dónde vino (docs/METRICAS.md § 1). Obligatorio en el wizard; se
    *  fija DESPUÉS de crear el tenant, fuera de su transacción, como la
    *  invitación: si falla, el tenant queda creado y la pantalla lo dice. */
@@ -216,6 +199,13 @@ export type ResultadoAlta = {
     // invitación: puede fallar con el tenant ya creado.
     origen: "guardado" | "fallo";
     motivoOrigen?: string;
+    /** La cuenta de cobro (20261031100000): la tercera fase, después de la
+     *  invitación. Si falla, el tenant cobra por pago único y la cuenta se
+     *  emite desde la ficha. */
+    cuenta: "emitida" | "fallo";
+    alias?: string;
+    cvu?: string;
+    motivoCuenta?: string;
   };
 };
 
@@ -256,10 +246,6 @@ export async function altaDeLubricentro(
     p_plan_id: datos.planId,
     p_periodo: datos.periodo,
     p_descuento_pct: datos.descuentoPct,
-    // `undefined` y no `null`: el parámetro tiene default en SQL, así que
-    // omitirlo es lo que lo deja en null. Mandar null explícito sería lo
-    // mismo para la base, pero el tipo generado no lo admite.
-    p_alias: datos.alias?.trim().toLowerCase() || undefined,
   });
 
   if (error || !id) {
@@ -286,6 +272,15 @@ export async function altaDeLubricentro(
   // ---------- Fase 2: la invitación ----------
   const motivo = await enviarInvitacion(id, ownerNombre, ownerEmail);
 
+  // La tercera fase: la cuenta de cobro en Cresium. Otra llamada HTTP, fuera
+  // de la transacción, como la invitación: si falla, el tenant queda creado
+  // y cobra por pago único hasta que se emita desde la ficha.
+  const aliasLibre = await sugerirAliasLibre(supabase, slug);
+  const cuenta = aliasLibre
+    ? await emitirCuentaDeCobro(supabase, id, aliasLibre)
+    : { ok: false as const, error: "No se pudo proponer un alias libre a partir del slug." };
+  revalidatePath(`/fidelli/${id}`);
+
   return {
     creado: {
       id,
@@ -296,6 +291,10 @@ export async function altaDeLubricentro(
       motivo: motivo ?? undefined,
       origen: errorOrigen ? "fallo" : "guardado",
       motivoOrigen: errorOrigen ? traducir(errorOrigen.message) : undefined,
+      cuenta: cuenta.ok ? "emitida" : "fallo",
+      alias: cuenta.ok ? cuenta.alias : undefined,
+      cvu: cuenta.ok ? cuenta.cvu : undefined,
+      motivoCuenta: cuenta.ok ? undefined : cuenta.error,
     },
   };
 }
