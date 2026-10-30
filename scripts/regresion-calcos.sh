@@ -140,6 +140,9 @@ M_PAGO=supabase/migrations/20261003200000_calcos_pago.sql
 # sacan de este archivo. Sacada del anterior, reinstalaría una versión sin
 # la clave nueva.
 M_STOCK=supabase/migrations/20261003210000_calcos_stock.sql
+# acreditar_deposito_cresium() se redefinió en 20261031100000 (la rama del CVU
+# dedicado): las roturas de la rama de calcos la muerden de ahí.
+M_CVU=supabase/migrations/20261031100000_cvu_dedicado.sql
 
 bloque() { awk "/^-- >>> $1\$/,/^-- <<< $1\$/" "$2"; }
 
@@ -394,21 +397,21 @@ done
 echo "── R40e · la trampa: la rama de calcos antes del cast ──"
 # Sin la rama, la referencia `calcos:<uuid>` llega al cast de la renovación:
 # el error es el de Postgres, crudo, que es exactamente el 500 del webhook.
-correr_marcada "la rama de calcos sacada: el cast a uuid explota con «calcos»" acreditar_deposito_cresium "$M_PAGO" \
+correr_marcada "la rama de calcos sacada: el cast a uuid explota con «calcos»" acreditar_deposito_cresium "$M_CVU" \
   "/@rama_calcos/s/if v_external like 'calcos:%' then/if false then/" R40 "invalid input syntax for type uuid"
-correr_marcada "el uuid del encargo casteado sin mirarle la forma" acreditar_deposito_cresium "$M_PAGO" \
+correr_marcada "el uuid del encargo casteado sin mirarle la forma" acreditar_deposito_cresium "$M_CVU" \
   "/@uuid_de_calcos/s/if v_ref ~\* '[^']*' then/if true then/" R40 "R40e EL WEBHOOK EXPLOTA"
 
 echo "── R40b · c · d · h · lo que el webhook hace con un pedido ──"
-correr_marcada "el pago que no guarda la transacción" acreditar_deposito_cresium "$M_PAGO" \
+correr_marcada "el pago que no guarda la transacción" acreditar_deposito_cresium "$M_CVU" \
   "/@paga_calcos/s/, cresium_transaccion_id = v_tx//" R40 "R40b EL PAGO NO DEJÓ"
-correr_marcada "la rama de calcos «unificada»: escribe una fila en pagos" acreditar_deposito_cresium "$M_PAGO" \
+correr_marcada "la rama de calcos «unificada»: escribe una fila en pagos" acreditar_deposito_cresium "$M_CVU" \
   "s/update cresium_eventos set procesado_at = now(), motivo = 'acreditado (pedido de calcos)'/insert into pagos (lubricentro_id, suscripcion_id, registrado_por, origen, cresium_transaccion_id, periodo_desde, periodo_hasta, monto, fecha_pago) select v_enc.lubricentro_id, su.id, null, 'cresium', v_tx, current_date, current_date + 30, v_pagado, current_date from suscripciones su where su.lubricentro_id = v_enc.lubricentro_id limit 1; update cresium_eventos set procesado_at = now(), motivo = 'acreditado (pedido de calcos)'/" R40 "R40b EL PAGO DE UN PEDIDO DE CALCOS ESCRIBIÓ"
-correr_marcada "la idempotencia de calcos sacada" acreditar_deposito_cresium "$M_PAGO" \
+correr_marcada "la idempotencia de calcos sacada" acreditar_deposito_cresium "$M_CVU" \
   "/@idempotencia_calcos/s/elsif v_enc.cresium_transaccion_id = v_tx then/elsif false then/" R40 "R40c"
-correr_marcada "un PARTIAL paga el pedido" acreditar_deposito_cresium "$M_PAGO" \
+correr_marcada "un PARTIAL paga el pedido" acreditar_deposito_cresium "$M_CVU" \
   "/@parcial_calcos/s/elsif v_estado is distinct from 'PAID' then/elsif false then/" R40 "R40d"
-correr_marcada "el webhook revive cualquier estado" acreditar_deposito_cresium "$M_PAGO" \
+correr_marcada "el webhook revive cualquier estado" acreditar_deposito_cresium "$M_CVU" \
   "/@estados_que_paga/s/elsif v_enc.estado not in ('pendiente_pago', 'vencido') then/elsif false then/" R40 "R40h"
 
 echo "── R40g · el vencimiento ──"
@@ -420,7 +423,7 @@ correr_marcada "el vencimiento que se lleva lo que no está sin pagar" vencer_en
   "/@vence_solo_sin_pagar/s/where estado = 'pendiente_pago'/where estado <> 'entregado'/" R40 "R40g VENCIÓ UN PEDIDO QUE NO ESTABA SIN PAGAR"
 correr_marcada "el vencimiento de un tenant que vence el de todos" vencer_encargos_calcos "$M_PAGO" \
   "/@vence_del_tenant/s/and (p_lubricentro_id is null or lubricentro_id = p_lubricentro_id);/;/" R40 "R40g vencer_encargos_calcos(tenant)"
-correr_marcada "el webhook que no acredita un pedido vencido" acreditar_deposito_cresium "$M_PAGO" \
+correr_marcada "el webhook que no acredita un pedido vencido" acreditar_deposito_cresium "$M_CVU" \
   "/@estados_que_paga/s/not in ('pendiente_pago', 'vencido')/not in ('pendiente_pago')/" R40 "R40g EL WEBHOOK NO ACREDITÓ"
 correr_marcada "vencido → pagado agregado a la tabla de avanzar_encargo_calcos" avanzar_encargo_calcos "$M" \
   "/@t_pagado/s/('pagado',         'en_produccion', false),/('pagado', 'en_produccion', false), ('vencido', 'pagado', false),/" R40 "R40g UN PEDIDO VENCIDO PASÓ"

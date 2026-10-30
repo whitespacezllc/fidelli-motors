@@ -5,13 +5,6 @@ import Link from "next/link";
 import { SLUG_MAXIMO, avisoSlugQr, slugSugerido } from "@/lib/texto";
 import { DOMINIO_SITIO } from "@/lib/seo";
 import { IconoAviso } from "@/components/iconos";
-import {
-  ALIAS_FORMATO,
-  ALIAS_LARGO_MAXIMO,
-  aliasSugerido,
-  esAliasValido,
-  type EstadoAlias,
-} from "@/lib/cresium/alias";
 import { Boton, clasesBoton } from "@/components/ui/boton";
 import { CamposPlan, type ValoresPlan } from "@/components/fidelli/campos-plan";
 import {
@@ -22,7 +15,6 @@ import {
 } from "@/components/fidelli/estilos";
 import {
   altaDeLubricentro,
-  verificarAlias,
   verificarSlug,
   type DatosAlta,
   type EstadoSlug,
@@ -74,35 +66,7 @@ const VEREDICTO: Record<EstadoSlug, { texto: (s: string) => string; clase: strin
   },
 };
 
-// Lo que dice el campo del alias. Ojo con "disponible": el veredicto sale
-// SOLO de nuestra base —Cresium no expone ninguna consulta de
-// disponibilidad— así que la frase no puede prometer que Cresium lo vaya a
-// dar. Un `EXISTING_ALIAS` descubierto después es un alias que el tenant ya
-// vio y ya no va a tener, y eso es exactamente lo que no queremos.
-const VEREDICTO_ALIAS: Record<EstadoAlias, { texto: string; clase: string }> = {
-  disponible: {
-    texto: "Libre entre nuestros lubricentros. Cresium lo confirma al crear la cuenta.",
-    clase: "text-success",
-  },
-  ocupado: {
-    texto: "Ocupado — ya se lo asignamos a otro lubricentro.",
-    clase: "text-overdue",
-  },
-  invalido: { texto: ALIAS_FORMATO, clase: "text-overdue" },
-  corto: { texto: ALIAS_FORMATO, clase: "text-overdue" },
-  largo: { texto: ALIAS_FORMATO, clase: "text-overdue" },
-};
-
-export function WizardAlta({
-  planes,
-  aliasHabilitado,
-}: {
-  planes: PlanCompleto[];
-  /** `alias_confirmado_por_cresium()`. Con false, el campo del alias no se
-   *  muestra: el servidor lo rechazaría siempre y un campo que no se puede
-   *  guardar es peor que ninguno. */
-  aliasHabilitado: boolean;
-}) {
+export function WizardAlta({ planes }: { planes: PlanCompleto[] }) {
   const [paso, setPaso] = useState(1);
   const [nombre, setNombre] = useState("");
   const [sucursales, setSucursales] = useState<Sucursal[]>([{ ...SUCURSAL_VACIA }]);
@@ -134,34 +98,6 @@ export function WizardAlta({
   // avisa acá, que es el único momento en que acortarlo es gratis.
   const avisoQr = avisoSlugQr(slug);
 
-  // El alias se propone desde el SLUG, no desde el nombre, y con la misma
-  // mecánica: se deriva mientras nadie lo toque. En cuanto alguien escribe,
-  // manda la persona — una sugerencia no es una respuesta.
-  //
-  // Es el slug y no el nombre porque el slug ya está normalizado y es lo que
-  // el superadmin acaba de elegir mirando la pantalla. (El alias derivado de
-  // las órdenes sí sale del nombre, y por eso come los acentos; ver
-  // `aliasSugerido()`, que los translitera.)
-  const [aliasEscrito, setAliasEscrito] = useState<string | null>(null);
-  const alias = aliasEscrito ?? aliasSugerido(slug);
-  const aliasFormatoValido = alias.length > 0 && esAliasValido(alias);
-
-  const [respuestaAlias, setRespuestaAlias] = useState<{
-    alias: string;
-    estado: EstadoAlias;
-  } | null>(null);
-  const [consultandoAlias, empezarAlias] = useTransition();
-
-  const veredictoAlias: EstadoAlias | null =
-    !aliasHabilitado || alias.length === 0
-      ? null
-      : !aliasFormatoValido
-        ? "invalido"
-        : respuestaAlias?.alias === alias
-          ? respuestaAlias.estado
-          : null;
-
-  const verificandoAlias = aliasHabilitado && aliasFormatoValido && veredictoAlias === null;
 
   // La respuesta del servidor se guarda junto al slug que se preguntó. Si el
   // texto ya cambió, el veredicto viejo no aplica y la pantalla vuelve a
@@ -199,21 +135,6 @@ export function WizardAlta({
     return () => clearTimeout(id);
   }, [slug, formatoValido]);
 
-  // Lo mismo para el alias, y con el mismo freno. La respuesta se guarda
-  // junto al texto que se preguntó: si ya cambió, el veredicto viejo no
-  // aplica y la pantalla vuelve a "verificando" en vez de mostrar un
-  // "disponible" que era de otra palabra.
-  useEffect(() => {
-    if (!aliasHabilitado || !aliasFormatoValido) return;
-
-    const id = setTimeout(() => {
-      empezarAlias(async () => {
-        setRespuestaAlias({ alias, estado: await verificarAlias(alias) });
-      });
-    }, 400);
-
-    return () => clearTimeout(id);
-  }, [alias, aliasFormatoValido, aliasHabilitado]);
 
   // El alta pasa por esta envoltura de cliente para poder mover el wizard al
   // paso del campo que falló. Va acá y no en un efecto: es la consecuencia
@@ -244,14 +165,7 @@ export function WizardAlta({
     nombre.trim().length > 1 &&
     veredicto === "disponible" &&
     !consultando &&
-    origen !== "" &&
-    // El alias solo frena cuando el campo se está mostrando. Y se lo deja
-    // pasar vacío a propósito: asignarlo después es una decisión válida
-    // —el tenant cobra igual por el camino de la orden— y obligar a
-    // elegirlo en el alta convertiría una sugerencia en un requisito.
-    (!aliasHabilitado ||
-      alias.length === 0 ||
-      (veredictoAlias === "disponible" && !consultandoAlias));
+    origen !== "";
 
   const puedeSeguirDelDos =
     sucursales.some((s) => s.nombre.trim() !== "") &&
@@ -271,9 +185,6 @@ export function WizardAlta({
       planId: plan.planId,
       periodo: plan.periodo,
       descuentoPct: plan.descuentoPct,
-      // Con el campo apagado va vacío, y el tenant nace sin alias: sigue
-      // cobrando por el alias que se deriva de cada orden, como los 17.
-      alias: aliasHabilitado ? alias : "",
       origen,
     }));
   }
@@ -372,37 +283,6 @@ export function WizardAlta({
               </p>
             </div>
 
-            {aliasHabilitado && (
-              <div>
-                <label htmlFor="alias" className={CLASE_LABEL}>
-                  Alias para transferir
-                </label>
-                <input
-                  id="alias"
-                  value={alias}
-                  maxLength={ALIAS_LARGO_MAXIMO}
-                  onChange={(e) => setAliasEscrito(e.target.value.toLowerCase())}
-                  className={CLASE_CAMPO}
-                />
-
-                <p
-                  aria-live="polite"
-                  className={`mt-1.5 text-label ${
-                    verificandoAlias
-                      ? "text-ink-60"
-                      : veredictoAlias
-                        ? VEREDICTO_ALIAS[veredictoAlias].clase
-                        : "text-ink-60"
-                  }`}
-                >
-                  {verificandoAlias
-                    ? "Verificando…"
-                    : veredictoAlias
-                      ? `${veredictoAlias === "disponible" ? "✓" : "×"} ${VEREDICTO_ALIAS[veredictoAlias].texto}`
-                      : "Es el alias que el dueño va a cargar en su home banking. Se elige una vez y no se cambia; podés dejarlo vacío y asignarlo después."}
-                </p>
-              </div>
-            )}
 
             <div className="rounded-md border border-reward bg-reward-soft px-4 py-3">
               <p className="font-brand text-ui font-bold text-ink">
@@ -727,6 +607,31 @@ function Listo({
           <p className="mt-2 text-ui text-ink-60">
             El lubricentro está creado. Cargá de dónde vino desde{" "}
             <span className="font-semibold text-ink">Editar</span>, en el listado.
+          </p>
+        </div>
+      )}
+
+      {/* La cuenta de cobro (20261031100000): la tercera fase del alta, después
+          de la invitación. Si Cresium no la emitió, el tenant cobra por pago
+          único hasta que se emita desde la ficha (Suscripción → Cuenta de cobro). */}
+      {creado.cuenta === "emitida" ? (
+        <p className="mt-5 rounded-md border border-line bg-surface px-4 py-3.5 text-ui text-ink-60">
+          Su cuenta de cobro quedó emitida:{" "}
+          <span className="font-semibold text-ink tabular-nums">{creado.alias}</span>
+          {creado.cvu && (
+            <>
+              {" "}· CVU <span className="font-semibold text-ink tabular-nums">{creado.cvu}</span>
+            </>
+          )}
+          . Es la que el dueño va a dejar agendada para pagar cada mes.
+        </p>
+      ) : (
+        <div className="mt-5 rounded-md border border-overdue bg-overdue-soft px-4 py-3.5">
+          <p className="font-semibold text-overdue">La cuenta de cobro no se emitió</p>
+          <p className="mt-1 text-ui text-ink-60">{creado.motivoCuenta}</p>
+          <p className="mt-2 text-ui text-ink-60">
+            Mientras tanto cobra por pago único, como siempre. Se emite desde la
+            ficha, en <span className="font-semibold text-ink">Suscripción → Cuenta de cobro</span>.
           </p>
         </div>
       )}

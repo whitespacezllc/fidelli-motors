@@ -3901,27 +3901,35 @@ begin
 end $$;
 -- <<< R24
 
--- R25 · El alias fijo por tenant (20260917120000)
+-- R25 · El alias y el CVU dedicado del tenant (20260917120000 + 20261031100000)
 --
--- El bloque tiene una particularidad y conviene decirla arriba: la mitad
--- de lo que vigila es que NADA PASE. Mientras Cresium no confirme el
--- formato, el largo y el tope de cambios, la única conducta correcta es
--- rechazar todo — y una conducta que consiste en no hacer nada es
--- exactamente la que se rompe sin que nadie se entere.
+-- El alias ya no es un dato suelto: es la mitad legible de la CUENTA DE
+-- COBRO del tenant, y nace junto con el número de CVU y el id de Cresium,
+-- los tres por fijar_cvu_de_tenant() y DESPUÉS de que Cresium emitió la
+-- cuenta (POST /v3/deposit-address/cvu). Hasta 20261031100000 el bloque
+-- vigilaba que NADA pasara (el interruptor apagado); desde entonces vigila
+-- que lo que pasa sea exactamente esto:
 --
---   a · El interruptor está APAGADO y la puerta rechaza. Con un alias
---       perfectamente válido. Es el invariante del sprint.
---   b · Los 17 tenants (y el demo) siguen en null, y un tenant en null NO
---       es un estado roto: es "todavía no se le asignó". Con el
---       interruptor prendido a mano, la puerta escribe.
---   c · El alias es INMUTABLE. Escrito una vez, ni un UPDATE directo lo
---       mueve. Es la promesa entera: el dueño ya lo cargó en su banco.
---   d · La unicidad de nuestro lado, incluida la de mayúsculas, y que el
---       índice parcial deje convivir a los 17 nulls.
---   e · El formato y los dos largos, con su contracaso.
---   f · El alta puede traer el alias, y lo asigna por la MISMA puerta —o
---       sea que hoy, con el interruptor apagado, un alta con alias falla
---       entera en vez de dejar un tenant a medias.
+--   a · El interruptor está PRENDIDO (Cresium publicó el formato y el tope
+--       de cambios), y la puerta vieja —el alias solo— rechaza siempre con
+--       alias_sin_cvu: un alias sin CVU volvería al pago único con ese
+--       alias y el día que se emitiera la cuenta Cresium lo rechazaría.
+--       Y los tres datos van JUNTOS: un UPDATE que escriba solo el alias,
+--       o solo el CVU, lo frena el CHECK alias_con_cvu.
+--   b · fijar_cvu_de_tenant escribe los tres y la fecha, y devuelve el
+--       alias normalizado (minúsculas, sin espacios; el CVU sin espacios).
+--   c · Inmutables: ni el alias, ni el CVU, ni el id se mueven por UPDATE
+--       directo, y la puerta no reasigna; el candado no bloquea el resto
+--       del ABM.
+--   d · La unicidad de los tres de nuestro lado (el alias sin distinguir
+--       mayúsculas; el CVU; el id), por la puerta y por el índice, y que
+--       los nulls convivan: el que todavía no tiene cuenta no choca con
+--       nadie.
+--   e · El formato y los largos del alias, y el formato del CVU (22
+--       dígitos), con su contracaso.
+--   f · El alta con p_alias falla ENTERA (no deja un tenant a medias), y
+--       sin alias nace con los tres en null: cobra por pago único hasta
+--       que Fidelli le emita la cuenta desde la ficha.
 -- ============================================================
 
 -- >>> R25
@@ -3934,132 +3942,163 @@ declare
   v_super uuid;
   v_n     integer;
   v_alias text;
+  v_ok    boolean;
+  v_txt   text;
 begin
   select id into v_plan  from planes where nombre = 'Pro' and not heredado;
   select id into v_super from usuarios where rol = 'superadmin' limit 1;
-
   perform set_config('request.jwt.claims',
     json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
 
   insert into lubricentros (nombre, slug) values ('Alias R25', 'alias-r25')
     returning id into v_lub;
 
-  -- ---------- a · El interruptor apagado ----------
-  if alias_confirmado_por_cresium() then
-    raise exception 'R25a EL INTERRUPTOR DEL ALIAS ESTÁ PRENDIDO: alias_confirmado_por_cresium() devolvió true. Arranca APAGADO y se prende recién cuando Cresium confirme el largo máximo, el formato exacto y el tope de cambios por CVU. Un alias asignado con el formato equivocado no se corrige barato: TOO_MANY_ALIAS_UPDATES es un tope y no sabemos cuál.';
+  -- ---------- a · el interruptor prendido, la puerta vieja cerrada, los tres juntos ----------
+  if not alias_confirmado_por_cresium() then
+    raise exception 'R25a EL INTERRUPTOR DEL ALIAS ESTÁ APAGADO: alias_confirmado_por_cresium() devolvió false. Desde 20261031100000 está prendido: Cresium publicó el formato del alias y el tope de cambios con la API de CVUs dedicados, y sin él ningún tenant puede recibir su cuenta de cobro.';
   end if;
 
   begin
     perform fijar_alias_de_tenant(v_lub, 'fm.aliasr25');
-    raise exception 'R25a SE ASIGNÓ UN ALIAS: la puerta escribió con el interruptor apagado. Mientras Cresium no conteste, ningún tenant recibe alias — ni siquiera uno con la forma correcta.';
+    raise exception 'R25a LA PUERTA VIEJA ESCRIBIÓ UN ALIAS SIN CVU: fijar_alias_de_tenant() tiene que rechazar siempre, con el error de la puerta cerrada. Un alias sin cuenta vuelve al pago único con ese alias, y el día que se emita el CVU dedicado Cresium contesta EXISTING_ALIAS.';
   exception
     when sqlstate 'P0001' then
-      if sqlerrm not like '%alias_sin_confirmar%' then raise; end if;
+      if sqlerrm not like '%alias_sin_cvu%' then raise; end if;
   end;
-
-  if exists (select 1 from lubricentros where cresium_alias is not null) then
-    raise exception 'R25a HAY ALIAS ASIGNADOS EN LA BASE. Tienen que ser CERO: el sprint entero se escribió para no asignar ninguno hasta que Cresium conteste.';
+  if (select cresium_alias from lubricentros where id = v_lub) is not null then
+    raise exception 'R25a la puerta vieja rechazó pero el alias quedó escrito.';
   end if;
 
-  -- ---------- b · El null no es un estado roto ----------
-  --
-  -- A partir de acá el interruptor se prende A MANO para poder probar el
-  -- camino de verdad. Es el mismo recurso que usa R21d con el candado del
-  -- demo: se redefine la función adentro de la transacción del reset.
-  create or replace function alias_confirmado_por_cresium()
-  returns boolean language sql immutable parallel safe as $f$ select true; $f$;
+  v_ok := false;
+  begin
+    update lubricentros set cresium_alias = 'fm.aliasr25' where id = v_lub;
+    v_ok := true;
+  exception when check_violation then
+    get stacked diagnostics v_txt = constraint_name;
+    if v_txt <> 'alias_con_cvu' then
+      raise exception 'R25a el alias solo lo frenó % y no alias_con_cvu.', v_txt;
+    end if;
+  end;
+  if v_ok then
+    raise exception 'R25a UN ALIAS SIN CVU ENTRÓ POR UPDATE DIRECTO: falta el CHECK alias_con_cvu. Los tres datos de la cuenta de cobro van juntos o no van.';
+  end if;
+  v_ok := false;
+  begin
+    update lubricentros set cresium_cvu = '0000003100000000000001', cresium_deposit_address_id = 1 where id = v_lub;
+    v_ok := true;
+  exception when check_violation then null;
+  end;
+  if v_ok then
+    raise exception 'R25a UN CVU SIN ALIAS ENTRÓ POR UPDATE DIRECTO: falta el CHECK alias_con_cvu. Una cuenta sin alias es un número que el dueño no puede tipear.';
+  end if;
 
-  select fijar_alias_de_tenant(v_lub, 'fm.aliasr25') into v_alias;
+  -- ---------- b · la puerta escribe los tres y la fecha (y solo Fidelli) ----------
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', (select id from usuarios where rol = 'owner' limit 1), 'role', 'authenticated')::text, true);
+  begin
+    perform fijar_cvu_de_tenant(v_lub, 'fm.aliasr25', '0000003100000000000025', 2525);
+    raise exception 'R25b_entro';
+  exception
+    when insufficient_privilege then null;
+    when others then
+      if sqlerrm = 'R25b_entro' then
+        raise exception 'R25b UN OWNER LE ASIGNÓ LA CUENTA DE COBRO A UN TENANT: la guarda de soy_superadmin() no rige en fijar_cvu_de_tenant.';
+      end if;
+      raise exception 'R25b el owner falló con otro error: %', sqlerrm;
+  end;
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  select fijar_cvu_de_tenant(v_lub, ' FM.AliasR25 ', '0000 0031 0000 0000 0000 25', 2525) into v_alias;
   if v_alias is distinct from 'fm.aliasr25' then
-    raise exception 'R25b: la puerta devolvió «%» en vez del alias asignado.', v_alias;
+    raise exception 'R25b: la puerta devolvió «%» en vez del alias normalizado (fm.aliasr25).', v_alias;
   end if;
-
-  select cresium_alias into v_alias from lubricentros where id = v_lub;
-  if v_alias is distinct from 'fm.aliasr25' then
-    raise exception 'R25b: el alias no quedó escrito en la fila (quedó «%»).', v_alias;
+  select cresium_alias || '/' || cresium_cvu || '/' || cresium_deposit_address_id into v_txt
+  from lubricentros where id = v_lub;
+  if v_txt is distinct from 'fm.aliasr25/0000003100000000000025/2525' then
+    raise exception 'R25b LOS TRES DATOS NO QUEDARON ESCRITOS: la fila dice «%» y tenía que decir fm.aliasr25/0000003100000000000025/2525.', v_txt;
   end if;
-
   if (select cresium_alias_asignado_at from lubricentros where id = v_lub) is null then
-    raise exception 'R25b: se escribió el alias y no la fecha. El día que alguien pregunte desde cuándo tiene ese alias, la fila tiene que contestarlo — y es lo único con lo que vamos a poder contar los cambios contra el tope de Cresium.';
+    raise exception 'R25b: se escribió la cuenta y no la fecha. El día que alguien pregunte desde cuándo cobra por su CVU, la fila tiene que contestarlo.';
   end if;
 
-  -- ---------- c · Inmutable ----------
+  -- ---------- c · inmutables ----------
   begin
     update lubricentros set cresium_alias = 'fm.otroalias' where id = v_lub;
-    raise exception 'R25c EL ALIAS SE PUDO CAMBIAR: un UPDATE directo lo movió. Es el alias que el dueño YA dejó cargado en su home banking para la transferencia programada; cambiarlo rompe exactamente lo que el alias fijo vino a habilitar, y además gasta uno de los cambios que Cresium permite por CVU.';
+    raise exception 'R25c EL ALIAS SE PUDO CAMBIAR: un UPDATE directo lo movió. Es el alias que el dueño YA dejó cargado en su home banking para la transferencia programada; cambiarlo rompe exactamente lo que la cuenta fija vino a habilitar.';
   exception
     when sqlstate 'P0001' then
       if sqlerrm not like '%alias_inmutable%' then raise; end if;
   end;
-
   begin
-    perform fijar_alias_de_tenant(v_lub, 'fm.otroalias');
-    raise exception 'R25c: la puerta reasignó el alias de un tenant que ya tenía.';
+    update lubricentros set cresium_cvu = '0000003100000000000099' where id = v_lub;
+    raise exception 'R25c EL CVU SE PUDO CAMBIAR: un UPDATE directo lo movió. Es el número que el dueño agendó; cambiarlo acá no cambia la cuenta de Cresium y el webhook deja de reconocer sus depósitos.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%cvu_inmutable%' then raise; end if;
+  end;
+  begin
+    update lubricentros set cresium_deposit_address_id = 99 where id = v_lub;
+    raise exception 'R25c EL ID DE LA CUENTA SE PUDO CAMBIAR: un UPDATE directo lo movió.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%cvu_inmutable%' then raise; end if;
+  end;
+  begin
+    perform fijar_cvu_de_tenant(v_lub, 'fm.otroalias', '0000003100000000000099', 99);
+    raise exception 'R25c: la puerta reasignó la cuenta de un tenant que ya tenía.';
   exception
     when sqlstate 'P0001' then
       if sqlerrm not like '%alias_ya_asignado%' then raise; end if;
   end;
-
-  -- Lo que el candado NO tiene que bloquear: cualquier otro UPDATE sobre
-  -- la fila. Si esto empieza a fallar, el candado se comió el ABM entero
-  -- de /fidelli — editar el nombre de un tenant con alias dejaría de andar.
   begin
     update lubricentros set nombre = 'Alias R25 editado' where id = v_lub;
   exception when others then
-    raise exception 'R25c EL CANDADO SE COMIÓ EL ABM: bloqueó un UPDATE que no toca el alias (%). Tiene que mirar SOLO cresium_alias.', sqlerrm;
+    raise exception 'R25c EL CANDADO SE COMIÓ EL ABM: bloqueó un UPDATE que no toca la cuenta (%). Tiene que mirar SOLO cresium_alias, cresium_cvu y cresium_deposit_address_id.', sqlerrm;
   end;
 
-  -- ---------- d · La unicidad, y el índice parcial ----------
+  -- ---------- d · unicidad ----------
   insert into lubricentros (nombre, slug) values ('Alias R25 dos', 'alias-r25-dos')
     returning id into v_lub2;
-
   begin
-    perform fijar_alias_de_tenant(v_lub2, 'fm.aliasr25');
+    perform fijar_cvu_de_tenant(v_lub2, 'fm.aliasr25', '0000003100000000000026', 2526);
     raise exception 'R25d: dos tenants se quedaron con el mismo alias. Un alias repetido es la plata de un lubricentro entrando al CVU de otro.';
   exception
     when unique_violation then null;
   end;
-
-  -- Y la de mayúsculas: para un banco, dos alias que difieren solo en el
-  -- case son EL MISMO alias. Por eso el índice va sobre lower().
   begin
-    perform fijar_alias_de_tenant(v_lub2, 'FM.ALIASR25');
+    perform fijar_cvu_de_tenant(v_lub2, 'FM.ALIASR25', '0000003100000000000026', 2526);
     raise exception 'R25d: entró un alias que difiere del de otro tenant SOLO en mayúsculas. Para el banco es el mismo alias.';
   exception
     when unique_violation then null;
   end;
-
-  -- Varios tenants sin alias conviven. Esto lo garantiza Postgres solo
-  -- —dos NULL nunca colisionan en un unique— y NO el `where` del índice, que
-  -- está por tamaño y no por corrección. Se afirma igual porque es la
-  -- condición de todos los días mientras Cresium no conteste: los 17 en null.
+  begin
+    perform fijar_cvu_de_tenant(v_lub2, 'fm.segundo', '0000003100000000000025', 2526);
+    raise exception 'R25d: dos tenants se quedaron con el mismo CVU. El webhook no sabría de quién es el depósito.';
+  exception
+    when unique_violation then null;
+  end;
+  begin
+    perform fijar_cvu_de_tenant(v_lub2, 'fm.segundo', '0000003100000000000026', 2525);
+    raise exception 'R25d: dos tenants se quedaron con el mismo id de cuenta en Cresium.';
+  exception
+    when unique_violation then null;
+  end;
   select count(*) into v_n from lubricentros where cresium_alias is null;
   if v_n < 2 then
-    raise exception 'R25d: hay % tenants sin alias y tendría que haber al menos dos. Mientras Cresium no confirme el formato, TODOS están en null: si dos nulls no pueden convivir, no se puede dar de alta a nadie.', v_n;
+    raise exception 'R25d: hay % tenants sin cuenta y tendría que haber al menos dos. Los que todavía no tienen CVU están en null: si dos nulls no pueden convivir, no se puede dar de alta a nadie.', v_n;
   end if;
-
-  -- ⚠ Y AHORA CONTRA EL ÍNDICE, NO CONTRA LA PUERTA. Las dos pruebas de
-  -- arriba pasan por `fijar_alias_de_tenant()`, así que lo que demuestran
-  -- es que la puerta valida — no que el índice exista. Un UPDATE directo no
-  -- pasa por la puerta, y ahí el índice es la única defensa que queda. Un
-  -- alias repetido es la plata de un lubricentro entrando al CVU de otro.
-  --
-  -- Va en minúsculas a propósito: el CHECK `alias_formato` rechaza las
-  -- mayúsculas antes de que el índice llegue a opinar, así que un duplicado
-  -- en mayúsculas probaría el CHECK y no el índice. (El `lower()` del
-  -- índice es seguro para el día que Cresium conteste que sí acepta
-  -- mayúsculas y el formato se abra: ahí pasa a hacer trabajo. Hoy no se
-  -- puede probar, y por eso no tiene rotura.)
   insert into lubricentros (nombre, slug) values ('Alias R25 tres', 'alias-r25-tres')
     returning id into v_lub3;
   begin
-    update lubricentros set cresium_alias = 'fm.aliasr25' where id = v_lub3;
+    update lubricentros
+       set cresium_alias = 'fm.aliasr25', cresium_cvu = '0000003100000000000027', cresium_deposit_address_id = 2527
+     where id = v_lub3;
     raise exception 'R25d NO HAY ÍNDICE ÚNICO: entró por UPDATE directo un alias que otro tenant ya tiene. La puerta no es suficiente — lo que no pasa por la puerta solo lo frena el índice.';
   exception
     when unique_violation then null;
   end;
 
-  -- ---------- e · El formato y los largos ----------
+  -- ---------- e · formato y largos ----------
   if not alias_formato_valido('fm.taller') then
     raise exception 'R25e: se rechazó un alias con la forma que Cresium ya aceptó en producción (minúsculas, dígitos y puntos simples). Es la única forma MEDIDA que tenemos.';
   end if;
@@ -4070,84 +4109,73 @@ begin
   if alias_formato_valido('fmtaller.')  then raise exception 'R25e: entró un alias que termina en punto.'; end if;
 
   begin
-    perform fijar_alias_de_tenant(v_lub2, 'fm.x');   -- 4 caracteres
-    -- ⚠ EL MENSAJE NO PUEDE NOMBRAR `alias_largo`, y no es cosmético: el
-    -- handler de abajo filtra por esa misma palabra, así que un mensaje que
-    -- la contenga se traga a sí mismo y el bloque pasa en verde con la
-    -- rotura puesta. Se vio exactamente así, con el mínimo bajado a 1.
+    perform fijar_cvu_de_tenant(v_lub2, 'fm.x', '0000003100000000000026', 2526);   -- 4 caracteres
     raise exception 'R25e SE ACEPTÓ UN ALIAS DEMASIADO CORTO: entró uno de 4 caracteres. El piso del estándar argentino de alias CBU/CVU es 6, y uno más corto lo rechaza el banco cuando el dueño lo tipea.';
   exception
     when sqlstate 'P0001' then
       if sqlerrm not like '%alias_largo%' then raise; end if;
   end;
-
   begin
-    perform fijar_alias_de_tenant(v_lub2, 'fm.aliasdemasiadolargoparaelbanco');
+    perform fijar_cvu_de_tenant(v_lub2, 'fm.aliasdemasiadolargoparaelbanco', '0000003100000000000026', 2526);
     raise exception 'R25e SE ACEPTÓ UN ALIAS DEMASIADO LARGO: entró uno de 32 caracteres. El estándar argentino de alias CBU/CVU topa en 20 y el banco del dueño lo va a rechazar cuando lo tipee. (El mensaje no nombra la excepción a propósito: el handler filtra por esa palabra.)';
   exception
     when sqlstate 'P0001' then
       if sqlerrm not like '%alias_largo%' then raise; end if;
   end;
-
-  -- El contracaso de los dos largos: uno que SÍ entra.
-  select fijar_alias_de_tenant(v_lub2, 'fm.segundo') into v_alias;
-  if v_alias is distinct from 'fm.segundo' then
-    raise exception 'R25e: un alias de largo válido no entró (dio «%»).', v_alias;
-  end if;
-
-  -- ---------- f · El alta ----------
-  --
-  -- Con el interruptor PRENDIDO el alta puede traerlo; con el apagado la
-  -- transacción del alta falla entera, que es lo correcto: un tenant a
-  -- medias es peor que un alta rechazada.
-  perform crear_lubricentro(
-    'Alta con alias R25', 'alta-alias-r25',
-    '[{"nombre":"Casa Central"}]'::jsonb, v_plan, 'mensual', 0, 'fm.altar25');
-
-  if (select cresium_alias from lubricentros where slug = 'alta-alias-r25') is distinct from 'fm.altar25' then
-    raise exception 'R25f: el alta no guardó el alias que le pasaron.';
-  end if;
-
-  -- Y con el interruptor apagado, el alta entera se cae.
-  create or replace function alias_confirmado_por_cresium()
-  returns boolean language sql immutable parallel safe as $f$ select false; $f$;
-
   begin
-    perform crear_lubricentro(
-      'Alta sin confirmar R25', 'alta-sin-confirmar-r25',
-      '[{"nombre":"Casa Central"}]'::jsonb, v_plan, 'mensual', 0, 'fm.nodebe');
-    raise exception 'R25f: un alta CON alias pasó con el interruptor apagado.';
+    perform fijar_cvu_de_tenant(v_lub2, 'fm.segundo', '000000310000000000002', 2526);   -- 21 dígitos
+    raise exception 'R25e SE ACEPTÓ UN CVU DE 21 DÍGITOS. Un CVU son 22, siempre: uno de 21 es un número mal copiado, y el webhook no lo va a reconocer nunca.';
   exception
     when sqlstate 'P0001' then
-      if sqlerrm not like '%alias_sin_confirmar%' then raise; end if;
+      if sqlerrm not like '%cvu_formato%' then raise; end if;
   end;
-
-  if exists (select 1 from lubricentros where slug = 'alta-sin-confirmar-r25') then
-    raise exception 'R25f EL ALTA QUEDÓ A MEDIAS: el alias falló y el tenant se creó igual. Tiene que abortar la transacción entera — un lubricentro sin suscripción ni templates es peor que un alta rechazada.';
+  begin
+    perform fijar_cvu_de_tenant(v_lub2, 'fm.segundo', '00000031000000000000AB', 2526);
+    raise exception 'R25e SE ACEPTÓ UN CVU CON LETRAS.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%cvu_formato%' then raise; end if;
+  end;
+  begin
+    perform fijar_cvu_de_tenant(v_lub2, 'fm.segundo', '0000003100000000000026', 0);
+    raise exception 'R25e SE ACEPTÓ UNA CUENTA SIN ID DE CRESIUM (0).';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%deposit_address_invalido%' then raise; end if;
+  end;
+  select fijar_cvu_de_tenant(v_lub2, 'fm.segundo', '0000003100000000000026', 2526) into v_alias;
+  if v_alias is distinct from 'fm.segundo' then
+    raise exception 'R25e: una cuenta válida no entró (dio «%»).', v_alias;
   end if;
 
-  -- Y un alta SIN alias sigue andando con el interruptor apagado, que es
-  -- el caso de todos los días mientras Cresium no conteste.
+  -- ---------- f · el alta ----------
+  begin
+    perform crear_lubricentro(
+      'Alta con alias R25', 'alta-alias-r25',
+      '[{"nombre":"Casa Central"}]'::jsonb, v_plan, 'mensual', 0, 'fm.altar25');
+    raise exception 'R25f EL ALTA CON ALIAS PASÓ: crear_lubricentro(p_alias) tiene que fallar con el error de la puerta cerrada. La cuenta se emite DESPUÉS del alta, como la invitación; un alta que escribe el alias sin el CVU deja al tenant cobrando por pago único con un alias que Cresium va a rechazar después.';
+  exception
+    when sqlstate 'P0001' then
+      if sqlerrm not like '%alias_sin_cvu%' then raise; end if;
+  end;
+  if exists (select 1 from lubricentros where slug = 'alta-alias-r25') then
+    raise exception 'R25f EL ALTA QUEDÓ A MEDIAS: el alias falló y el tenant se creó igual. Tiene que abortar la transacción entera — un lubricentro sin suscripción ni templates es peor que un alta rechazada.';
+  end if;
   perform crear_lubricentro(
     'Alta sin alias R25', 'alta-sin-alias-r25',
     '[{"nombre":"Casa Central"}]'::jsonb, v_plan, 'mensual', 0);
-
-  if (select cresium_alias from lubricentros where slug = 'alta-sin-alias-r25') is not null then
-    raise exception 'R25f: un alta sin alias le inventó uno. El null es la respuesta «todavía no se le asignó», y es lo que lo deja cobrando por el alias de cada orden.';
+  if (select cresium_alias is not null or cresium_cvu is not null or cresium_deposit_address_id is not null
+        from lubricentros where slug = 'alta-sin-alias-r25') then
+    raise exception 'R25f: un alta sin alias le inventó una cuenta. Los tres en null es la respuesta «todavía no se le emitió», y es lo que lo deja cobrando por pago único mientras tanto.';
   end if;
 
-  -- ---------- La limpieza ----------
   perform set_config('request.jwt.claims', null, true);
 
-  delete from sucursales  where lubricentro_id in (
-    select id from lubricentros where slug in ('alta-alias-r25', 'alta-sin-alias-r25'));
-  delete from mensaje_templates where lubricentro_id in (
-    select id from lubricentros where slug in ('alta-alias-r25', 'alta-sin-alias-r25'));
-  delete from config_experiencia where lubricentro_id in (
-    select id from lubricentros where slug in ('alta-alias-r25', 'alta-sin-alias-r25'));
-  delete from suscripciones where lubricentro_id in (
-    select id from lubricentros where slug in ('alta-alias-r25', 'alta-sin-alias-r25'));
-  delete from lubricentros where slug in ('alta-alias-r25', 'alta-sin-alias-r25');
+  delete from sucursales  where lubricentro_id in (select id from lubricentros where slug = 'alta-sin-alias-r25');
+  delete from mensaje_templates where lubricentro_id in (select id from lubricentros where slug = 'alta-sin-alias-r25');
+  delete from config_experiencia where lubricentro_id in (select id from lubricentros where slug = 'alta-sin-alias-r25');
+  delete from suscripciones where lubricentro_id in (select id from lubricentros where slug = 'alta-sin-alias-r25');
+  delete from lubricentros where slug = 'alta-sin-alias-r25';
   delete from lubricentros where id in (v_lub, v_lub2, v_lub3);
 end $$;
 -- <<< R25
@@ -15354,3 +15382,516 @@ begin
   end;
 end $$;
 -- <<< R50
+
+
+-- ============================================================
+-- R51 · El CVU dedicado por tenant: el depósito se acredita por monto
+--       EXACTO, o lo mira una persona (20261031100000)
+--
+-- Cresium recicla los CVUs del pago único (28/10/2026: «alias inválido» en
+-- varios tenants), así que cada tenant pasa a tener su cuenta fija. El
+-- webhook de un depósito a esa cuenta no trae paymentOrder: trae el CVU.
+-- Lo que vigila:
+--   a · la forma: el libro depositos_cresium con RLS (el owner lee solo lo
+--       suyo y no escribe), sus tres candados en ALWAYS, y la orden interna
+--       (deposit_address_id) solo de una renovación.
+--   b · el monto EXACTO del mensual acredita: fila en pagos (origen
+--       cresium, sin autor, con la transacción), vencimiento =
+--       greatest(vencimiento, hoy) + 1 mes, la orden interna de ese
+--       período PAID y la del otro período CERRADA, el depósito
+--       «acreditado» con su pago, y la evidencia con el motivo.
+--   c · los cinco reintentos: ya_acreditado, un pago, un depósito.
+--   d · el anual acredita 12 meses desde el vencimiento nuevo.
+--   e · otro monto NO acredita: queda a confirmar con los montos de hoy
+--       escritos en el motivo, sin pago y sin mover el vencimiento; el
+--       reintento contesta ya_registrado y no duplica la fila. Y el
+--       monto que llega solo en `amounts` (sin totalAmount) se suma.
+--   f · el semestral acredita SOLO si el plan lo ofrece
+--       (descuento_semestral_pct > 0): con el Pro de hoy (0) queda a
+--       confirmar; con un plan que lo ofrece, acredita 6 meses.
+--   g · un CVU que no es de nadie sigue con el motivo de siempre (sin fila
+--       en el libro), y un DEPOSIT CON paymentOrder manda la referencia
+--       aunque el CVU coincida: un PARTIAL de pago único sigue siendo un
+--       PARTIAL, no un depósito a confirmar.
+--   h · resolver: el owner no puede; sin período o sin nota se rechaza;
+--       «acreditar» deja un pago con la transacción Y quien decidió, mueve
+--       el vencimiento y cierra el depósito; dos veces no; «descartar»
+--       con nota no toca pagos.
+--   i · depositos_cresium_pendientes(): el owner no la ejecuta; lista el
+--       a confirmar con los montos de hoy y no los resueltos.
+--   j · un tenant suspendido a mano con el monto exacto igual acredita
+--       (la plata entró; R36 dice lo mismo del pago único).
+-- Todo corre en una subtransacción con rollback (P0051).
+-- ============================================================
+
+-- El DEPOSIT de un CVU dedicado con la forma MEDIDA (data.transaction, el
+-- CVU en `to`), sin paymentOrder.
+create or replace function r51_deposito(p_tx bigint, p_cvu text, p_id bigint, p_total numeric, p_retry integer default 1)
+returns jsonb language sql immutable as $$
+  select jsonb_build_object(
+    'type', 'DEPOSIT', 'retry', p_retry,
+    'data', jsonb_build_object('transaction', jsonb_build_object(
+      'id', p_tx, 'type', 'DEPOSIT', 'status', 'SUCCESS',
+      'totalAmount', p_total, 'netAmount', p_total,
+      'to', jsonb_build_object('id', p_id, 'type', 'CVU', 'value', p_cvu, 'bankName', 'Cresium'),
+      'amounts', jsonb_build_array(jsonb_build_object('type', 'NET_BASE', 'amount', p_total, 'key', null)))));
+$$;
+
+-- >>> R51
+do $$
+declare
+  v_plan     uuid;
+  v_plan_sem uuid;
+  v_super    uuid;
+  v_demo     uuid;
+  v_own      uuid;
+  v_lub      uuid;
+  v_sus      uuid;
+  v_ord_men  uuid;
+  v_ord_anu  uuid;
+  v_men      numeric;
+  v_anu      numeric;
+  v_sem      numeric;
+  v_r        jsonb;
+  v_n        integer;
+  v_pagos0   integer;
+  v_venc0    date;
+  v_venc     date;
+  v_esp      date;
+  v_d        depositos_cresium%rowtype;
+  v_p        pagos%rowtype;
+  v_o        cresium_ordenes%rowtype;
+  v_ok       boolean;
+  v_txt      text;
+  v_dep_e    uuid;
+  v_dep_i    uuid;
+  v_enc      uuid;
+  r          record;
+  c_cvu      constant text := '0000003100000000005101';
+  c_id       constant bigint := 5101;
+begin
+  select id into v_plan  from planes where nombre = 'Pro' and not heredado;
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  select id into v_demo  from lubricentros where slug = 'demo';
+  select id into v_own   from usuarios where lubricentro_id = v_demo and rol = 'owner' limit 1;
+  if v_plan is null or v_super is null or v_demo is null or v_own is null then
+    raise exception 'R51 SIN PISO: falta el plan Pro, el superadmin, el demo o su owner.';
+  end if;
+
+  begin
+    -- ---------- los fixtures ----------
+    -- Un tenant con un pago anterior (para no caer en la rama del que nunca
+    -- pagó), dentro del ciclo (vence en 5 días), con su cuenta de cobro y
+    -- dos órdenes internas vivas: la del mensual que acaba de elegir y una
+    -- del anual que eligió la semana pasada y no pagó.
+    insert into lubricentros (nombre, slug, cobranza_desde) values ('CVU R51', 'cvu-r51', current_date - 60)
+    returning id into v_lub;
+    insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, inicio, vencimiento)
+    values (v_lub, v_plan, 'activa', 'mensual', 0, current_date - 25, current_date + 5)
+    returning id into v_sus;
+    insert into pagos (lubricentro_id, suscripcion_id, registrado_por, periodo_desde, periodo_hasta, monto, fecha_pago)
+    values (v_lub, v_sus, v_super, current_date - 25, current_date + 5, 1, current_date - 25);
+
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    perform fijar_cvu_de_tenant(v_lub, 'fm.cvur51', c_cvu, c_id);
+    perform set_config('request.jwt.claims', '{}', true);
+
+    select total into v_men from montos_ofrecidos(v_lub) where periodo = 'mensual';
+    select total into v_anu from montos_ofrecidos(v_lub) where periodo = 'anual';
+    if v_men is null or v_anu is null or v_men = v_anu or v_men <= 0 then
+      raise exception 'R51 SIN PISO: montos_ofrecidos dio mensual % y anual %.', v_men, v_anu;
+    end if;
+    if (select descuento_semestral_pct from planes where id = v_plan) > 0 then
+      raise exception 'R51 SIN PISO: el Pro del catálogo ofrece semestral (descuento_semestral_pct > 0) y el caso f cuenta con que no.';
+    end if;
+
+    insert into cresium_ordenes (lubricentro_id, suscripcion_id, external_id, periodo, periodo_hasta, monto, alias, cvu, deposit_address_id, created_at)
+    values (v_lub, v_sus, 'cvu:' || v_sus || ':' || (current_date + 370), 'anual', current_date + 370, v_anu, 'fm.cvur51', c_cvu, c_id, now() - interval '6 days')
+    returning id into v_ord_anu;
+    insert into cresium_ordenes (lubricentro_id, suscripcion_id, external_id, periodo, periodo_hasta, monto, alias, cvu, deposit_address_id)
+    values (v_lub, v_sus, 'cvu:' || v_sus || ':' || (current_date + 35), 'mensual', current_date + 35, v_men, 'fm.cvur51', c_cvu, c_id)
+    returning id into v_ord_men;
+
+    select count(*) into v_pagos0 from pagos where lubricentro_id = v_lub;
+    select vencimiento into v_venc0 from suscripciones where id = v_sus;
+    -- Un pedido de calcos, para el caso (a): la orden interna no puede ser
+    -- de un pedido (con el pedido como única cosa, el CHECK que frena es
+    -- dedicada_de_renovacion y no orden_de_una_sola_cosa).
+    insert into encargos_calcos (lubricentro_id, pack_codigo, cantidad, entrega, estado,
+                                 monto_pack, monto_rediseno, monto_envio, monto_total, costo_estimado, comision_estimada)
+    values (v_lub, 'pack_400', 400, 'retiro', 'pendiente_pago', 84000, 0, 0, 84000, 60000, 813.12)
+    returning id into v_enc;
+
+    -- ---------- a · la forma ----------
+    v_ok := false;
+    begin
+      insert into cresium_ordenes (lubricentro_id, encargo_calcos_id, external_id, monto, alias, deposit_address_id)
+      values (v_lub, v_enc, 'r51:dedicada-de-un-pedido', 1, 'fm.r51.x', c_id);
+      v_ok := true;
+    exception when check_violation then
+      get stacked diagnostics v_txt = constraint_name;
+      if v_txt <> 'dedicada_de_renovacion' then
+        raise exception 'R51a la orden interna sin suscripción la frenó % y no dedicada_de_renovacion.', v_txt;
+      end if;
+    end;
+    if v_ok then
+      raise exception 'R51a EL CHECK dedicada_de_renovacion NO ESTÁ: entró una orden interna de un pedido de calcos. La cuenta fija cobra abonos; los pedidos siguen por pago único.';
+    end if;
+
+    select count(*) into v_n from pg_trigger
+    where tgrelid = 'depositos_cresium'::regclass and not tgisinternal and tgenabled = 'A';
+    if v_n <> 3 then
+      raise exception 'R51a LOS CANDADOS DE depositos_cresium NO ESTÁN EN ALWAYS: hay % en A y tienen que ser 3 (borrado, purga, edición). En ORIGIN los apaga un session_replication_role = replica.', v_n;
+    end if;
+
+    -- ---------- b · el monto exacto del mensual ----------
+    v_r := acreditar_deposito_cresium(r51_deposito(5100001, c_cvu, c_id, v_men));
+    if v_r ->> 'resultado' is distinct from 'acreditado' or v_r ->> 'periodo' is distinct from 'mensual'
+       or v_r ->> 'concepto' is distinct from 'suscripcion' then
+      raise exception 'R51b EL MONTO EXACTO DEL MENSUAL NO ACREDITÓ: contestó %. Es el caso de todos los días: el dueño transfiere lo que vio en pantalla al alias que tiene agendado.', v_r;
+    end if;
+    v_esp := (v_venc0 + interval '1 month')::date;
+    select vencimiento into v_venc from suscripciones where id = v_sus;
+    if v_venc is distinct from v_esp then
+      raise exception 'R51b el vencimiento quedó en % y tenía que ser % (vencimiento + 1 mes: el que paga dentro del ciclo no gana días).', v_venc, v_esp;
+    end if;
+    select * into v_p from pagos where cresium_transaccion_id = 5100001;
+    if v_p.id is null or v_p.origen <> 'cresium' or v_p.registrado_por is not null
+       or v_p.monto <> v_men or v_p.periodo_desde <> v_venc0 or v_p.periodo_hasta <> v_esp
+       or v_p.lubricentro_id <> v_lub or v_p.suscripcion_id <> v_sus then
+      raise exception 'R51b el pago no quedó como un cobro de Cresium: origen %, autor %, monto %, período % → % (esperaba cresium, sin autor, %, % → %).',
+        v_p.origen, v_p.registrado_por, v_p.monto, v_p.periodo_desde, v_p.periodo_hasta, v_men, v_venc0, v_esp;
+    end if;
+    select * into v_o from cresium_ordenes where id = v_ord_men;
+    if v_o.estado <> 'PAID' or v_o.monto_pagado <> v_men then
+      raise exception 'R51b la orden interna del mensual quedó % con % pagados: tenía que quedar PAID con %. Es lo que la pantalla mira para cambiar al éxito.', v_o.estado, v_o.monto_pagado, v_men;
+    end if;
+    select * into v_o from cresium_ordenes where id = v_ord_anu;
+    if v_o.estado <> 'CERRADA' then
+      raise exception 'R51b la orden interna del ANUAL quedó % y tenía que quedar CERRADA: el dueño eligió mensual y pagó mensual; la del anual ya no representa nada.', v_o.estado;
+    end if;
+    select * into v_d from depositos_cresium where transaccion_id = 5100001;
+    if v_d.id is null or v_d.estado <> 'acreditado' or v_d.periodo <> 'mensual' or v_d.pago_id <> v_p.id
+       or v_d.lubricentro_id <> v_lub or v_d.monto <> v_men or v_d.cvu <> c_cvu or v_d.evento_id is null then
+      raise exception 'R51b el libro no registró el depósito acreditado como corresponde: estado %, período %, pago %, monto %.', v_d.estado, v_d.periodo, v_d.pago_id, v_d.monto;
+    end if;
+    if (select motivo from cresium_eventos where id = v_d.evento_id) not like 'acreditado (CVU dedicado%' then
+      raise exception 'R51b la evidencia no dice que se acreditó por el CVU dedicado.';
+    end if;
+
+    -- ---------- c · los reintentos ----------
+    for v_n in 2..5 loop
+      v_r := acreditar_deposito_cresium(r51_deposito(5100001, c_cvu, c_id, v_men, v_n));
+      if v_r ->> 'resultado' is distinct from 'ya_acreditado' then
+        raise exception 'R51c el reintento % contestó «%» en vez de ya_acreditado.', v_n, v_r ->> 'resultado';
+      end if;
+    end loop;
+    if (select count(*) from pagos where lubricentro_id = v_lub) <> v_pagos0 + 1 then
+      raise exception 'R51c LA IDEMPOTENCIA SE CAYÓ: cinco entregas del mismo depósito dejaron más de un pago.';
+    end if;
+    if (select count(*) from depositos_cresium where transaccion_id = 5100001) <> 1 then
+      raise exception 'R51c el libro registró el mismo depósito más de una vez.';
+    end if;
+    select vencimiento into v_venc from suscripciones where id = v_sus;
+    if v_venc is distinct from v_esp then
+      raise exception 'R51c los reintentos movieron el vencimiento a %.', v_venc;
+    end if;
+
+    -- ---------- d · el anual ----------
+    v_venc0 := v_esp;
+    v_r := acreditar_deposito_cresium(r51_deposito(5100002, c_cvu, c_id, v_anu));
+    if v_r ->> 'resultado' is distinct from 'acreditado' or v_r ->> 'periodo' is distinct from 'anual' then
+      raise exception 'R51d EL MONTO EXACTO DEL ANUAL NO ACREDITÓ: contestó %.', v_r;
+    end if;
+    v_esp := (v_venc0 + interval '12 months')::date;
+    select vencimiento into v_venc from suscripciones where id = v_sus;
+    if v_venc is distinct from v_esp then
+      raise exception 'R51d el anual dejó el vencimiento en % y tenía que ser % (12 meses desde el vencimiento nuevo).', v_venc, v_esp;
+    end if;
+    select * into v_p from pagos where cresium_transaccion_id = 5100002;
+    if v_p.periodo_desde <> v_venc0 or v_p.periodo_hasta <> v_esp or v_p.monto <> v_anu then
+      raise exception 'R51d el pago del anual registró % → % por % (esperaba % → % por %).', v_p.periodo_desde, v_p.periodo_hasta, v_p.monto, v_venc0, v_esp, v_anu;
+    end if;
+
+    -- ---------- e · otro monto: a confirmar ----------
+    v_venc0 := v_esp;
+    v_pagos0 := (select count(*) from pagos where lubricentro_id = v_lub);
+    v_r := acreditar_deposito_cresium(r51_deposito(5100003, c_cvu, c_id, v_men + 1000));
+    if v_r ->> 'resultado' is distinct from 'sin_acreditar' or v_r ->> 'motivo' is distinct from 'a_confirmar' then
+      raise exception 'R51e UN MONTO QUE NO ES EL DE NINGÚN PERÍODO HIZO ALGO: contestó %. Nada se infiere: lo mira una persona.', v_r;
+    end if;
+    if (select count(*) from pagos where lubricentro_id = v_lub) <> v_pagos0 then
+      raise exception 'R51e un monto distinto dejó un pago.';
+    end if;
+    select vencimiento into v_venc from suscripciones where id = v_sus;
+    if v_venc is distinct from v_venc0 then
+      raise exception 'R51e un monto distinto movió el vencimiento a %.', v_venc;
+    end if;
+    select * into v_d from depositos_cresium where transaccion_id = 5100003;
+    if v_d.id is null or v_d.estado <> 'a_confirmar' or v_d.pago_id is not null or v_d.monto <> v_men + 1000 then
+      raise exception 'R51e el depósito no quedó a confirmar (estado %, pago %, monto %).', v_d.estado, v_d.pago_id, v_d.monto;
+    end if;
+    if v_d.motivo not like '%mensual ' || pesos_texto(v_men) || '%'
+       or v_d.motivo not like '%anual ' || pesos_texto(v_anu) || '%' then
+      raise exception 'R51e el motivo no dice cuánto se cobra hoy por cada período (es lo que Fidelli necesita para decidir): «%».', v_d.motivo;
+    end if;
+    if pesos_texto(47527) <> '$47.527' or pesos_texto(47527.5) <> '$47.527,50' or pesos_texto(1000000) <> '$1.000.000' then
+      raise exception 'R51e pesos_texto no escribe los pesos como los lee una persona de acá: % / % / %.', pesos_texto(47527), pesos_texto(47527.5), pesos_texto(1000000);
+    end if;
+    v_dep_e := v_d.id;
+    v_r := acreditar_deposito_cresium(r51_deposito(5100003, c_cvu, c_id, v_men + 1000, 2));
+    if v_r ->> 'resultado' is distinct from 'ya_registrado' then
+      raise exception 'R51e el reintento de un depósito a confirmar contestó «%» en vez de ya_registrado.', v_r ->> 'resultado';
+    end if;
+    if (select count(*) from depositos_cresium where transaccion_id = 5100003) <> 1 then
+      raise exception 'R51e el reintento duplicó la fila a confirmar.';
+    end if;
+    -- El monto solo en `amounts`: NET_BASE + comisión = lo que transfirió.
+    v_r := acreditar_deposito_cresium(jsonb_build_object(
+      'type', 'DEPOSIT', 'retry', 1,
+      'data', jsonb_build_object('transaction', jsonb_build_object(
+        'id', 5100004, 'type', 'DEPOSIT', 'status', 'SUCCESS',
+        'to', jsonb_build_object('id', c_id, 'type', 'CVU', 'value', c_cvu),
+        'amounts', jsonb_build_array(
+          jsonb_build_object('type', 'NET_BASE', 'amount', v_men - 100, 'key', null),
+          jsonb_build_object('type', 'FEE', 'amount', 100, 'key', 'AR_CREDIT_TAX'))))));
+    if v_r ->> 'resultado' is distinct from 'acreditado' or v_r ->> 'periodo' is distinct from 'mensual' then
+      raise exception 'R51e sin totalAmount, la suma de amounts (neto + comisión) tenía que acreditar el mensual: contestó %.', v_r;
+    end if;
+    v_venc0 := (v_venc0 + interval '1 month')::date;
+
+    -- ---------- f · el semestral solo si el plan lo ofrece ----------
+    v_sem := round((monto_de_renovacion_en(v_lub, 'semestral') ->> 'total')::numeric, 2);
+    if v_sem is null or v_sem <= 0 or v_sem = v_men or v_sem = v_anu then
+      raise exception 'R51f SIN PISO: el monto semestral del Pro dio %.', v_sem;
+    end if;
+    v_r := acreditar_deposito_cresium(r51_deposito(5100005, c_cvu, c_id, v_sem));
+    if v_r ->> 'resultado' is distinct from 'sin_acreditar' or v_r ->> 'motivo' is distinct from 'a_confirmar' then
+      raise exception 'R51f EL SEMESTRAL ACREDITÓ CON UN PLAN QUE NO LO OFRECE: contestó %. La pantalla no muestra el semestral si descuento_semestral_pct = 0, así que el dueño nunca pudo elegirlo.', v_r;
+    end if;
+    insert into planes (nombre, precio_mensual, descuento_semestral_pct, descuento_anual_pct, features, limites, activo, heredado)
+    select 'Pro R51', precio_mensual, 10, descuento_anual_pct, features, limites, true, true
+    from planes where id = v_plan
+    returning id into v_plan_sem;
+    update suscripciones set plan_id = v_plan_sem where id = v_sus;
+    v_sem := (select total from montos_ofrecidos(v_lub) where periodo = 'semestral');
+    if v_sem is null then
+      raise exception 'R51f con descuento_semestral_pct = 10, montos_ofrecidos tiene que ofrecer el semestral.';
+    end if;
+    v_r := acreditar_deposito_cresium(r51_deposito(5100006, c_cvu, c_id, v_sem));
+    if v_r ->> 'resultado' is distinct from 'acreditado' or v_r ->> 'periodo' is distinct from 'semestral' then
+      raise exception 'R51f con un plan que ofrece el semestral, su monto exacto tenía que acreditar: contestó %.', v_r;
+    end if;
+    v_esp := (v_venc0 + interval '6 months')::date;
+    select vencimiento into v_venc from suscripciones where id = v_sus;
+    if v_venc is distinct from v_esp then
+      raise exception 'R51f el semestral dejó el vencimiento en % y tenía que ser %.', v_venc, v_esp;
+    end if;
+    v_venc0 := v_esp;
+    update suscripciones set plan_id = v_plan where id = v_sus;
+
+    -- ---------- g · lo ajeno, y la prioridad de paymentOrder ----------
+    v_n := (select count(*) from depositos_cresium);
+    v_r := acreditar_deposito_cresium(r51_deposito(5100007, '0000003100000000009999', 9999, v_men));
+    if v_r ->> 'resultado' is distinct from 'sin_acreditar' or v_r ->> 'motivo' not like 'depósito sin paymentOrder%' then
+      raise exception 'R51g un depósito a un CVU que no es de nadie contestó % y tenía que quedar sin acreditar con el motivo de siempre.', v_r;
+    end if;
+    if (select count(*) from depositos_cresium) <> v_n then
+      raise exception 'R51g un CVU de nadie dejó una fila en el libro.';
+    end if;
+    v_r := acreditar_deposito_cresium(jsonb_build_object(
+      'type', 'DEPOSIT', 'retry', 1,
+      'data', jsonb_build_object('transaction', jsonb_build_object(
+        'id', 5100008, 'type', 'DEPOSIT', 'status', 'SUCCESS', 'totalAmount', v_men,
+        'to', jsonb_build_object('id', c_id, 'type', 'CVU', 'value', c_cvu),
+        'paymentOrder', jsonb_build_object(
+          'externalId', cresium_external_id(v_sus, current_date + 400), 'status', 'PARTIAL',
+          'amount', v_men * 2, 'amountPaid', v_men)))));
+    if v_r ->> 'resultado' is distinct from 'sin_acreditar' or v_r ->> 'motivo' not like 'orden en PARTIAL%' then
+      raise exception 'R51g UN DEPOSIT CON paymentOrder ENTRÓ POR LA RAMA DEL CVU DEDICADO: contestó %. Con paymentOrder manda la referencia (es un pago único: una renovación vieja o un pedido de calcos), aunque el CVU coincida.', v_r;
+    end if;
+    if (select count(*) from depositos_cresium) <> v_n then
+      raise exception 'R51g un pago único dejó una fila en el libro de la cuenta fija.';
+    end if;
+
+    -- ---------- h · resolver ----------
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+      perform resolver_deposito_cresium(v_dep_e, 'acreditar', 'mensual');
+      raise exception 'R51h_entro';
+    exception
+      when insufficient_privilege then null;
+      when others then
+        if sqlerrm = 'R51h_entro' then
+          raise exception 'R51h UN OWNER RESOLVIÓ UN DEPÓSITO: se acreditó un período a sí mismo.';
+        end if;
+        raise exception 'R51h el owner falló con otro error: %', sqlerrm;
+    end;
+    execute 'reset role';
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    for r in select * from (values
+        ('acreditar', null::periodo_suscripcion, null::text, 'periodo_vacio'),
+        ('descartar', null, null, 'nota_vacia'),
+        ('descartar', null, '   ', 'nota_vacia'),
+        ('otra',      null, null, 'accion_invalida')
+      ) t(accion, periodo, nota, esperado)
+    loop
+      begin
+        perform resolver_deposito_cresium(v_dep_e, r.accion, r.periodo, r.nota);
+        raise exception 'R51h_paso';
+      exception when others then
+        if sqlerrm = 'R51h_paso' then
+          raise exception 'R51h resolver(%, %, %) pasó y tenía que fallar con %.', r.accion, r.periodo, r.nota, r.esperado;
+        end if;
+        if sqlerrm not like '%' || r.esperado || '%' then
+          raise exception 'R51h resolver(%, %, %) falló con «%» y no con %.', r.accion, r.periodo, r.nota, sqlerrm, r.esperado;
+        end if;
+      end;
+    end loop;
+    v_pagos0 := (select count(*) from pagos where lubricentro_id = v_lub);
+    v_r := resolver_deposito_cresium(v_dep_e, 'acreditar', 'mensual', 'lo charlamos por WhatsApp: pagó el mensual con el recargo viejo');
+    if v_r ->> 'resultado' is distinct from 'acreditado' then
+      raise exception 'R51h acreditar a mano contestó %.', v_r;
+    end if;
+    select * into v_p from pagos where cresium_transaccion_id = 5100003;
+    if v_p.id is null or v_p.origen <> 'cresium' or v_p.registrado_por is distinct from v_super or v_p.monto <> v_men + 1000 then
+      raise exception 'R51h el pago acreditado a mano no lleva las dos firmas: origen %, autor %, monto % (esperaba cresium, el superadmin, %).', v_p.origen, v_p.registrado_por, v_p.monto, v_men + 1000;
+    end if;
+    if (select count(*) from pagos where lubricentro_id = v_lub) <> v_pagos0 + 1 then
+      raise exception 'R51h acreditar a mano no dejó exactamente un pago más.';
+    end if;
+    v_esp := (v_venc0 + interval '1 month')::date;
+    select vencimiento into v_venc from suscripciones where id = v_sus;
+    if v_venc is distinct from v_esp then
+      raise exception 'R51h acreditar a mano un mensual dejó el vencimiento en % y tenía que ser %.', v_venc, v_esp;
+    end if;
+    v_venc0 := v_esp;
+    select * into v_d from depositos_cresium where id = v_dep_e;
+    if v_d.estado <> 'acreditado_a_mano' or v_d.periodo <> 'mensual' or v_d.pago_id <> v_p.id
+       or v_d.resuelto_por is distinct from v_super or v_d.resuelto_at is null or v_d.nota not like 'lo charlamos%' then
+      raise exception 'R51h el depósito no quedó cerrado como acreditado a mano (estado %, período %, quién %).', v_d.estado, v_d.periodo, v_d.resuelto_por;
+    end if;
+    begin
+      perform resolver_deposito_cresium(v_dep_e, 'acreditar', 'mensual');
+      raise exception 'R51h_dos';
+    exception when others then
+      if sqlerrm = 'R51h_dos' then
+        raise exception 'R51h UN DEPÓSITO SE RESOLVIÓ DOS VECES: el segundo acreditar regaló otro mes.';
+      end if;
+      if sqlerrm not like '%deposito_ya_resuelto%' then
+        raise exception 'R51h resolver dos veces falló con otro error: %', sqlerrm;
+      end if;
+    end;
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    v_r := acreditar_deposito_cresium(r51_deposito(5100009, c_cvu, c_id, 12345));
+    v_dep_i := (v_r ->> 'deposito')::uuid;
+    v_pagos0 := (select count(*) from pagos where lubricentro_id = v_lub);
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    v_r := resolver_deposito_cresium(v_dep_i, 'descartar', null, 'transferencia equivocada, se la devolvemos por Cresium');
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+    if v_r ->> 'resultado' is distinct from 'descartado'
+       or (select estado from depositos_cresium where id = v_dep_i) <> 'descartado'
+       or (select count(*) from pagos where lubricentro_id = v_lub) <> v_pagos0 then
+      raise exception 'R51h descartar no dejó el depósito descartado sin tocar pagos: %.', v_r;
+    end if;
+
+    -- ---------- i · la lista de /fidelli ----------
+    v_r := acreditar_deposito_cresium(r51_deposito(5100010, c_cvu, c_id, 777));
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_own, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    begin
+      perform * from depositos_cresium_pendientes();
+      raise exception 'R51i_entro';
+    exception
+      when insufficient_privilege then null;
+      when others then
+        if sqlerrm = 'R51i_entro' then
+          raise exception 'R51i UN OWNER LEYÓ LOS DEPÓSITOS A CONFIRMAR DE TODA LA PLATAFORMA.';
+        end if;
+        raise exception 'R51i el owner falló con otro error: %', sqlerrm;
+    end;
+    -- y por la tabla, el owner del demo no ve lo del tenant de prueba ni
+    -- escribe (los del demo sí los ve: en una base donde corrió la prueba
+    -- con navegador, el demo tiene los suyos)
+    if (select count(*) from depositos_cresium where lubricentro_id <> v_demo) <> 0 then
+      raise exception 'R51i EL OWNER DEL DEMO VE DEPÓSITOS AJENOS por la tabla: el RLS no recorta.';
+    end if;
+    begin
+      insert into depositos_cresium (lubricentro_id, transaccion_id, monto, estado, motivo)
+      values (v_demo, 5100099, 1, 'acreditado', 'x');
+      raise exception 'R51i_inserto';
+    exception
+      when insufficient_privilege then null;
+      when others then
+        if sqlerrm = 'R51i_inserto' then
+          raise exception 'R51i UN OWNER ESCRIBIÓ EN depositos_cresium.';
+        end if;
+    end;
+    execute 'reset role';
+    perform set_config('request.jwt.claims',
+      json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+    execute 'set local role authenticated';
+    -- Dos a confirmar vivos: el semestral de (f) y el de $777. Ni el
+    -- acreditado a mano ni el descartado de (h).
+    select count(*) into v_n from depositos_cresium_pendientes() where lubricentro_id = v_lub;
+    if v_n <> 2 then
+      raise exception 'R51i la lista trae % depósitos del tenant y tenía que traer 2 (los dos a confirmar; no el acreditado a mano ni el descartado).', v_n;
+    end if;
+    select * into r from depositos_cresium_pendientes() where lubricentro_id = v_lub and monto = 777;
+    if r.monto <> 777 or r.nombre <> 'CVU R51' or r.periodo_actual <> 'mensual'
+       or (select count(*) from jsonb_array_elements(r.montos)) < 2
+       or r.montos -> 0 ->> 'periodo' <> 'mensual' or (r.montos -> 0 ->> 'total')::numeric <> v_men then
+      raise exception 'R51i la fila no trae lo que Fidelli necesita para decidir (monto %, tenant %, montos %).', r.monto, r.nombre, r.montos;
+    end if;
+    execute 'reset role';
+    perform set_config('request.jwt.claims', '{}', true);
+
+    -- ---------- j · los candados ----------
+    begin
+      delete from depositos_cresium where id = v_dep_i;
+      raise exception 'R51j SE BORRÓ UN DEPÓSITO: el libro de la plata que entró se puede vaciar.';
+    exception when sqlstate 'P0001' then
+      if sqlerrm not like '%deposito_no_se_borra%' then raise; end if;
+    end;
+    begin
+      update depositos_cresium set monto = 1 where id = v_dep_i;
+      raise exception 'R51j SE EDITÓ EL MONTO DE UN DEPÓSITO.';
+    exception when sqlstate 'P0001' then
+      if sqlerrm not like '%deposito_no_se_edita%' then raise; end if;
+    end;
+    begin
+      execute 'truncate depositos_cresium';
+      raise exception 'R51j SE VACIÓ depositos_cresium.';
+    exception when sqlstate 'P0001' then
+      if sqlerrm not like '%deposito_no_se_borra%' then raise; end if;
+    end;
+
+    -- ---------- k · suspendido a mano, igual acredita ----------
+    update lubricentros set activo = false where id = v_lub;
+    v_pagos0 := (select count(*) from pagos where lubricentro_id = v_lub);
+    v_r := acreditar_deposito_cresium(r51_deposito(5100011, c_cvu, c_id, v_men));
+    if v_r ->> 'resultado' is distinct from 'acreditado'
+       or (select count(*) from pagos where lubricentro_id = v_lub) <> v_pagos0 + 1 then
+      raise exception 'R51k un tenant suspendido a mano transfirió el monto exacto y no se acreditó: %. La plata entró; la suspensión manual la levanta Fidelli, pero el pago se registra.', v_r;
+    end if;
+
+    raise exception 'rollback_r51' using errcode = 'P0051';
+  exception
+    when sqlstate 'P0051' then
+      execute 'reset role';
+      perform set_config('request.jwt.claims', '{}', true);
+  end;
+end $$;
+-- <<< R51
+
+drop function r51_deposito(bigint, text, bigint, numeric, integer);

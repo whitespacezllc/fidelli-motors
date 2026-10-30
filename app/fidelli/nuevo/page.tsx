@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { aliasHabilitado } from "@/app/fidelli/actions";
 import { WizardAlta } from "@/components/fidelli/wizard-alta";
 import type { PlanCompleto } from "@/components/fidelli/tipos";
 
@@ -10,9 +9,7 @@ export const metadata: Metadata = { title: "Nuevo lubricentro" };
 export default async function PaginaAlta() {
   const supabase = await createClient();
 
-  // Los planes y el interruptor del alias no dependen uno del otro: van en
-  // el mismo viaje.
-  const [{ data }, conAlias] = await Promise.all([
+  const { data } = await (
     supabase
       .from("planes")
       .select(
@@ -22,12 +19,8 @@ export default async function PaginaAlta() {
       // cobran y se editan en /fidelli/precios), pero acá no aparecen.
       .eq("activo", true)
       .eq("heredado", false)
-      .order("precio_mensual"),
-    // Mientras Cresium no confirme el formato, el campo del alias no se
-    // muestra. No es una decisión de diseño: el servidor rechaza cualquier
-    // alias que se mande, así que el campo solo podría frustrar.
-    aliasHabilitado(),
-  ]);
+      .order("precio_mensual")
+  );
 
   const planes = (data ?? []) as unknown as PlanCompleto[];
 
@@ -53,7 +46,7 @@ export default async function PaginaAlta() {
           antes de dar de alta un lubricentro: la suscripción necesita un plan.
         </p>
       ) : (
-        <WizardAlta planes={planes} aliasHabilitado={conAlias} />
+        <WizardAlta planes={planes} />
       )}
     </div>
   );
