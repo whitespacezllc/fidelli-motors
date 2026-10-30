@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { DOCUMENTOS_LEGALES } from "@/lib/legal";
 
-// La línea discreta con los dos documentos legales, al pie del sidebar y de
-// la hoja "Más" de mobile: junto a "Ayuda por WhatsApp" y "Cerrar sesión",
-// que es donde se busca. Solo texto, en tinta terciaria y 12px (el piso):
-// no compite con la navegación. Abren en pestaña nueva para no sacar al
-// mecánico de lo que estaba haciendo.
+// La línea discreta con los dos documentos legales, al pie de Mi cuenta
+// (hasta el 30/10/2026 estaba en el pie del sidebar y de la hoja «Más»;
+// con el pie en una sola fila, lo legal se busca en la cuenta). Solo texto,
+// en tinta terciaria y 12px (el piso): no compite con nada. Abren en
+// pestaña nueva para no sacar al mecánico de lo que estaba haciendo.
 //
 // El mismo par que enlaza el pie de la landing. Ninguna página más.
 export function LineaLegal({ className = "" }: { className?: string }) {

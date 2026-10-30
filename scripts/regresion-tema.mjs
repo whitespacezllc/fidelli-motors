@@ -248,6 +248,25 @@ try {
     check("en claro se ve el logotipo negro y no el gris", (await logoNegro.isVisible()) && !(await logoGris.isVisible()));
     const sw = page.locator("aside").getByRole("switch", { name: /Modo oscuro/ });
     check("el sidebar tiene el interruptor, apagado", (await sw.count()) === 1 && (await sw.getAttribute("aria-checked")) === "false");
+    // El pie del sidebar es UNA fila (30/10/2026): «Cerrar sesión» como
+    // texto y los dos accesos como íconos; mide menos de 64 px y los tres
+    // siguen ahí. Y el menú no queda tapado: el último ítem («Ayuda») se
+    // puede ver con scroll dentro del nav, no debajo del pie.
+    const pie = await page.evaluate(() => {
+      const aside = document.querySelector("aside");
+      const boton = Array.from(aside.querySelectorAll("button")).find((b) => b.textContent.trim() === "Cerrar sesión");
+      const fila = boton?.closest("form")?.parentElement;
+      const r = fila?.getBoundingClientRect();
+      const ayuda = Array.from(aside.querySelectorAll("a")).find((a) => a.textContent.trim() === "Ayuda");
+      ayuda?.scrollIntoView({ block: "nearest" });
+      const ra = ayuda?.getBoundingClientRect();
+      return { alto: r ? Math.round(r.height) : null, whatsapp: Boolean(fila?.querySelector('a[aria-label="Ayuda por WhatsApp"]')),
+        interruptor: Boolean(fila?.querySelector('[role="switch"]')), ayudaVisible: ra ? ra.bottom <= (r?.top ?? 0) + 1 : null };
+    });
+    check("el pie del sidebar es una sola fila (< 64 px) con Cerrar sesión, el WhatsApp y el modo oscuro",
+      pie.alto != null && pie.alto < 64 && pie.whatsapp && pie.interruptor, JSON.stringify(pie));
+    check("el último ítem del menú («Ayuda») no queda tapado por el pie", pie.ayudaVisible === true, JSON.stringify(pie));
+    check("los enlaces legales ya no están en el sidebar", (await page.locator("aside").getByRole("link", { name: "Términos" }).count()) === 0);
     await sw.click();
     check("tocarlo pinta el panel oscuro en el acto", (await temaEnPantalla(page)) === "oscuro");
     check("y la base guarda la preferencia", await esperarTema(OWNER, "oscuro"), `usuarios.tema = ${temaDe(OWNER)}`);
@@ -264,6 +283,7 @@ try {
     check("Mi cuenta tiene el interruptor, prendido, con su explicación",
       (await enCuenta.count()) >= 1 && (await enCuenta.first().getAttribute("aria-checked")) === "true" &&
         (await page.getByText("Se guarda en tu cuenta").count()) === 1);
+    check("y los enlaces legales, al pie", (await page.getByRole("link", { name: "Términos" }).count()) === 1 && (await page.getByRole("link", { name: "Privacidad" }).count()) === 1);
     await ctx.close();
   });
   await paso("el interruptor a 390, en la hoja «Más»", async () => {
@@ -273,6 +293,19 @@ try {
     await page.getByRole("button", { name: "Más", exact: true }).tap();
     const sw = page.getByRole("dialog").getByRole("switch", { name: /Modo oscuro/ });
     check("la hoja «Más» tiene el interruptor, prendido", (await sw.count()) === 1 && (await sw.getAttribute("aria-checked")) === "true");
+    // La hoja (30/10/2026): cada acceso con su ícono, en dos columnas, con
+    // Calcos y Ayuda, y las dos salidas con ícono. Sin los enlaces legales.
+    const hoja = await page.evaluate(() => {
+      const d = document.querySelector("[role=dialog]");
+      const accesos = Array.from(d.querySelectorAll("nav a, nav [aria-disabled]"));
+      const salidas = Array.from(d.querySelectorAll("a, button")).filter((e) => /Ayuda por WhatsApp|Cerrar sesión/.test(e.textContent));
+      const columnas = getComputedStyle(d.querySelector("nav")).gridTemplateColumns.split(" ").length;
+      return { accesos: accesos.length, conIcono: accesos.filter((a) => a.querySelector("svg")).length, columnas,
+        nombres: accesos.map((a) => a.textContent.trim()), salidasConIcono: salidas.filter((e) => e.querySelector("svg")).length, legales: d.textContent.includes("Términos") };
+    });
+    check("cada acceso de la hoja lleva su ícono, en dos columnas", hoja.accesos >= 9 && hoja.conIcono === hoja.accesos && hoja.columnas === 2, JSON.stringify(hoja));
+    check("la hoja tiene Calcos, Mi cuenta y Ayuda", ["Calcos", "Mi cuenta", "Ayuda"].every((n) => hoja.nombres.includes(n)), hoja.nombres.join(" · "));
+    check("las dos salidas (WhatsApp y cerrar sesión) llevan ícono y los enlaces legales se fueron a Mi cuenta", hoja.salidasConIcono === 2 && !hoja.legales, JSON.stringify(hoja));
     await capturar(page, "mas-oscuro-390", DIR_CAPTURAS);
     await sw.tap();
     check("apagarlo vuelve a claro en el acto", (await temaEnPantalla(page)) === "claro");

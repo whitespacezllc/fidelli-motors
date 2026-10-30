@@ -18,13 +18,14 @@ import {
   IconoLubricentro,
   IconoCuenta,
   IconoAyuda,
+  IconoSalir,
+  IconoWhatsapp,
 } from "@/components/iconos";
 import { cerrarSesion } from "@/lib/auth/actions";
 import { urlWhatsappSoporte } from "@/lib/config";
 import { MOTIVO_SUSPENSION } from "@/components/panel/aviso-suspension";
 import { motivoBloqueo } from "@/components/panel/bloqueo-onboarding";
 import type { FeaturePlan } from "@/lib/planes";
-import { LineaLegal } from "@/components/panel/linea-legal";
 import { ToggleTema } from "@/components/tema/toggle-tema";
 import type { TemaPanel } from "@/lib/tema-panel";
 
@@ -224,27 +225,35 @@ export function Sidebar({
         ))}
       </nav>
 
-      {/* El pie del sidebar, como en el hi-fi: ayuda y salida; y desde el
-          30/10/2026 el modo oscuro, que es de la persona y no del taller. */}
-      <div className="border-t border-line px-4 py-2">
-        <ToggleTema tema={tema} />
+      {/* EL PIE ES UNA SOLA FILA (30/10/2026). Antes eran cuatro renglones
+          —ayuda, cerrar sesión, los dos enlaces legales y, un rato, el modo
+          oscuro—: unos 150 px que en una pantalla de 768 de alto le tapaban
+          «Ayuda» al menú y se veían apretados en varios tenants. Queda lo
+          que se usa a diario como texto, «Cerrar sesión», y a su derecha los
+          dos accesos que no pueden irse lejos, como íconos de 40 px con su
+          nombre accesible: la ayuda por WhatsApp y el modo oscuro. Los
+          enlaces legales viven en Mi cuenta. Nada dejó de estar a un clic. */}
+      <div className="flex items-center gap-1 border-t border-line px-3 py-2">
+        <form action={cerrarSesion} className="min-w-0 flex-1">
+          <button
+            type="submit"
+            className="flex h-10 w-full items-center gap-2.5 rounded-md px-3 text-left text-ui text-ink-60 transition-colors hover:bg-surface/60 hover:text-ink"
+          >
+            <IconoSalir aria-hidden className="size-5 shrink-0" />
+            Cerrar sesión
+          </button>
+        </form>
         <a
           href={urlWhatsappSoporte()}
           target="_blank"
           rel="noopener noreferrer"
-          className={`${CLASE_ITEM} text-ink-60 hover:bg-surface/60`}
+          aria-label="Ayuda por WhatsApp"
+          title="Ayuda por WhatsApp"
+          className="flex size-10 shrink-0 items-center justify-center rounded-md text-ink-60 transition-colors hover:bg-surface/60 hover:text-ink"
         >
-          Ayuda por WhatsApp
+          <IconoWhatsapp className="size-5" />
         </a>
-        <form action={cerrarSesion}>
-          <button
-            type="submit"
-            className={`${CLASE_ITEM} w-full text-left text-ink-60 hover:bg-surface/60`}
-          >
-            Cerrar sesión
-          </button>
-        </form>
-        <LineaLegal className="px-3 pt-1.5 pb-1" />
+        <ToggleTema tema={tema} variante="icono" />
       </div>
     </aside>
   );
