@@ -9,6 +9,7 @@ import {
   type ResultadoMovimiento,
 } from "@/app/panel/(tras-onboarding)/finanzas/actions";
 import { recordarSucursal } from "@/lib/preferencias";
+import { BuscadorCliente } from "@/components/finanzas/buscador-cliente";
 import { MEDIOS_PAGO, ETIQUETA_MEDIO, parsearMonto, type MedioPago } from "@/lib/finanzas";
 
 type Sucursal = { id: string; nombre: string };
@@ -40,16 +41,22 @@ export function FormMovimiento({
   const [monto, setMonto] = useState("");
   const [concepto, setConcepto] = useState("");
   const [medio, setMedio] = useState<MedioPago>("efectivo");
+  // Solo para ingresos: de qué cliente es la plata que entró. Opcional —
+  // así el cobro queda en el seguimiento del cliente, como el de un
+  // presupuesto. Un egreso es un gasto, no va contra un cliente.
+  const [cliente, setCliente] = useState<{ id: string; nombre: string } | null>(null);
 
   const [resultado, enviar, enviando] = useActionState(async (prev: ResultadoMovimiento) => {
-    const datos = {
+    const base = {
       sucursalId,
       fecha,
       monto: parsearMonto(monto),
       concepto,
       medio,
     };
-    const r = esIngreso ? await crearIngreso(prev, datos) : await crearEgreso(prev, datos);
+    const r = esIngreso
+      ? await crearIngreso(prev, { ...base, clienteId: cliente?.id ?? null })
+      : await crearEgreso(prev, base);
     if (r.id) {
       router.push("/panel/finanzas");
       router.refresh();
@@ -75,6 +82,17 @@ export function FormMovimiento({
           autoFocus
         />
       </div>
+
+      {/* De quién es la plata: solo para ingresos y opcional. Lo deja en el
+          seguimiento del cliente, igual que el cobro de un presupuesto. */}
+      {esIngreso && (
+        <div>
+          <label className={CLASE_LABEL}>
+            Cliente <span className="text-ink-40 normal-case">(opcional)</span>
+          </label>
+          <BuscadorCliente onElegir={setCliente} />
+        </div>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
