@@ -1,4 +1,5 @@
 import { ToggleTema } from "@/components/tema/toggle-tema";
+import { LineaLegal } from "@/components/panel/linea-legal";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -393,6 +394,11 @@ export default async function PaginaCuenta() {
           </p>
         )}
       </Bloque>
+
+      {/* Los dos documentos legales, al pie de la cuenta: es donde se
+          buscan (antes estaban en el pie del sidebar y de la hoja «Más»,
+          que desde el 30/10/2026 son una sola fila). */}
+      <LineaLegal className="justify-center px-1 pt-1" />
     </div>
   );
 }

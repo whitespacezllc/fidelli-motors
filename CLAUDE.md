@@ -65,6 +65,21 @@ solo en elementos flotantes, radios 4/8/12.
 
 **Áreas táctiles de 44px mínimo.** El mecánico tiene los dedos con aceite.
 
+**El pie del sidebar es UNA fila, y la hoja «Más» del celular es una grilla
+con íconos (30/10/2026).** El pie lleva «Cerrar sesión» como texto y, a su
+derecha, los dos accesos que no pueden irse lejos como íconos de 40 px con
+nombre accesible: la ayuda por WhatsApp y el modo oscuro. Antes eran cuatro
+renglones (unos 150 px) que en una pantalla de 768 de alto tapaban «Ayuda»
+y se veían apretados en varios tenants. Los enlaces legales viven al pie de
+Mi cuenta. **Nada deja de estar a un clic: un acceso nuevo del pie entra
+como ícono, no como renglón.** La hoja «Más» tiene las MISMAS secciones y
+los MISMOS íconos que el sidebar (incluida Neumáticos, con el módulo), en
+dos columnas de 48 px, la abierta marcada; abajo, el modo oscuro y las dos
+salidas con ícono. Un ítem nuevo de navegación entra en los dos lugares
+con su ícono de `components/iconos.tsx`. Lo vigila `scripts/regresion-tema.mjs`
+(sección B: la altura del pie, el último ítem a la vista, los íconos de la
+hoja).
+
 **El modo oscuro del panel es una elección de la PERSONA, con interruptor;
 los papeles no se apagan (30/10/2026).** Claro por defecto. La preferencia
 vive en `usuarios.tema`, viaja con la sesión y se pinta como
