@@ -65,6 +65,18 @@ solo en elementos flotantes, radios 4/8/12.
 
 **Áreas táctiles de 44px mínimo.** El mecánico tiene los dedos con aceite.
 
+**La barra del celular mide 64 px y marca la pestaña abierta con una
+píldora (30/10/2026).** Íconos de 24 px, la pestaña activa con una píldora
+de 56 × 32 en `line` detrás del ícono y el nombre en negrita; «Nuevo
+trabajo» es un círculo rojo de 52 px levantado sobre la barra con un anillo
+del color de la barra; en oscuro la barra es `surface`, un escalón más clara
+que la página y que las tarjetas, para que se lea como barra; en tablet las
+cinco pestañas se agrupan en 448 px al centro. La hoja «Más» entra y sale
+con una transición de 200 ms (el velo se funde, la hoja sube 16 px) y el
+componente espera `animationend` antes de desmontarla. Antes medía 56 px
+con íconos de 20 y sin indicador: un tenant la describió como «fina, no se
+diferencia del fondo».
+
 **El pie del sidebar es UNA fila, y la hoja «Más» del celular es una grilla
 con íconos (30/10/2026).** El pie lleva «Cerrar sesión» como texto y, a su
 derecha, los dos accesos que no pueden irse lejos como íconos de 40 px con
