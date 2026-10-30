@@ -24,7 +24,12 @@ import {
 } from "@/lib/servicios";
 import { formatearKm } from "@/lib/renglones";
 import { descripcionEnUnaLinea } from "@/lib/renglones-mecanica";
-import { ETIQUETA_TIPO, type TipoTrabajo } from "@/lib/trabajos";
+import {
+  ETIQUETA_TIPO,
+  NOMBRE_TRABAJO,
+  admiteMecanicaAdjunta,
+  type TipoTrabajo,
+} from "@/lib/trabajos";
 import {
   formatearFecha,
   formatearFechaHora,
@@ -105,9 +110,10 @@ export default async function PaginaService({ params, searchParams }: Props) {
   // el mismo viaje.
   const [parejaRes, firmas] = await Promise.all([
     // La otra mitad de la visita, si este trabajo nació en una carga doble:
-    // el service de una mecánica adjunta, o la mecánica adjunta de un
-    // service. Son dos trabajos con sus plazos (24 horas / 7 días); acá solo
-    // se muestran juntos y el anular avisa del otro.
+    // el anfitrión (un service o una caja) de una mecánica adjunta, o la
+    // mecánica adjunta de un service o de una caja. Son dos trabajos con
+    // sus plazos (24 horas / 7 días); acá solo se muestran juntos y el
+    // anular avisa del otro.
     // En las dos direcciones se ignora la mitad anulada: un service anulado
     // no es «misma visita» de nadie, y el diálogo de anular no puede mandar
     // a anular lo que ya está anulado.
@@ -118,7 +124,7 @@ export default async function PaginaService({ params, searchParams }: Props) {
           .eq("id", service.cargado_con_id)
           .eq("anulado", false)
           .maybeSingle()
-      : service.tipo === "service"
+      : admiteMecanicaAdjunta(service.tipo)
         ? supabase
             .from("services")
             .select("id, tipo, fecha, trabajo_descripcion")
@@ -365,7 +371,7 @@ export default async function PaginaService({ params, searchParams }: Props) {
                 pareja
                   ? {
                       href: `/panel/services/${pareja.id}`,
-                      esService: pareja.tipo === "service",
+                      tipo: pareja.tipo,
                     }
                   : null
               }
@@ -429,9 +435,11 @@ export default async function PaginaService({ params, searchParams }: Props) {
                     href={`/panel/services/${pareja.id}`}
                     className="underline underline-offset-4 hover:text-ink-60"
                   >
-                    {pareja.tipo === "service"
-                      ? `El service del ${formatearFecha(pareja.fecha)}`
-                      : `Una mecánica: ${descripcionEnUnaLinea(pareja.trabajo_descripcion) ?? ""}`}
+                    {/* La pareja es la mecánica adjunta o su anfitrión
+                        (service o caja): el nombre sale del catálogo. */}
+                    {pareja.tipo === "mecanica"
+                      ? `Una mecánica: ${descripcionEnUnaLinea(pareja.trabajo_descripcion) ?? ""}`
+                      : `El ${NOMBRE_TRABAJO[pareja.tipo]} del ${formatearFecha(pareja.fecha)}`}
                   </Link>
                 </dd>
               </>

@@ -12221,7 +12221,7 @@ drop function r41_trabajos(uuid, uuid, uuid, text, timestamptz, text, boolean);
 --       km; sin próximo service de aceite ni descripción de mecánica) y el
 --       espejo `prox_caja_solo_caja` (un service, una mecánica o un
 --       trabajo de gomería con próximo de caja es un dato mentiroso). Una
---       caja no es adjunta de nada ni lleva adjunta.
+--       caja no es adjunta de nada (sí lleva adjunta desde 20261029200000: R49).
 --   c · La rama de guardar_service: la caja con sus cuatro renglones, que
 --       se guardan como HECHOS (`cambiado = true`) aunque el jsonb diga
 --       otra cosa; el stock del aceite baja por litros o por bidón como en
@@ -12625,11 +12625,7 @@ begin
     if v_err not like '%salto_caja_invalido%' then
       raise exception 'R42c un salto de 200.001 km no se rechazó con salto_caja_invalido (%).', v_err;
     end if;
-    v_err := r42_intento(v_val, v_suc, 84300, 'Dexron VI', 164300,
-      jsonb_build_object('descripcion', 'R42 mecánica colgada de una caja'));
-    if v_err not like '%mecanica_adjunta_solo_en_service%' then
-      raise exception 'R42c una caja con mecánica adjunta no se rechazó con mecanica_adjunta_solo_en_service (%).', v_err;
-    end if;
+    -- (Una caja CON mecánica adjunta entra desde 20261029200000: R49a.)
     select count(*) into v_m from services where vehiculo_id = v_val;
     if v_m <> v_n then
       raise exception 'R42c los intentos rechazados dejaron % fila(s) en la base.', v_m - v_n;
@@ -12822,8 +12818,7 @@ begin
       end;
     end loop;
     -- Una caja no es adjunta de un service (el CHECK del vínculo está en
-    -- positivo) ni lleva una mecánica adjunta (el trigger exige un service
-    -- como destino).
+    -- positivo)…
     begin
       insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, kilometros, aceite_tipo, prox_caja_km, cargado_con_id)
       values (v_demo, v_suc, v_val, v_own, 'caja', v_hoy, 84300, 'Dexron VI', 164300, v_srv);
@@ -12840,15 +12835,18 @@ begin
         end if;
         raise;
     end;
+    -- …pero SÍ lleva una mecánica adjunta (desde 20261029200000 el trigger
+    -- acepta una caja como destino; la pareja entera la prueba R49). Acá,
+    -- como INSERT directo, y se deshace enseguida para no mover los
+    -- contadores de más abajo.
     begin
       insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, trabajo_descripcion, cargado_con_id)
       values (v_demo, v_suc, v_veh, v_own, 'mecanica', v_hoy, 'R42 mecánica colgada de una caja', v_caja);
-      raise exception 'R42b_entro';
-    exception when others then
-      if sqlerrm = 'R42b_entro' then
-        raise exception 'R42b una mecánica quedó «cargada con» una CAJA: el trigger del vínculo dejó de exigir un service como destino.';
-      end if;
-      if sqlerrm not like '%vinculo_invalido%' then raise; end if;
+      raise exception 'R42b_deshacer' using errcode = 'P0042';
+    exception
+      when sqlstate 'P0042' then null;
+      when others then
+        raise exception 'R42b una mecánica «cargada con» una CAJA fue rechazada (%): desde 20261029200000 la caja es anfitrión de la mecánica adjunta (R49).', sqlerrm;
     end;
     -- El contracaso: la fila bien formada entra por la tabla (los CHECK no
     -- se cerraron de más).
@@ -14739,3 +14737,456 @@ begin
   delete from vehiculos where id = any(v_ids);
 end $$;
 -- <<< R48
+
+
+-- ============================================================
+-- R49 · Service de caja + mecánica en UNA carga (20261029200000)
+--
+-- Lo pidió un taller con el service de caja prendido: la misma pregunta
+-- del final del cartón de aceite —«¿Se le hizo algo de mecánica?»— al
+-- final de la caja. La pareja caja + mecánica nace por la misma rama que
+-- la de service + mecánica (R38), así que acá se prueba lo que cambia de
+-- lugar y lo que podría romperse sin error:
+--   a · la pareja nace junta desde la caja: guardar_service devuelve la
+--       caja; la mecánica queda vinculada a ella (cargado_con_id), con la
+--       misma fecha, km, sucursal y created_at, su descripción recortada y
+--       sus renglones libres; la caja conserva su próximo en prox_caja_km,
+--       sus renglones como hechos y sus observaciones; la mecánica nace
+--       sin próximo de caja (el espejo) y sin observaciones; los pendientes
+--       nuevos y tildados cuelgan de la caja y la mecánica no los duplica.
+--   b · un plan sin 'mecanica' (Basic) con la feature caja prendida: la
+--       carga doble falla con 42501 y no queda NI LA CAJA; la caja sola del
+--       Basic sigue entrando.
+--   c · sin la feature caja la pareja no entra (42501) y no queda nada.
+--   d · el premio: la pareja vale 0 con alcance 'services' (la caja no es
+--       un service) y UNA visita con 'todos', en las dos funciones; con
+--       «Aplicar premio» en la carga doble queda UN canje atado a la caja
+--       y el ciclo vuelve a 0.
+--   e · corregir fecha, km y sucursal de la CAJA los copia a la mecánica
+--       adjunta (la rama de la caja termina en su propio return: la
+--       propagación va copiada ahí); con el plan en Basic la caja se
+--       corrige igual y la mecánica queda como estaba; editar la mecánica
+--       no toca la caja.
+--   f · el trigger del vínculo acepta una caja como destino y sigue
+--       rechazando un trabajo de gomería.
+--   g · anular la caja no anula la mecánica.
+--   h · vista_proximos_caja no se mueve por la adjunta: un auto con caja
+--       sola y uno con caja + mecánica (misma historia) proyectan la misma
+--       fecha y el mismo estado (la mecánica repite el punto de la caja).
+-- Lo que NO cambia lo siguen probando R38 (la pareja desde un service) y
+-- R42b (una caja nunca es adjunta: el CHECK en positivo).
+-- Todo corre en una subtransacción con rollback (P0049).
+-- ============================================================
+-- >>> R49
+create or replace function r49_como(p_uid uuid) returns void language plpgsql as $$
+begin
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', p_uid, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+end $$;
+
+create or replace function r49_postgres() returns void language plpgsql as $$
+begin
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+end $$;
+
+do $$
+declare
+  v_demo    uuid;
+  v_own     uuid;
+  v_super   uuid;
+  v_suc     uuid;
+  v_suc2    uuid;
+  v_plan    uuid;
+  v_basic   uuid;
+  v_premio  uuid;
+  v_cli     uuid;
+  v_veh     uuid;   -- la pareja (a, e, f, g)
+  v_veh2    uuid;   -- los intentos que no dejan nada (b, c)
+  v_vd      uuid;   -- el premio (d)
+  v_va      uuid;   -- la vista: caja sola (h)
+  v_vb      uuid;   -- la vista: caja + mecánica (h)
+  v_caja    uuid;
+  v_mec     uuid;
+  v_otro    uuid;
+  v_neu     uuid;
+  v_pend    uuid;
+  v_padre   services%rowtype;
+  v_fila    services%rowtype;
+  v_a       record;
+  v_b       record;
+  v_n       integer;
+  v_ciclo   integer;
+  v_flota   integer;
+  v_disp    boolean;
+  v_d1      date := current_date - 10;  -- la pareja (a)
+  v_d2      date := current_date - 11;  -- el premio (d)
+  v_d3      date := current_date - 12;  -- el Basic y la feature apagada (b, c)
+begin
+  select id into v_demo  from lubricentros where slug = 'demo';
+  select id into v_own   from usuarios where lubricentro_id = v_demo and rol = 'owner' limit 1;
+  select id into v_super from usuarios where rol = 'superadmin' limit 1;
+  select id into v_suc   from sucursales where lubricentro_id = v_demo and activa order by created_at limit 1;
+  select id into v_suc2  from sucursales where lubricentro_id = v_demo and activa and id <> v_suc order by created_at limit 1;
+  select p.id into v_basic from planes p where p.nombre = 'Basic';
+  select s.plan_id into v_plan from suscripciones s where s.lubricentro_id = v_demo
+    order by s.inicio desc, s.created_at desc limit 1;
+  select p.id into v_premio from premios p where p.lubricentro_id = v_demo and p.activo limit 1;
+  if v_demo is null or v_own is null or v_super is null or v_suc is null
+     or v_basic is null or v_plan is null or v_premio is null then
+    raise exception 'R49 SIN PISO: falta el demo, su owner, su sucursal, el superadmin, el plan Basic o el premio activo del seed.';
+  end if;
+
+  begin
+    -- ---------- los fixtures ----------
+    insert into clientes (lubricentro_id, nombre, telefono, email)
+    values (v_demo, 'Persona R49', '351 555 0490', 'r49@ejemplo.com') returning id into v_cli;
+    insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+    values (v_demo, v_cli, 'AB149CD', 'Toyota', 'Corolla') returning id into v_veh;
+    insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+    values (v_demo, v_cli, 'AB249CD', 'Toyota', 'Yaris') returning id into v_veh2;
+    insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+    values (v_demo, v_cli, 'AB349CD', 'Honda', 'Fit') returning id into v_vd;
+    insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+    values (v_demo, v_cli, 'AB449CD', 'Nissan', 'Sentra') returning id into v_va;
+    insert into vehiculos (lubricentro_id, cliente_id, patente, marca, modelo)
+    values (v_demo, v_cli, 'AB549CD', 'Nissan', 'Versa') returning id into v_vb;
+    update premios set alcance = 'services', meta_services = 3 where id = v_premio;
+    insert into trabajos_pendientes (lubricentro_id, vehiculo_id, usuario_id, descripcion, objetivo_km)
+    values (v_demo, v_veh, v_own, 'R49 pendiente previo', 85000) returning id into v_pend;
+    -- Un trabajo de gomería del mismo auto, como postgres: el destino que
+    -- el trigger tiene que seguir rechazando (f).
+    insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, tipo, fecha, kilometros, alineacion)
+    values (v_demo, v_suc, v_veh, v_own, 'neumaticos', v_d1 - 30, 79000, true) returning id into v_neu;
+    -- La feature caja, por la puerta real de /fidelli.
+    perform r49_como(v_super);
+    perform fijar_override_plan(v_demo,
+      (select coalesce(plan_overrides, '{}'::jsonb) || '{"caja": true}'::jsonb from lubricentros where id = v_demo),
+      'Service de caja automática · sin costo — prueba de regresión R49');
+    perform r49_postgres();
+
+    -- ---------- a · la pareja nace junta, desde la caja ----------
+    perform r49_como(v_own);
+    v_caja := guardar_service(
+      p_vehiculo_id => v_veh, p_sucursal_id => v_suc, p_fecha => v_d1,
+      p_kilometros => 80000, p_aceite_tipo => 'Dexron VI', p_prox_service_km => null,
+      p_tipo => 'caja', p_prox_caja_km => 160000,
+      p_items => jsonb_build_array(jsonb_build_object('tipo', 'caja_filtro', 'cambiado', false, 'detalle', 'R49 filtro')),
+      p_observaciones => 'R49 observación de la caja',
+      p_pendientes => jsonb_build_array(
+        jsonb_build_object('descripcion', 'R49 revisar soportes de caja', 'objetivo_km', 90000)),
+      p_resolver_pendientes => array[v_pend],
+      p_mecanica => jsonb_build_object(
+        'descripcion', '  R49 cambio de pastillas delanteras ',
+        'items', jsonb_build_array(
+          jsonb_build_object('detalle', 'R49 pastillas', 'cantidad', 2),
+          jsonb_build_object('detalle', '   '))));
+    perform r49_postgres();
+
+    select * into v_padre from services where id = v_caja;
+    if v_padre.tipo <> 'caja' then
+      raise exception 'R49a guardar_service devolvió la fila % en vez de la caja: la pantalla de guardado aterriza en la mecánica.', v_padre.tipo;
+    end if;
+    if v_padre.cargado_con_id is not null then
+      raise exception 'R49a la CAJA lleva cargado_con_id: el vínculo va en la mecánica, hacia la caja.';
+    end if;
+    if v_padre.prox_caja_km <> 160000 or v_padre.prox_service_km is not null then
+      raise exception 'R49a la caja de la pareja perdió su próximo (prox_caja_km %, prox_service_km %).', v_padre.prox_caja_km, v_padre.prox_service_km;
+    end if;
+    select count(*) into v_n from services where cargado_con_id = v_caja;
+    if v_n <> 1 then
+      raise exception 'R49a la mecánica adjunta no quedó vinculada a la caja (filas con cargado_con_id: %). Sin el vínculo, el guardado, el detalle y Editar no encuentran la pareja.', v_n;
+    end if;
+    select * into v_fila from services where cargado_con_id = v_caja;
+    v_mec := v_fila.id;
+    if v_fila.tipo <> 'mecanica' then
+      raise exception 'R49a lo vinculado a la caja es un(a) % y no una mecánica.', v_fila.tipo;
+    end if;
+    if v_fila.fecha <> v_padre.fecha then
+      raise exception 'R49a la mecánica adjunta quedó con fecha % y la caja con %: la regla «una visita, un punto» necesita la MISMA fecha.', v_fila.fecha, v_padre.fecha;
+    end if;
+    if v_fila.kilometros is distinct from 80000 or v_fila.sucursal_id <> v_suc then
+      raise exception 'R49a la mecánica adjunta no heredó los kilómetros (%) o la sucursal de la caja.', v_fila.kilometros;
+    end if;
+    if v_fila.created_at <> v_padre.created_at then
+      raise exception 'R49a la mecánica adjunta nació con OTRO created_at que la caja: la del día del canje contaría para el ciclo siguiente.';
+    end if;
+    if v_fila.trabajo_descripcion <> 'R49 cambio de pastillas delanteras' then
+      raise exception 'R49a la descripción de la mecánica adjunta no se guardó recortada: «%».', v_fila.trabajo_descripcion;
+    end if;
+    if v_fila.prox_caja_km is not null or v_fila.prox_service_km is not null
+       or v_fila.aceite_tipo is not null or v_fila.observaciones is not null then
+      raise exception 'R49a la mecánica adjunta heredó datos de la caja que no son suyos (prox_caja_km %, aceite %, observaciones %).', v_fila.prox_caja_km, v_fila.aceite_tipo, v_fila.observaciones;
+    end if;
+    select count(*), max(cantidad) into v_n, v_ciclo
+    from service_items where service_id = v_mec and item_tipo is null;
+    if v_n <> 1 or v_ciclo <> 2 then
+      raise exception 'R49a los renglones de la mecánica adjunta no se guardaron como renglones libres con su cantidad (% renglones, cantidad %).', v_n, v_ciclo;
+    end if;
+    select count(*) filter (where item_tipo = 'caja_filtro' and cambiado) into v_n
+    from service_items where service_id = v_caja;
+    if v_n <> 1 then
+      raise exception 'R49a el renglón de la caja no quedó como HECHO al guardar la pareja (prendido = hecho, también con la mecánica adjunta).';
+    end if;
+    if v_padre.observaciones <> 'R49 observación de la caja' then
+      raise exception 'R49a la caja perdió sus observaciones al guardar la pareja.';
+    end if;
+    select count(*) into v_n from trabajos_pendientes where origen_service_id = v_caja;
+    if v_n <> 1 then
+      raise exception 'R49a el pendiente anotado en la carga doble no quedó colgado de la caja (%).', v_n;
+    end if;
+    select count(*) into v_n from trabajos_pendientes where origen_service_id = v_mec;
+    if v_n <> 0 then
+      raise exception 'R49a la mecánica adjunta duplicó % pendiente(s): los pendientes quedan en la caja, la llamada recursiva no los reenvía.', v_n;
+    end if;
+    select count(*) into v_n from trabajos_pendientes where id = v_pend and resuelto_service_id = v_caja;
+    if v_n <> 1 then
+      raise exception 'R49a el pendiente tildado en la carga doble no se resolvió en la caja.';
+    end if;
+
+    -- ---------- b · el Basic: la policy rige adentro, y no queda ni la caja ----------
+    update suscripciones set plan_id = v_basic where lubricentro_id = v_demo;
+    perform r49_como(v_own);
+    begin
+      perform guardar_service(
+        p_vehiculo_id => v_veh2, p_sucursal_id => v_suc, p_fecha => v_d3,
+        p_kilometros => 60000, p_aceite_tipo => 'CVT', p_prox_service_km => null,
+        p_tipo => 'caja', p_prox_caja_km => 140000,
+        p_mecanica => jsonb_build_object('descripcion', 'R49 mecánica que un Basic no puede'));
+      raise exception 'R49b UN BASIC CARGÓ UNA MECÁNICA ADJUNTA A UNA CAJA: la segunda fila no pasó por services_insercion.';
+    exception
+      when insufficient_privilege then null;
+      when others then
+        raise exception 'R49b el Basic con mecánica adjunta a la caja falló con otro error: %', sqlerrm;
+    end;
+    perform r49_postgres();
+    if exists (select 1 from services where vehiculo_id = v_veh2) then
+      raise exception 'R49b la carga doble del Basic dejó la CAJA guardada sin la mecánica: la visita se guarda entera o no se guarda.';
+    end if;
+    -- El contracaso: la caja sola del Basic (con la feature prendida por
+    -- override) sigue entrando.
+    perform r49_como(v_own);
+    begin
+      v_otro := guardar_service(
+        p_vehiculo_id => v_veh2, p_sucursal_id => v_suc, p_fecha => v_d3,
+        p_kilometros => 60000, p_aceite_tipo => 'CVT', p_prox_service_km => null,
+        p_tipo => 'caja', p_prox_caja_km => 140000);
+    exception when others then
+      raise exception 'R49b EL PEOR BUG: un Basic con la feature caja no puede cargar una caja sola (%).', sqlerrm;
+    end;
+    perform r49_postgres();
+    update suscripciones set plan_id = v_plan where lubricentro_id = v_demo;
+    delete from service_items where service_id = v_otro;
+    delete from services where id = v_otro;
+
+    -- ---------- c · sin la feature caja, la pareja no entra y no queda nada ----------
+    perform r49_como(v_super);
+    perform fijar_override_plan(v_demo,
+      (select coalesce(plan_overrides, '{}'::jsonb) - 'caja' from lubricentros where id = v_demo),
+      'R49 · la feature apagada');
+    perform r49_postgres();
+    perform r49_como(v_own);
+    begin
+      perform guardar_service(
+        p_vehiculo_id => v_veh2, p_sucursal_id => v_suc, p_fecha => v_d3,
+        p_kilometros => 60000, p_aceite_tipo => 'CVT', p_prox_service_km => null,
+        p_tipo => 'caja', p_prox_caja_km => 140000,
+        p_mecanica => jsonb_build_object('descripcion', 'R49 mecánica sin la feature caja'));
+      raise exception 'R49c SIN la feature caja entró una caja con mecánica adjunta.';
+    exception
+      when insufficient_privilege then null;
+      when others then
+        raise exception 'R49c sin la feature caja la pareja falló con otro error: %', sqlerrm;
+    end;
+    perform r49_postgres();
+    if exists (select 1 from services where vehiculo_id = v_veh2) then
+      raise exception 'R49c sin la feature caja quedó una fila de la pareja.';
+    end if;
+    perform r49_como(v_super);
+    perform fijar_override_plan(v_demo,
+      (select coalesce(plan_overrides, '{}'::jsonb) || '{"caja": true}'::jsonb from lubricentros where id = v_demo),
+      'R49 · la feature de vuelta');
+    perform r49_postgres();
+
+    -- ---------- d · el premio: la pareja es UNA visita con 'todos', cero con 'services' ----------
+    perform r49_como(v_own);
+    perform guardar_service(
+      p_vehiculo_id => v_vd, p_sucursal_id => v_suc, p_fecha => v_d2,
+      p_kilometros => 50000, p_aceite_tipo => 'Dexron VI', p_prox_service_km => null,
+      p_tipo => 'caja', p_prox_caja_km => 130000,
+      p_mecanica => jsonb_build_object('descripcion', 'R49 mecánica del premio'));
+    select services_ciclo into v_ciclo from premio_disponible(v_vd);
+    select cf.services_ciclo into v_flota from ciclos_fidelizacion() cf where cf.vehiculo_id = v_vd;
+    perform r49_postgres();
+    if v_ciclo <> 0 or v_flota <> 0 then
+      raise exception 'R49d con alcance «services» la pareja caja + mecánica sumó al ciclo (auto: %, flota: %). Con ese alcance cuentan solo los cambios de aceite.', v_ciclo, v_flota;
+    end if;
+    update premios set alcance = 'todos' where id = v_premio;
+    perform r49_como(v_own);
+    select services_ciclo into v_ciclo from premio_disponible(v_vd);
+    select cf.services_ciclo into v_flota from ciclos_fidelizacion() cf where cf.vehiculo_id = v_vd;
+    perform r49_postgres();
+    if v_ciclo <> 1 or v_flota <> 1 then
+      raise exception 'R49d con alcance «todos» la pareja caja + mecánica vale % (flota: %; esperaba 1 y 1): la visita doble suma dos, o no suma.', v_ciclo, v_flota;
+    end if;
+    -- «Aplicar premio» en la carga doble: un canje, atado a la caja, y el
+    -- ciclo vuelve a 0 (las dos filas comparten el now() del canje).
+    -- (la meta mínima es 2: una segunda visita, una caja sola de un día
+    -- antes, completa el ciclo)
+    update premios set meta_services = 2 where id = v_premio;
+    perform r49_como(v_own);
+    perform guardar_service(
+      p_vehiculo_id => v_vd, p_sucursal_id => v_suc, p_fecha => v_d2 - 1,
+      p_kilometros => 49000, p_aceite_tipo => 'Dexron VI', p_prox_service_km => null,
+      p_tipo => 'caja', p_prox_caja_km => 129000);
+    select disponible into v_disp from premio_disponible(v_vd);
+    if not v_disp then
+      raise exception 'R49d SIN PISO: con la meta en 2 y dos visitas el premio tendría que estar disponible.';
+    end if;
+    v_otro := guardar_service(
+      p_vehiculo_id => v_vd, p_sucursal_id => v_suc, p_fecha => current_date,
+      p_kilometros => 50100, p_aceite_tipo => 'Dexron VI', p_prox_service_km => null,
+      p_tipo => 'caja', p_prox_caja_km => 130100, p_canjear_premio => true,
+      p_mecanica => jsonb_build_object('descripcion', 'R49 mecánica del día del canje'));
+    select services_ciclo, disponible into v_ciclo, v_disp from premio_disponible(v_vd);
+    perform r49_postgres();
+    select count(*) into v_n from canjes where vehiculo_id = v_vd;
+    if v_n <> 1 then
+      raise exception 'R49d la carga doble con «Aplicar premio» dejó % canjes (esperaba 1).', v_n;
+    end if;
+    if (select service_id from canjes where vehiculo_id = v_vd) is distinct from v_otro then
+      raise exception 'R49d el canje quedó atado a otra fila que la caja (a la mecánica adjunta?): la pantalla de guardado no lo encuentra.';
+    end if;
+    if v_ciclo <> 0 or v_disp then
+      raise exception 'R49d tras el canje el ciclo vale % (esperaba 0): la caja o la mecánica adjunta del día del canje están contando para el ciclo siguiente.', v_ciclo;
+    end if;
+    update premios set alcance = 'services', meta_services = 3 where id = v_premio;
+
+    -- ---------- e · corregir la caja corrige la visita ----------
+    perform r49_como(v_own);
+    begin
+      perform actualizar_service(
+        p_service_id => v_caja, p_sucursal_id => coalesce(v_suc2, v_suc), p_fecha => v_d1 - 1,
+        p_kilometros => 80050, p_aceite_tipo => 'Dexron VI', p_prox_service_km => null,
+        p_items => jsonb_build_array(jsonb_build_object('tipo', 'caja_filtro', 'detalle', 'R49 filtro')),
+        p_observaciones => 'R49 observación corregida', p_prox_caja_km => 160050);
+    exception when others then
+      raise exception 'R49e no se pudo corregir la caja de la pareja dentro de sus 24 horas: %', sqlerrm;
+    end;
+    perform r49_postgres();
+    select * into v_fila from services where id = v_mec;
+    if v_fila.fecha <> v_d1 - 1 or v_fila.kilometros <> 80050
+       or v_fila.sucursal_id <> coalesce(v_suc2, v_suc) then
+      raise exception 'R49e al corregir la caja de la pareja la mecánica adjunta no la siguió (fecha %, km %): la visita queda partida en dos y con alcance ''todos'' vale dos puntos.', v_fila.fecha, v_fila.kilometros;
+    end if;
+    if v_fila.trabajo_descripcion <> 'R49 cambio de pastillas delanteras' or v_fila.observaciones is not null then
+      raise exception 'R49e la propagación desde la caja tocó algo más que fecha, km y sucursal de la mecánica.';
+    end if;
+    -- Con el plan en Basic: la caja se corrige igual (regla 2) y la
+    -- mecánica queda como estaba (42501 atrapado).
+    update suscripciones set plan_id = v_basic where lubricentro_id = v_demo;
+    perform r49_como(v_own);
+    begin
+      perform actualizar_service(
+        p_service_id => v_caja, p_sucursal_id => v_suc, p_fecha => v_d1 - 1,
+        p_kilometros => 80060, p_aceite_tipo => 'Dexron VI', p_prox_service_km => null,
+        p_items => jsonb_build_array(jsonb_build_object('tipo', 'caja_filtro', 'detalle', 'R49 filtro')),
+        p_prox_caja_km => 160060);
+    exception when others then
+      raise exception 'R49e un Basic no pudo corregir su caja porque la mecánica adjunta ya no está en su plan (%): un downgrade nunca bloquea lo que ya se tenía.', sqlerrm;
+    end;
+    perform r49_postgres();
+    update suscripciones set plan_id = v_plan where lubricentro_id = v_demo;
+    select kilometros into v_n from services where id = v_caja;
+    select kilometros into v_ciclo from services where id = v_mec;
+    if v_n <> 80060 or v_ciclo <> 80050 then
+      raise exception 'R49e con el plan en Basic la caja quedó en % km y la mecánica en % (esperaba 80060 y 80050): o la edición no pasó, o la propagación pasó por encima de la policy.', v_n, v_ciclo;
+    end if;
+    -- Al revés no se propaga: editar la mecánica es editar la mecánica.
+    perform r49_como(v_own);
+    perform actualizar_service(
+      p_service_id => v_mec, p_sucursal_id => v_suc, p_fecha => v_d1 - 2,
+      p_kilometros => 80070, p_aceite_tipo => null, p_prox_service_km => null,
+      p_trabajo_descripcion => 'R49 pastillas corregidas');
+    perform r49_postgres();
+    select * into v_padre from services where id = v_caja;
+    if v_padre.kilometros <> 80060 or v_padre.fecha <> v_d1 - 1 then
+      raise exception 'R49e editar la mecánica adjunta movió la caja (fecha %, km %): la propagación es solo del anfitrión hacia la mecánica.', v_padre.fecha, v_padre.kilometros;
+    end if;
+
+    -- ---------- f · el trigger del vínculo: la caja sí, la gomería no ----------
+    begin
+      insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, fecha, tipo, trabajo_descripcion, cargado_con_id)
+      values (v_demo, v_suc, v_veh, v_own, v_d1, 'mecanica', 'R49 mecánica colgada de una gomería', v_neu);
+      raise exception 'R49f una mecánica se vinculó a un trabajo de NEUMÁTICOS: el trigger dejó de exigir un service o una caja como destino.';
+    exception when others then
+      if sqlerrm not like '%vinculo_invalido%' then
+        raise exception 'R49f el vínculo hacia un trabajo de neumáticos falló con otro error: %', sqlerrm;
+      end if;
+    end;
+    -- El contracaso: una segunda mecánica hacia la caja, bien formada,
+    -- entra por la tabla (el trigger no se cerró de más).
+    begin
+      insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, fecha, tipo, trabajo_descripcion, cargado_con_id)
+      values (v_demo, v_suc, v_veh, v_own, v_d1 - 1, 'mecanica', 'R49 segunda mecánica de la misma visita', v_caja);
+    exception when others then
+      raise exception 'R49f un vínculo bien formado (misma patente, hacia una caja) fue rechazado: %', sqlerrm;
+    end;
+
+    -- ---------- g · anular es de a uno ----------
+    update services set anulado = true where id = v_caja;
+    if (select anulado from services where id = v_mec) then
+      raise exception 'R49g anular la caja anuló también la mecánica adjunta: son dos trabajos y se anulan por separado (con aviso).';
+    end if;
+    update services set anulado = false where id = v_caja;
+
+    -- ---------- h · la proyección de la caja no se mueve por la adjunta ----------
+    -- Dos autos con la misma historia: un service viejo (como postgres) y
+    -- la caja de hace 10 días con un salto de 20.000 km; en uno, con la
+    -- mecánica adjunta. La mecánica repite el punto (misma fecha, mismos
+    -- km): el ritmo, la fecha estimada y el estado tienen que coincidir.
+    insert into services (lubricentro_id, sucursal_id, vehiculo_id, usuario_id, fecha, kilometros, aceite_tipo, prox_service_km)
+    values (v_demo, v_suc, v_va, v_own, v_d1 - 90, 10000, '5W30', 20000),
+           (v_demo, v_suc, v_vb, v_own, v_d1 - 90, 10000, '5W30', 20000);
+    perform r49_como(v_own);
+    perform guardar_service(
+      p_vehiculo_id => v_va, p_sucursal_id => v_suc, p_fecha => v_d1,
+      p_kilometros => 80000, p_aceite_tipo => 'Dexron VI', p_prox_service_km => null,
+      p_tipo => 'caja', p_prox_caja_km => 100000);
+    perform guardar_service(
+      p_vehiculo_id => v_vb, p_sucursal_id => v_suc, p_fecha => v_d1,
+      p_kilometros => 80000, p_aceite_tipo => 'Dexron VI', p_prox_service_km => null,
+      p_tipo => 'caja', p_prox_caja_km => 100000,
+      p_mecanica => jsonb_build_object('descripcion', 'R49 mecánica que no mueve la proyección'));
+    select km_por_dia, fecha_estimada, estado, ultimo_service_id into v_a from vista_proximos_caja where vehiculo_id = v_va;
+    select km_por_dia, fecha_estimada, estado, ultimo_service_id into v_b from vista_proximos_caja where vehiculo_id = v_vb;
+    perform r49_postgres();
+    if v_a.fecha_estimada is null or v_b.fecha_estimada is null then
+      raise exception 'R49h SIN PISO: la vista no lista el auto de la caja sola (%) o el de la pareja (%).', v_a.fecha_estimada, v_b.fecha_estimada;
+    end if;
+    if v_a.km_por_dia is distinct from v_b.km_por_dia or v_a.fecha_estimada <> v_b.fecha_estimada
+       or v_a.estado <> v_b.estado then
+      raise exception 'R49h la mecánica adjunta movió la proyección de la caja (sola: % km/día, % %; con mecánica: % km/día, % %).', v_a.km_por_dia, v_a.fecha_estimada, v_a.estado, v_b.km_por_dia, v_b.fecha_estimada, v_b.estado;
+    end if;
+    if (select tipo from services where id = v_b.ultimo_service_id) <> 'caja' then
+      raise exception 'R49h el «último» de la fila de la pareja no es la caja: la vista tomó la mecánica como última caja.';
+    end if;
+
+    -- Todo lo escrito en este bloque se deshace acá. Cualquier otra
+    -- excepción de arriba NO se atrapa: sube y pone el reset en rojo.
+    raise exception 'rollback_r49' using errcode = 'P0049';
+  exception
+    when sqlstate 'P0049' then
+      perform r49_postgres();
+  end;
+
+  if exists (select 1 from vehiculos where patente_normalizada in ('AB149CD', 'AB249CD', 'AB349CD', 'AB449CD', 'AB549CD'))
+     or exists (select 1 from clientes where email = 'r49@ejemplo.com') then
+    raise exception 'R49 SIN PISO: la subtransacción no deshizo los fixtures.';
+  end if;
+end $$;
+
+drop function r49_postgres();
+drop function r49_como(uuid);
+-- <<< R49
