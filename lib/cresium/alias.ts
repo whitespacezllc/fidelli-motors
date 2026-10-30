@@ -69,34 +69,73 @@ export function esAliasValido(alias: string): boolean {
 // ============================================================
 
 function sinAcentos(texto: string): string {
-  return texto.normalize("NFD").replace(/[̀-ͯ]/g, "");
+  return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
+
+/**
+ * Las palabras del slug que no identifican a nadie: «lubricentro»,
+ * «mecánica», «taller»… El alias es lo que el dueño tipea en su home
+ * banking y lee en el comprobante, y `fm.lubricentroelgar` no se parece a
+ * nada; `fm.elgarage` sí. Se sacan solo si queda algo con qué nombrar.
+ */
+const GENERICAS = new Set([
+  "lubricentro", "lubricentros", "lubricantes", "lubricante", "lubricacion",
+  "mecanica", "mecanicas", "mecanico", "taller", "talleres", "servicio", "servicios",
+  "soluciones", "integral", "system", "automotive", "automotriz", "y", "de", "del", "al", "detalle",
+]);
 
 /**
  * Un alias propuesto a partir del slug, recortado al largo válido.
  *
  * Devuelve `""` cuando no queda nada utilizable (un slug vacío, o uno que
  * después de normalizar da menos que el mínimo): una sugerencia que no
- * sirve es peor que ninguna, porque el campo arranca con algo que el
- * veredicto va a marcar en rojo.
+ * sirve es peor que ninguna.
+ *
+ * La regla (30/10/2026): se sacan las palabras genéricas del slug si queda
+ * algo de 3 letras o más; después entran palabras ENTERAS mientras quepan
+ * en lo que deja el prefijo (17 con `fm.` y un máximo de 20), y solo una
+ * palabra que no entra sola se corta. «lubricentro-el-garage» → `fm.elgarage`;
+ * «pg-taller-lubricentro» → `fm.pgtaller`; «loprestimotorsport» (una
+ * palabra de 18) → `fm.loprestimotorspor`. Es una SUGERENCIA: el campo de
+ * /fidelli es editable y quien emite la cuenta está eligiendo.
  *
  * `maximo` entra por parámetro para que el formulario pueda usar el número
  * REAL de la base en vez de la copia de este archivo.
  */
 export function aliasSugerido(slug: string, maximo = ALIAS_LARGO_MAXIMO): string {
-  const limpio = sinAcentos(slug)
+  const palabras = sinAcentos(slug)
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "");
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+  if (palabras.length === 0) return "";
 
-  if (!limpio) return "";
+  const propias = palabras.filter((p) => !GENERICAS.has(p));
+  const elegidas = propias.join("").length >= 3 ? propias : palabras;
 
-  // El prefijo entra solo si después queda algo. Con `fm.` son 3
-  // caracteres, así que en un máximo de 20 quedan 17 para el nombre.
   const lugar = maximo - ALIAS_PREFIJO.length;
-  if (lugar < 1) return limpio.slice(0, maximo);
+  if (lugar < 1) return elegidas.join("").slice(0, maximo);
 
-  const propuesto = ALIAS_PREFIJO + limpio.slice(0, lugar);
+  let nombre = "";
+  for (const palabra of elegidas) {
+    if (nombre.length + palabra.length <= lugar) nombre += palabra;
+    else if (nombre === "") { nombre = palabra.slice(0, lugar); break; }
+    else break;
+  }
+
+  const propuesto = ALIAS_PREFIJO + nombre;
   return propuesto.length >= ALIAS_LARGO_MINIMO ? propuesto : "";
+}
+
+/**
+ * El mismo alias, con un número al final, para cuando el primero ya es de
+ * otro: `fm.shaddai` → `fm.shaddai2`, `fm.shaddai3`… Recorta el nombre si el
+ * número no entra en el máximo. Devuelve `""` si no hay base.
+ */
+export function aliasConNumero(base: string, n: number, maximo = ALIAS_LARGO_MAXIMO): string {
+  if (!base || n < 2) return base;
+  const sufijo = String(n);
+  const recortado = base.slice(0, Math.max(ALIAS_PREFIJO.length + 1, maximo - sufijo.length));
+  return recortado + sufijo;
 }
 
 /** Los veredictos de `alias_estado()`. La base contesta uno de estos. */

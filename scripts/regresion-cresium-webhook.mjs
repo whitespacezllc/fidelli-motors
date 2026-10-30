@@ -11,7 +11,8 @@
 //   npm run dev
 // Correr:  node scripts/regresion-cresium-webhook.mjs
 //
-// Crea un lubricentro de prueba y lo borra al final, pase lo que pase.
+// Crea un lubricentro de prueba y lo limpia al final, pase lo que pase (el
+// tenant queda: ver limpiar()).
 import crypto from "node:crypto";
 import fs from "node:fs";
 import { execSync } from "node:child_process";
@@ -95,19 +96,34 @@ const SLUG = "cresium-regresion";
 //
 // Las filas de prueba quedan, y está bien que queden: es lo que esta tabla
 // dice ser. Si hace falta una base limpia, la puerta es `supabase db reset`.
+//
+// ⚠ Y TAMPOCO BORRA `depositos_cresium` (20261031100000): es el libro de la
+// plata que entró por la cuenta fija y tiene candado. Como sus filas apuntan
+// al tenant, el tenant de prueba QUEDA entre corridas (igual que los
+// `email-run-*` de los avisos): se reutiliza por su slug, y lo que sí se
+// limpia es lo que se puede limpiar. `supabase db reset` es la única
+// limpieza completa.
 function limpiar() {
-  sql(`delete from pagos where lubricentro_id in (select id from lubricentros where slug='${SLUG}');
+  // Los pagos que nacieron de un depósito a la cuenta fija están referidos
+  // por el libro (FK): quedan, como el libro. Los demás se borran.
+  sql(`delete from pagos p where p.lubricentro_id in (select id from lubricentros where slug='${SLUG}')
+         and not exists (select 1 from depositos_cresium d where d.pago_id = p.id);
        delete from cresium_ordenes where lubricentro_id in (select id from lubricentros where slug='${SLUG}');
        delete from encargos_calcos where lubricentro_id in (select id from lubricentros where slug='${SLUG}');
-       delete from suscripciones where lubricentro_id in (select id from lubricentros where slug='${SLUG}');
-       delete from lubricentros where slug='${SLUG}';`);
+       delete from suscripciones s where s.lubricentro_id in (select id from lubricentros where slug='${SLUG}')
+         and not exists (select 1 from depositos_cresium d where d.lubricentro_id = s.lubricentro_id);
+       delete from lubricentros l where l.slug='${SLUG}'
+         and not exists (select 1 from depositos_cresium d where d.lubricentro_id = l.id);`);
 }
 limpiar();
 
-sql(`insert into lubricentros (nombre, slug) values ('Cresium Regresión','${SLUG}')`);
+sql(`insert into lubricentros (nombre, slug) values ('Cresium Regresión','${SLUG}') on conflict (slug) do nothing`);
 const lub = sql(`select id from lubricentros where slug='${SLUG}'`);
 sql(`insert into suscripciones (lubricentro_id, plan_id, estado, periodo, descuento_pct, vencimiento)
-     select '${lub}', id, 'activa', 'mensual', 0, current_date + 3 from planes where nombre='Pro' and not heredado`);
+     select '${lub}', id, 'activa', 'mensual', 0, current_date + 3 from planes where nombre='Pro' and not heredado
+     and not exists (select 1 from suscripciones where lubricentro_id='${lub}')`);
+sql(`update suscripciones set estado='activa', periodo='mensual', descuento_pct=0, inicio=current_date - 27, vencimiento=current_date + 3
+     where lubricentro_id='${lub}'`);
 const sus = sql(`select id from suscripciones where lubricentro_id='${lub}'`);
 const HASTA = sql(`select to_char(current_date + 33,'YYYY-MM-DD')`);
 const HASTA2 = sql(`select to_char(current_date + 63,'YYYY-MM-DD')`);
@@ -117,6 +133,11 @@ const vencAntes = sql(`select vencimiento from suscripciones where id='${sus}'`)
 const pagos = () => Number(sql(`select count(*) from pagos where lubricentro_id='${lub}'`));
 const eventos = () => Number(sql(`select count(*) from cresium_eventos where external_id='${EXT}'`));
 const venc = () => sql(`select vencimiento from suscripciones where id='${sus}'`);
+// Los conteos son RELATIVOS al arranque: el tenant y la evidencia quedan
+// entre corridas (ver limpiar()), así que «un pago» es «uno más que al
+// empezar», no «uno en total».
+const pagos0 = pagos();
+const eventos0 = eventos();
 
 try {
   console.log(`tenant de prueba: ${SLUG} · vencimiento inicial ${vencAntes}\n`);
@@ -191,11 +212,11 @@ try {
     const j = await r.json();
     check("DEPOSIT PAID → 200", r.status === 200, `dio ${r.status}`);
     check("acreditado", j.resultado === "acreditado", JSON.stringify(j));
-    check("se registró UN pago", pagos() === 1, `hay ${pagos()}`);
+    check("se registró UN pago", pagos() === pagos0 + 1, `hay ${pagos()} (había ${pagos0})`);
     check(`el vencimiento se movió a ${HASTA}`, venc() === HASTA, `quedó en ${venc()}`);
     check(
       "el pago quedó sin usuario y con origen cresium",
-      sql(`select coalesce(registrado_por::text,'NULL') || '/' || origen from pagos where lubricentro_id='${lub}'`) === "NULL/cresium",
+      sql(`select coalesce(registrado_por::text,'NULL') || '/' || origen from pagos where cresium_transaccion_id=90010`) === "NULL/cresium",
     );
   }
 
@@ -208,12 +229,12 @@ try {
       codigos.push(r.status);
     }
     check("los cuatro reintentos responden 200", codigos.every((c) => c === 200), codigos.join(","));
-    check("SIGUE habiendo un solo pago", pagos() === 1, `hay ${pagos()}`);
+    check("SIGUE habiendo un solo pago", pagos() === pagos0 + 1, `hay ${pagos()}`);
     check("el vencimiento no se movió de nuevo", venc() === HASTA, `quedó en ${venc()}`);
     check(
       "pero la evidencia guardó las cinco entregas",
-      eventos() === 5,
-      `hay ${eventos()} eventos`,
+      eventos() === eventos0 + 5,
+      `hay ${eventos()} eventos (había ${eventos0})`,
     );
   }
 
@@ -226,7 +247,7 @@ try {
     check("PARTIAL → 200 (no se reintenta lo que ya entendimos)", r.status === 200);
     check("no acredita", j.resultado === "sin_acreditar", JSON.stringify(j));
     check("el vencimiento NO se movió", venc() === vencAhora, `quedó en ${venc()}`);
-    check("y sigue habiendo un solo pago", pagos() === 1, `hay ${pagos()}`);
+    check("y sigue habiendo un solo pago", pagos() === pagos0 + 1, `hay ${pagos()}`);
   }
 
   // ── 5 · Un evento que no es nuestro ───────────────────────────────
@@ -234,7 +255,7 @@ try {
   {
     const r = await enviar(deposito(90030, "00000000-0000-0000-0000-000000000000:2026-12-31", "PAID", 1, 1));
     check("orden de otro → 200 sin acreditar", r.status === 200 && (await r.json()).resultado === "sin_acreditar");
-    check("no se creó ningún pago nuevo", pagos() === 1, `hay ${pagos()}`);
+    check("no se creó ningún pago nuevo", pagos() === pagos0 + 1, `hay ${pagos()}`);
   }
   {
     const r = await enviar({ type: "OTRA_COSA", retry: 1, data: { id: 90040 } });
@@ -335,6 +356,97 @@ try {
       check("una referencia de calcos que ni es un uuid → 200 sin acreditar", r.status === 200 && j.resultado === "sin_acreditar", `${r.status} ${JSON.stringify(j)}`);
     }
     check("ninguno de los cinco tocó `pagos`", todosLosPagos() === pagosAntes, `${pagosAntes} → ${todosLosPagos()}`);
+  }
+
+  // ── 7 · El CVU dedicado (20261031100000) ──────────────────────────
+  // El depósito a la cuenta FIJA del tenant no trae paymentOrder: trae el
+  // CVU en `to` (la forma medida). Se acredita SOLO con el monto exacto de
+  // un período; cualquier otro queda a confirmar, sin pago. Los ids de
+  // transacción salen del reloj: el libro no se borra entre corridas.
+  console.log("\n── El CVU dedicado (sin paymentOrder) ──");
+  {
+    const CVU = "0000003100000000007001";
+    // La cuenta, como la deja fijar_cvu_de_tenant() (acá por SQL, como
+    // postgres: la puerta exige superadmin y acá no hay sesión).
+    if (sql(`select coalesce(cresium_cvu,'') from lubricentros where id='${lub}'`) !== CVU) {
+      sql(`update lubricentros set cresium_alias='fm.cresiumreg', cresium_cvu='${CVU}', cresium_deposit_address_id=7001 where id='${lub}'`);
+    }
+    const mensual = Number(sql(`select total from montos_ofrecidos('${lub}') where periodo='mensual'`));
+    const anual = Number(sql(`select total from montos_ofrecidos('${lub}') where periodo='anual'`));
+    check("el tenant tiene sus montos de hoy", mensual > 0 && anual > mensual, `mensual ${mensual} · anual ${anual}`);
+
+    const base = Date.now() % 1_000_000_000;
+    const real = JSON.parse(fs.readFileSync(new URL("./fixtures-cresium-deposit-real.json", import.meta.url), "utf8"));
+    // Un DEPOSIT con los bytes reales, sin paymentOrder y al CVU del tenant.
+    const dedicado = (id, monto) => {
+      const p = structuredClone(real);
+      p.data.transaction.id = id;
+      delete p.data.transaction.paymentOrder;
+      // Las dos formas en que viene la cuenta que recibió (la doc dice
+      // depositAddress; el DEPOSIT real trae `to`): las dos apuntan a ella.
+      p.data.transaction.to = { ...p.data.transaction.to, id: 7001, value: CVU };
+      p.data.transaction.depositAddress = { id: 7001, type: "CVU", value: CVU, bankName: "Cresium" };
+      p.data.transaction.totalAmount = monto;
+      p.data.transaction.netAmount = monto;
+      p.data.transaction.amounts = [{ type: "NET_BASE", amount: monto, key: null }];
+      return p;
+    };
+    const depositos = (tx) => Number(sql(`select count(*) from depositos_cresium where transaccion_id=${tx}`));
+    const estadoDep = (tx) => sql(`select estado from depositos_cresium where transaccion_id=${tx}`);
+    const vencAhora = venc();
+    const pagosAhora = pagos();
+
+    {
+      const r = await enviar(dedicado(base + 1, mensual));
+      const j = await r.json().catch(() => ({}));
+      check("el monto EXACTO del mensual → 200 acreditado", r.status === 200 && j.resultado === "acreditado" && j.periodo === "mensual", `${r.status} ${JSON.stringify(j)}`);
+      check("un pago más, de Cresium y sin autor", pagos() === pagosAhora + 1 &&
+        sql(`select coalesce(registrado_por::text,'NULL') || '/' || origen from pagos where cresium_transaccion_id=${base + 1}`) === "NULL/cresium");
+      const esperado = sql(`select to_char((date '${vencAhora}' + interval '1 month')::date, 'YYYY-MM-DD')`);
+      check(`el vencimiento se movió un mes (${esperado})`, venc() === esperado, `quedó en ${venc()}`);
+      check("el libro lo registró como acreditado", estadoDep(base + 1) === "acreditado", estadoDep(base + 1));
+    }
+    {
+      const codigos = [];
+      for (let i = 2; i <= 5; i++) {
+        const p = dedicado(base + 1, mensual); p.retry = i;
+        const r = await enviar(p);
+        codigos.push(`${r.status}/${(await r.json().catch(() => ({}))).resultado}`);
+      }
+      check("los cuatro reintentos → 200 ya_acreditado", codigos.every((c) => c === "200/ya_acreditado"), codigos.join(","));
+      check("y sigue habiendo un pago y una fila en el libro", pagos() === pagosAhora + 1 && depositos(base + 1) === 1);
+    }
+    {
+      const v = venc(); const p0 = pagos();
+      const r = await enviar(dedicado(base + 2, mensual + 1000));
+      const j = await r.json().catch(() => ({}));
+      check("otro monto → 200 sin acreditar, a confirmar", r.status === 200 && j.resultado === "sin_acreditar" && j.motivo === "a_confirmar", `${r.status} ${JSON.stringify(j)}`);
+      check("sin pago y sin mover el vencimiento", pagos() === p0 && venc() === v);
+      check("el libro lo dejó a confirmar con el motivo", estadoDep(base + 2) === "a_confirmar" &&
+        /mensual \$/.test(sql(`select motivo from depositos_cresium where transaccion_id=${base + 2}`)));
+      const p = dedicado(base + 2, mensual + 1000); p.retry = 2;
+      const r2 = await enviar(p);
+      check("el reintento del a confirmar → 200 ya_registrado, una fila", r2.status === 200 &&
+        (await r2.json().catch(() => ({}))).resultado === "ya_registrado" && depositos(base + 2) === 1);
+    }
+    {
+      const v = venc();
+      const r = await enviar(dedicado(base + 3, anual));
+      const j = await r.json().catch(() => ({}));
+      const esperado = sql(`select to_char((date '${v}' + interval '12 months')::date, 'YYYY-MM-DD')`);
+      check("el monto exacto del anual → acreditado, 12 meses", r.status === 200 && j.resultado === "acreditado" && j.periodo === "anual" && venc() === esperado, `${JSON.stringify(j)} · venc ${venc()}`);
+    }
+    {
+      const p = dedicado(base + 4, mensual);
+      p.data.transaction.to.value = "0000003100000000009999"; p.data.transaction.to.id = 9999;
+      p.data.transaction.depositAddress = { id: 9999, type: "CVU", value: "0000003100000000009999" };
+      const r = await enviar(p);
+      const j = await r.json().catch(() => ({}));
+      check("un CVU que no es de nadie → 200 sin acreditar, con el motivo de siempre", r.status === 200 && j.resultado === "sin_acreditar" && /sin paymentOrder/.test(j.motivo ?? ""), `${r.status} ${JSON.stringify(j)}`);
+      check("y sin fila en el libro", depositos(base + 4) === 0);
+    }
+    check("los a confirmar están en la lista de Fidelli",
+      Number(sql(`select count(*) from depositos_cresium where lubricentro_id='${lub}' and estado='a_confirmar'`)) >= 1);
   }
 } finally {
   limpiar();
