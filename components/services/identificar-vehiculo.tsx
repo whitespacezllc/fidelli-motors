@@ -5,6 +5,7 @@ import { PanelAlta } from "@/components/services/panel-alta";
 import { CampoPatente, MiniFicha } from "@/components/services/campos-carton";
 import { createClient } from "@/lib/supabase/client";
 import {
+  esPatenteArgentina,
   esPatenteValida,
   normalizarPatente,
   patenteIncompleta,
@@ -63,9 +64,10 @@ export function IdentificarVehiculo({ marcas }: { marcas: string[] }) {
     const turno = ++busqueda.current;
     const buscar = async () => {
       setQuieto(true);
-      // AB123C todavía va a ser AB123CD: buscarla ahora sería buscar otra
-      // patente y abrir «¿De quién es?» a mitad de tipeo. Con menos de 6
-      // tampoco hay nada que buscar (el aviso de arriba igual ya se mostró).
+      // AB123C todavía va a ser AB123CD (y ABC1D2, ABC1D23): buscarla ahora
+      // sería buscar otra patente y abrir «¿De quién es?» a mitad de tipeo.
+      // Con menos de 5 tampoco hay nada que buscar (el aviso de arriba igual
+      // ya se mostró).
       if (patenteIncompleta(enMayusculas)) return;
 
       const resultado = await buscarVehiculoPorPatente(supabase, enMayusculas);
@@ -75,11 +77,14 @@ export function IdentificarVehiculo({ marcas }: { marcas: string[] }) {
       setBuscado(true);
     };
 
-    // Una patente completa y válida sale YA: ninguna patente válida es el
-    // principio de otra, así que no hay nada que esperar. Son 300 ms menos
-    // en cada carga. Lo que no cierra en ningún formato espera a que deje
-    // de tipear, como siempre.
-    if (esPatenteValida(enMayusculas)) {
+    // Una patente argentina completa sale YA: ninguna patente argentina es
+    // el principio de otra argentina, así que no hay nada que esperar. Son
+    // 300 ms menos en cada carga. Una vecina espera a que deje de tipear,
+    // como lo que no cierra en ningún formato: ABC 12 (la moto chilena) es
+    // el principio de ABC 123, y si saliera al toque toda patente argentina
+    // vieja se buscaría dos veces, con «¿De quién es?» asomando en la
+    // quinta letra. Apurar el caso raro le costaría al común.
+    if (esPatenteArgentina(enMayusculas)) {
       void buscar();
     } else {
       temporizador.current = setTimeout(() => {
@@ -132,7 +137,7 @@ export function IdentificarVehiculo({ marcas }: { marcas: string[] }) {
           <button
             type="button"
             onClick={() => setAltaManual(true)}
-            className="font-semibold text-brand"
+            className="font-semibold text-brand-texto"
           >
             Cargar cliente y vehículo
           </button>

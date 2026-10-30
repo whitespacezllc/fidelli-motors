@@ -141,10 +141,11 @@ if (libs) {
   // falla más, no el final de la corrida.
   await paso("patenteIncompleta existe", async () => {
     const { patenteIncompleta, esPatenteValida, PATENTE_LARGO_MINIMO, PATENTE_LARGO_MAXIMO } = libs.texto;
-    check("los largos son 6 y 7", PATENTE_LARGO_MINIMO === 6 && PATENTE_LARGO_MAXIMO === 7);
+    // 5 desde el 26/10/2026: la moto chilena (ABC 12) es la patente más corta.
+    check("los largos son 5 y 7", PATENTE_LARGO_MINIMO === 5 && PATENTE_LARGO_MAXIMO === 7);
     for (const [p, esperado] of [
       ["AB123C", true], ["ab 123 c", true], ["A123BC", true],
-      ["ABC12", true], ["A", true], ["", true],
+      ["AB123", true], ["A", true], ["", true],
       ["ABC123", false], ["AB123CD", false], ["123ABC", false], ["A123BCD", false],
       ["KXM616", false], ["AB12CD", false], ["ABCDEF", false],
     ]) {

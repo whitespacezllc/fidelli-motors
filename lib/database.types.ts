@@ -3189,6 +3189,7 @@ export type Database = {
           lubricentro_id: string | null
           nombre: string
           rol: Database["public"]["Enums"]["rol_usuario"]
+          tema: string
         }
         Insert: {
           created_at?: string
@@ -3197,6 +3198,7 @@ export type Database = {
           lubricentro_id?: string | null
           nombre: string
           rol: Database["public"]["Enums"]["rol_usuario"]
+          tema?: string
         }
         Update: {
           created_at?: string
@@ -3205,6 +3207,7 @@ export type Database = {
           lubricentro_id?: string | null
           nombre?: string
           rol?: Database["public"]["Enums"]["rol_usuario"]
+          tema?: string
         }
         Relationships: [
           {
@@ -4410,6 +4413,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      fijar_mi_tema: { Args: { p_tema: string }; Returns: undefined }
       fijar_origen_tenant: {
         Args: {
           p_detalle?: string
@@ -5000,6 +5004,7 @@ export type Database = {
         | "caja_aditivo"
         | "caja_limpieza_carter"
         | "caja_lavado"
+        | "caja_dialisis"
       motivo_contacto_fidelli: "trial" | "cobranza"
       motivo_perdida:
         | "precio"
@@ -5227,6 +5232,7 @@ export const Constants = {
         "caja_aditivo",
         "caja_limpieza_carter",
         "caja_lavado",
+        "caja_dialisis",
       ],
       motivo_contacto_fidelli: ["trial", "cobranza"],
       motivo_perdida: [

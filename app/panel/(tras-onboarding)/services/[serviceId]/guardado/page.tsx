@@ -8,7 +8,11 @@ import { formatearKm } from "@/lib/renglones";
 import { descripcionEnUnaLinea } from "@/lib/renglones-mecanica";
 import { resumenRuedas } from "@/lib/ruedas";
 import { nombreParaMensaje } from "@/lib/clientes";
-import type { TipoTrabajo } from "@/lib/trabajos";
+import {
+  admiteMecanicaAdjunta,
+  type AnfitrionMecanica,
+  type TipoTrabajo,
+} from "@/lib/trabajos";
 
 // Qué dice la confirmación, por tipo. Un mapa: con cuatro tipos, «si no es
 // un service es un trabajo» ya no alcanza —el service de caja se nombra—.
@@ -17,6 +21,11 @@ const GUARDADO: Record<TipoTrabajo, string> = {
   mecanica: "Trabajo guardado",
   neumaticos: "Trabajo guardado",
   caja: "Service de caja guardado",
+};
+// …y con la mecánica adjunta: los dos trabajos de la visita, nombrados.
+const GUARDADO_CON_MECANICA: Record<AnfitrionMecanica, string> = {
+  service: "Service y mecánica guardados",
+  caja: "Service de caja y mecánica guardados",
 };
 
 export const metadata: Metadata = { title: "Trabajo guardado" };
@@ -99,8 +108,8 @@ export default async function PaginaGuardado({
     <div className="mx-auto max-w-md lg:max-w-xl lg:pt-4">
       <p className="rounded-md bg-success-soft px-3.5 py-3 font-brand text-body font-bold text-success">
         ✓{" "}
-        {service.tipo === "service" && adjunta
-          ? "Service y mecánica guardados"
+        {adjunta && admiteMecanicaAdjunta(service.tipo)
+          ? GUARDADO_CON_MECANICA[service.tipo]
           : GUARDADO[service.tipo]}
       </p>
 

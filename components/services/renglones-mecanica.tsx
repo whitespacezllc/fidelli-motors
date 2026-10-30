@@ -7,6 +7,7 @@ import {
   renglonesVisibles,
   tieneFrase,
 } from "@/lib/renglones-mecanica";
+import type { AnfitrionMecanica } from "@/lib/trabajos";
 
 // ============================================================
 // La orden de trabajo — los renglones de la mecánica, como teclado
@@ -25,18 +26,18 @@ export function RenglonesMecanica({
   descripcion,
   alCambiar,
   tieneGomeria,
-  adjunta,
+  adjuntaA,
 }: {
   descripcion: string;
   alCambiar: (texto: string) => void;
   /** El taller tiene la feature 'neumaticos': alineación y rotación se
    *  cargan como trabajo de gomería y acá no se ofrecen. */
   tieneGomeria: boolean;
-  /** Es la mecánica adjunta a un service: lo que ya está en el cartón de
-   *  arriba no se repite. */
-  adjunta: boolean;
+  /** Es la mecánica adjunta a un service o a un service de caja: lo que ya
+   *  está en el cartón de arriba no se repite. null = mecánica suelta. */
+  adjuntaA: AnfitrionMecanica | null;
 }) {
-  const visibles = renglonesVisibles({ tieneGomeria, adjunta });
+  const visibles = renglonesVisibles({ tieneGomeria, adjuntaA });
 
   return (
     <div className="flex flex-col gap-3.5">
@@ -73,7 +74,7 @@ export function RenglonesMecanica({
                     // vecino se corre de fila. Lo mide la prueba.
                     className={`flex min-h-11 items-center rounded-md border text-ui font-semibold whitespace-nowrap transition-colors ${
                       prendido
-                        ? "gap-1.5 border-ink bg-ink pr-4 pl-3 text-white"
+                        ? "gap-1.5 border-ink bg-ink pr-4 pl-3 text-base"
                         : "border-line bg-base px-6 text-ink hover:bg-surface"
                     }`}
                   >

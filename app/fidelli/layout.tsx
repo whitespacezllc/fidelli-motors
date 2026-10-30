@@ -4,6 +4,7 @@ import { exigirRol } from "@/lib/auth/session";
 import { cerrarSesion } from "@/lib/auth/actions";
 import { Logo } from "@/components/marca/logo";
 import { NavLink } from "@/components/panel/nav-link";
+import { ToggleTema } from "@/components/tema/toggle-tema";
 
 // El panel de administración de Fidelli: barra superior en vez de sidebar —
 // dos módulos no justifican uno (ver docs/Panel de Administración.html).
@@ -24,10 +25,10 @@ export default async function LayoutFidelli({
   const sesion = await exigirRol("superadmin");
 
   return (
-    <div className="min-h-dvh bg-surface/40">
+    <div className="min-h-dvh bg-fondo" data-theme={sesion.tema} data-tema-panel="">
       <header className="flex h-[54px] items-center gap-5 overflow-x-auto border-b border-line bg-base px-5">
         <div className="flex shrink-0 items-baseline gap-2">
-          <Logo className="h-5 w-auto" priority />
+          <Logo tono="auto" className="h-5 w-auto" priority />
           <span className="text-ui text-ink-60">Administración</span>
         </div>
 
@@ -102,6 +103,7 @@ export default async function LayoutFidelli({
           <span className="text-ui text-ink-60">
             Sesión: <span className="font-semibold text-ink">{sesion.nombre}</span>
           </span>
+          <ToggleTema tema={sesion.tema} variante="icono" />
           <form action={cerrarSesion}>
             <button
               type="submit"

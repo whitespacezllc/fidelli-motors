@@ -11,7 +11,11 @@ import {
   SALTO_RANGO_ERROR,
   validarCaja,
 } from "@/lib/renglones";
-import { FEATURE_DE_TIPO, type TipoTrabajo } from "@/lib/trabajos";
+import {
+  FEATURE_DE_TIPO,
+  admiteMecanicaAdjunta,
+  type TipoTrabajo,
+} from "@/lib/trabajos";
 import {
   DOT_FORMATO,
   MEDIDA_FORMATO,
@@ -85,9 +89,10 @@ export type PayloadService = {
   alineacion?: boolean | null;
   /** Gomería: una fila por rueda con sustancia. */
   ruedas?: RuedaCargada[];
-  /** La mecánica adjunta del final del cartón (solo en un service): se
-   *  guarda como segunda fila, con la fecha, los km y la sucursal del
-   *  service, en la MISMA transacción. Sus renglones son libres. */
+  /** La mecánica adjunta del final del cartón (en un service o en una
+   *  caja): se guarda como segunda fila, con la fecha, los km y la
+   *  sucursal del anfitrión, en la MISMA transacción. Sus renglones son
+   *  libres. */
   mecanica?: { descripcion: string; items: ItemCargado[] } | null;
 };
 
@@ -116,6 +121,12 @@ const SIN_LA_FEATURE: Record<"mecanica" | "neumaticos" | "caja", string> = {
   caja: "El service de caja automática no está activo en tu cuenta. Escribinos si lo querés activar.",
 };
 
+// Dónde va la mecánica adjunta. El error de la base conserva su nombre de
+// siempre (mecanica_adjunta_solo_en_service) aunque desde el 29/10/2026
+// también entre en una caja.
+const SOLO_EN_ANFITRION =
+  "La mecánica adjunta va al final de un service o de un service de caja. Para cargarla sola, elegí Mecánica arriba del cartón.";
+
 function traducirError(error: { code?: string; message?: string }): string {
   if (/premio_no_disponible/.test(error.message ?? "")) return PREMIO_YA_NO;
   if (/canje_solo_en_service/.test(error.message ?? "")) {
@@ -128,7 +139,7 @@ function traducirError(error: { code?: string; message?: string }): string {
     return "Contá qué trabajo se hizo: es lo que va a ver tu cliente en su historial.";
   }
   if (/mecanica_adjunta_solo_en_service/.test(error.message ?? "")) {
-    return "La mecánica adjunta va al final de un service. Para cargarla sola, elegí Mecánica arriba del cartón.";
+    return SOLO_EN_ANFITRION;
   }
   if (/pendiente_sin_objetivo|pendiente_invalido/.test(error.message ?? "")) {
     return "A cada pendiente ponele qué es y una fecha o kilómetros.";
@@ -194,16 +205,14 @@ export async function guardarService(
   }
 
   // La mecánica adjunta: la misma feature que la mecánica sola, y solo al
-  // final de un service. La base lo repite (policy y función); acá el
-  // mensaje llega ANTES de perder lo tipeado — y como la transacción es
-  // una, un rechazo tardío se llevaría también el service.
+  // final de un service o de una caja. La base lo repite (policy y
+  // función); acá el mensaje llega ANTES de perder lo tipeado — y como la
+  // transacción es una, un rechazo tardío se llevaría también el
+  // anfitrión.
   const mecanica = payload.mecanica ?? null;
   if (mecanica) {
-    if (tipo !== "service") {
-      return {
-        error:
-          "La mecánica adjunta va al final de un service. Para cargarla sola, elegí Mecánica arriba del cartón.",
-      };
+    if (!admiteMecanicaAdjunta(tipo)) {
+      return { error: SOLO_EN_ANFITRION };
     }
     if (!featureHabilitada(sesion, "mecanica")) {
       return {

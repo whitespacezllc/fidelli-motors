@@ -87,3 +87,101 @@ en producción. Cero emails. El orden de la sección A no es opcional.
 - [ ] Bloque 3 (Santiago, tras un pago real por Cresium):
       `update lubricentros set suspension_automatica = true where slug <> 'demo';`
       y la migración de una línea que pone `bloqueo_de_alta_activo()` en `true`.
+
+## H · Patentes de los países vecinos (26/10/2026)
+
+Una migración sola, `20261026120000_patentes_vecinas.sql`: redefine
+`patente_formato_valido()` con los nueve formatos de Brasil, Uruguay, Paraguay,
+Bolivia y Chile. No carga datos, no toca ninguna fila, es instantánea, y es un
+superconjunto: ningún vehículo existente deja de cumplir el CHECK.
+
+- [x] **La base primero**: `db push` a dev y a prod desde el workdir aislado
+      (26/10, 17:50 y 17:59 UTC; prod 119 → 120, `vehiculos_invalidos = 0`).
+- [x] Después el release develop → main y el deploy (#182, 26/10 18:00 UTC).
+- [ ] Humo en producción con una chapa real de Sassi: cargarla en «Nuevo
+      trabajo» y abrir `/[slug]/[patente]`.
+- [x] Nada que cargar a mano.
+
+**Trampa vista el 26/10, para el próximo push a dev.** Dev tiene cuatro
+migraciones `20261022*_finanzas_*` (rama `feat/facturacion-cimientos` de
+Grego, commit `fa2e130`) que no están en develop ni en prod. `db push` a dev
+desde el repo se niega con «Remote migration versions not found in local
+migrations directory» y sugiere `migration repair --status reverted`: **no
+correrlo**, le borraría el historial a finanzas en dev. Lo que anda es un
+workdir aislado linkeado a dev con las migraciones del repo MÁS esas cuatro
+(`git show fa2e130:supabase/migrations/<archivo>`). Y cuando finanzas llegue
+a prod, sus archivos quedan ANTES de `20261026120000` en el orden: el push va
+a pedir `--include-all` o renumerarlas.
+
+## I · El renglón de diálisis en el service de caja (26/10/2026)
+
+Una migración sola, `20261026150000_caja_dialisis.sql`: un valor más en el
+enum `item_tipo` (`caja_dialisis`, al final, después de `caja_lavado`). No
+carga datos y no toca ninguna función.
+
+- [x] **La base primero**: `db push` a dev y a prod desde el workdir aislado
+      (26/10, 20:45 y 20:48 UTC; prod 120 → 121, el enum con los cinco de la
+      caja en orden). El workdir de dev llevó las cuatro migraciones de
+      finanzas que develop no tiene (trampa de la sección H).
+- [x] Después el release develop → main (#185, 26/10 20:49 UTC). Al revés no
+      rompe nada a la vista, pero una caja con la diálisis tildada fallaría al
+      guardar con el error crudo del enum («invalid input value for enum
+      item_tipo»), que el front no traduce: no dejar la app adelante de la base.
+- [ ] Humo en producción: en un tenant con la feature `caja` prendida, abrir
+      «Nuevo trabajo» → Caja y ver el quinto renglón; tildarlo con una nota,
+      guardar, y mirar el papel en `/[slug]/[patente]` y el Excel.
+- [ ] Nada que cargar a mano.
+
+## J · La tarjeta de WhatsApp de cada tenant (27/10/2026)
+
+Sin migraciones: la salida es solo de la app (#187: `opengraph-image.tsx`
+por tenant, en el modo de su página, sin marca Fidelli; `sharp` como
+dependencia directa). La base no cambia, así que no hay «base primero».
+
+- [x] Los logos de producción: Santi corrió la consulta de #187 (27/10), dio
+      bien. Los tenants sin logo salen con el círculo de su color y las
+      iniciales; son la lista para pedirles el logo en la próxima llamada.
+- [x] PR #187 a develop (27/10), con las dos pruebas en rojo y en verde.
+- [x] Release develop → main (#188, 27/10 16:20 UTC; sin nada que pushear antes).
+- [x] Humo en producción (27/10, 16:25 UTC, un minuto después del deploy):
+      `https://fidellimotors.app/falco-lubricantes-y-servicios` con
+      `og:image` → `/falco-lubricantes-y-servicios/opengraph-image-iw6p63`,
+      1200×630, `og:site_name` = «Falco Lubricantes y Servicios», ninguna
+      `og:*`/`twitter:*` con Fidelli; la imagen es un PNG de 1200×630 en el
+      modo oscuro de Falco, con su logo real. La landing comercial sigue con
+      `/assets/og-image.jpg`.
+- [ ] Avisarle a Darío (Falco): para que WhatsApp muestre la tarjeta nueva en
+      un chat donde el link ya se compartió, hay que agregarle algo a la URL
+      (`?v=1`); WhatsApp cachea la vista previa por su cuenta.
+- [ ] Nada que cargar a mano. La tarjeta se regenera sola una vez por día
+      y al guardar en /panel/experiencia.
+
+## K · Service de caja + mecánica en una carga (29/10/2026)
+
+Una migración, `20261029200000_caja_con_mecanica.sql` (#191): el trigger del
+vínculo acepta una caja como destino, `guardar_service` abre la puerta de
+`p_mecanica` a la caja y `actualizar_service` propaga también desde la rama
+de la caja. Firmas iguales, sin datos ni variables. **Base primero, app
+después**, como siempre; el front viejo convive con la base nueva (solo se
+abre una puerta).
+
+- [x] `db push` a dev desde un workdir aislado (29/10, 21:50 UTC-3, 125 → 126).
+      Dev tiene además las cuatro migraciones `20261022*` de finanzas de Grego,
+      que no están en develop ni en prod: el workdir las llevó como archivos
+      (sacados de `origin/feat/facturacion-cimientos`) para que el CLI no las
+      diera por faltantes, y el dry-run listó solo `20261029200000`. No se
+      corrió ningún `migration repair`.
+- [x] `db push` a prod desde su workdir (`cutzedfmxyyxxqfjutru`, 121 → 122),
+      dry-run con una sola migración, `.temp/project-ref` verificado antes.
+- [x] Foto de las dos bases por `db query`: una firma de `guardar_service` y de
+      `actualizar_service`, security invoker, los tres cuerpos con las líneas
+      nuevas, `verificar_seguridad_vistas()` sin filas.
+- [x] PR #191 a develop (`f062397`), con el CI (`db reset`) en verde.
+- [x] Release develop → main (#192, `3fe062f`, 30/10 00:40 UTC).
+- [x] Deploy de Vercel en `main` (Production, `3fe062f`, 30/10 00:41 UTC, status
+      `success`) y humo un minuto después: `/`, `/login`, `/demo`, `/demo/ABC123`
+      y `/blog` en 200; `/panel` y `/fidelli` en 307.
+- [ ] De Santi: probar en el celular con el tenant que lo pidió (caja + «¿Se le
+      hizo algo de mecánica?», guardar, mirar las dos tarjetas y el cartón del
+      cliente). La feature `caja` sigue prendiéndose por tenant desde /fidelli.
+- [ ] Nada que cargar a mano.

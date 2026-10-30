@@ -4,9 +4,14 @@ import Image from "next/image";
 //   · negro — "fidelli" en negro. Para fondos claros (paneles, auth).
 //   · gris  — "fidelli" en gris claro. Para fondos oscuros (el login sobre
 //     la foto). "motors" va en bordo en las dos.
-type Tono = "negro" | "gris";
+//   · auto  — las dos, y el modo del panel decide cuál se ve (la variante
+//     `oscuro:` de globals.css): negro en claro, gris en oscuro. Es la de
+//     las superficies privadas, que desde el 30/10/2026 tienen interruptor;
+//     la landing y el auth no la necesitan, y no cargan la segunda imagen.
+//     El gris es la pieza «variante-gris_bordo» del branding, tal cual.
+type Tono = "negro" | "gris" | "auto";
 
-const SRC: Record<Tono, string> = {
+const SRC: Record<Exclude<Tono, "auto">, string> = {
   negro: "/assets/logos/logo-negro_bordo.webp",
   gris: "/assets/logos/logo-gris_bordo.webp",
 };
@@ -24,6 +29,14 @@ export function Logo({
   className?: string;
   priority?: boolean;
 }) {
+  if (tono === "auto") {
+    return (
+      <>
+        <Logo tono="negro" className={`${className} oscuro:hidden`} priority={priority} />
+        <Logo tono="gris" className={`${className} hidden oscuro:block`} />
+      </>
+    );
+  }
   return (
     <Image
       src={SRC[tono]}

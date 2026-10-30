@@ -47,7 +47,8 @@ Un error tampoco es rojo de marca. Esta es la regla de oro de la paleta.
 
 **La landing pública es un shell neutro pintado con el color del lubricentro.**
 En `/[slug]` el rojo Motors no aparece nunca — ni un píxel. El color viene de
-`config_experiencia.color_primario`.
+`config_experiencia.color_primario`. También su tarjeta de WhatsApp:
+`opengraph-image.tsx` por tenant, en el modo de su página y sin marca Fidelli.
 
 **Dos tipografías con roles fijos.** Nunito para marca y para todo lo que lee el
 cliente final. Public Sans para el dato operativo del panel. Nunca se mezclan
@@ -63,6 +64,49 @@ mínimo.
 solo en elementos flotantes, radios 4/8/12.
 
 **Áreas táctiles de 44px mínimo.** El mecánico tiene los dedos con aceite.
+
+**El pie del sidebar es UNA fila, y la hoja «Más» del celular es una grilla
+con íconos (30/10/2026).** El pie lleva «Cerrar sesión» como texto y, a su
+derecha, los dos accesos que no pueden irse lejos como íconos de 40 px con
+nombre accesible: la ayuda por WhatsApp y el modo oscuro. Antes eran cuatro
+renglones (unos 150 px) que en una pantalla de 768 de alto tapaban «Ayuda»
+y se veían apretados en varios tenants. Los enlaces legales viven al pie de
+Mi cuenta. **Nada deja de estar a un clic: un acceso nuevo del pie entra
+como ícono, no como renglón.** La hoja «Más» tiene las MISMAS secciones y
+los MISMOS íconos que el sidebar (incluida Neumáticos, con el módulo), en
+dos columnas de 48 px, la abierta marcada; abajo, el modo oscuro y las dos
+salidas con ícono. Un ítem nuevo de navegación entra en los dos lugares
+con su ícono de `components/iconos.tsx`. Lo vigila `scripts/regresion-tema.mjs`
+(sección B: la altura del pie, el último ítem a la vista, los íconos de la
+hoja).
+
+**El modo oscuro del panel es una elección de la PERSONA, con interruptor;
+los papeles no se apagan (30/10/2026).** Claro por defecto. La preferencia
+vive en `usuarios.tema`, viaja con la sesión y se pinta como
+`data-theme="oscuro"` en el wrapper de `/panel` y de `/fidelli`
+(`data-tema-panel` es la marca que el interruptor busca para cambiarlo en
+el acto); `globals.css` redefine ahí los tokens de color y las utilidades
+se adaptan solas. **Nada de `prefers-color-scheme`**, por la misma razón
+que la regla 7: el interruptor es una decisión, la media query no. La
+escala es la de la superficie del cliente (`lib/cliente/tema.ts`): tinta
+blanca al 100/72/55 %, línea al 14 %, base `#141414`, surface `#1D1D1D`,
+página `#0A0A0A`; los estados suben un escalón de luz para pasar AA sobre
+grafito; la marca no cambia. Lo que un color fijo no puede hacer lo hacen
+cuatro tokens nuevos: `fondo` (la página; en oscuro es lo MÁS oscuro y las
+tarjetas se despegan hacia arriba), `velo` (detrás de un dialog; `bg-ink/40`
+sería un velo blanco), `brillo` (el reflejo del esqueleto) y `brand-texto`
+(el rojo cuando es texto: `#E01F26` sobre grafito da 3,9:1). **Sobre
+`bg-ink` y sobre un estado el texto va en `text-base`, nunca `text-white`**:
+en oscuro la tinta es blanca y un chip blanco sobre blanco no se ve. La
+variante `oscuro:` existe para lo poco que no sale de los tokens (el
+logotipo gris, `<Logo tono="auto">`). **Los papeles llevan
+`data-theme="claro"` en su raíz** —el cartón, los papeles de la mecánica y
+de las ruedas, el presupuesto, la hoja de calcos, la burbuja de WhatsApp de
+Mensajes— y el bloque claro de `globals.css` va DESPUÉS del oscuro, porque a
+igual especificidad gana el último; impreso, todo es claro. Lo vigilan R50,
+`scripts/regresion-tema.sh` y `scripts/regresion-tema.mjs`, que mide el
+contraste de CADA texto visible contra su fondo efectivo en todas las
+pantallas de las dos superficies.
 
 **El cartón digital va en versión papel** (la "versión B" del hi-fi): troquel,
 grilla completa con bordes, etiquetas verticales de grupo en el color del tenant,
@@ -109,31 +153,46 @@ la resuelve.
   `created_at > canje`, no la fecha. `ciclos_fidelizacion()` es la misma
   cuenta para toda la flota y tiene que decir lo mismo. No hay contadores
   guardados. Lo vigila R38.
-- **La mecánica adjunta.** Al final del cartón de un service, con la feature
-  `mecanica`, «¿Se le hizo algo de mecánica?» guarda una SEGUNDA fila (tipo
-  mecánica, misma fecha, km y sucursal) dentro de la misma llamada a
-  `guardar_service` (`p_mecanica`), en la misma transacción y con el mismo
-  `now()`; queda atada al service por `services.cargado_con_id`. Después son
-  dos trabajos con su plazo cada uno y se anulan por separado (con aviso),
-  pero la fecha, los km y la sucursal son de LA VISITA: corregirlos en el
-  service los copia a la mecánica (`actualizar_service`; un plan sin la
-  feature no bloquea la edición). Nunca como segunda llamada desde la
-  acción: ver la regla 22.
-- **La orden de trabajo (01/10/2026).** Los 42 renglones de
-  `lib/renglones-mecanica.ts` son un teclado: escriben líneas en
+- **La mecánica adjunta.** Al final del cartón de un service —y, desde el
+  29/10/2026 (`20261029200000`), también del de un service de CAJA—, con la
+  feature `mecanica`, «¿Se le hizo algo de mecánica?» guarda una SEGUNDA
+  fila (tipo mecánica, misma fecha, km y sucursal) dentro de la misma
+  llamada a `guardar_service` (`p_mecanica`), en la misma transacción y con
+  el mismo `now()`; queda atada a su anfitrión por `services.cargado_con_id`
+  (el trigger del vínculo acepta un service o una caja como destino; una
+  mecánica o un trabajo de gomería, no). Después son dos trabajos con su
+  plazo cada uno y se anulan por separado (con aviso), pero la fecha, los km
+  y la sucursal son de LA VISITA: corregirlos en el anfitrión los copia a la
+  mecánica (`actualizar_service`, en la rama del service Y en la de la caja;
+  un plan sin la feature no bloquea la edición). Qué tipos la ofrecen lo
+  dice `ANFITRIONES_MECANICA` / `admiteMecanicaAdjunta()` en
+  `lib/trabajos.ts`, y de ahí leen el cartón, la acción y las pantallas que
+  buscan la pareja. Nunca como segunda llamada desde la acción: ver la
+  regla 22. Lo vigilan R38 (desde un service) y R49 (desde una caja).
+- **La orden de trabajo (01/10/2026).** Los 49 renglones de
+  `lib/renglones-mecanica.ts` (42 al nacer; el 30/10/2026 la junta de tapa
+  pasó a ser dos —de cilindros y de válvulas—, alineación y balanceo se
+  separaron en dos, y entraron el tensor y los rodillos de la correa
+  poli V, los retenes de levas y de cigüeñal y la cadena de distribución,
+  a pedido de varios talleres) son un teclado: escriben líneas en
   `trabajo_descripcion` y nada más. No crean filas en `service_items` ni
   tocan `item_tipo`. Un renglón está prendido mientras su línea esté tal
   cual (`tieneFrase`, comparación con `normalizar()`). Los lectores que
   resumen en una línea usan `descripcionEnUnaLinea`; el papel y la
   previsualización respetan los saltos. Alineación y rotación solo sin
   gomería; batería, líquido de frenos, refrigerante y aceite de caja no se
-  repiten en la mecánica adjunta.
+  repiten en la mecánica adjunta a un service (`companeroDeService`), y en
+  la adjunta a una caja solo se esconde el aceite de caja
+  (`companeroDeCaja`): los otros tres no están en el cartón de la caja.
 - **El service de caja automática (04/10/2026).** Es el CUARTO
   `tipo_trabajo` (`caja`), no un service con otros renglones: se parece en
   la forma —fecha, km, un aceite, renglones, un próximo— y todo lo suyo es
   propio. El aceite es un ATF (`aceite_tipo`, guardado como se escribió:
   «Dexron VI» no pasa por `normalizarViscosidad`). Los renglones son los
-  cuatro `caja_*` de `item_tipo`, **al final del enum y en el orden de SU
+  cinco `caja_*` de `item_tipo` —filtro, aditivo, limpieza de cárter e
+  imanes, lavado del circuito y, desde `20261026150000`, el **servicio por
+  sistema de diálisis** (lo pidieron Risso y otro lubricentro; lleva una
+  nota, como el lavado)—, **al final del enum y en el orden de SU
   papel**; **prendido = hecho** (`cambiado` se guarda `true` siempre: en una
   caja no existe el «revisado y OK»). El próximo vive en **su columna,
   `services.prox_caja_km`**, y `prox_service_km` queda en null: **el cambio
@@ -164,6 +223,12 @@ la resuelve.
   Inicio—, y en el Excel de trabajos la columna «Próx. caja» va solo si el
   tenant tiene la feature o el archivo trae alguna caja (al resto no se le
   suma una columna vacía). Lo vigilan R42 y `scripts/regresion-caja.mjs`.
+  **Y desde el 29/10/2026 la caja lleva la mecánica adjunta**
+  (`20261029200000`): la misma pregunta del final del cartón de aceite, la
+  misma rama de `guardar_service` y el mismo vínculo; lo único propio es que
+  el teclado de esa adjunta no esconde batería, frenos ni refrigerante
+  (solo el aceite de caja). Lo vigilan R49, `scripts/regresion-caja-mecanica.sh`
+  y `scripts/regresion-caja-mecanica.mjs`.
 - **Adjuntos en cualquier trabajo (04/10/2026).** Un PDF o una foto del
   diagnóstico, colgados de un trabajo de cualquier tipo, en todos los planes:
   `adjuntos_trabajo` y el bucket **privado** `adjuntos` (carpeta = tenant,
@@ -254,8 +319,19 @@ la resuelve.
   dentro de los 30 días.
 - **Las patentes se normalizan solas** por trigger. El front manda lo que escribió
   el mecánico; la base guarda `AB123CD` para buscar. Se aceptan los cuatro formatos
-  argentinos: auto `ABC123` / `AB123CD` y moto `123ABC` / `A123BCD`. La fuente única
-  es `patente_formato_valido()`; el front la repite en `lib/texto.ts` solo para avisar.
+  argentinos —auto `ABC123` / `AB123CD` y moto `123ABC` / `A123BCD`— y, **desde
+  `20261026120000`, los de los países vecinos** (lo pidió Lubricheck Sassi): Brasil
+  `ABC1D23` y `ABC1234`, Uruguay `ABC1234`, Paraguay `ABCD123` y `123ABCD`, Bolivia
+  `1234ABC` y `AB12345`, Chile `ABCD12`, `AB1234` y `ABC12`. La fuente única es
+  `patente_formato_valido()`; el front la repite en `lib/texto.ts` —una lista de
+  formas escritas como la chapa (`"LL NNN LL"`), de la que salen validar, mostrar
+  con espacios y detectar la patente a medio tipear— solo para avisar, y
+  `scripts/regresion-patentes.mjs` compara las dos listas forma por forma. **No se
+  guarda el país**: la forma clasifica, como auto y moto, y `ABC1234` es Brasil o
+  Uruguay sin manera de distinguirlo. Quedan afuera a propósito las motos chilenas
+  anteriores a 2014 (`AB123`: el principio de toda Mercosur argentina) y los
+  formatos chilenos del decreto de 2026, que no se emiten hasta 2027 y 2029. Lo
+  vigilan R13 y R48.
 - **El buscador de clientes: la forma del término dice qué es (21/10/2026).**
   `filtroClientes` (`lib/clientes.ts`) es el ÚNICO filtro de clientes y lo
   usan los cuatro lugares que buscan clientes: el listado, su export a
@@ -501,11 +577,16 @@ navegador es UN viaje, con el mismo JWT y el mismo RLS
 redirigir a `/login`. Una lectura nueva que quiera seguir este camino tiene
 que poder decir lo mismo: que no hay nada que el servidor sepa y el
 navegador no. Las escrituras siguen siendo Server Actions. Además, la
-patente válida sale sin esperar los 300 ms del debounce —ninguna patente
-válida es el principio de otra— y `AB123C` no busca nada hasta la D
-(`patenteIncompleta`, `lib/texto.ts`): buscarla sería buscar otra patente y
-abrir «¿De quién es?» a mitad de tipeo. Lo mide `scripts/medir-alta.mjs`,
-local o contra un preview.
+patente **argentina** válida sale sin esperar los 300 ms del debounce
+—ninguna patente argentina es el principio de otra argentina
+(`esPatenteArgentina`)—, la de un país vecino espera los 300 ms como
+cualquier cosa que no cierra en un formato argentino (`ABC12`, la moto
+chilena, es el principio de `ABC123`: si una vecina saliera al toque, toda
+patente argentina vieja se buscaría dos veces, con «¿De quién es?» asomando
+en la quinta letra), y `AB123C` o `ABC1D2` no buscan
+nada hasta la última letra (`patenteIncompleta`, `lib/texto.ts`): buscarlas
+sería buscar otra patente y abrir «¿De quién es?» a mitad de tipeo. Lo mide
+`scripts/medir-alta.mjs`, local o contra un preview.
 
 **Una consulta por pantalla.** Columnas explícitas, nunca `select *`. Sin N+1.
 El costo de Supabase se controla acá.
@@ -911,10 +992,13 @@ en la transacción que lo crea. El molde es `20260915120000_item_tipo_pesado`.
 Ninguna función SQL enumera valores de `item_tipo` y así tiene que seguir:
 `guardar_service` y `actualizar_service` castean el jsonb entrante de forma
 genérica. Lo vigila R17. **La única excepción a «nunca al final» son los
-cuatro renglones del service de caja** (`caja_filtro`, `caja_aditivo`,
-`caja_limpieza_carter`, `caja_lavado`, desde `20261004120000`): van al final
-a propósito, porque no son del cartón de aceite sino de OTRO papel, que se
-dibuja solo y en ese orden. La base no los separa de los 21 —sigue casteando
+cinco renglones del service de caja** (`caja_filtro`, `caja_aditivo`,
+`caja_limpieza_carter`, `caja_lavado`, desde `20261004120000`, y
+`caja_dialisis`, desde `20261026150000`): van al final a propósito, porque
+no son del cartón de aceite sino de OTRO papel, que se dibuja solo y en ese
+orden. Un renglón nuevo de la caja entra también al final, después del
+último de la caja, y son tres líneas: el enum, `RENGLONES_CAJA` y la
+etiqueta de la exportación (el tipo generado obliga a la tercera). La base no los separa de los 21 —sigue casteando
 genérico—; quien no los mezcla es el front, con dos listas (`RENGLONES` y
 `RENGLONES_CAJA` en `lib/renglones.ts`).
 
@@ -1190,7 +1274,7 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R14** | Ninguna cuenta queda con `onboarding_completado_at` null tras el seed; las funciones del onboarding son definer; un Basic tiene dos pasos y nunca se le pide el premio; el estado de otro tenant no se lee | Una cuenta vieja vería el panel bloqueado, o un taller no podría salir nunca del onboarding, o se le pide una función que su plan no tiene |
 | **R15** | El módulo de gomería (bloque 1): sin el módulo no entra un trabajo de neumáticos ni por SQL directo —en dos variantes, porque la de "solo alineación" es la única que aísla la policy de `services`—; no altera la retención; los CHECK del tercer tipo y de cada rueda; el stock baja una por rueda colocada; el premio sigue `alcance`; apagar el módulo no le saca a nadie lo que ya cargó; el listado de `/fidelli` sigue respondiendo | La regla 11 o la 12. El módulo pago quedó abierto, o la superficie de administración quedó vacía sin error |
 | **R16** | Los retornos de gomería (bloque 2): `vista_proximos_service` devuelve exactamente las mismas filas antes y después de cargar trabajos de gomería; la vista nueva es invoker y solo para tenants con el módulo; cada motivo (rotación, alineación, reajuste, antigüedad, desgaste) con su regla; el anti-spam por ciclo; el beneficio de la compra y su apagado; los CHECK y el RLS de `config_neumaticos`; `resumen_inicio` emite el tipo; el ritmo sale de todos los trabajos con km | La regla 5 otra vez, o un motivo que dejó de avisar: la pantalla que trae la plata miente en silencio |
-| **R17** | Los renglones del vehículo pesado: el enum `item_tipo` tiene los 21 valores del cartón de aceite en el orden exacto del papel (y, al final, los cuatro del service de caja, que son otro papel); `guardar_service` y `actualizar_service` aceptan los 21 tal cual y `get_carton` los devuelve en el orden del papel | La regla 14: el cartón de un camión se dibuja fuera de orden, o alguien enumeró los valores de `item_tipo` en SQL y los diez de camión quedaron afuera |
+| **R17** | Los renglones del vehículo pesado: el enum `item_tipo` tiene los 21 valores del cartón de aceite en el orden exacto del papel (y, al final, los cinco del service de caja, que son otro papel); `guardar_service` y `actualizar_service` aceptan los 21 tal cual y `get_carton` los devuelve en el orden del papel | La regla 14: el cartón de un camión se dibuja fuera de orden, o alguien enumeró los valores de `item_tipo` en SQL y los diez de camión quedaron afuera |
 | **R18** | La clase del vehículo: `vehiculos.clase` es anulable y sin default; el enum es exactamente `(liviano, pesado)`; `crear_cliente_con_vehiculo` guarda la clase contestada y deja null la omitida; `vista_vehiculos` y `get_carton` la exponen (null como null) | Alguien marcó los ~1.800 vehículos como autos "para simplificar", el alta perdió la clase, o el papel del cliente volvió a ser el de un auto para un camión |
 | **R19** | Editar un vehículo sin contestar la clase la deja como estaba: el update de `editarVehiculo` sin la clave no la toca, null o contestada, y nada de la base la inventa | Una sugerencia pasó a ser una respuesta: un trigger o un default clasifica autos que nadie clasificó, o una edición pisa una clase guardada |
 | **R21** | El reloj de cobranza: los cuatro estados con sus bordes exactos y el contador que vale 1 el último día útil; `activo = false` gana sobre todo, `descuento_pct = 100` exime y sin `cobranza_desde` no hay reloj; el SEGUNDO interruptor (con `suspension_automatica` apagada avisa pero no cierra el panel); las nueve claves del payload; la lectura cruzada de tenants con un composite forjado; y los montos (Pro anual, módulo pago vs bonificado, el founding que no toca el módulo) | Un cliente que pagó se suspende solo, un bonificado recibe una factura de $25.000, el primer ciclo dejó de ser solo avisos, o un owner está leyendo la negociación comercial del de al lado |
@@ -1215,12 +1299,15 @@ producción. El mensaje de la excepción dice qué invariante se rompió.
 | **R39** | Los pedidos de calcos (`20261003120000`): la tabla de transiciones de `avanzar_encargo_calcos()` (`pagado → entregado` no existe, `entregado` es terminal, cancelar un pagado es solo para incluidos y con nota, pagar a mano exige nota, enviado exige envío + transportista + seguimiento y listo para retirar exige retiro, y la versión del diseño se fija al entrar a producción); «Entregado» escribe UNA fila en el libro con la cantidad, incluidas o cobradas y el monto, guarda su id y el contador sube esa cantidad; un pedido sin pagar por tenant (la puerta contesta `ya_hay_pendiente` y el índice parcial frena el insert directo; con el primero pagado, el segundo entra); el owner no escribe por tabla (encargos, diseños, catálogo, bucket), no ejecuta ninguna puerta de Fidelli, no lee pedidos ni diseños ajenos **ni el costo de los propios**; el precio y el costo del catálogo no se mueven por UPDATE directo (ni como postgres), el candado no se pasa de rosca, la puerta exige motivo, audita antes/después con autor, no registra lo que no cambió y no deja la bandera prendida; los montos del pedido quedan congelados aunque el catálogo cambie; `resumen_admin().calcos` cuenta pagados sin producir, en producción hace más de 5 días HÁBILES y sin pagar que vencen en 24 h, y la cola sale en el orden de trabajo; los días hábiles (lunes a viernes, sin el día de partida); los diseños (versiones correlativas, una sola actual, la ruta en la carpeta del tenant) y el bucket `calcos` privado, donde el owner ve solo su carpeta; el catálogo local es el de la decisión del sprint y la comisión 0,968 %; los cuatro CHECK del encargo por su nombre; y un tenant suspendido no pide | Un pedido llega a entregado sin producirse o un entregado se mueve y el libro queda sin su pedido, la entrega no suma al contador (o suma otra cosa), un tenant tiene dos alias vivos y no sabe cuál pagar, un owner se marca pagado solo o lee lo que nos cuesta imprimir sus calcos, un precio se movió sin dejar rastro o un pedido ya emitido cambió de monto, la alerta del hub cuenta mal lo que Grego tiene que hacer hoy, o el diseño de un tenant se baja adivinando la ruta |
 | **R40** | El pago de un pedido de calcos (`20261003200000`): los tres CHECK de `cresium_ordenes` por su nombre (una orden es de una renovación con su período, o de un pedido sin período; nunca de las dos ni de ninguna); un `DEPOSIT` en `PAID` con referencia `calcos:<uuid>` deja el pedido `pagado` con `pagado_at` y el id de la transacción, la orden en `PAID`, la evidencia en «acreditado» y **ni una fila nueva en `pagos`**; los cuatro reintentos contestan `ya_acreditado` sin mover nada (idempotencia por `encargos_calcos.cresium_transaccion_id`); `PARTIAL` no paga y deja a la vista cuánto entró y cuánto falta; una referencia de calcos que no es de nadie —un uuid que no existe, algo que ni es un uuid, vacía— **no explota** y queda sin acreditar con su motivo; `calcos:<uuid>:2` acredita al mismo pedido; un depósito no revive un cancelado ni le cambia la transacción a uno ya pagado; `vencer_encargos_calcos()` vence los sin pagar de más de 7 días (ni los de 6 días y 23 horas, ni los que no están sin pagar, ni los de otro tenant si se le pasa uno) y es idempotente; con uno vencido el tenant vuelve a pedir; **`vencido → pagado` pasa por el webhook y por ningún estado de `avanzar_encargo_calcos()`**; el mail se reclama una vez por tipo y se puede soltar; `cobranzas_pendientes()` y `resumen_admin().ordenes_cresium` miran la orden de la RENOVACIÓN —ni cuentan una de calcos, ni se dejan tapar por una más nueva—; y un owner no vence, no reclama mails, no lee el catálogo con costos ni escribe una orden, pero sí lee la de su pedido | El webhook contesta 500 a cada depósito de calcos y Cresium lo reintenta cinco veces (la plata entró y el pedido sigue sin pagar), un pedido se paga dos veces o con la mitad, la plata de calcos entra al MRR y mueve el vencimiento de la suscripción, un pedido sin pagar le bloquea al tenant volver a pedir para siempre, el tenant recibe cinco «recibimos tu pago», o Cobranzas y la alerta del hub leen un pedido de calcos como si fuera el abono |
 | **R41** | El stock de calcos y el aviso (`20261003210000`): **la cuenta** (400 entregadas y 285 autos nuevos → 115; no cuentan el auto que ya venía de antes, el que solo tiene historia importada ni el que solo tiene un trabajo anulado; sí, una vez, el importado que vuelve y el que tiene dos trabajos; nunca negativo); **el recuento** (90 declaradas y 7 autos nuevos → 83; una entrega posterior suma y una corrección del libro con fecha vieja no; gana el más nuevo; el dueño declara con el tenant de SU sesión); **null en todo** sin entregas y con `calcos_propias`; **el ritmo** (8 semanas, o la historia que haya; null con menos de 2 semanas; cobertura null con ritmo cero); **los umbrales del aviso** en las dos direcciones (4 semanas, 1 semana, 20 calcos) y nunca con un pedido abierto, estado por estado del enum; **los mails** (el más avanzado, una vez por escalón por ciclo de entrega, sin caer al anterior, y una entrega nueva habilita los dos; nada para el que imprime por su cuenta, el suspendido, el demo ni el que tiene un pedido abierto); **la lista del hub** (menos de 3 semanas, con teléfono y owner, y `sin_stock` cuenta lo mismo); **`calcos_propias`** (el owner no lo prende, un UPDATE suelto se rechaza, la puerta exige nota y deja el evento); los seis candados de `recuentos_calcos` y `emails_calcos` en ALWAYS y el unique; y quién ejecuta qué (un owner no lee el stock del vecino, tampoco un usuario sin lubricentro) | A un lubricentro se le dice que le quedan calcos que no tiene (o se lo apura cuando le sobran), el que volvió con su auto de siempre le «gasta» un calco, la entrega que llegó ayer no cuenta y sigue el aviso, el dueño recibe el mismo mail todos los días o «te quedan cuatro semanas» después de «te queda una», se le manda «pedí ahora» al que ya pidió o al suspendido, Grego llama al que imprime por su cuenta, o un owner lee el ritmo de trabajo del lubricentro de al lado |
-| **R42** | El service de caja automática, el cuarto tipo (`20261004120000` + `20261004120100`): **el catálogo** (la feature `caja` existe y no figura en el `features` de ningún plan; la categoría `transmision` entre los aceites y los filtros; una sola firma de `guardar_service` y de `actualizar_service`; los dos CHECK por su nombre; la vista con `security_invoker` y el contrato de columnas de la de services); **el gating** (sin la feature no entra una caja por la RPC ni por INSERT directo, y un service no se convierte en caja por UPDATE; con el override de `/fidelli`, sí; apagarla apaga la escritura y no la lectura, tampoco en el cartón del cliente); **los CHECK** (`caja_coherente`, condición por condición, y el espejo `prox_caja_solo_caja` para cada uno de los otros tres tipos; una caja no es adjunta ni lleva adjunta); **la rama** (la caja con sus cuatro renglones guardados como hechos aunque el jsonb diga otra cosa, el stock del aceite por litros o por bidón y el de los renglones por cantidad, los pendientes colgados de la caja, y las tres validaciones con su error nombrado y sus bordes: 20.000 y 200.000 entran); **la edición** (cambia el ATF, los litros, el producto, el próximo y las observaciones; sincroniza los renglones por tipo, siempre como hechos; no toca el stock ni el tipo; a las 23 horas se edita y a las 25 no); **la vista** (el km/día y el último odómetro salen de todos los trabajos; los bordes 15 / 7 / 30; 40 km/día con un solo punto; una caja anulada no cuenta; vencida hace 500 días sigue y hace 600 no; una caja de hace cinco años y medio SÍ aparece; sin la feature y para un superadmin, cero filas; el contacto de un service no la tilda y una caja nueva reabre el aviso); **`vista_proximos_service` y `vista_vehiculos` dicen EXACTAMENTE lo mismo** antes y después de cargar cajas y de contactar por caja en los mismos autos, y un auto que solo tiene cajas no aparece en la retención de aceite; **el premio** (suma con `'todos'` y no con `'services'`, en las dos funciones); **`get_carton`** con `prox_caja_km` en cada entrada; **`resumen_inicio().cajas_mes`** y **`metricas_plataforma()`** (`cajas_mes`, `cajas_acumulado`, la caja como trabajo y no como service, y cada punto de las series sumando los cuatro tipos); el badge con la cuarta fuente; y las plantillas con su texto de caja, sin pisar lo personalizado | Una caja entra sin kilómetros o con descripción de mecánica, un tenant sin la feature la carga por `/rpc/`, un service queda con próximo de caja, los renglones de la caja se guardan como «revisados», el aceite de caja no baja del stock, un salto de 800.000 km deja al auto fuera de la lista por décadas, la lista de un taller de cajas está siempre vacía (o llena de autos perdidos), la caja se cuela como «último service» y el auto deja de avisar por su aceite, contactar por la caja tilda el service, el cliente no ve su próximo de caja, el Inicio cuenta cualquier trabajo como caja, o el Pulso apilado no suma su total |
+| **R42** | El service de caja automática, el cuarto tipo (`20261004120000` + `20261004120100`): **el catálogo** (la feature `caja` existe y no figura en el `features` de ningún plan; la categoría `transmision` entre los aceites y los filtros; una sola firma de `guardar_service` y de `actualizar_service`; los dos CHECK por su nombre; la vista con `security_invoker` y el contrato de columnas de la de services); **el gating** (sin la feature no entra una caja por la RPC ni por INSERT directo, y un service no se convierte en caja por UPDATE; con el override de `/fidelli`, sí; apagarla apaga la escritura y no la lectura, tampoco en el cartón del cliente); **los CHECK** (`caja_coherente`, condición por condición, y el espejo `prox_caja_solo_caja` para cada uno de los otros tres tipos; una caja no es adjunta de nadie —y desde `20261029200000` SÍ lleva una mecánica adjunta: R49—); **la rama** (la caja con sus cinco renglones guardados como hechos aunque el jsonb diga otra cosa, el stock del aceite por litros o por bidón y el de los renglones por cantidad, los pendientes colgados de la caja, y las tres validaciones con su error nombrado y sus bordes: 20.000 y 200.000 entran); **la edición** (cambia el ATF, los litros, el producto, el próximo y las observaciones; sincroniza los renglones por tipo, siempre como hechos; no toca el stock ni el tipo; a las 23 horas se edita y a las 25 no); **la vista** (el km/día y el último odómetro salen de todos los trabajos; los bordes 15 / 7 / 30; 40 km/día con un solo punto; una caja anulada no cuenta; vencida hace 500 días sigue y hace 600 no; una caja de hace cinco años y medio SÍ aparece; sin la feature y para un superadmin, cero filas; el contacto de un service no la tilda y una caja nueva reabre el aviso); **`vista_proximos_service` y `vista_vehiculos` dicen EXACTAMENTE lo mismo** antes y después de cargar cajas y de contactar por caja en los mismos autos, y un auto que solo tiene cajas no aparece en la retención de aceite; **el premio** (suma con `'todos'` y no con `'services'`, en las dos funciones); **`get_carton`** con `prox_caja_km` en cada entrada; **`resumen_inicio().cajas_mes`** y **`metricas_plataforma()`** (`cajas_mes`, `cajas_acumulado`, la caja como trabajo y no como service, y cada punto de las series sumando los cuatro tipos); el badge con la cuarta fuente; y las plantillas con su texto de caja, sin pisar lo personalizado | Una caja entra sin kilómetros o con descripción de mecánica, un tenant sin la feature la carga por `/rpc/`, un service queda con próximo de caja, los renglones de la caja se guardan como «revisados», el aceite de caja no baja del stock, un salto de 800.000 km deja al auto fuera de la lista por décadas, la lista de un taller de cajas está siempre vacía (o llena de autos perdidos), la caja se cuela como «último service» y el auto deja de avisar por su aceite, contactar por la caja tilda el service, el cliente no ve su próximo de caja, el Inicio cuenta cualquier trabajo como caja, o el Pulso apilado no suma su total |
 | **R43** | Los adjuntos de un trabajo (`20261004200000`): **la forma** (la tabla con RLS; `anon` sin ningún privilegio; el alta de seis columnas —sin `visible_cliente`, `subido_por` ni `created_at`— y la edición de una sola; los dos triggers; la FK en cascada; el bucket privado, de 2 MB y tres formatos, con tres policies y ninguna para `anon`; `adjunto_publico()` definer y solo de `service_role`, igual que `adjuntos_huerfanos()`); **el alta** (entra en un trabajo FIJADO hace un mes, nace oculto, a nombre de quien lo subió y en el tenant de su trabajo aunque el insert mande otro; se rechazan la carpeta de otro trabajo o de otro tenant, la ruta que sube de carpeta, la extensión que no es la del formato, el formato desconocido, el archivo vacío, los 2 MB y un byte, el nombre en blanco o de 121 caracteres —y exactamente 2 MB entra—; y a un trabajo ajeno, nada); **el tope** (el cuarto falla con `tope_adjuntos`, también fuera de la sesión del owner; es por trabajo; al quitar uno entra otro, y quitar funciona en un trabajo fijado); **lo único que se edita** es «Mostrar al cliente», columna por columna; **el aislamiento** (el owner no lee ni toca lo del tenant de al lado, en la tabla ni en el bucket; sube solo a su carpeta y borra solo lo que no está registrado; `anon` no lee la tabla, no ve el bucket, no sube y no ejecuta la función, y un owner tampoco ejecuta las dos de servicio); **la puerta del cliente** (`adjunto_publico()` entrega la ruta solo del visible, con la patente como la escribe la gente; null para el oculto, para otro vehículo, para el slug de OTRO tenant que tiene la misma patente, para el adjunto del vecino, para lo que no existe, para un trabajo anulado y al apagarlo); **`get_carton`** (lista los visibles con `id`, `nombre`, `mime` y `creado` y nada más, en el orden en que se subieron; `[]` donde solo hay ocultos; no deja ver la ruta ni el id del trabajo; **no perdió `prox_caja_km`**; y el tenant de al lado ve solo el suyo); y **los huérfanos** (lista el archivo sin fila de hace dos días; no el recién subido, ni el que tiene su fila, ni los de otro bucket) | Un adjunto nace a la vista del cliente o el taller ya no puede adjuntar al día siguiente, el cuarto archivo entra, un owner le cuelga un archivo al trabajo de otro lubricentro o lee su carpeta, el diagnóstico de un auto se baja sabiendo la patente de otro (o el slug de otro taller), el cliente ve un adjunto oculto o la ruta de un archivo, `get_carton` perdió el próximo de caja al ganar los adjuntos, o el cierre diario le borra el archivo a quien está adjuntando (o no barre nunca) |
 | **R44** | El slug entra en el QR del calco (`20261004200000`): el CHECK `slug_largo_qr` existe y ningún tenant lo viola; 32 caracteres entran y 33 no —por INSERT lo frena ESE check, no el viejo de 3 a 60, y por UPDATE tampoco—; y `slug_estado()` contesta `invalido` para 33, `disponible` para 32 libres y `ocupado` para 32 tomados | Un lubricentro queda con un slug cuyo QR no se puede hacer (pasó con uno de 34), o el alta dice «Disponible» y falla al crear |
 | **R45** | Los datos de la empresa en el presupuesto (`20261004210000`): **la forma** (la tabla con RLS; `anon` sin nada; el owner lee, da de alta y edita SOLO los seis campos —ni el sello ni el tenant— y no borra; tres policies y ninguna de borrado; los seis CHECK por su nombre; el trigger del sello; la FK en cascada; la puerta, una sola firma, invoker, y que `anon` no ejecuta); **la puerta** (recorta, guarda el CUIT en once números —escrito con guiones, con puntos o pelado—, deja null lo vacío, y es un upsert de los SEIS campos: una fila por tenant, a nombre de quien guardó); **los rechazos** (un CUIT de diez o de doce números contesta `cuit_invalido`, una condición de IVA que no es de la lista, una clave mal escrita, un dato más largo que su tope —y los cuatro en el tope exacto entran—; y por la tabla tampoco entran el CUIT con guiones, la condición inventada, la razón social vacía, el domicilio con espacios, el teléfono con un salto de línea ni el email de 121 caracteres); **el sello** (el owner no escribe `actualizado_por`, `updated_at` ni el tenant, y un UPDATE con privilegios tampoco los deja: los pisa el trigger); **el aislamiento** (el owner del demo ve una fila; no lee, no pisa por la puerta ni por la tabla, y no da de alta la del tenant de al lado; nadie borra; `anon` no lee ni ejecuta); **Fidelli** (sin decir el lubricentro, `falta_lubricentro`; con él, guarda a su nombre y no toca a los demás); y **la purga** (la simulación cuenta la fila sin borrarla; la real se la lleva, y solo la de ese tenant) | Un owner lee la razón social y el CUIT de otro lubricentro (o se los cambia), un CUIT a medias sale impreso en un presupuesto, un dato no se puede vaciar, alguien firma la carga con el usuario de otro, Fidelli pisa los datos de un taller cargando los del de al lado, o la razón social de quien canceló hace más de un año sigue en la base |
 | **R46** | El buscador de clientes encuentra el teléfono por sus dígitos (`20261021120000`): `vista_clientes` tiene `telefono_digitos`, «+54 9 351 317-2545» da `5493513172545`, el `like` por dígitos lo encuentra y `telefono` sigue siendo el crudo que se muestra | Un cliente cargado con espacios o guiones en el teléfono no aparece al buscarlo por teléfono |
+| **R48** | Las patentes de los países vecinos (`20261026120000`): los nueve formatos nuevos —Brasil `ABC1D23` / `ABC1234`, Paraguay `ABCD123` / `123ABCD`, Bolivia `1234ABC` / `AB12345`, Chile `ABCD12` / `AB1234` / `ABC12`— entran por el CHECK escritos de cualquier manera (minúsculas, guiones, el punto de la chapa chilena) y se normalizan; `get_carton` encuentra una brasileña; `corregir_patente` acepta una uruguaya y rechaza `ABCDE1`; y lo que quedó afuera a propósito sigue afuera (`AB123`, los formatos chilenos de 2026, una letra y seis dígitos, ocho caracteres, una brasileña a medio tipear) | Alguien volvió a cerrar el formato a los argentinos —y Sassi no puede cargar al cliente brasileño—, o lo abrió a cualquier cosa |
 | **R47** | Las policies preguntan por la sesión una vez por consulta (`20261021230000`): ninguna policy de `public` ni de `storage` llama a `mi_lubricentro_id()`, `soy_superadmin()` o `auth.uid()` a pelo en su `USING` o su `WITH CHECK` —cada llamada va envuelta en un sub-select—, y el chequeo tiene qué mirar (70 policies de `public` o más las llaman) | Una policy nueva o redefinida volvió a la forma vieja: Postgres la evalúa fila por fila, el Inicio vuelve a tardar segundos y a veces no llega, sin ningún error |
+| **R49** | Service de caja + mecánica en UNA carga (`20261029200000`): la pareja nace junta desde la caja —`guardar_service` devuelve la caja; la mecánica queda vinculada a ella con la misma fecha, km, sucursal y `created_at`, su descripción recortada y sus renglones libres; la caja conserva su próximo en `prox_caja_km`, sus renglones como hechos y sus observaciones; la mecánica nace sin próximo de caja ni observaciones; los pendientes nuevos y tildados cuelgan de la caja y la mecánica no los duplica—; como owner de un Basic con la feature caja la carga doble falla con 42501 sin dejar NI LA CAJA, y la caja sola del Basic sigue entrando; sin la feature caja la pareja no entra y no queda nada; la pareja vale 0 con alcance `'services'` y UNA visita con `'todos'` en las dos funciones, y con «Aplicar premio» queda UN canje atado a la caja y el ciclo vuelve a 0; corregir fecha, km y sucursal de la CAJA los copia a la mecánica adjunta, con el plan en Basic la caja se corrige igual y la mecánica queda como estaba, y editar la mecánica no toca la caja; el trigger del vínculo acepta una caja como destino y sigue rechazando un trabajo de gomería; anular la caja no anula la mecánica; y `vista_proximos_caja` proyecta lo mismo para un auto con caja sola y uno con caja + mecánica (y su «último» es la caja) | La carga doble desde la caja dejó media visita guardada, un Basic metió una mecánica por la puerta de la caja, la pareja suma dos al premio, un typo corregido en la caja partió la visita en dos fechas (la rama de la caja tiene su propio `return` y la propagación no la alcanzaba), el canje se ató a la mecánica, una mecánica quedó «cargada con» un trabajo de gomería, o la mecánica adjunta movió la proyección de la caja |
+| **R50** | El modo oscuro del panel, preferencia de la persona (`20261030100000`): `usuarios.tema` existe, nace en claro y tiene su CHECK por nombre; `fijar_mi_tema()` tiene una firma, es definer, `anon` no la ejecuta y `authenticated` sí; como owner, «oscuro» queda en SU fila y en ninguna otra, «azul» y null se rechazan con `tema_invalido`, un UPDATE directo sobre la fila de otro no toca nada, y vuelve a claro; sin sesión contesta `sin_sesion` sin tocar filas; como anon, 42501 | El interruptor no guarda (la función quedó invoker y usuarios no tiene policy de update), un owner le cambia el tema a todos, el panel se pinta con un modo que no existe, o anon escribe en `usuarios` |
 
 Además, fuera del reset, **las roturas a mano** (regla 13):
 
@@ -1244,6 +1331,8 @@ Además, fuera del reset, **las roturas a mano** (regla 13):
 ./scripts/regresion-importacion.sh   # necesita importaciones/falco/falco-limpio.json (no está en el repo)
 ./scripts/regresion-calcos.sh
 ./scripts/regresion-caja.sh
+./scripts/regresion-caja-mecanica.sh
+./scripts/regresion-tema.sh
 ./scripts/regresion-adjuntos.sh
 ./scripts/regresion-datos-empresa.sh
 ./scripts/regresion-rls-initplan.sh
@@ -1258,9 +1347,14 @@ node --no-warnings scripts/regresion-calcos-tenant.mjs     # ídem; levanta los 
 node --no-warnings scripts/regresion-calcos-stock.mjs      # ídem; levanta el doble de Resend (el stock, el aviso y el cron)
 node --no-warnings scripts/regresion-cresium-webhook.mjs   # contra next dev: la puerta del webhook, renovación y calcos
 node --no-warnings scripts/regresion-caja.mjs              # contra next dev + el seed (Playwright); prende la feature en el demo local y lo restaura
+node --no-warnings scripts/regresion-caja-mecanica.mjs     # ídem; carga una caja con su mecánica en el ABC 123 del demo y la borra al final
+node --no-warnings scripts/regresion-tema.mjs              # ídem; el modo oscuro: el interruptor y el contraste de cada texto en todas las pantallas (deja a los dos usuarios en claro)
 node --no-warnings scripts/regresion-adjuntos.mjs          # ídem; cuelga adjuntos en dos trabajos del demo y los quita (deja un tenant `zza-…`)
 node --no-warnings scripts/regresion-datos-empresa.mjs     # ídem; le carga y le vacía los datos de la empresa al demo y los restaura
 node --no-warnings scripts/regresion-busquedas.mjs         # ídem; seis clientes «Zzbusq» en el demo por psql, restaurados al final (SOLO_A=1: solo la parte sin navegador)
+node --no-warnings scripts/regresion-patentes.mjs          # ídem; da de alta «Zzpat Brasil» con una chapa brasileña y lo borra (SOLO_A=1: el espejo con la base y las roturas, sin navegador)
+node --no-warnings scripts/regresion-og-tenant.mjs         # contra next dev + el seed (Playwright): la tarjeta de WhatsApp del tenant en el HTML, sin marca Fidelli
+node --no-warnings scripts/og-tenants.mjs                  # ídem; crea cinco tenants zz-og-* (claro y oscuro, con logo PNG/WebP/JPG y sin logo), baja las seis tarjetas a docs/capturas/og/ y los borra
 ```
 
 El primero rompe la vista de retención de dos formas —le saca el filtro de
@@ -1395,6 +1489,40 @@ base de `develop`. El `alter policy` de cada una es la expresión del
 catálogo con la llamada envuelta y nada más, y se comprobó que el catálogo
 de después, sin el envoltorio, es byte a byte el de antes.
 
+El vigesimosegundo (`scripts/regresion-patentes.mjs`) no rompe un bloque
+de SQL: rompe el ESPEJO. Lo que las patentes vecinas tienen de nuevo es que
+la regla vive en dos lugares que no se ven —`patente_formato_valido()` en la
+base y la lista de formas de `lib/texto.ts`— y nada en el build acusa que
+se desvíen: la base aceptaría una chapa que el front rechaza, o al revés, y
+el mecánico vería «no parece una patente» sobre una que la base guardaría
+sin problema. Por eso la sección A2 genera las 224 formas posibles de 5, 6 y
+7 caracteres (letra o número en cada lugar), se las pregunta a la base y al
+front, y exige la misma respuesta forma por forma —y que las aceptadas sean
+exactamente 13—. Las cuatro roturas van sobre una copia de `lib/texto.ts`:
+un vecino sacado de la lista, un vecino metido entre los argentinos (con lo
+que `ABC 1234` saldría sin esperar y `ABC 123` se buscaría a medio tipear),
+el mínimo clavado en 6 (la moto chilena no se busca nunca) y el «principio
+de» sacado (`AB123C` abre «¿De quién es?» antes de la D). Lo que enseñó al
+escribirse: **dos ejemplos de «patente inválida» de R13 (`ABCD123`,
+`1234ABC`) pasaron a ser Paraguay y Bolivia**, y el bloque viejo hubiera
+quedado en rojo con razón; se movieron a R48, que los prueba del otro lado.
+Y una de medición: **`page.type` con `delay` espera ese delay DESPUÉS de la
+última tecla antes de resolver**, así que el instante de la última tecla
+quedaba 70 ms tarde y los 300 ms del debounce se medían como 236; la última
+letra se tipea sin `delay`. El compañero con navegador carga «ABC1D23» en
+«Nuevo trabajo» (ninguna consulta antes de la última tecla, la consulta
+después de los 300 ms, sin aviso), da de alta «Zzpat Brasil» con esa chapa,
+la lee en la base y en `/demo/ABC1D23`, abre el alta con «BBB12» (cinco
+caracteres), comprueba que «ABC123» sigue saliendo antes de los 250 ms —y
+que «ABC12», válida en el medio, no se buscó porque el 3 llegó antes de los
+300 ms— y ve el aviso con «ABCDE1». Se vio en rojo contra el `lib/texto.ts`
+de `develop` (las nueve vecinas inválidas, el mínimo en 6) y contra sus
+cuatro roturas. **Toca el demo local y lo restaura.**
+
+
+El vigesimotercero rompe R49 (doce roturas) y tiene un compañero con navegador. Es el sprint en que la pareja service + mecánica aprendió a nacer también de un service de caja (`20261029200000`; lo pidió un taller con la caja prendida), y lo que enseñó al escribirse: **la rama de la caja en `actualizar_service` termina en su propio `return`**, así que la propagación de fecha, km y sucursal a la mecánica adjunta (`@propaga-visita`, escrita en la rama del service) no la alcanzaba —corregir la caja partía la visita en dos, sin ningún error—; el bloque va copiado en esa rama (`@propaga-visita-caja`) y la rotura que lo acusa es sacarlo. **Dos pruebas de R42 decían lo contrario de la regla nueva** («una caja no lleva adjunta»: R42b por la tabla y R42c por la función): la de la tabla pasó a ser el contracaso, deshecho enseguida para no mover los contadores de más abajo, y la de la función se fue (la pareja entera la prueba R49a). Las demás: la puerta de `p_mecanica` de vuelta a «solo en un service»; la mecánica adjunta con la fecha de hoy, sin el vínculo, con sus renglones ignorados, «ordenada» con `clock_timestamp()` y con los pendientes reenviados (la misma rama que R38, vista desde la caja); las dos policies sin el gate por tipo (un Basic con la feature caja cuela la mecánica adjunta); las dos funciones del premio de vuelta a contar filas (la pareja vale 2 con `'todos'`); y el trigger del vínculo de vuelta a exigir un service como destino (la pareja no nace: `vinculo_invalido`) y sin exigir nada (una mecánica se cuelga de un trabajo de gomería). **Lo que R38 ya rompe sobre la rama compartida no se repite** —es la misma línea de código—, y el CHECK del vínculo abierto a la caja sigue siendo de R42b. **`guardar_service`, `actualizar_service` y `services_validar_vinculo` viven desde este sprint en `20261029200000`** (copiadas textuales, con tres líneas cambiadas y el bloque nuevo): las muerden de ahí `regresion-visita.sh` y `regresion-caja.sh` (`M_PAR`), y las roturas de R38c y R38h cambiaron su `sed` por la línea nueva. Y una del script viejo: **`regresion-caja.sh` esperaba «de los 4 renglones» y con la diálisis son 5**, así que el patrón ya no cuenta. El compañero es `scripts/regresion-caja-mecanica.mjs`: prende la feature por SQL; en 390 táctil comprueba que el cartón de la caja ofrece «¿Se le hizo algo de mecánica?» (y el de una mecánica suelta no), que el teclado de la adjunta no repite el aceite de caja pero sí ofrece batería, líquido de frenos y refrigerante —que en el cartón de aceite se esconden—, que la previsualización muestra los DOS papeles con el plazo de cada uno y «Confirmar service de caja y mecánica», que el guardado dice «Service de caja y mecánica guardados» con «Ver la mecánica», y que en la base la pareja nació junta; a 1280 abre el detalle de las dos mitades («Misma visita» en las dos direcciones, nombrando el service de caja), el diálogo de anular de cada una, Editar la mecánica (el aviso que manda a editar el service de caja) y Editar la caja (corregir los kilómetros los copia a la mecánica); mira el historial del cliente; y a 360, 390, 820 y 1280 abre la pregunta en una caja sin scroll horizontal. Se vio en rojo contra el front de `develop` (el cartón de la caja no ofrecía la pregunta). **Toca el demo local y lo restaura.**
+
+El vigesimocuarto rompe R50 (cuatro roturas) y tiene un compañero con navegador que es, más que una prueba, un instrumento. Las cuatro: `fijar_mi_tema` como invoker (sin policy de update, el interruptor dejaría de guardar), grantada a `anon`, con la validación sacada —«azul» lo frena igual el CHECK de la tabla pero con OTRO error, que el front no traduce, y el bloque lo acusa por eso; el CHECK borrado, solo, lo ve R50a en el catálogo— y sin la guarda de `auth.uid()` (le cambia el tema a TODOS). El compañero es `scripts/regresion-tema.mjs`: primero rompe ocho reglas estáticas sobre una copia del texto (el bloque claro de `globals.css` borrado o movido ANTES del oscuro, la impresión sin volver a claro, el lienzo que no sigue al panel, un `prefers-color-scheme` colado, un `text-white` sobre `bg-ink` de vuelta, el velo de vuelta a `ink/40`, un papel sin su `data-theme="claro"`); después, con el demo, toca el interruptor del sidebar a 1280 (pinta en el acto, la base guarda, al recargar sale oscuro desde la sesión, el logotipo pasa al gris, el lienzo es grafito y los controles nativos siguen), el de la hoja «Más» a 390 y el de la barra de `/fidelli`; y **mide la legibilidad**: en oscuro, a 1280 y a 390, en las 25 pantallas de `/panel` y las 14 de `/fidelli` (más el diálogo de anular y la hoja «Más»), compara cada texto visible con el fondo efectivo que tiene detrás —apilando los fondos con alfa desde el `html`— y exige AA (4,5:1; 3:1 para los grandes; los controles deshabilitados exentos, como en WCAG). Y mira que el cartón del detalle y el presupuesto sigan claros dentro del panel oscuro, y que en impresión el panel entero vuelva a claro. **Es la red de la próxima pantalla**: una tarjeta nueva con un color fijo se ve acá antes que en el celular de un taller. Se vio en rojo contra el front de `develop` (sin interruptor). **Toca el tema de los dos usuarios del demo y los deja en claro.**
 ⚠ Y DOS DE ESTOS SCRIPTS APUNTAN A MÁS DE UNA MIGRACIÓN, porque
 `estado_cobranza`, `reloj_cobranza` y `crear_lubricentro` se redefinieron en
 migraciones posteriores a las que las crearon. Un script que las extrae del

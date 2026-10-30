@@ -270,7 +270,7 @@ export function SelectorViscosidad({
   const claseChip = (activa: boolean) =>
     `flex h-11 items-center rounded-md border px-2.5 text-ui tabular-nums transition-colors ${
       activa
-        ? "border-ink bg-ink font-semibold text-white"
+        ? "border-ink bg-ink font-semibold text-base"
         : "border-line bg-base text-ink-60 hover:bg-surface"
     }`;
 
@@ -356,7 +356,7 @@ export function SelectorViscosidad({
             <button
               type="button"
               onClick={() => elegir(delProducto.viscosidad)}
-              className="inline-flex min-h-11 items-center font-semibold text-brand"
+              className="inline-flex min-h-11 items-center font-semibold text-brand-texto"
             >
               Usar {delProducto.viscosidad}
             </button>
@@ -407,7 +407,7 @@ export function SelectorAtf({
   const claseChip = (activa: boolean) =>
     `flex h-11 items-center rounded-md border px-2.5 text-ui transition-colors ${
       activa
-        ? "border-ink bg-ink font-semibold text-white"
+        ? "border-ink bg-ink font-semibold text-base"
         : "border-line bg-base text-ink-60 hover:bg-surface"
     }`;
 
@@ -865,7 +865,7 @@ export function SelectorProductoBuscable({
                   setAbierto(false);
                   alPedirAlta(escrito);
                 }}
-                className={`${claseItem} font-semibold text-brand`}
+                className={`${claseItem} font-semibold text-brand-texto`}
               >
                 <span className="min-w-0 truncate">
                   {texto.trim()

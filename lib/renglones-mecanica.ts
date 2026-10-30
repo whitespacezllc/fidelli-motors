@@ -52,11 +52,24 @@ export type RenglonMecanica = {
   /** Se oculta en la mecánica ADJUNTA a un service: ya está en el cartón
    *  de arriba y no se repite. */
   companeroDeService?: true;
+  /** Se oculta en la mecánica ADJUNTA a un service de CAJA: el cambio de
+   *  aceite de caja ES ese trabajo. Los otros compañeros del service
+   *  (batería, líquido de frenos, refrigerante) no están en el cartón de
+   *  la caja, así que ahí sí se ofrecen. */
+  companeroDeCaja?: true;
 };
 
-// Los 42, en el orden de la pantalla. Las frases van tal cual, con tildes,
+// Los 49, en el orden de la pantalla. Las frases van tal cual, con tildes,
 // en el lenguaje del taller y no del manual. Ni una más ni una menos: lo
 // que no está entra como siempre, escribiendo.
+//
+// Lo que cambió el 30/10/2026, a pedido de varios talleres: la junta de
+// tapa son DOS (de cilindros y de válvulas); alineación y balanceo son dos
+// trabajos y van en dos renglones (los dos se cargan como gomería cuando el
+// taller tiene el módulo); y entran el tensor y los rodillos de la correa
+// poli V, los retenes de levas y de cigüeñal y la cadena de distribución.
+// La frase vieja «Alineación y balanceo» no es de ningún renglón: en las
+// descripciones guardadas queda como texto, que es lo que siempre fue.
 export const RENGLONES_MECANICA: RenglonMecanica[] = [
   { clave: "pastillas_delanteras", grupo: "Frenos", etiqueta: "Pastillas delanteras", frase: "Cambio de pastillas delanteras" },
   { clave: "pastillas_traseras", grupo: "Frenos", etiqueta: "Pastillas traseras", frase: "Cambio de pastillas traseras" },
@@ -73,16 +86,23 @@ export const RENGLONES_MECANICA: RenglonMecanica[] = [
   { clave: "extremos", grupo: "Suspensión y dirección", etiqueta: "Extremos", frase: "Cambio de extremos de dirección" },
   { clave: "tren_delantero", grupo: "Suspensión y dirección", etiqueta: "Tren delantero", frase: "Reparación de tren delantero" },
   { clave: "direccion", grupo: "Suspensión y dirección", etiqueta: "Dirección", frase: "Reparación de dirección" },
-  { clave: "alineacion_balanceo", grupo: "Suspensión y dirección", etiqueta: "Alineación y balanceo", frase: "Alineación y balanceo", soloSinGomeria: true },
+  { clave: "alineacion", grupo: "Suspensión y dirección", etiqueta: "Alineación", frase: "Alineación", soloSinGomeria: true },
+  { clave: "balanceo", grupo: "Suspensión y dirección", etiqueta: "Balanceo", frase: "Balanceo", soloSinGomeria: true },
   { clave: "rotacion_cubiertas", grupo: "Suspensión y dirección", etiqueta: "Rotación de cubiertas", frase: "Rotación de cubiertas", soloSinGomeria: true },
 
   { clave: "bujias", grupo: "Motor", etiqueta: "Bujías", frase: "Cambio de bujías" },
   { clave: "kit_distribucion", grupo: "Motor", etiqueta: "Kit de distribución", frase: "Cambio de kit de distribución" },
+  { clave: "cadena_distribucion", grupo: "Motor", etiqueta: "Cadena de distribución", frase: "Cambio de cadena de distribución" },
   { clave: "correas", grupo: "Motor", etiqueta: "Correas", frase: "Cambio de correas" },
+  { clave: "tensor_poli_v", grupo: "Motor", etiqueta: "Tensor poli V", frase: "Cambio de tensor de correa poli V" },
+  { clave: "rodillos_poli_v", grupo: "Motor", etiqueta: "Rodillos poli V", frase: "Cambio de rodillos de correa poli V" },
   { clave: "bomba_agua", grupo: "Motor", etiqueta: "Bomba de agua", frase: "Cambio de bomba de agua" },
   { clave: "termostato", grupo: "Motor", etiqueta: "Termostato", frase: "Cambio de termostato" },
   { clave: "refrigerante", grupo: "Motor", etiqueta: "Refrigerante", frase: "Cambio de líquido refrigerante", companeroDeService: true },
-  { clave: "junta_tapa", grupo: "Motor", etiqueta: "Junta de tapa", frase: "Cambio de junta de tapa de cilindros" },
+  { clave: "junta_tapa", grupo: "Motor", etiqueta: "Junta de tapa de cilindros", frase: "Cambio de junta de tapa de cilindros" },
+  { clave: "junta_tapa_valvulas", grupo: "Motor", etiqueta: "Junta de tapa de válvulas", frase: "Cambio de junta de tapa de válvulas" },
+  { clave: "retenes_levas", grupo: "Motor", etiqueta: "Retenes de levas", frase: "Cambio de retenes de árbol de levas" },
+  { clave: "reten_ciguenal", grupo: "Motor", etiqueta: "Retén de cigüeñal", frase: "Cambio de retén de cigüeñal" },
   { clave: "puesta_a_punto", grupo: "Motor", etiqueta: "Puesta a punto", frase: "Puesta a punto" },
   { clave: "luz_valvulas", grupo: "Motor", etiqueta: "Luz de válvulas", frase: "Regulación de luz de válvulas" },
   { clave: "inyectores", grupo: "Motor", etiqueta: "Inyectores", frase: "Limpieza de inyectores" },
@@ -91,7 +111,7 @@ export const RENGLONES_MECANICA: RenglonMecanica[] = [
 
   { clave: "embrague", grupo: "Embrague y caja", etiqueta: "Embrague", frase: "Cambio de kit de embrague" },
   { clave: "caja", grupo: "Embrague y caja", etiqueta: "Caja", frase: "Reparación de caja de cambios" },
-  { clave: "aceite_caja", grupo: "Embrague y caja", etiqueta: "Aceite de caja", frase: "Cambio de aceite de caja", companeroDeService: true },
+  { clave: "aceite_caja", grupo: "Embrague y caja", etiqueta: "Aceite de caja", frase: "Cambio de aceite de caja", companeroDeService: true, companeroDeCaja: true },
   { clave: "homocinetica", grupo: "Embrague y caja", etiqueta: "Homocinética", frase: "Cambio de homocinética" },
   { clave: "fuelle_homocinetica", grupo: "Embrague y caja", etiqueta: "Fuelle", frase: "Cambio de fuelle de homocinética" },
 
@@ -153,15 +173,19 @@ export function alternarFrase(texto: string, frase: string): string {
   return quedan.join("\n").trim();
 }
 
-/** Los renglones que esta pantalla muestra. */
+/** Los renglones que esta pantalla muestra. `adjuntaA` es el tipo del
+ *  trabajo al que la mecánica se adjunta (AnfitrionMecanica de
+ *  lib/trabajos, escrito acá como literal para que la prueba compile este
+ *  archivo solo), o null para la mecánica suelta. */
 export function renglonesVisibles(opts: {
   tieneGomeria: boolean;
-  adjunta: boolean;
+  adjuntaA: "service" | "caja" | null;
 }): RenglonMecanica[] {
   return RENGLONES_MECANICA.filter(
     (r) =>
       !(r.soloSinGomeria && opts.tieneGomeria) &&
-      !(r.companeroDeService && opts.adjunta),
+      !(r.companeroDeService && opts.adjuntaA === "service") &&
+      !(r.companeroDeCaja && opts.adjuntaA === "caja"),
   );
 }
 

@@ -86,16 +86,17 @@ const ETIQUETA_RENGLON: Record<ItemTipo, string> = {
   aditivo_transmision: "Aditivo de transmisión",
   engrase: "Engrase",
   bateria: "Batería",
-  // Los cuatro del service de caja. En la carga el aditivo se lee
+  // Los cinco del service de caja. En la carga el aditivo se lee
   // «Aditivo» (la pantalla ya dice que es una caja); acá va «de caja»
   // porque comparte columna con el aditivo de motor y el de transmisión.
   caja_filtro: "Filtro de caja",
   caja_aditivo: "Aditivo de caja",
   caja_limpieza_carter: "Limpieza de cárter e imanes",
   caja_lavado: "Lavado del circuito (máquina)",
+  caja_dialisis: "Servicio por sistema de diálisis",
 };
 
-// Los 21 del cartón de aceite y, DESPUÉS, los cuatro de la caja: es el
+// Los 21 del cartón de aceite y, DESPUÉS, los cinco de la caja: es el
 // orden del enum, y cada papel conserva el suyo.
 const ORDEN_RENGLON = new Map(
   [...RENGLONES, ...RENGLONES_CAJA].map((r, i) => [r.tipo, i]),

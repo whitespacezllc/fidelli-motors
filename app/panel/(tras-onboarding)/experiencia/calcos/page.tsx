@@ -152,6 +152,7 @@ export default async function PaginaCalcos() {
 
       {/* La hoja: A4 exacto. En pantalla se ve tal cual sale. */}
       <div
+        data-theme="claro"
         className="hoja-calcos bg-white shadow-lg"
         style={{ width: "210mm", minHeight: "297mm", padding: "15mm" }}
       >

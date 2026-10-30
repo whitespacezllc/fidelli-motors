@@ -81,8 +81,14 @@ export default async function LayoutPanel({
   const badgePorLlamar = <PorLlamar cuenta={porLlamar} />;
 
   return (
-    <div className="min-h-dvh bg-surface/40">
+    // `data-theme` pinta el modo elegido por la persona (globals.css
+    // redefine los tokens debajo); `data-tema-panel` es la marca que el
+    // interruptor busca para cambiarlo en el acto. El fondo de la página
+    // es `fondo` y no `surface/40`: en oscuro la página es lo más oscuro y
+    // las tarjetas se despegan hacia arriba, al revés que en claro.
+    <div className="min-h-dvh bg-fondo" data-theme={sesion.tema} data-tema-panel="">
       <Sidebar
+        tema={sesion.tema}
         lubricentroNombre={sesion.lubricentroNombre ?? "Tu lubricentro"}
         suspendido={suspendido}
         motivoSuspension={motivoSuspension}
@@ -126,6 +132,7 @@ export default async function LayoutPanel({
         </main>
       </div>
       <BarraMobile
+        tema={sesion.tema}
         cerrarSesion={cerrarSesion}
         suspendido={suspendido}
         motivoSuspension={motivoSuspension}
