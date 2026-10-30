@@ -186,19 +186,49 @@ abre una puerta).
       cliente). La feature `caja` sigue prendiéndose por tenant desde /fidelli.
 - [ ] Nada que cargar a mano.
 
+## L · Renglones de la mecánica, modo oscuro, sidebar y hoja «Más» (30/10/2026)
+
+Tres PRs encadenados (#194, #195, #196) y una migración,
+`20261030100000_tema_del_panel.sql` (#195): `usuarios.tema` (claro por
+defecto, CHECK de dos valores) y `fijar_mi_tema()`, definer con guarda
+sobre la fila de `auth.uid()`. Sin datos ni variables. **Base primero, app
+después**; el front viejo convive con la columna nueva (la sesión la pide
+solo en el select «completo» y degrada a claro si no está).
+
+- [x] `db push` a dev desde el workdir aislado (30/10, 126 → 127; las cuatro
+      migraciones `20261022*` de Grego siguen ahí, intactas).
+- [x] `db push` a prod: lo corrió Santi desde el mismo workdir
+      (`cutzedfmxyyxxqfjutru`, 122 → 123) porque el clasificador de auto mode
+      lo frenó esta vez. Foto por `db query`: la columna nace en claro, el
+      CHECK, la función definer, `anon` sin ejecutar, 0 usuarios en oscuro,
+      `verificar_seguridad_vistas()` sin filas.
+- [x] #193 (docs), #194 (renglones), #195 (modo oscuro) y #196 (sidebar y
+      hoja «Más», retargeteado a develop) mergeados a develop en ese orden,
+      con el CI en verde.
+- [x] Release develop → main (#197, lo mergeó Santi el 30/10 a las 01:59 UTC,
+      `9d3f264`); deploy de Vercel en Production a las 02:00 (status `success`
+      02:19) y humo: `/`, `/login`, `/demo`, `/demo/ABC123` y `/blog` en 200;
+      `/panel` y `/fidelli` en 307.
+- [ ] De Santi: entrar al panel, prender el modo oscuro desde el pie del
+      sidebar (o Mi cuenta → Apariencia) y recorrer; en el celular, abrir
+      «Más» y ver los íconos. Confirmar la ortografía «poli V».
+- [ ] Decisión pendiente: `ink-40` (#8A8A8A) sobre blanco da 3,45:1 en
+      claro; subirlo a #767676 lo deja en AA. No se tocó.
+- [ ] Nada que cargar a mano.
+
 ## G · El CVU dedicado (31/10/2026) — `feat/cresium-cvu-dedicado`
 
 La base primero, la app después, y **las credenciales antes que todo**: el
 cobro pasa a la API key de producción y el webhook de cresium.app tiene que
 quedar en esa key.
 
-- [ ] **Las credenciales de prod en `.env.local` dan 401** («Invalid signature when checking partner authentication», medido el 30/10 con un GET de solo lectura: la key existe en prod y el secret no es el suyo; contra el sandbox contesta «Partner not found», o sea que tampoco es una key de sandbox). Santi: en cresium.app → Desarrolladores, regenerar la key de producción (el secret se muestra UNA vez) y pegar el par de nuevo en `~/Desktop/fidelli-motors/.env.local`. Verificar con `node <scratch>/fase0-cresium.mjs ~/Desktop/fidelli-motors/.env.local` (imprime solo huellas): los dos GET tienen que dar 200.
-- [ ] **Vercel (Production)**: `CRESIUM_API_KEY` y `CRESIUM_SECRET` con el par nuevo; el par viejo («Develop FM») pasa a `CRESIUM_API_KEY_ANTERIOR` y `CRESIUM_SECRET_ANTERIOR` (la ruta acepta las dos mientras dure la transición). `CRESIUM_COMPANY_ID` no cambia (1488).
-- [ ] **`db push` a dev** (`20261031100000_cvu_dedicado.sql`; sin datos: columnas nuevas en null, el interruptor prendido, el libro vacío) y **`db push` a prod** desde el workdir aislado (sección A). El `db reset` local corrió en verde con R25 reescrito y R51 (30/10).
-- [ ] **Merge** del PR a `develop` y release a `main`; deploy; humo: `/panel/suscripcion` de un tenant SIN cuenta sigue emitiendo pago único (nada cambia para él), y la ficha de `/fidelli` muestra «Cuenta de cobro» con el botón.
+- [x] (30/10: Santi las recargó; los dos GET de solo lectura dan 200) **Las credenciales de prod en `.env.local` daban 401** («Invalid signature when checking partner authentication», medido el 30/10 con un GET de solo lectura: la key existe en prod y el secret no es el suyo; contra el sandbox contesta «Partner not found», o sea que tampoco es una key de sandbox). Santi: en cresium.app → Desarrolladores, regenerar la key de producción (el secret se muestra UNA vez) y pegar el par de nuevo en `~/Desktop/fidelli-motors/.env.local`. Verificar con `node <scratch>/fase0-cresium.mjs ~/Desktop/fidelli-motors/.env.local` (imprime solo huellas): los dos GET tienen que dar 200.
+- [x] (30/10: Santi cargó el par nuevo y BORRÓ el viejo; no hay `_ANTERIOR`, así que la ruta acepta solo la key nueva y **el webhook de cresium.app tiene que apuntar a ella antes del primer depósito**) **Vercel (Production)**: `CRESIUM_API_KEY` y `CRESIUM_SECRET` con el par nuevo. `CRESIUM_COMPANY_ID` no cambia (1488).
+- [x] (dev: hecho el 30/10, 127 → 128, solo `20261031100000` pendiente y aplicada; prod: el clasificador de auto mode lo frenó —`Production Deploy`—, lo corre Santi: `npx supabase db push --workdir <scratch>/prod-link --linked`, con el dry-run ya visto: «Would push 20261031100000_cvu_dedicado.sql») **`db push` a dev** (`20261031100000_cvu_dedicado.sql`; sin datos: columnas nuevas en null, el interruptor prendido, el libro vacío) y **`db push` a prod** desde el workdir aislado (sección A). El `db reset` local corrió en verde con R25 reescrito y R51 (30/10).
+- [x] (#201, #202 y #199 mergeados a develop el 30/10; el release es #203 develop → main, abierto y SIN mergear hasta que la migración esté en prod) **Merge** del PR a `develop` y release a `main`; deploy; humo: `/panel/suscripcion` de un tenant SIN cuenta sigue emitiendo pago único (nada cambia para él), y la ficha de `/fidelli` muestra «Cuenta de cobro» con el botón.
 - [ ] **El webhook en cresium.app** apuntado a la key nueva (la misma URL `https://fidellimotors.app/api/cresium/webhook`). Mirar el log de Vercel: «firmado con la API Key ANTERIOR» significa que todavía apunta a la vieja.
-- [ ] **Pedirle a Cresium que habilite los CVUs dedicados** en la company (es un feature con comisión por transacción; `POST /v3/deposit-address/cvu` contesta 403 hasta que lo prendan). Tope por defecto: 300 cuentas.
-- [ ] **Emitir las 34 cuentas** desde la ficha de cada tenant (Suscripción → Cuenta de cobro), con el alias propuesto o uno editado. La lista propuesta está en el PR; Santi la aprueba antes. El demo no.
+- [x] (30/10: habilitado; probado con una emisión real de prueba —`fm.prueba.fidelli`, 200 con id y CVU de 22 dígitos— dada de baja después) **Pedirle a Cresium que habilite los CVUs dedicados** en la company (es un feature con comisión por transacción; `POST /v3/deposit-address/cvu` contesta 403 hasta que lo prendan). Tope por defecto: 300 cuentas.
+- [ ] **Emitir las 34 cuentas**: `scripts/emitir-cuentas.mjs` con la lista APROBADA por Santi el 30/10 (primero `--dry-run`; corre con una sesión de superadmin real y las credenciales de Cresium de `.env.local`; el que ya tiene cuenta se saltea). O una por una desde la ficha (Suscripción → Cuenta de cobro). El demo no.
 - [ ] **Una transferencia real** del monto exacto del mensual a UN tenant (el nuestro de prueba, o uno que avise): el pago tiene que acreditarse solo y la pantalla pasar a «Al día». Después, una con otro monto: tiene que aparecer en `/fidelli/cobranzas` como depósito a confirmar.
 - [ ] **Avisar a cada tenant su alias nuevo** (es lo que dejan agendado en el home banking): el mensaje sale de la ficha.
-- [ ] Cuando ningún webhook llegue más con la key vieja (una semana de logs sin «ANTERIOR»): borrar `CRESIUM_API_KEY_ANTERIOR` y `CRESIUM_SECRET_ANTERIOR` de Vercel.
+- [x] (no aplica: Santi borró la key vieja de Vercel de entrada) Borrar `CRESIUM_API_KEY_ANTERIOR` y `CRESIUM_SECRET_ANTERIOR` cuando ningún webhook llegue más con la key vieja.
