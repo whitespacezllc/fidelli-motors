@@ -23,9 +23,10 @@ import {
   esAliasTomado,
 } from "@/lib/cresium/cliente";
 import {
-  aliasParaLaOrden,
   conIntentos,
   estadoEfectivo,
+  estadoEfectivoDedicado,
+  externalIdDedicado,
   periodoHastaDeLaOrden,
 } from "@/lib/cresium/orden";
 import { hoyISO } from "@/lib/fechas";
@@ -109,11 +110,9 @@ export async function crearOrden(
   // la orden como siempre. El corte es este dato y nada más.
   const { data: tenant } = await supabase
     .from("lubricentros")
-    .select("cresium_alias")
+    .select("cresium_alias, cresium_cvu, cresium_deposit_address_id")
     .eq("id", lubricentroId)
     .maybeSingle();
-
-  const aliasFijo = tenant?.cresium_alias ?? null;
 
   // El período se aplica sobre el vencimiento actual, no sobre hoy: pagar
   // tres días antes no puede regalarle al tenant tres días menos.
@@ -150,6 +149,69 @@ export async function crearOrden(
     MESES_DEL_PERIODO[periodo as Periodo],
   );
 
+  // ============================================================
+  // LA CUENTA FIJA (20261031100000): la orden es NUESTRA
+  //
+  // El tenant con su CVU dedicado no le pide nada a Cresium para renovar.
+  // Lo que «Quiero pagar» deja es una fila interna con el período que
+  // eligió y el monto que vio: la pantalla le muestra su cuenta de siempre
+  // con ese monto, y el webhook acredita por monto exacto cuando entre.
+  // Si ya hay una orden interna viva de ESE período con el monto de hoy,
+  // se reusa; una vieja con otro monto (cambió el precio) se cierra.
+  // ============================================================
+  if (tenant?.cresium_cvu && tenant.cresium_alias && tenant.cresium_deposit_address_id) {
+    const { data: internas } = await supabase
+      .from("cresium_ordenes")
+      .select("id, external_id, estado, monto, periodo")
+      .eq("suscripcion_id", sub.id)
+      .not("deposit_address_id", "is", null)
+      .in("estado", ["NOT_PAID", "PARTIAL"])
+      .order("created_at", { ascending: false });
+
+    const delPeriodo = (internas ?? []).filter((o) => o.periodo === periodo);
+    const vivaConElMonto = delPeriodo.find(
+      (o) => estadoEfectivoDedicado(o.estado, Number(o.monto), monto) !== "EXPIRED",
+    );
+    if (vivaConElMonto) {
+      revalidarPantallasDePago();
+      return { ok: true };
+    }
+    // Las del mismo período con el monto viejo ya no representan nada.
+    const viejas = delPeriodo.map((o) => o.id);
+    if (viejas.length > 0) {
+      await supabase
+        .from("cresium_ordenes")
+        .update({ estado: "CERRADA", actualizado_at: new Date().toISOString() })
+        .in("id", viejas);
+    }
+    // La referencia lleva el número de intento por el unique de la tabla
+    // (regla 20), aunque acá nada se queme: contar las que ya existen con
+    // esa base alcanza.
+    const { count } = await supabase
+      .from("cresium_ordenes")
+      .select("id", { count: "exact", head: true })
+      .like("external_id", `cvu:${sub.id}:${hastaISO}%`);
+    const { error: errInterna } = await supabase.from("cresium_ordenes").insert({
+      lubricentro_id: lubricentroId,
+      suscripcion_id: sub.id,
+      external_id: externalIdDedicado(sub.id, hastaISO, (count ?? 0) + 1),
+      periodo: periodo as Periodo,
+      periodo_hasta: hastaISO,
+      monto,
+      alias: tenant.cresium_alias,
+      cvu: tenant.cresium_cvu,
+      deposit_address_id: tenant.cresium_deposit_address_id,
+      estado: "NOT_PAID",
+    });
+    if (errInterna) {
+      console.error(`[cresium] no se pudo registrar la orden interna del tenant ${lubricentroId}: ${errInterna.message}`);
+      return { error: "No pudimos registrar tu elección. Probá de nuevo en un momento." };
+    }
+    revalidarPantallasDePago();
+    return { ok: true };
+  }
+
+  // ---------- Sin cuenta fija todavía: el pago único de siempre ----------
   const { data: externalId } = await supabase.rpc("cresium_external_id", {
     p_suscripcion: sub.id,
     p_hasta: hastaISO,
@@ -200,9 +262,9 @@ export async function crearOrden(
     async (externalIdIntento, intento) => {
       // El alias fijo si lo tiene, el derivado si no. Misma interfaz para
       // los dos caminos: acá no hay un `if` de negocio, hay un dato.
-      const { alias } = aliasParaLaOrden(aliasFijo, () =>
-        aliasDeOrden(sesion.lubricentroNombre ?? "taller", externalIdIntento),
-      );
+      // Siempre el alias derivado: el alias fijo del tenant es el de su
+      // CVU dedicado, y pedirlo para un pago único chocaría con él.
+      const alias = aliasDeOrden(sesion.lubricentroNombre ?? "taller", externalIdIntento);
       const orden = await crearOrdenDePago({
         externalId: externalIdIntento,
         monto,
@@ -242,13 +304,8 @@ export async function crearOrden(
     // Hoy no puede pasar —nadie tiene alias asignado— y está escrito para
     // el día que sí, porque es el único error de esta pantalla que ninguna
     // acción del dueño resuelve.
-    if (aliasFijo && esAliasTomado(resultado.error)) {
-      console.error(`[cresium] el alias fijo «${aliasFijo}» del tenant ${lubricentroId} está tomado`);
-      return {
-        error:
-          "No pudimos generar la cuenta para transferir. Escribinos por WhatsApp y lo " +
-          "resolvemos nosotros: no es algo que puedas destrabar desde acá.",
-      };
+    if (esAliasTomado(resultado.error)) {
+      console.error(`[cresium] el alias derivado de ${resultado.externalId} está tomado en Cresium`);
     }
 
     return {

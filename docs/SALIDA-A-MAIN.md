@@ -185,3 +185,20 @@ abre una puerta).
       hizo algo de mecánica?», guardar, mirar las dos tarjetas y el cartón del
       cliente). La feature `caja` sigue prendiéndose por tenant desde /fidelli.
 - [ ] Nada que cargar a mano.
+
+## G · El CVU dedicado (31/10/2026) — `feat/cresium-cvu-dedicado`
+
+La base primero, la app después, y **las credenciales antes que todo**: el
+cobro pasa a la API key de producción y el webhook de cresium.app tiene que
+quedar en esa key.
+
+- [ ] **Las credenciales de prod en `.env.local` dan 401** («Invalid signature when checking partner authentication», medido el 30/10 con un GET de solo lectura: la key existe en prod y el secret no es el suyo; contra el sandbox contesta «Partner not found», o sea que tampoco es una key de sandbox). Santi: en cresium.app → Desarrolladores, regenerar la key de producción (el secret se muestra UNA vez) y pegar el par de nuevo en `~/Desktop/fidelli-motors/.env.local`. Verificar con `node <scratch>/fase0-cresium.mjs ~/Desktop/fidelli-motors/.env.local` (imprime solo huellas): los dos GET tienen que dar 200.
+- [ ] **Vercel (Production)**: `CRESIUM_API_KEY` y `CRESIUM_SECRET` con el par nuevo; el par viejo («Develop FM») pasa a `CRESIUM_API_KEY_ANTERIOR` y `CRESIUM_SECRET_ANTERIOR` (la ruta acepta las dos mientras dure la transición). `CRESIUM_COMPANY_ID` no cambia (1488).
+- [ ] **`db push` a dev** (`20261031100000_cvu_dedicado.sql`; sin datos: columnas nuevas en null, el interruptor prendido, el libro vacío) y **`db push` a prod** desde el workdir aislado (sección A). El `db reset` local corrió en verde con R25 reescrito y R51 (30/10).
+- [ ] **Merge** del PR a `develop` y release a `main`; deploy; humo: `/panel/suscripcion` de un tenant SIN cuenta sigue emitiendo pago único (nada cambia para él), y la ficha de `/fidelli` muestra «Cuenta de cobro» con el botón.
+- [ ] **El webhook en cresium.app** apuntado a la key nueva (la misma URL `https://fidellimotors.app/api/cresium/webhook`). Mirar el log de Vercel: «firmado con la API Key ANTERIOR» significa que todavía apunta a la vieja.
+- [ ] **Pedirle a Cresium que habilite los CVUs dedicados** en la company (es un feature con comisión por transacción; `POST /v3/deposit-address/cvu` contesta 403 hasta que lo prendan). Tope por defecto: 300 cuentas.
+- [ ] **Emitir las 34 cuentas** desde la ficha de cada tenant (Suscripción → Cuenta de cobro), con el alias propuesto o uno editado. La lista propuesta está en el PR; Santi la aprueba antes. El demo no.
+- [ ] **Una transferencia real** del monto exacto del mensual a UN tenant (el nuestro de prueba, o uno que avise): el pago tiene que acreditarse solo y la pantalla pasar a «Al día». Después, una con otro monto: tiene que aparecer en `/fidelli/cobranzas` como depósito a confirmar.
+- [ ] **Avisar a cada tenant su alias nuevo** (es lo que dejan agendado en el home banking): el mensaje sale de la ficha.
+- [ ] Cuando ningún webhook llegue más con la key vieja (una semana de logs sin «ANTERIOR»): borrar `CRESIUM_API_KEY_ANTERIOR` y `CRESIUM_SECRET_ANTERIOR` de Vercel.

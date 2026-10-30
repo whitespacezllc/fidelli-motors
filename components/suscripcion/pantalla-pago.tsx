@@ -27,6 +27,10 @@ export type OrdenAbierta = OrdenDePago & {
   /** El período que el dueño YA eligió al generar la orden. Manda sobre el
    *  selector: una vez emitido el CVU, el monto está fijado. */
   periodo: Periodo;
+  /** La orden es NUESTRA, contra la cuenta fija del tenant (20261031100000):
+   *  el CVU es el de siempre, el monto tiene que ser exacto y no hay pago
+   *  parcial que se acumule. */
+  dedicada?: boolean;
 };
 
 // ============================================================
@@ -86,6 +90,15 @@ export type DatosPago = {
   orden: OrdenAbierta | null;
   /** La última orden venció sin pagarse: se avisa y se ofrece una nueva. */
   ordenVencida: boolean;
+  /** Por qué venció: a los 7 días (pago único) o porque el precio del
+   *  período cambió desde que se generó (cuenta fija). */
+  motivoVencida?: "dias" | "precio" | null;
+  /** La cuenta de cobro FIJA del tenant (20261031100000), si ya tiene:
+   *  siempre la misma, para dejarla agendada en el home banking. */
+  cuenta?: { alias: string; cvu: string } | null;
+  /** Un depósito a la cuenta fija que no coincidió con ningún período y lo
+   *  está mirando Fidelli. El dueño tiene que saber que su plata llegó. */
+  enRevision?: { monto: number; fecha: string } | null;
   /** LA VOZ. `renovacion` es la de siempre: "tu período actual termina
    *  el…". `alta` es la del tenant que acaba de nacer y todavía no pagó
    *  ninguna vez: decirle que su período "vence" es mentirle sobre una
@@ -232,6 +245,11 @@ export function PantallaPago({ datos, concepto }: Props) {
           <span className="font-brand text-ui font-bold">Tu suscripción</span>
           <span className="text-ui text-success">Al día</span>
         </div>
+        {datos.enRevision && (
+          <div className="px-5 pt-5">
+            <EnRevision deposito={datos.enRevision} />
+          </div>
+        )}
         <Exito hasta={datos.alDiaHasta!} monto={datos.montoCobrado} />
       </div>
     );
@@ -292,6 +310,8 @@ export function PantallaPago({ datos, concepto }: Props) {
           </p>
         )}
 
+        {datos.enRevision && <EnRevision deposito={datos.enRevision} />}
+
         {/* ---------- El período ----------
             Se elige PERÍODO, nunca plan: cambiar de Basic a Pro es una
             conversación de venta por WhatsApp, a propósito.
@@ -351,7 +371,13 @@ export function PantallaPago({ datos, concepto }: Props) {
         {/* ---------- Generar la cuenta, o mostrarla ---------- */}
         {!orden ? (
           <form action={accion} className="mt-5">
-            {datos.ordenVencida && (
+            {datos.ordenVencida && datos.motivoVencida === "precio" && (
+              <p className="mb-4 rounded-lg border border-line bg-surface px-4 py-3 text-ui text-ink-60">
+                El monto de tu plan cambió desde que elegiste el período. Elegilo de nuevo
+                para ver el monto actualizado: tu cuenta para transferir es la misma.
+              </p>
+            )}
+            {datos.ordenVencida && datos.motivoVencida !== "precio" && (
               <p className="mb-4 rounded-lg border border-line bg-surface px-4 py-3 text-ui text-ink-60">
                 La cuenta que habías generado venció a los {DIAS_DE_VIDA_DE_LA_ORDEN} días
                 sin recibir la transferencia. Elegí el período y te damos una nueva. Si
@@ -360,10 +386,12 @@ export function PantallaPago({ datos, concepto }: Props) {
             )}
             <input type="hidden" name="periodo" value={periodo} />
             <Boton type="submit" tam="lg" disabled={enviando} className="w-full sm:w-auto">
-              {enviando ? "Generando tu cuenta…" : "Quiero pagar"}
+              {enviando ? (datos.cuenta ? "Un segundo…" : "Generando tu cuenta…") : "Quiero pagar"}
             </Boton>
             <p className="mt-2 text-label text-ink-40">
-              Te damos una cuenta tuya para transferir desde tu home banking.
+              {datos.cuenta
+                ? "Te mostramos tu cuenta de cobro de siempre y el monto exacto a transferir."
+                : "Te damos una cuenta tuya para transferir desde tu home banking."}
             </p>
             {/* EL TITULAR, ANTES DE QUE LO VEA EL BANCO. Dicho de antemano
                 es un dato; descubierto en el home banking a la hora de
@@ -374,12 +402,15 @@ export function PantallaPago({ datos, concepto }: Props) {
         ) : (
           <>
             <div className="mt-5 rounded-lg border border-line p-4">
-              <h3 className="font-brand text-body font-bold">
-                Transferí desde tu home banking
+              <h3 className="font-brand text-body font-bold tabular-nums">
+                {orden.dedicada
+                  ? `Transferí exactamente ${pesos(orden.monto)}`
+                  : "Transferí desde tu home banking"}
               </h3>
               <p className="mt-0.5 mb-1 text-ui text-ink-60">
-                La cuenta es tuya y de nadie más: identifica tu pago sin que tengas que
-                avisarnos.
+                {orden.dedicada
+                  ? "Tu cuenta de cobro es siempre la misma: podés dejarla agendada en tu home banking. El monto tiene que ser exacto; si transferís otro, lo revisamos a mano y demora más."
+                  : "La cuenta es tuya y de nadie más: identifica tu pago sin que tengas que avisarnos."}
               </p>
               <Dato k="Alias" v={orden.alias} copiable />
               {orden.cvu && <Dato k="CVU" v={orden.cvu} copiable />}
@@ -387,7 +418,7 @@ export function PantallaPago({ datos, concepto }: Props) {
               <NotaDelTitular />
             </div>
 
-            <EstadoDeLaOrden orden={orden} />
+            <EstadoDeLaOrden orden={orden} queSeCompleta={orden.dedicada ? null : undefined} />
           </>
         )}
 
@@ -407,6 +438,35 @@ export function PantallaPago({ datos, concepto }: Props) {
             </p>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Un depósito en revisión
+//
+// Entró a la cuenta fija del tenant pero no coincide con el monto exacto
+// de ningún período, así que lo mira Fidelli. El dueño tiene que saber que
+// su plata llegó, esté al día o no.
+// ============================================================
+function EnRevision({ deposito }: { deposito: { monto: number; fecha: string } }) {
+  return (
+    <div className="flex items-start gap-3 rounded-lg border border-urgente bg-urgente-soft px-4 py-3.5">
+      <span
+        aria-hidden
+        className="mt-0.5 grid size-[22px] shrink-0 place-items-center rounded-full bg-urgente text-label font-bold text-base"
+      >
+        !
+      </span>
+      <div className="min-w-0">
+        <p className="font-brand text-body font-bold text-overdue tabular-nums">
+          Recibimos {pesos(deposito.monto)} el {fechaLarga(deposito.fecha)}
+        </p>
+        <p className="mt-0.5 text-ui text-ink-60">
+          No coincide con el monto de ningún período, así que lo estamos revisando a mano.
+          Tu plata está: si hace falta algo, te escribimos por WhatsApp.
+        </p>
       </div>
     </div>
   );
@@ -574,10 +634,12 @@ function EstadoDeLaOrden({
   queSeCompleta = "el período",
 }: {
   orden: OrdenDePago;
-  /** Lo que la diferencia termina de pagar: el período, o el pedido. */
-  queSeCompleta?: string;
+  /** Lo que la diferencia termina de pagar: el período, o el pedido. Con
+   *  `null` no hay pago parcial que se acumule (la cuenta fija acredita
+   *  por monto exacto y nada más). */
+  queSeCompleta?: string | null;
 }) {
-  if (orden.estado === "PARTIAL") {
+  if (orden.estado === "PARTIAL" && queSeCompleta !== null) {
     const falta = orden.monto - orden.montoPagado;
     // Una sola cadena, y no `{queSeCompleta}` suelto en medio de la frase:
     // así el HTML de la renovación queda byte a byte como era.

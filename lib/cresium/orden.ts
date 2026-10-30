@@ -54,44 +54,40 @@ export function estadoEfectivo(estado: string, createdAt: string, ahora: Date = 
 }
 
 // ============================================================
-// EL ALIAS DE UNA ORDEN · el camino nuevo detrás de la misma interfaz
+// LA ORDEN INTERNA DE UN CVU DEDICADO (20261031100000)
 //
-// Una sola función decide, y por eso el corte entre el alias fijo y el
-// derivado es UN DATO y no un deploy:
-//
-//   · el tenant TIENE alias asignado  → se usa ése, siempre, sin tocarlo.
-//   · el tenant NO tiene  (null)      → se sigue derivando de la orden,
-//                                        exactamente como hasta hoy.
-//
-// Hoy los 17 tenants están en null, así que esto no cambia el comportamiento
-// de nadie. El día que Cresium conteste, cada tenant que reciba su alias
-// cruza de camino solo, sin que se toque una línea.
-//
-// ⚠ EL REINTENTO SE COMPORTA DISTINTO CON UN ALIAS FIJO, y conviene tenerlo
-// escrito antes de que pase. Hoy el alias sale del `externalId`, así que el
-// intento `:2` pide un alias DISTINTO del que pidió el `:1` —el comentario
-// de `externalIdDelIntento()` lo dice: «el CVU nuevo trae alias nuevo»—.
-// Con un alias fijo, el `:2` pide EL MISMO, y si el `:1` alcanzó a crear la
-// cuenta antes de fallar por otra cosa, Cresium va a contestar que el alias
-// está tomado. Ese error NO es motivo para subir el número de intento:
-// insistir pide lo mismo otra vez. Lo maneja la acción, que solo reintenta
-// con `EXISTING_EXTERNAL_ID`.
+// Un tenant con su cuenta de cobro ya no pide nada a Cresium para renovar:
+// «Quiero pagar» escribe una fila en cresium_ordenes con el período que
+// eligió y el monto que vio, y la pantalla le muestra SU CVU fijo con ese
+// monto. El webhook del depósito acredita por monto exacto; la orden solo
+// le sirve a la pantalla (esperando → al día) y a Cobranzas («ya generó la
+// cuenta»). Como no viaja a Cresium, su referencia no tiene el problema
+// del externalId quemado: lleva el prefijo `cvu:` para que nadie la
+// confunda con una referencia de pago único.
 // ============================================================
 
+/** La referencia de una orden interna: `cvu:<suscripción>:<hasta>`, con el
+ *  número de intento como las demás (regla 20: la tabla tiene el unique). */
+export function externalIdDedicado(suscripcionId: string, hastaISO: string, intento = 1): string {
+  return externalIdDelIntento(`cvu:${suscripcionId}:${hastaISO}`, intento);
+}
+
+export function esOrdenDedicada(externalId: string): boolean {
+  return externalId.startsWith("cvu:");
+}
+
 /**
- * El alias con el que se pide una orden.
- *
- * `derivado` es la función de siempre (`aliasDeOrden`), que entra por
- * parámetro para que este módulo siga siendo puro: sin `server-only`, sin
- * red y sin `node:crypto`, que es lo que permite que la regresión lo
- * importe directo.
+ * El estado que hay que creerle a una orden INTERNA. No vence a los 7
+ * días —el CVU fijo no vence— pero sí queda vieja cuando el precio de su
+ * período cambió desde que se generó: el dueño transferiría el monto
+ * viejo y el depósito quedaría a confirmar. Con el monto distinto del de
+ * hoy, la pantalla la trata como vencida y le pide elegir de nuevo.
  */
-export function aliasParaLaOrden(
-  aliasDelTenant: string | null | undefined,
-  derivado: () => string,
-): { alias: string; fijo: boolean } {
-  const propio = aliasDelTenant?.trim();
-  return propio ? { alias: propio, fijo: true } : { alias: derivado(), fijo: false };
+export function estadoEfectivoDedicado(estado: string, monto: number, montoActual: number | null): string {
+  if ((estado === "NOT_PAID" || estado === "PARTIAL") && montoActual !== null && montoActual !== monto) {
+    return "EXPIRED";
+  }
+  return estado;
 }
 
 // ============================================================
