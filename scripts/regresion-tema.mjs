@@ -335,7 +335,7 @@ try {
     `/panel/services/${IDS.service}/guardado`, "/panel/productos", "/panel/fidelizacion", "/panel/presupuestos",
     "/panel/presupuestos/nuevo", IDS.presupuesto ? `/panel/presupuestos/${IDS.presupuesto}` : null, "/panel/experiencia",
     "/panel/experiencia/calcos", "/panel/mensajes", "/panel/sucursales", "/panel/suscripcion", "/panel/cuenta",
-    "/panel/cuenta/calcos", "/panel/ayuda",
+    "/panel/cuenta?tab=plan", "/panel/cuenta?tab=negocio", "/panel/cuenta/calcos", "/panel/ayuda",
   ].filter(Boolean);
   const RUTAS_FIDELLI = [
     "/fidelli", "/fidelli/lubricentros", `/fidelli/${LUB}`, `/fidelli/${LUB}?tab=suscripcion`, `/fidelli/${LUB}?tab=datos`,

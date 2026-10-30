@@ -47,7 +47,7 @@ export function DepositosAConfirmar({ depositos }: { depositos: DepositoAConfirm
   }
 
   return (
-    <section>
+    <section className="mb-8">
       {aviso && <Toast aviso={aviso} alCerrar={() => setAviso(null)} />}
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="font-brand text-lead font-bold text-ink">Depósitos a confirmar</h2>

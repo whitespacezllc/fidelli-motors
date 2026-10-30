@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { obtenerSesion } from "@/lib/auth/session";
 import { CabeceraSeccion } from "@/components/panel/cabecera-seccion";
+import { SolapasCuenta } from "@/components/cuenta/solapas";
 import { clasesBoton } from "@/components/ui/boton";
 import { MiniaturaDelCalco } from "@/components/cuenta/calcos/miniatura-del-calco";
 import { StockDeCalcos } from "@/components/cuenta/calcos/stock-de-calcos";
@@ -243,14 +243,12 @@ export default async function PaginaCalcos() {
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
+      {/* La cuarta solapa de Mi cuenta (30/10/2026): la misma cabecera y la
+          misma barra que las otras tres; esta es una ruta propia porque
+          tiene su pago y sus acciones. */}
       <div>
-        <Link
-          href="/panel/cuenta"
-          className="mb-2 inline-flex min-h-11 items-center text-ui font-semibold text-ink-60 hover:text-ink"
-        >
-          ← Mi cuenta
-        </Link>
-        <CabeceraSeccion titulo="Calcos" />
+        <CabeceraSeccion titulo="Mi cuenta" />
+        <SolapasCuenta activa="calcos" />
       </div>
 
       {/* ============ 1 · Tu calco ============ */}

@@ -114,11 +114,10 @@ export default async function PaginaCobranzas() {
         mejor que cualquier plantilla.
       </p>
 
-      {depositos.length > 0 && (
-        <div className="mb-8">
-          <DepositosAConfirmar depositos={depositos} />
-        </div>
-      )}
+      {/* Siempre montado, con lista vacía incluida: el toast que confirma el
+          último depósito resuelto vive adentro, y desmontarlo al vaciarse la
+          lista se lo llevaba antes de que nadie lo leyera. */}
+      <DepositosAConfirmar depositos={depositos} />
 
       {filas.length === 0 ? (
         // Sin trabajo pendiente se celebra, en verde. Es la regla de copy
