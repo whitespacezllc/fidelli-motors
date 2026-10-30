@@ -1192,11 +1192,9 @@ export type Database = {
       }
       egresos: {
         Row: {
-          categoria: string | null
           concepto: string
           created_at: string
           fecha: string
-          fondos: string
           id: string
           lubricentro_id: string
           medio: string
@@ -1205,11 +1203,9 @@ export type Database = {
           usuario_id: string
         }
         Insert: {
-          categoria?: string | null
           concepto: string
           created_at?: string
           fecha?: string
-          fondos?: string
           id?: string
           lubricentro_id: string
           medio?: string
@@ -1218,11 +1214,9 @@ export type Database = {
           usuario_id: string
         }
         Update: {
-          categoria?: string | null
           concepto?: string
           created_at?: string
           fecha?: string
-          fondos?: string
           id?: string
           lubricentro_id?: string
           medio?: string
@@ -1519,7 +1513,6 @@ export type Database = {
       }
       ingresos: {
         Row: {
-          categoria: string | null
           cliente_id: string | null
           concepto: string
           created_at: string
@@ -1534,7 +1527,6 @@ export type Database = {
           usuario_id: string
         }
         Insert: {
-          categoria?: string | null
           cliente_id?: string | null
           concepto: string
           created_at?: string
@@ -1549,7 +1541,6 @@ export type Database = {
           usuario_id: string
         }
         Update: {
-          categoria?: string | null
           cliente_id?: string | null
           concepto?: string
           created_at?: string
@@ -3526,11 +3517,9 @@ export type Database = {
       }
       vista_movimientos_caja: {
         Row: {
-          categoria: string | null
           concepto: string | null
           created_at: string | null
           fecha: string | null
-          fondos: string | null
           id: string | null
           lubricentro_id: string | null
           medio: string | null
@@ -4627,10 +4616,8 @@ export type Database = {
       }
       guardar_egreso: {
         Args: {
-          p_categoria?: string
           p_concepto: string
           p_fecha?: string
-          p_fondos?: string
           p_medio?: string
           p_monto: number
           p_sucursal_id: string
@@ -4639,7 +4626,6 @@ export type Database = {
       }
       guardar_ingreso: {
         Args: {
-          p_categoria?: string
           p_cliente_id?: string
           p_concepto: string
           p_fecha?: string
