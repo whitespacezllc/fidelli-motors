@@ -78,7 +78,8 @@ const PRUEBAS = {
       && e.text.includes("El 01/10 vence tu plan Pro de Fidelli Motors. Son $49.000 por mes.")
       && e.text.includes("Podés pagarlo desde ahora y no se corta nada:")
       && e.text.includes("Pagar ahora: https://fidellimotors.app/panel/suscripcion")
-      && e.text.includes("Transferís al alias de tu cuenta y se acredita solo.")
+      && e.text.includes("transferís a la cuenta que te mostramos ahí: se acredita sola")
+      && e.text.includes("no uses el alias ni el CVU de la vez anterior")
       && e.text.includes("Cualquier duda, respondé este mail o escribinos por WhatsApp.")
       && /Santiago\nFidelli Motors/.test(e.text);
   },
@@ -151,7 +152,7 @@ const PRUEBAS = {
   "4 · el alias, condicional": (m) => {
     const sin = m.emailDeCobranza("por_vencer:cobranza", base);
     const con = m.emailDeCobranza("por_vencer:cobranza", { ...base, alias: "fm.sanmartin" });
-    return sin.text.includes("Transferís al alias de tu cuenta") && !sin.text.includes("fm.sanmartin")
+    return sin.text.includes("transferís a la cuenta que te mostramos ahí") && !sin.text.includes("fm.sanmartin")
       && con.text.includes("Transferís al alias fm.sanmartin y se acredita solo.");
   },
   "1 · fecha7 y fecha8 cruzan el mes": (m) => {
