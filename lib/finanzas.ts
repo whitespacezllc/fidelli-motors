@@ -19,6 +19,41 @@ export function esMedioPago(valor: string): valor is MedioPago {
   return (MEDIOS_PAGO as readonly string[]).includes(valor);
 }
 
+// ---------- Categoría / origen del movimiento ----------
+// Set corto y FIJO, ESPEJO de los CHECK de la base (ingreso_categoria_valida /
+// egreso_categoria_valida). Es el "de qué es la plata", aparte del medio.
+export const CATEGORIAS_INGRESO = ["trabajo", "repuesto", "otro"] as const;
+export const CATEGORIAS_EGRESO = ["insumos", "sueldos", "servicios", "otro"] as const;
+
+export type CategoriaIngreso = (typeof CATEGORIAS_INGRESO)[number];
+export type CategoriaEgreso = (typeof CATEGORIAS_EGRESO)[number];
+
+export const ETIQUETA_CATEGORIA: Record<CategoriaIngreso | CategoriaEgreso, string> = {
+  trabajo: "Trabajo",
+  repuesto: "Repuesto",
+  insumos: "Insumos",
+  sueldos: "Sueldos",
+  servicios: "Servicios",
+  otro: "Otro",
+};
+
+/** La etiqueta de una categoría, tolerante al null/desconocido. */
+export function etiquetaCategoria(valor: string | null | undefined): string | null {
+  if (!valor) return null;
+  return (ETIQUETA_CATEGORIA as Record<string, string>)[valor] ?? null;
+}
+
+// ---------- Fondos: de qué bolsillo (solo egresos) ----------
+// taller = plata del lubricentro (entra al arqueo); personal = la del dueño,
+// de su bolsillo (NO entra al arqueo). Espejo de egreso_fondos_valido.
+export const FONDOS = ["taller", "personal"] as const;
+export type Fondos = (typeof FONDOS)[number];
+
+export const ETIQUETA_FONDOS: Record<Fondos, string> = {
+  taller: "Del taller",
+  personal: "Personal (de tu bolsillo)",
+};
+
 /** AR: miles con punto, decimales con coma. "12.500,50" → 12500.5 */
 export function parsearMonto(texto: string): number {
   return Number(texto.replace(/\./g, "").replace(",", ".")) || 0;

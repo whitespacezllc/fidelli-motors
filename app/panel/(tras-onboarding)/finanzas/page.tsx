@@ -9,7 +9,14 @@ import { clasesBoton } from "@/components/ui/boton";
 import { AccionBloqueada } from "@/components/panel/bloqueo-suspension";
 import { formatearFecha } from "@/lib/fechas";
 import { formatearPesos } from "@/lib/presupuestos";
-import { MEDIOS_PAGO, ETIQUETA_MEDIO, type PuntoCaja } from "@/lib/finanzas";
+import {
+  MEDIOS_PAGO,
+  ETIQUETA_MEDIO,
+  CATEGORIAS_INGRESO,
+  CATEGORIAS_EGRESO,
+  etiquetaCategoria,
+  type PuntoCaja,
+} from "@/lib/finanzas";
 import { esVistaPanel, type VistaPanel } from "@/lib/series";
 import { TabsFinanzas } from "@/components/finanzas/tabs-finanzas";
 import { GraficoCaja } from "@/components/finanzas/grafico-caja";
@@ -46,7 +53,9 @@ export default async function PaginaFinanzas({
     supabase.rpc("serie_caja"),
     supabase
       .from("vista_movimientos_caja")
-      .select("id, tipo, fecha, concepto, monto, medio, sucursal_nombre", { count: "exact" })
+      .select("id, tipo, fecha, concepto, monto, medio, categoria, fondos, sucursal_nombre", {
+        count: "exact",
+      })
       .order("fecha", { ascending: false })
       .order("created_at", { ascending: false })
       .range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1),
@@ -66,6 +75,8 @@ export default async function PaginaFinanzas({
     semana?: Periodo;
     mes?: Periodo;
     arqueo_hoy?: Arqueo;
+    personal?: { hoy?: number; semana?: number; mes?: number };
+    por_origen_mes?: { ingresos?: Record<string, number>; egresos?: Record<string, number> };
   };
 
   const periodo = (p?: Periodo) => {
@@ -95,8 +106,30 @@ export default async function PaginaFinanzas({
     concepto: m.concepto as string,
     monto: Number(m.monto),
     medio: m.medio as string,
+    categoria: (m.categoria as string | null) ?? null,
+    fondos: (m.fondos as string | null) ?? null,
     sucursal: (m.sucursal_nombre as string) ?? "",
   }));
+
+  // "De tu bolsillo": lo que el dueño puso de lo personal (fuera del arqueo).
+  const personal = {
+    hoy: Number(resumen.personal?.hoy ?? 0),
+    semana: Number(resumen.personal?.semana ?? 0),
+    mes: Number(resumen.personal?.mes ?? 0),
+  };
+  const hayPersonal = personal.hoy + personal.semana + personal.mes > 0;
+
+  // "Este mes por origen": el desglose por categoría. Se arma en el orden del
+  // catálogo y se ocultan las categorías en cero.
+  const porOrigen = (
+    datos: Record<string, number> | undefined,
+    cats: readonly string[],
+  ) =>
+    [...cats, "sin"]
+      .map((c) => ({ categoria: c, total: Number(datos?.[c] ?? 0) }))
+      .filter((x) => x.total > 0);
+  const origenIngresos = porOrigen(resumen.por_origen_mes?.ingresos, CATEGORIAS_INGRESO);
+  const origenEgresos = porOrigen(resumen.por_origen_mes?.egresos, CATEGORIAS_EGRESO);
 
   const total = listaRes.count ?? 0;
   const paginas = Math.max(1, Math.ceil(total / POR_PAGINA));
@@ -145,6 +178,25 @@ export default async function PaginaFinanzas({
         ))}
       </div>
 
+      {/* De tu bolsillo: lo que el dueño puso de lo personal. Fuera del
+          arqueo del taller — es plata suya, no de la caja. En ámbar (es un
+          estado "ojo", no una acción). */}
+      {hayPersonal && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-line bg-surface/60 px-5 py-3">
+          <p className="text-label font-semibold tracking-[0.06em] text-overdue uppercase">
+            De tu bolsillo
+          </p>
+          <p className="text-ui text-ink-60 tabular-nums">
+            Hoy <span className="font-semibold text-ink">{formatearPesos(personal.hoy)}</span> ·
+            Semana <span className="font-semibold text-ink">{formatearPesos(personal.semana)}</span>{" "}
+            · Mes <span className="font-semibold text-ink">{formatearPesos(personal.mes)}</span>
+          </p>
+          <p className="w-full text-label text-ink-40">
+            Gastos del taller que pagaste con tu plata. No cuentan en el arqueo del cajón.
+          </p>
+        </div>
+      )}
+
       {/* Arqueo de hoy: neto por medio. El efectivo neto es lo que tendría
           que haber en el cajón. */}
       {hayArqueo && (
@@ -165,6 +217,20 @@ export default async function PaginaFinanzas({
         </div>
       )}
 
+      {/* Este mes por origen: de dónde vino la plata y en qué se fue. El
+          "doble click" sobre la caja. */}
+      {(origenIngresos.length > 0 || origenEgresos.length > 0) && (
+        <div className="surface-card mb-5 px-5 py-4">
+          <p className="mb-3 text-label font-semibold tracking-[0.06em] text-ink-60 uppercase">
+            Este mes por origen
+          </p>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <ColumnaOrigen titulo="Entró" filas={origenIngresos} />
+            <ColumnaOrigen titulo="Salió" filas={origenEgresos} />
+          </div>
+        </div>
+      )}
+
       {/* La evolución de la caja: ingresos / egresos / neto por período. */}
       {haySerie && <GraficoCaja series={series} vistaInicial={vistaInicial} />}
 
@@ -179,8 +245,18 @@ export default async function PaginaFinanzas({
                 <span className="order-2 text-label text-ink-60 tabular-nums lg:order-none lg:text-ui">
                   {formatearFecha(m.fecha)}
                 </span>
-                <span className="order-1 w-full truncate text-ui text-ink lg:order-none lg:w-auto">
-                  {m.concepto}
+                <span className="order-1 flex w-full min-w-0 items-center gap-2 lg:order-none lg:w-auto">
+                  <span className="truncate text-ui text-ink">{m.concepto}</span>
+                  {etiquetaCategoria(m.categoria) && (
+                    <span className="shrink-0 rounded-sm bg-surface px-1.5 py-0.5 text-label text-ink-60">
+                      {etiquetaCategoria(m.categoria)}
+                    </span>
+                  )}
+                  {m.fondos === "personal" && (
+                    <span className="shrink-0 rounded-sm bg-overdue-soft px-1.5 py-0.5 text-label font-semibold text-overdue">
+                      Personal
+                    </span>
+                  )}
                 </span>
                 <span className="order-4 text-label text-ink-60 lg:order-none lg:text-ui">
                   {ETIQUETA_MEDIO[m.medio as keyof typeof ETIQUETA_MEDIO] ?? m.medio}
@@ -240,6 +316,46 @@ export default async function PaginaFinanzas({
           )}
         </EstadoVacio>
       )}
+    </div>
+  );
+}
+
+// Una columna del desglose "por origen": categoría y total, en el orden del
+// catálogo. "sin" es lo que quedó sin categorizar.
+function ColumnaOrigen({
+  titulo,
+  filas,
+}: {
+  titulo: string;
+  filas: { categoria: string; total: number }[];
+}) {
+  if (filas.length === 0) {
+    return (
+      <div>
+        <p className="mb-2 text-label font-semibold tracking-[0.06em] text-ink-40 uppercase">
+          {titulo}
+        </p>
+        <p className="text-ui text-ink-40">—</p>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <p className="mb-2 text-label font-semibold tracking-[0.06em] text-ink-60 uppercase">
+        {titulo}
+      </p>
+      <ul className="flex flex-col gap-1.5">
+        {filas.map((f) => (
+          <li key={f.categoria} className="flex items-center justify-between gap-3">
+            <span className="text-ui text-ink">
+              {f.categoria === "sin" ? "Sin categoría" : etiquetaCategoria(f.categoria)}
+            </span>
+            <span className="text-ui font-semibold text-ink tabular-nums">
+              {formatearPesos(f.total)}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

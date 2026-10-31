@@ -8,7 +8,7 @@ import {
 } from "@/lib/exportar/respuesta";
 import { paginar } from "@/lib/exportar/paginar";
 import { fecha, generarXlsx, nombreArchivo, numero, texto, type Celda } from "@/lib/exportar/xlsx";
-import { ETIQUETA_MEDIO, esMedioPago } from "@/lib/finanzas";
+import { ETIQUETA_MEDIO, esMedioPago, etiquetaCategoria } from "@/lib/finanzas";
 
 // ============================================================
 // La exportación de la caja — GET /panel/finanzas/exportar
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     const movimientos = await paginar((desde, hasta) =>
       supabase
         .from("vista_movimientos_caja")
-        .select("tipo, fecha, concepto, monto, medio, sucursal_nombre")
+        .select("tipo, fecha, concepto, monto, medio, categoria, fondos, sucursal_nombre")
         .order("fecha", { ascending: false })
         .order("created_at", { ascending: false })
         .range(desde, hasta),
@@ -54,7 +54,11 @@ export async function GET(request: NextRequest) {
       fecha(m.fecha),
       texto(m.tipo === "egreso" ? "Egreso" : "Ingreso"),
       texto(m.concepto),
+      texto(etiquetaCategoria(m.categoria) ?? ""),
       texto(m.medio && esMedioPago(m.medio) ? ETIQUETA_MEDIO[m.medio] : (m.medio ?? "")),
+      // Fondos: solo tiene sentido en egresos; "Personal" es lo pagado por el
+      // dueño. En ingresos va vacío.
+      texto(m.fondos === "personal" ? "Personal" : m.fondos === "taller" ? "Taller" : ""),
       texto(m.sucursal_nombre ?? ""),
       numero(Number(m.monto)),
     ]);
@@ -62,7 +66,7 @@ export async function GET(request: NextRequest) {
     const archivo = await generarXlsx([
       {
         nombre: "Movimientos",
-        cabecera: ["Fecha", "Tipo", "Concepto", "Medio", "Sucursal", "Monto"],
+        cabecera: ["Fecha", "Tipo", "Concepto", "Categoría", "Medio", "Fondos", "Sucursal", "Monto"],
         filas,
       },
     ]);

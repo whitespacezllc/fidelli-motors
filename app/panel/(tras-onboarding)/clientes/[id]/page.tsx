@@ -8,6 +8,8 @@ import { DialogSuprimirCliente } from "@/components/clientes/dialog-suprimir-cli
 import { anonimizarCliente } from "@/app/panel/(tras-onboarding)/clientes/actions";
 import { clienteSuprimido, sinNombre, sinTelefono } from "@/lib/clientes";
 import { SeccionVehiculos } from "@/components/vehiculos/seccion-vehiculos";
+import { SeccionPresupuestos } from "@/components/clientes/seccion-presupuestos";
+import { SeccionFinanzasCliente } from "@/components/clientes/seccion-finanzas-cliente";
 import { estadoService } from "@/lib/servicios";
 import { obtenerSesion, featureHabilitada } from "@/lib/auth/session";
 import { formatearCuit } from "@/lib/cuit";
@@ -81,6 +83,7 @@ export default async function FichaCliente({
   ]);
   const puedePendientes = featureHabilitada(sesion, "pendientes");
   const puedePresupuestos = featureHabilitada(sesion, "presupuestos");
+  const tieneFinanzas = featureHabilitada(sesion, "finanzas");
 
   // Las columnas de una vista llegan tipadas como nullable (Postgres no puede
   // probar NOT NULL a través de un group by): con este chequeo quedan
@@ -125,8 +128,17 @@ export default async function FichaCliente({
   // cada auto (premio_disponible() es por vehículo y un cliente tiene uno o
   // dos: en paralelo, no en cascada); y los canjes, las notas y los
   // pendientes, en una sola consulta para todos.
-  const [{ data: filasServices }, premios, canjesRes, notasRes, pendientesRes, marcasRes] =
-    await Promise.all([
+  const [
+    { data: filasServices },
+    premios,
+    canjesRes,
+    notasRes,
+    pendientesRes,
+    marcasRes,
+    presupuestosRes,
+    saldoRes,
+    ingresosRes,
+  ] = await Promise.all([
     supabase
       .from("services")
       .select(
@@ -189,6 +201,37 @@ export default async function FichaCliente({
       .select("nombre")
       .eq("activa", true)
       .order("orden"),
+
+    // Los presupuestos del cliente (si tiene el módulo): el hilo entre los
+    // tres módulos. El total se arma con los renglones (el presupuesto no
+    // guarda un total).
+    puedePresupuestos
+      ? supabase
+          .from("presupuestos")
+          .select("id, numero, fecha, presupuesto_items(cantidad, precio_unitario)")
+          .eq("cliente_id", id)
+          .order("numero", { ascending: false })
+          .limit(8)
+      : Promise.resolve({ data: null }),
+
+    // Finanzas del cliente (si tiene el módulo): el saldo que debe y sus
+    // últimos ingresos. La cuenta corriente completa vive en su pantalla.
+    tieneFinanzas
+      ? supabase
+          .from("vista_saldos_cliente")
+          .select("saldo")
+          .eq("cliente_id", id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    tieneFinanzas
+      ? supabase
+          .from("ingresos")
+          .select("id, fecha, concepto, monto, categoria")
+          .eq("cliente_id", id)
+          .order("fecha", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(5)
+      : Promise.resolve({ data: null }),
   ]);
 
   const marcas = (marcasRes.data ?? []).map((m) => m.nombre);
@@ -392,6 +435,42 @@ export default async function FichaCliente({
           })),
         }))}
       />
+
+      {/* El hilo con los otros dos módulos: sus presupuestos y su finanzas.
+          Cada sección aparece solo con su módulo prendido y si hay algo que
+          mostrar. */}
+      {puedePresupuestos && (
+        <SeccionPresupuestos
+          presupuestos={(presupuestosRes.data ?? []).flatMap((pr) =>
+            pr.id && pr.numero != null
+              ? [
+                  {
+                    id: pr.id,
+                    numero: pr.numero,
+                    fecha: pr.fecha,
+                    total: (pr.presupuesto_items ?? []).reduce(
+                      (s, it) => s + Number(it.cantidad) * Number(it.precio_unitario),
+                      0,
+                    ),
+                  },
+                ]
+              : [],
+          )}
+        />
+      )}
+      {tieneFinanzas && (
+        <SeccionFinanzasCliente
+          clienteId={cliente.id}
+          saldo={Number(saldoRes.data?.saldo ?? 0)}
+          ingresos={(ingresosRes.data ?? []).map((i) => ({
+            id: i.id,
+            fecha: i.fecha,
+            concepto: i.concepto,
+            monto: Number(i.monto),
+            categoria: i.categoria ?? null,
+          }))}
+        />
+      )}
     </div>
   );
 }
