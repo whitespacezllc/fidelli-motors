@@ -44,6 +44,7 @@ import type { VehiculoIdentificado } from "@/lib/busqueda-alta";
 // visitante — el auto que "aparece" es siempre este.
 const DEMO = {
   vehiculoId: "demo",
+  clienteId: "demo",
   marca: "Chevrolet",
   modelo: "Corsa",
   anio: 2011,

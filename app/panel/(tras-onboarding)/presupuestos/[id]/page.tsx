@@ -59,7 +59,7 @@ export default async function PaginaPresupuesto({ params }: Props) {
       .select(
         `id, numero, fecha, validez_dias, observaciones,
          destinatario_nombre, destinatario_telefono, destinatario_vehiculo,
-         cliente_id, created_at, updated_at,
+         cliente_id, vehiculo_id, created_at, updated_at,
          sucursales(nombre), usuarios!usuario_id(nombre),
          presupuesto_items(orden, descripcion, cantidad, precio_unitario)`,
       )
@@ -186,6 +186,26 @@ export default async function PaginaPresupuesto({ params }: Props) {
           </div>
         )}
       </div>
+
+      {/* Convertir en trabajo: si el presupuesto quedó atado a un auto, el
+          cartón se abre con ese vehículo precargado — no se re-tipea nada.
+          Un presupuesto «de paso» (sin auto) no ofrece esto. */}
+      {!suspendido && p.vehiculo_id && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-line bg-surface/60 px-4 py-3 print:hidden">
+          <div>
+            <p className="font-brand text-ui font-bold text-ink">¿Lo hacés?</p>
+            <p className="text-label text-ink-60">
+              Cargá el trabajo con el auto de este presupuesto ya cargado.
+            </p>
+          </div>
+          <Link
+            href={`/panel/services/nuevo/${p.vehiculo_id}`}
+            className={clasesBoton("primario", "md")}
+          >
+            Cargar el trabajo
+          </Link>
+        </div>
+      )}
 
       {/* Finanzas: cobrar este presupuesto lo registra como ingreso. Solo
           con el módulo prendido; no toca el papel. */}

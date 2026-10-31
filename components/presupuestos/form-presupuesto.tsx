@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import { Boton } from "@/components/ui/boton";
 import { Combobox } from "@/components/ui/combobox";
 import {
+  SelectorClienteVehiculo,
+  type SeleccionPresupuesto,
+} from "@/components/presupuestos/selector-cliente-vehiculo";
+import {
   crearPresupuesto,
   editarPresupuesto,
   type ResultadoPresupuesto,
@@ -47,12 +51,39 @@ const FILA_VACIA: Fila = { descripcion: "", cantidad: "1", precio: "" };
 // con el cliente esperando. Por eso los renglones se agregan sin recargar,
 // el total se ve mientras se escribe, y NADA es obligatorio salvo un
 // renglón con descripción — ni el cliente, ni el vehículo, ni la ficha.
+// La selección inicial del «Para quién»: vinculada si el presupuesto ya tenía
+// cliente+auto; de paso si tenía algún texto libre; null si es nuevo y en
+// blanco (muestra el buscador de patente).
+function seleccionDesde(inicial?: PresupuestoInicial): SeleccionPresupuesto | null {
+  if (!inicial) return null;
+  if (inicial.clienteId && inicial.vehiculoId) {
+    return {
+      modo: "vinculado",
+      clienteId: inicial.clienteId,
+      vehiculoId: inicial.vehiculoId,
+      nombre: inicial.destinatarioNombre ?? "",
+      telefono: inicial.destinatarioTelefono ?? "",
+      vehiculoTexto: inicial.destinatarioVehiculo ?? "",
+    };
+  }
+  if (inicial.destinatarioNombre || inicial.destinatarioTelefono || inicial.destinatarioVehiculo) {
+    return {
+      modo: "paso",
+      nombre: inicial.destinatarioNombre ?? "",
+      telefono: inicial.destinatarioTelefono ?? "",
+      vehiculo: inicial.destinatarioVehiculo ?? "",
+    };
+  }
+  return null;
+}
+
 export function FormPresupuesto({
   sucursales,
   sucursalInicial,
   hoy,
   inicial,
   productos = [],
+  marcas = [],
 }: {
   sucursales: Sucursal[];
   sucursalInicial: string;
@@ -61,6 +92,8 @@ export function FormPresupuesto({
   /** El catálogo, para sugerir. La sugerencia ahorra tipeo, no impone:
    *  el renglón sigue siendo texto libre y todo queda editable. */
   productos?: ProductoSugerido[];
+  /** El catálogo de marcas, para el alta de un auto nuevo desde acá. */
+  marcas?: string[];
 }) {
   const router = useRouter();
   const edicion = Boolean(inicial?.id);
@@ -70,9 +103,11 @@ export function FormPresupuesto({
   const [validez, setValidez] = useState(
     inicial ? (inicial.validezDias?.toString() ?? "") : String(VALIDEZ_SUGERIDA),
   );
-  const [nombre, setNombre] = useState(inicial?.destinatarioNombre ?? "");
-  const [telefono, setTelefono] = useState(inicial?.destinatarioTelefono ?? "");
-  const [vehiculo, setVehiculo] = useState(inicial?.destinatarioVehiculo ?? "");
+  // El «Para quién»: cliente+auto vinculado, o cliente de paso (texto libre).
+  // El selector es el dueño de su estado; el padre guarda una copia para el
+  // submit. `seleccionInicial` es estable: el selector lo lee una sola vez.
+  const seleccionInicial = useMemo(() => seleccionDesde(inicial), [inicial]);
+  const [seleccion, setSeleccion] = useState<SeleccionPresupuesto | null>(seleccionInicial);
   const [observaciones, setObservaciones] = useState(
     inicial?.observaciones ?? "",
   );
@@ -89,16 +124,38 @@ export function FormPresupuesto({
 
   const [resultado, enviar, enviando] = useActionState(
     async (prev: ResultadoPresupuesto) => {
+      // El «Para quién» sale de la selección: vinculado deja cliente+auto y
+      // una foto de los datos para el papel; de paso, solo texto libre.
+      const destino =
+        seleccion?.modo === "vinculado"
+          ? {
+              destinatarioNombre: seleccion.nombre.trim() || null,
+              destinatarioTelefono: seleccion.telefono.trim() || null,
+              destinatarioVehiculo: seleccion.vehiculoTexto.trim() || null,
+              clienteId: seleccion.clienteId,
+              vehiculoId: seleccion.vehiculoId,
+            }
+          : seleccion?.modo === "paso"
+            ? {
+                destinatarioNombre: seleccion.nombre.trim() || null,
+                destinatarioTelefono: seleccion.telefono.trim() || null,
+                destinatarioVehiculo: seleccion.vehiculo.trim() || null,
+                clienteId: null,
+                vehiculoId: null,
+              }
+            : {
+                destinatarioNombre: null,
+                destinatarioTelefono: null,
+                destinatarioVehiculo: null,
+                clienteId: null,
+                vehiculoId: null,
+              };
       const datos = {
         sucursalId,
         fecha,
         validezDias: validez.trim() === "" ? null : Number(validez),
         observaciones: observaciones.trim() || null,
-        destinatarioNombre: nombre.trim() || null,
-        destinatarioTelefono: telefono.trim() || null,
-        destinatarioVehiculo: vehiculo.trim() || null,
-        clienteId: inicial?.clienteId ?? null,
-        vehiculoId: inicial?.vehiculoId ?? null,
+        ...destino,
         items: filas.map((f) => ({
           descripcion: f.descripcion,
           cantidad: Number(f.cantidad.replace(",", ".")) || 1,
@@ -149,40 +206,9 @@ export function FormPresupuesto({
 
   return (
     <form action={enviar} className="flex flex-col gap-4">
-      {/* Destino: TEXTO LIBRE. Un potencial cliente no tiene ficha y no
-          se lo obliga a tenerla para darle un número. */}
-      <div className="rounded-lg border border-line bg-surface/60 p-4">
-        <p className="mb-3 font-brand text-body font-bold text-ink">
-          Para quién
-          <span className="ml-2 font-ui text-label font-semibold text-ink-40 uppercase">
-            todo opcional
-          </span>
-        </p>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <input
-            value={nombre}
-            onChange={(e) => setNombre(e.target.value)}
-            placeholder="Nombre"
-            aria-label="Nombre del destinatario"
-            className={CLASE_CAMPO}
-          />
-          <input
-            value={telefono}
-            onChange={(e) => setTelefono(e.target.value)}
-            placeholder="Teléfono"
-            inputMode="tel"
-            aria-label="Teléfono del destinatario"
-            className={CLASE_CAMPO}
-          />
-          <input
-            value={vehiculo}
-            onChange={(e) => setVehiculo(e.target.value)}
-            placeholder="Vehículo — ej: Corsa 1.4 2012"
-            aria-label="Vehículo"
-            className={CLASE_CAMPO}
-          />
-        </div>
-      </div>
+      {/* Para quién: vinculá el cliente y su auto (así el presupuesto se
+          convierte en trabajo y queda en finanzas), o cargalo de paso. */}
+      <SelectorClienteVehiculo marcas={marcas} inicial={seleccionInicial} onCambio={setSeleccion} />
 
       {/* Los renglones: descripción + cantidad + precio. Agregar es un
           tap, borrar es un tap, y el total se mueve solo. */}
