@@ -47,14 +47,14 @@ export function Toast({
   return (
     <div
       role={aviso.tipo === "error" ? "alert" : "status"}
-      className="fixed inset-x-4 bottom-[calc(4.5rem_+_env(safe-area-inset-bottom))] z-50 flex items-center gap-2 rounded-lg bg-ink py-2 pr-1 pl-4 text-ui text-inverso shadow-lg sm:inset-x-auto sm:right-6 sm:max-w-md lg:bottom-6"
+      className="fixed inset-x-4 bottom-[calc(4.5rem_+_env(safe-area-inset-bottom))] z-50 flex items-center gap-2 rounded-lg bg-ink py-2 pr-1 pl-4 text-ui text-base shadow-lg sm:inset-x-auto sm:right-6 sm:max-w-md lg:bottom-6"
     >
       <p className="min-w-0 flex-1 py-1.5 break-words tabular-nums">{aviso.texto}</p>
       <button
         type="button"
         onClick={alCerrar}
         aria-label="Cerrar aviso"
-        className="flex size-11 shrink-0 items-center justify-center rounded-md text-inverso-60 transition-colors hover:text-inverso"
+        className="flex size-11 shrink-0 items-center justify-center rounded-md text-base/70 transition-colors hover:text-base"
       >
         <IconoCerrar className="size-5" />
       </button>

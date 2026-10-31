@@ -56,7 +56,7 @@ export function ItemBloqueado({
         <span
           role="tooltip"
           id={id}
-          className={`pointer-events-none absolute z-50 w-max max-w-56 rounded-md bg-ink px-3 py-2 font-ui text-label text-inverso shadow-lg ${
+          className={`pointer-events-none absolute z-50 w-max max-w-56 rounded-md bg-ink px-3 py-2 font-ui text-label text-base shadow-lg ${
             posicion === "abajo"
               ? "top-full left-3 mt-1"
               : "bottom-full left-1/2 mb-2 -translate-x-1/2"

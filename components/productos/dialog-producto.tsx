@@ -91,7 +91,7 @@ export function FormularioProducto({
           {categorias.map((c, i) => (
             <label
               key={c.valor}
-              className="cursor-pointer rounded-md border border-line px-3.5 py-2.5 text-ui text-ink-60 transition-colors has-checked:border-ink has-checked:bg-ink has-checked:font-semibold has-checked:text-white"
+              className="cursor-pointer rounded-md border border-line px-3.5 py-2.5 text-ui text-ink-60 transition-colors has-checked:border-ink has-checked:bg-ink has-checked:font-semibold has-checked:text-base"
             >
               <input
                 type="radio"
