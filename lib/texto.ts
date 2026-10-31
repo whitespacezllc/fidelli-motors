@@ -156,11 +156,21 @@ export const PATENTE_LARGO_MAXIMO = Math.max(...FORMAS.map((f) => f.length));
 /** ¿Es el principio de una patente sin ser todavía ninguna? AB123C va a ser
  *  AB123CD y ABC1D2 va a ser ABC1D23: buscarlas sería buscar otra cosa (y
  *  mostrar «¿De quién es?» a mitad de tipeo). Lo que tiene menos de 5
- *  también está incompleto. Una patente válida nunca lo está, aunque sea el
- *  principio de otra: ABC 123 se busca, y si le sigue un 4 se busca de nuevo. */
+ *  también está incompleto. Una patente ARGENTINA completa nunca lo está,
+ *  aunque sea el principio de otra forma: ABC 123 se busca, y si le sigue un
+ *  4 se busca de nuevo. Pero una vecina completa que ADEMÁS es el principio
+ *  de una argentina SÍ está incompleta: ABC 12 (la moto chilena, LLL NN) es
+ *  el principio de la argentina ABC 123 (LLL NNN), y en estos talleres la
+ *  argentina es la regla. Dejarla buscar abría «¿De quién es?» en la quinta
+ *  letra de toda ABC 123 cada vez que el mecánico hacía una pausa al tipear
+ *  (el debounce de 300 ms solo lo tapaba si tipeaba sin pausas). El caso raro
+ *  —una moto chilena de verdad— resigna el auto-search; el común deja de
+ *  parpadear. Es la única colisión de este tipo entre los trece formatos. */
 export function patenteIncompleta(texto: string): boolean {
   const n = normalizarPatente(texto);
   if (n.length < PATENTE_LARGO_MINIMO) return true;
+  if (FORMAS_ARGENTINAS.some((f) => tieneForma(n, f))) return false;
+  if (FORMAS_ARGENTINAS.some((f) => esPrincipioDe(n, f))) return true;
   if (FORMAS.some((f) => tieneForma(n, f))) return false;
   return FORMAS.some((f) => esPrincipioDe(n, f));
 }
