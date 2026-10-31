@@ -12,8 +12,9 @@
 //           escritos de cualquier manera y lo que quedó afuera a propósito
 //           no; esPatenteArgentina distingue las cuatro argentinas de las
 //           nueve vecinas; patenteIncompleta (AB123C, ABC1D2, 1234AB y
-//           AB123 todavía van a ser otra cosa; una válida nunca está
-//           incompleta); formatearPatente con los espacios de cada chapa;
+//           AB123 todavía van a ser otra cosa; la moto chilena ABC 12, aun
+//           siendo válida, está incompleta porque es el principio de la
+//           argentina ABC 123); formatearPatente con los espacios de cada chapa;
 //           los largos son 5 y 7; y la propiedad que sostiene al alta:
 //           tipear una patente válida de izquierda a derecha nunca pasa por
 //           un estado que sea «ni incompleta ni válida».
@@ -24,16 +25,19 @@
 //           impide que el front y la base se desvíen en silencio.
 //       3 · Roturas sobre una copia de lib/texto.ts (regla 13): un vecino
 //           sacado de la lista, un vecino metido entre los argentinos, el
-//           mínimo clavado en 6 y el chequeo de «principio de» sacado; cada
-//           una tiene que poner en rojo lo que dice cubrir.
+//           mínimo clavado en 6, el chequeo de «principio de» sacado y el fix
+//           de la moto chilena revertido; cada una tiene que poner en rojo lo
+//           que dice cubrir.
 //   B · Con navegador (Playwright, 390×844 táctil), en «Nuevo trabajo» del
 //       demo, con el cliente de prueba «Zzpat Brasil» BORRADO AL FINAL:
 //       1 · «ABC1D23» no avisa, espera el debounce (ninguna consulta antes
 //           de la última tecla, y la consulta parte DESPUÉS de los 300 ms)
 //           y abre «¿De quién es?»; se da de alta un cliente nuevo con esa
 //           patente, queda ABC1D23 en la base y /demo/ABC1D23 la muestra.
-//       2 · «BBB12» (una moto chilena, cinco caracteres) abre el alta.
-//       3 · «ABC123» (argentina) sigue saliendo antes de los 250 ms.
+//       2 · «BBB12» (una moto chilena, cinco caracteres) NO busca ni abre el
+//           alta ni con una pausa: es el principio de la argentina ABC 123.
+//       3 · «ABC123» (argentina) sigue saliendo antes de los 250 ms, y ABC 12
+//           en el medio no genera una consulta.
 //       4 · «ABCDE1» (Chile 2026, todavía no se emite) avisa.
 //
 // Requiere el stack local y, para B, el servidor de Next:
@@ -101,6 +105,12 @@ const VECINAS = [
 const AFUERA = ["AB123", "ABCDE1", "ABCD1", "A123456", "ABCD1234", "ABC1D2", "1234AB", "AB12CD", "ZZ1ZZ", "12345", "ABCDEFG", "ABCDEF", ""];
 // A medio tipear: todavía pueden ser una patente y no son ninguna.
 const INCOMPLETAS = ["AB123C", "ab 123 c", "A123BC", "ABC1D2", "1234AB", "AB123", "1234A", "ABCD1", "123AB", "ABC1D", "A123B", "AB12", "A", ""];
+// La moto chilena (ABC 12, LLL NN): es una patente VÁLIDA, pero es el
+// principio de la argentina ABC 123 (LLL NNN), así que patenteIncompleta la
+// trata como incompleta y el alta no la auto-busca. Si no, «¿De quién es?»
+// asomaba en la quinta letra de toda ABC 123 cuando el mecánico hacía una
+// pausa. Es la única válida que además está incompleta.
+const MOTO_CHILENA_NORM = "BBB12";
 
 // ============================================================
 // A1 · lib/texto.ts compilado con tsc
@@ -136,7 +146,12 @@ function fallasDeArgentina(t) {
 function fallasDeIncompleta(t) {
   const f = [];
   for (const p of INCOMPLETAS) if (!t.patenteIncompleta(p)) f.push(`«${p}» está incompleta`);
-  for (const [escrita] of [...ARGENTINAS, ...VECINAS]) if (t.patenteIncompleta(escrita)) f.push(`«${escrita}» es válida, no incompleta`);
+  // La moto chilena es válida PERO incompleta (principio de la argentina).
+  if (!t.patenteIncompleta(MOTO_CHILENA_NORM)) f.push(`«${MOTO_CHILENA_NORM}» (moto chilena, principio de ABC 123) está incompleta`);
+  for (const [, n] of [...ARGENTINAS, ...VECINAS]) {
+    if (n === MOTO_CHILENA_NORM) continue; // la única válida que además está incompleta
+    if (t.patenteIncompleta(n)) f.push(`«${n}» es válida, no incompleta`);
+  }
   for (const p of ["ABCDEF", "ABCDEFG", "12345", "AB12CD", "ZZ1ZZ"]) if (t.patenteIncompleta(p)) f.push(`«${p}» no es el principio de nada`);
   return f;
 }
@@ -238,6 +253,12 @@ const ROTURAS = [
     nombre: "el «principio de» sacado (AB123C se busca y abre «¿De quién es?»)",
     buscar: "  return FORMAS.some((f) => esPrincipioDe(n, f));",
     por: "  return false;",
+    acusa: "incompleta",
+  },
+  {
+    nombre: "el fix de la moto chilena revertido (ABC 12 vuelve a buscarse)",
+    buscar: "  if (FORMAS_ARGENTINAS.some((f) => esPrincipioDe(n, f))) return true;",
+    por: "  // (revertido: la moto chilena vuelve a cerrar como vecina y se busca)",
     acusa: "incompleta",
   },
 ];
@@ -369,15 +390,19 @@ try {
     await anon.close();
   });
 
-  // ---------- B2 · la moto chilena ----------
-  titulo("── B2 · «BBB12»: cinco caracteres abren el alta ──");
-  await paso("la moto chilena", async () => {
+  // ---------- B2 · la moto chilena NO se auto-busca ----------
+  titulo("── B2 · «BBB12»: cinco caracteres NO abren el alta (es principio de ABC 123) ──");
+  await paso("la moto chilena, con la pausa del taller", async () => {
     await page.goto(`${BASE}/panel/services/nuevo`, { waitUntil: "networkidle" });
     await page.waitForSelector("#patente");
     const n = desde();
     await tipear("BBB12");
-    await page.waitForSelector("text=¿De quién es?");
-    check("busca (una consulta) y abre «¿De quién es?»", rpcDesde(n).length === 1, `${rpcDesde(n).length}`);
+    // La pausa que el mecánico hace entre la quinta y la sexta tecla: antes
+    // del fix disparaba la búsqueda de BBB12 y abría «¿De quién es?» en la
+    // quinta letra de toda ABC 123. Esperamos más que el debounce de 300 ms.
+    await page.waitForTimeout(600);
+    check("no busca: BBB12 es principio de la argentina BBB123", rpcDesde(n).length === 0, `${rpcDesde(n).length}`);
+    check("no abre «¿De quién es?»", !(await page.isVisible("text=¿De quién es?")));
     check("no avisa de formato", !((await page.textContent("main")) ?? "").includes(AVISO));
   });
 
@@ -390,9 +415,11 @@ try {
     const rpc = rpcDesde(n);
     const salida = rpc.length ? rpc[rpc.length - 1].t - ultimaTecla : null;
     check("la consulta parte antes de 250 ms de la última tecla", salida !== null && salida < 250, `${salida} ms`);
-    // Con «ABC12» en el medio: es una moto chilena válida, pero la tecla
-    // siguiente llegó antes de los 300 ms y no hubo consulta por ella.
-    check("una sola consulta: «ABC12» no se buscó porque el 3 llegó antes de los 300 ms", rpc.length === 1, `${rpc.length}`);
+    // Con «ABC12» en el medio: es una moto chilena válida, pero es el
+    // principio de la argentina ABC 123, así que está incompleta y no se
+    // busca —ni al toque ni tras el debounce—. Antes del fix, una pausa acá
+    // abría «¿De quién es?» en la quinta letra.
+    check("una sola consulta: «ABC12» no se buscó (es principio de ABC 123)", rpc.length === 1, `${rpc.length}`);
   });
 
   // ---------- B4 · lo que no es patente avisa ----------
