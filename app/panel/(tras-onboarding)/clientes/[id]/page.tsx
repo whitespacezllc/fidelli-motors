@@ -226,7 +226,7 @@ export default async function FichaCliente({
     tieneFinanzas
       ? supabase
           .from("ingresos")
-          .select("id, fecha, concepto, monto")
+          .select("id, fecha, concepto, monto, categoria")
           .eq("cliente_id", id)
           .order("fecha", { ascending: false })
           .order("created_at", { ascending: false })
@@ -467,6 +467,7 @@ export default async function FichaCliente({
             fecha: i.fecha,
             concepto: i.concepto,
             monto: Number(i.monto),
+            categoria: i.categoria ?? null,
           }))}
         />
       )}

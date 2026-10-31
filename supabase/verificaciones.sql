@@ -15895,3 +15895,120 @@ end $$;
 -- <<< R51
 
 drop function r51_deposito(bigint, text, bigint, numeric, integer);
+
+-- R52 · Finanzas: origen de los movimientos y fondos personales
+--   (20261031120000)
+--
+-- La invariante central: un egreso PERSONAL (lo pagó el dueño de su bolsillo)
+-- NO entra en el arqueo ni en los totales de egresos del taller, y SÍ en
+-- «de tu bolsillo». Más: los CHECK de categoría/fondos, y que
+-- vista_movimientos_caja sigue siendo security_invoker.
+-- ============================================================
+-- >>> R52
+do $$
+declare
+  v_lub        uuid;
+  v_owner      uuid;
+  v_super      uuid;
+  v_suc        uuid;
+  v_over_orig  jsonb;
+  v_resumen    jsonb;
+  v_egr_tall   uuid;
+  v_egr_pers   uuid;
+  v_ing        uuid;
+begin
+  select l.id, l.plan_overrides into v_lub, v_over_orig from lubricentros l where l.slug = 'demo';
+  select u.id into v_owner from usuarios u where u.lubricentro_id = v_lub and u.rol = 'owner' limit 1;
+  select u.id into v_super from usuarios u where u.rol = 'superadmin' limit 1;
+  select su.id into v_suc from sucursales su where su.lubricentro_id = v_lub and su.activa limit 1;
+  if v_lub is null or v_owner is null or v_super is null or v_suc is null then
+    raise exception 'R52 SIN PISO: falta demo/owner/superadmin/sucursal en el seed.';
+  end if;
+
+  -- b · los CHECK (catálogo): un fondos o una categoría fuera de la lista no
+  -- entran ni por un INSERT directo.
+  begin
+    insert into egresos (lubricentro_id, sucursal_id, usuario_id, monto, concepto, fondos)
+      values (v_lub, v_suc, v_owner, 1, 'R52 check fondos', 'bolsillo');
+    raise exception 'R52b: un `fondos` inválido entró — falta el CHECK egreso_fondos_valido.';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into egresos (lubricentro_id, sucursal_id, usuario_id, monto, concepto, categoria)
+      values (v_lub, v_suc, v_owner, 1, 'R52 check cat', 'nafta');
+    raise exception 'R52b: una categoría de egreso inválida entró — falta el CHECK egreso_categoria_valida.';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into ingresos (lubricentro_id, sucursal_id, usuario_id, monto, concepto, categoria)
+      values (v_lub, v_suc, v_owner, 1, 'R52 check cat ing', 'propina');
+    raise exception 'R52b: una categoría de ingreso inválida entró — falta el CHECK ingreso_categoria_valida.';
+  exception when check_violation then null;
+  end;
+
+  -- c · la vista sigue siendo security_invoker (si no, un owner ve lo ajeno).
+  if not exists (
+    select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'vista_movimientos_caja'
+      and (c.reloptions @> array['security_invoker=on']
+        or c.reloptions @> array['security_invoker=true'])
+  ) then
+    raise exception 'R52c: vista_movimientos_caja perdió security_invoker (regla 4).';
+  end if;
+
+  -- Prender finanzas para el demo por la puerta real, y cargar movimientos
+  -- como owner.
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  perform fijar_override_plan(v_lub, coalesce(v_over_orig, '{}'::jsonb) || '{"finanzas": true}'::jsonb,
+    'Módulo finanzas · bonificado — prueba de regresión R52');
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_owner, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  v_egr_tall := guardar_egreso(v_suc, 1000, 'R52 taller',   'efectivo', current_date, 'insumos',   'taller');
+  v_egr_pers := guardar_egreso(v_suc, 7000, 'R52 personal', 'tarjeta',  current_date, 'servicios', 'personal');
+  v_ing      := guardar_ingreso(v_suc, 5000, 'R52 ingreso', current_date, null, null, 'efectivo', 'trabajo');
+
+  v_resumen := resumen_caja();
+
+  -- a · el personal NO ensucia el taller.
+  if (v_resumen -> 'hoy' ->> 'egresos')::numeric <> 1000 then
+    raise exception 'R52a: egresos del taller de hoy = % (esperaba 1000; el personal se coló).',
+      v_resumen -> 'hoy' ->> 'egresos';
+  end if;
+  if (v_resumen -> 'personal' ->> 'hoy')::numeric <> 7000 then
+    raise exception 'R52a: «de tu bolsillo» de hoy = % (esperaba 7000).',
+      v_resumen -> 'personal' ->> 'hoy';
+  end if;
+  if (v_resumen -> 'arqueo_hoy' -> 'tarjeta' ->> 'egresos')::numeric <> 0 then
+    raise exception 'R52a: el arqueo de tarjeta incluyó el egreso personal (% ).',
+      v_resumen -> 'arqueo_hoy' -> 'tarjeta' ->> 'egresos';
+  end if;
+  if coalesce((v_resumen -> 'por_origen_mes' -> 'egresos' ->> 'servicios')::numeric, 0) <> 0 then
+    raise exception 'R52a: por_origen_mes contó el egreso personal (servicios).';
+  end if;
+  if (v_resumen -> 'por_origen_mes' -> 'egresos' ->> 'insumos')::numeric <> 1000 then
+    raise exception 'R52a: por_origen_mes no contó el egreso del taller (insumos).';
+  end if;
+  if (v_resumen -> 'por_origen_mes' -> 'ingresos' ->> 'trabajo')::numeric <> 5000 then
+    raise exception 'R52a: por_origen_mes no contó el ingreso (trabajo).';
+  end if;
+
+  -- limpieza: borrar los movimientos y restaurar el override del demo.
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+  delete from ingresos where id = v_ing;
+  delete from egresos where id in (v_egr_tall, v_egr_pers);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  perform fijar_override_plan(v_lub, coalesce(v_over_orig, '{}'::jsonb),
+    'Módulo finanzas · baja de prueba de regresión R52');
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '{}', true);
+end $$;
+-- <<< R52

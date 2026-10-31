@@ -10,7 +10,20 @@ import {
 } from "@/app/panel/(tras-onboarding)/finanzas/actions";
 import { recordarSucursal } from "@/lib/preferencias";
 import { BuscadorCliente } from "@/components/finanzas/buscador-cliente";
-import { MEDIOS_PAGO, ETIQUETA_MEDIO, parsearMonto, type MedioPago } from "@/lib/finanzas";
+import {
+  MEDIOS_PAGO,
+  ETIQUETA_MEDIO,
+  parsearMonto,
+  CATEGORIAS_INGRESO,
+  CATEGORIAS_EGRESO,
+  ETIQUETA_CATEGORIA,
+  FONDOS,
+  ETIQUETA_FONDOS,
+  type MedioPago,
+  type CategoriaIngreso,
+  type CategoriaEgreso,
+  type Fondos,
+} from "@/lib/finanzas";
 
 type Sucursal = { id: string; nombre: string };
 
@@ -45,6 +58,12 @@ export function FormMovimiento({
   // así el cobro queda en el seguimiento del cliente, como el de un
   // presupuesto. Un egreso es un gasto, no va contra un cliente.
   const [cliente, setCliente] = useState<{ id: string; nombre: string } | null>(null);
+  // De qué es la plata (categoría), con el set según el tipo. Arranca en el
+  // caso más común de cada uno.
+  const categorias = esIngreso ? CATEGORIAS_INGRESO : CATEGORIAS_EGRESO;
+  const [categoria, setCategoria] = useState<CategoriaIngreso | CategoriaEgreso>(categorias[0]);
+  // Solo egresos: con qué fondos se pagó. 'personal' no entra en el arqueo.
+  const [fondos, setFondos] = useState<Fondos>("taller");
 
   const [resultado, enviar, enviando] = useActionState(async (prev: ResultadoMovimiento) => {
     const base = {
@@ -55,8 +74,12 @@ export function FormMovimiento({
       medio,
     };
     const r = esIngreso
-      ? await crearIngreso(prev, { ...base, clienteId: cliente?.id ?? null })
-      : await crearEgreso(prev, base);
+      ? await crearIngreso(prev, {
+          ...base,
+          clienteId: cliente?.id ?? null,
+          categoria: categoria as CategoriaIngreso,
+        })
+      : await crearEgreso(prev, { ...base, categoria: categoria as CategoriaEgreso, fondos });
     if (r.id) {
       router.push("/panel/finanzas");
       router.refresh();
@@ -91,6 +114,57 @@ export function FormMovimiento({
             Cliente <span className="text-ink-40 normal-case">(opcional)</span>
           </label>
           <BuscadorCliente onElegir={setCliente} />
+        </div>
+      )}
+
+      {/* Categoría: de qué es la plata. Chips, set fijo según el tipo. */}
+      <div>
+        <label className={CLASE_LABEL}>{esIngreso ? "Origen" : "Categoría"}</label>
+        <div className="flex flex-wrap gap-2">
+          {categorias.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setCategoria(c)}
+              aria-pressed={categoria === c}
+              className={`min-h-11 rounded-md border px-3.5 text-ui font-semibold ${
+                categoria === c
+                  ? "border-ink bg-ink text-base"
+                  : "border-line text-ink-60 hover:bg-surface"
+              }`}
+            >
+              {ETIQUETA_CATEGORIA[c]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Fondos: solo egresos. 'personal' sale del arqueo del cajón. */}
+      {!esIngreso && (
+        <div>
+          <label className={CLASE_LABEL}>¿Con qué fondos?</label>
+          <div className="flex flex-wrap gap-2">
+            {FONDOS.map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setFondos(f)}
+                aria-pressed={fondos === f}
+                className={`min-h-11 rounded-md border px-3.5 text-ui font-semibold ${
+                  fondos === f
+                    ? "border-ink bg-ink text-base"
+                    : "border-line text-ink-60 hover:bg-surface"
+                }`}
+              >
+                {ETIQUETA_FONDOS[f]}
+              </button>
+            ))}
+          </div>
+          {fondos === "personal" && (
+            <p className="mt-1.5 text-label text-overdue">
+              Lo pagaste vos, no sale de la caja: no cuenta en el arqueo del cajón.
+            </p>
+          )}
         </div>
       )}
 
