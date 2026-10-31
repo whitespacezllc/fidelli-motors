@@ -15898,7 +15898,7 @@ drop function r51_deposito(bigint, text, bigint, numeric, integer);
 
 
 -- ============================================================
--- R52 · Comprobantes por foto/IA: el egreso nace de una lectura REVISADA
+-- R53 · Comprobantes por foto/IA: el egreso nace de una lectura REVISADA
 --       (20261101120000)
 --
 -- Una factura de proveedor se sube, la IA PROPONE y el dueño CONFIRMA: ahí
@@ -15919,7 +15919,7 @@ drop function r51_deposito(bigint, text, bigint, numeric, integer);
 --   d · aislamiento: el owner del demo no lee el comprobante de otro tenant.
 -- Todo en una subtransacción que se deshace (P0052).
 -- ============================================================
--- >>> R52
+-- >>> R53
 do $$
 declare
   v_demo    uuid;
@@ -15950,68 +15950,68 @@ begin
   select id into v_super from usuarios where rol = 'superadmin' limit 1;
   select id into v_suc   from sucursales where lubricentro_id = v_demo and activa limit 1;
   if v_own is null or v_super is null or v_suc is null then
-    raise exception 'R52 SIN PISO: falta el owner del demo, el superadmin o una sucursal.';
+    raise exception 'R53 SIN PISO: falta el owner del demo, el superadmin o una sucursal.';
   end if;
 
   -- ---------- a · el catálogo ----------
   if not exists (
     select 1 from pg_class where relname = 'comprobantes_recibidos' and relrowsecurity
   ) then
-    raise exception 'R52a comprobantes_recibidos no existe o no tiene RLS.';
+    raise exception 'R53a comprobantes_recibidos no existe o no tiene RLS.';
   end if;
   if (
     select count(*) from pg_policies where tablename = 'comprobantes_recibidos'
     and policyname in ('comprobantes_lectura', 'comprobantes_alta', 'comprobantes_edicion', 'comprobantes_borrado')
   ) <> 4 then
-    raise exception 'R52a faltan policies de comprobantes_recibidos.';
+    raise exception 'R53a faltan policies de comprobantes_recibidos.';
   end if;
   -- El gate del módulo va en el WITH CHECK, nunca en el USING (regla 2):
   -- un downgrade apaga la ESCRITURA, no la lectura.
   select with_check, qual into v_check, v_qual
   from pg_policies where tablename = 'comprobantes_recibidos' and policyname = 'comprobantes_alta';
   if v_check not like '%plan_permite%' or v_qual is not null then
-    raise exception 'R52a el gate de alta no está en el WITH CHECK (o se coló en el USING).';
+    raise exception 'R53a el gate de alta no está en el WITH CHECK (o se coló en el USING).';
   end if;
   select with_check, qual into v_check, v_qual
   from pg_policies where tablename = 'comprobantes_recibidos' and policyname = 'comprobantes_edicion';
   if v_check not like '%plan_permite%' or v_qual like '%plan_permite%' then
-    raise exception 'R52a el gate de edición está en el USING: un downgrade apagaría la lectura, no la escritura.';
+    raise exception 'R53a el gate de edición está en el USING: un downgrade apagaría la lectura, no la escritura.';
   end if;
   foreach v_con in array c_check loop
     if not exists (
       select 1 from pg_constraint where conname = v_con and conrelid = 'comprobantes_recibidos'::regclass
     ) then
-      raise exception 'R52a falta el CHECK %.', v_con;
+      raise exception 'R53a falta el CHECK %.', v_con;
     end if;
   end loop;
   if not exists (
     select 1 from storage.buckets
     where id = 'comprobantes' and public = false and file_size_limit = 2097152
   ) then
-    raise exception 'R52a el bucket comprobantes no existe, no es privado o no tiene el tope de 2 MB.';
+    raise exception 'R53a el bucket comprobantes no existe, no es privado o no tiene el tope de 2 MB.';
   end if;
   -- Las puertas de mutación son INVOKER (pasan por el RLS); huerfanos es
   -- DEFINER y solo service_role.
   if (select bool_or(prosecdef) from pg_proc where proname in
        ('registrar_comprobante', 'guardar_extraccion_comprobante', 'confirmar_comprobante', 'descartar_comprobante')) then
-    raise exception 'R52a una puerta de mutación es SECURITY DEFINER: dejaría de pasar por el RLS (gating).';
+    raise exception 'R53a una puerta de mutación es SECURITY DEFINER: dejaría de pasar por el RLS (gating).';
   end if;
   if not (select prosecdef from pg_proc where proname = 'comprobantes_huerfanos') then
-    raise exception 'R52a comprobantes_huerfanos no es DEFINER: no podría ver storage.objects.';
+    raise exception 'R53a comprobantes_huerfanos no es DEFINER: no podría ver storage.objects.';
   end if;
   if has_function_privilege('anon', 'registrar_comprobante(text,text,text,integer,text)', 'execute')
      or has_function_privilege('anon', 'confirmar_comprobante(uuid,uuid,numeric,text,text,date)', 'execute')
      or has_function_privilege('anon', 'descartar_comprobante(uuid,text)', 'execute')
      or has_function_privilege('anon', 'comprobantes_huerfanos()', 'execute') then
-    raise exception 'R52a anon ejecuta alguna función de comprobantes.';
+    raise exception 'R53a anon ejecuta alguna función de comprobantes.';
   end if;
   if not has_function_privilege('service_role', 'comprobantes_huerfanos()', 'execute') then
-    raise exception 'R52a service_role no ejecuta comprobantes_huerfanos: el cierre diario no barrería los archivos.';
+    raise exception 'R53a service_role no ejecuta comprobantes_huerfanos: el cierre diario no barrería los archivos.';
   end if;
 
   begin
     -- ---------- Isolación: un comprobante de OTRO tenant ----------
-    insert into lubricentros (nombre, slug) values ('R52 ajeno', 'r52-ajeno') returning id into v_ajeno;
+    insert into lubricentros (nombre, slug) values ('R53 ajeno', 'r53-ajeno') returning id into v_ajeno;
     insert into comprobantes_recibidos (lubricentro_id, usuario_id, direccion, ruta, nombre, mime, bytes)
     values (v_ajeno, v_super, 'compra', v_ajeno::text || '/' || gen_random_uuid()::text || '.pdf',
             'ajeno.pdf', 'application/pdf', 1000)
@@ -16022,7 +16022,7 @@ begin
       json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     perform fijar_override_plan(v_demo, '{"finanzas": true}'::jsonb,
-      'Comprobantes por IA · prueba de regresión R52');
+      'Comprobantes por IA · prueba de regresión R53');
     execute 'reset role';
     perform set_config('request.jwt.claims', '{}', true);
 
@@ -16035,44 +16035,44 @@ begin
       v_demo::text || '/' || gen_random_uuid()::text || '.pdf', 'factura.pdf', 'application/pdf', 1000, 'compra');
     select estado into v_estado from comprobantes_recibidos where id = v_c1;
     if v_estado <> 'sin_revisar' then
-      raise exception 'R52b un comprobante nuevo no nació sin_revisar (quedó «%»).', v_estado;
+      raise exception 'R53b un comprobante nuevo no nació sin_revisar (quedó «%»).', v_estado;
     end if;
 
     -- La IA propone un total de 121000; el dueño confirma 99999: tiene que
     -- ganar lo revisado.
     perform guardar_extraccion_comprobante(v_c1,
       '{"razon_social": "Distribuidora La Pampa", "total": 121000}'::jsonb);
-    v_eg := confirmar_comprobante(v_c1, v_suc, 99999, 'Concepto corregido R52', 'efectivo', current_date);
+    v_eg := confirmar_comprobante(v_c1, v_suc, 99999, 'Concepto corregido R53', 'efectivo', current_date);
 
     select monto, concepto into v_monto, v_concepto from egresos where id = v_eg;
-    if v_monto <> 99999 or v_concepto <> 'Concepto corregido R52' then
-      raise exception 'R52b el egreso no tomó los valores revisados (monto %, concepto «%»): ganó lo que leyó la IA.', v_monto, v_concepto;
+    if v_monto <> 99999 or v_concepto <> 'Concepto corregido R53' then
+      raise exception 'R53b el egreso no tomó los valores revisados (monto %, concepto «%»): ganó lo que leyó la IA.', v_monto, v_concepto;
     end if;
     select estado, egreso_id into v_estado, v_c2 from comprobantes_recibidos where id = v_c1;
     if v_estado <> 'confirmado' or v_c2 <> v_eg then
-      raise exception 'R52b el comprobante no quedó confirmado y atado a su egreso (estado «%»).', v_estado;
+      raise exception 'R53b el comprobante no quedó confirmado y atado a su egreso (estado «%»).', v_estado;
     end if;
 
     -- El segundo confirmar no vuelve a cobrar.
     begin
       perform confirmar_comprobante(v_c1, v_suc, 1, 'otra vez', 'efectivo', current_date);
-      raise exception 'R52b_entro';
+      raise exception 'R53b_entro';
     exception when others then
-      if sqlerrm = 'R52b_entro' then
-        raise exception 'R52b un comprobante confirmado se confirmó de nuevo: doble egreso.';
+      if sqlerrm = 'R53b_entro' then
+        raise exception 'R53b un comprobante confirmado se confirmó de nuevo: doble egreso.';
       end if;
       if sqlerrm not like '%comprobante_no_pendiente%' then
-        raise exception 'R52b el segundo confirmar falló con otro error: %', sqlerrm;
+        raise exception 'R53b el segundo confirmar falló con otro error: %', sqlerrm;
       end if;
     end;
 
     -- Descartar.
     v_c2 := registrar_comprobante(
       v_demo::text || '/' || gen_random_uuid()::text || '.jpg', 'ticket.jpg', 'image/jpeg', 500, 'compra');
-    perform descartar_comprobante(v_c2, 'Subido por error — prueba R52');
+    perform descartar_comprobante(v_c2, 'Subido por error — prueba R53');
     select estado into v_estado from comprobantes_recibidos where id = v_c2;
     if v_estado <> 'descartado' then
-      raise exception 'R52b descartar no marcó descartado (quedó «%»).', v_estado;
+      raise exception 'R53b descartar no marcó descartado (quedó «%»).', v_estado;
     end if;
 
     -- Una venta no se confirma en R1 (su rama es R2).
@@ -16080,13 +16080,13 @@ begin
       v_demo::text || '/' || gen_random_uuid()::text || '.pdf', 'venta.pdf', 'application/pdf', 1000, 'venta');
     begin
       perform confirmar_comprobante(v_cv, v_suc, 100, 'venta', 'efectivo', current_date);
-      raise exception 'R52b_entro';
+      raise exception 'R53b_entro';
     exception when others then
-      if sqlerrm = 'R52b_entro' then
-        raise exception 'R52b una venta se confirmó: la rama del ingreso es R2, no existe todavía.';
+      if sqlerrm = 'R53b_entro' then
+        raise exception 'R53b una venta se confirmó: la rama del ingreso es R2, no existe todavía.';
       end if;
       if sqlerrm not like '%comprobante_direccion_no_soportada%' then
-        raise exception 'R52b la venta se rechazó con otro error: %', sqlerrm;
+        raise exception 'R53b la venta se rechazó con otro error: %', sqlerrm;
       end if;
     end;
 
@@ -16096,13 +16096,13 @@ begin
       insert into comprobantes_recibidos (lubricentro_id, usuario_id, direccion, ruta, nombre, mime, bytes)
       values (v_demo, v_own, 'compra', gen_random_uuid()::text || '/' || gen_random_uuid()::text || '.pdf',
               'x.pdf', 'application/pdf', 1000);
-      raise exception 'R52b_entro';
+      raise exception 'R53b_entro';
     exception when others then
-      if sqlerrm = 'R52b_entro' then
-        raise exception 'R52b entró un comprobante cuya ruta apunta a otra carpeta.';
+      if sqlerrm = 'R53b_entro' then
+        raise exception 'R53b entró un comprobante cuya ruta apunta a otra carpeta.';
       end if;
       if sqlerrm not like '%comprobante_ruta_valida%' then
-        raise exception 'R52b la ruta ajena se rechazó con otro error: %', sqlerrm;
+        raise exception 'R53b la ruta ajena se rechazó con otro error: %', sqlerrm;
       end if;
     end;
 
@@ -16111,19 +16111,19 @@ begin
       insert into comprobantes_recibidos (lubricentro_id, usuario_id, direccion, ruta, nombre, mime, bytes, estado, confirmado_at)
       values (v_demo, v_own, 'compra', v_demo::text || '/' || gen_random_uuid()::text || '.pdf',
               'x.pdf', 'application/pdf', 1000, 'confirmado', now());
-      raise exception 'R52b_entro';
+      raise exception 'R53b_entro';
     exception when others then
-      if sqlerrm = 'R52b_entro' then
-        raise exception 'R52b entró un comprobante confirmado sin su egreso.';
+      if sqlerrm = 'R53b_entro' then
+        raise exception 'R53b entró un comprobante confirmado sin su egreso.';
       end if;
       if sqlerrm not like '%comprobante_movimiento_coherente%' then
-        raise exception 'R52b la incoherencia se rechazó con otro error: %', sqlerrm;
+        raise exception 'R53b la incoherencia se rechazó con otro error: %', sqlerrm;
       end if;
     end;
 
     -- Aislamiento: el owner del demo no ve el comprobante del ajeno.
     if exists (select 1 from comprobantes_recibidos where id = v_ajeno_c) then
-      raise exception 'R52d el owner del demo lee el comprobante de otro tenant.';
+      raise exception 'R53d el owner del demo lee el comprobante de otro tenant.';
     end if;
 
     -- Dejo uno sin_revisar para la prueba del gate.
@@ -16138,7 +16138,7 @@ begin
       json_build_object('sub', v_super, 'role', 'authenticated')::text, true);
     execute 'set local role authenticated';
     perform fijar_override_plan(v_demo, '{"finanzas": false}'::jsonb,
-      'Comprobantes por IA · apagado en la prueba R52');
+      'Comprobantes por IA · apagado en la prueba R53');
     execute 'reset role';
     perform set_config('request.jwt.claims', '{}', true);
 
@@ -16149,40 +16149,40 @@ begin
     begin
       perform registrar_comprobante(
         v_demo::text || '/' || gen_random_uuid()::text || '.pdf', 'no.pdf', 'application/pdf', 1000, 'compra');
-      raise exception 'R52c_entro';
+      raise exception 'R53c_entro';
     exception when others then
-      if sqlerrm = 'R52c_entro' then
-        raise exception 'R52c sin el módulo se registró un comprobante: el gate del WITH CHECK no frena.';
+      if sqlerrm = 'R53c_entro' then
+        raise exception 'R53c sin el módulo se registró un comprobante: el gate del WITH CHECK no frena.';
       end if;
       if sqlerrm not like '%42501%' and sqlerrm not like '%permission denied%' and sqlerrm not like '%policy%' then
-        raise exception 'R52c registrar sin módulo falló con otro error: %', sqlerrm;
+        raise exception 'R53c registrar sin módulo falló con otro error: %', sqlerrm;
       end if;
     end;
     begin
       perform confirmar_comprobante(v_c3, v_suc, 100, 'x', 'efectivo', current_date);
-      raise exception 'R52c_entro';
+      raise exception 'R53c_entro';
     exception when others then
-      if sqlerrm = 'R52c_entro' then
-        raise exception 'R52c sin el módulo se confirmó un comprobante (nació un egreso).';
+      if sqlerrm = 'R53c_entro' then
+        raise exception 'R53c sin el módulo se confirmó un comprobante (nació un egreso).';
       end if;
       if sqlerrm not like '%42501%' and sqlerrm not like '%permission denied%' and sqlerrm not like '%policy%' then
-        raise exception 'R52c confirmar sin módulo falló con otro error: %', sqlerrm;
+        raise exception 'R53c confirmar sin módulo falló con otro error: %', sqlerrm;
       end if;
     end;
     -- La lectura sigue: lo cargado no desaparece con el downgrade.
     select count(*) into v_n from comprobantes_recibidos where lubricentro_id = v_demo;
     if v_n = 0 then
-      raise exception 'R52c sin el módulo el tenant dejó de VER lo que ya había cargado.';
+      raise exception 'R53c sin el módulo el tenant dejó de VER lo que ya había cargado.';
     end if;
 
     execute 'reset role';
     perform set_config('request.jwt.claims', '{}', true);
 
-    raise exception 'rollback_r52' using errcode = 'P0052';
+    raise exception 'rollback_r53' using errcode = 'P0052';
   exception
     when sqlstate 'P0052' then
       execute 'reset role';
       perform set_config('request.jwt.claims', '{}', true);
   end;
 end $$;
--- <<< R52
+-- <<< R53

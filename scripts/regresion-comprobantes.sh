@@ -1,13 +1,13 @@
 #!/bin/bash
-# La rotura a mano de R52 (regla 13): comprobantes por foto/IA, el egreso
+# La rotura a mano de R53 (regla 13): comprobantes por foto/IA, el egreso
 # nace de una lectura REVISADA (20261101120000). Cada afirmación se corre
 # con SU rotura y tiene que ponerse en ROJO.
 #
-#   R52a · el gate del módulo movido al USING (edición) o sacado del WITH
+#   R53a · el gate del módulo movido al USING (edición) o sacado del WITH
 #          CHECK (alta); un CHECK borrado; una puerta de mutación como
 #          DEFINER; comprobantes_huerfanos como INVOKER; registrar grantada
 #          a anon.
-#   R52b · confirmar que toma lo que leyó la IA en vez de lo revisado (el
+#   R53b · confirmar que toma lo que leyó la IA en vez de lo revisado (el
 #          corazón del «nunca auto-guarda»); y confirmar que acepta una
 #          venta (la rama del ingreso es R2, no existe todavía).
 #
@@ -97,26 +97,26 @@ create policy comprobantes_alta on comprobantes_recibidos for insert to authenti
 SQL
 )
 
-echo "── R52 · comprobantes por foto/IA ──"
+echo "── R53 · comprobantes por foto/IA ──"
 correr "el gate de edición movido al USING (apagaría la lectura)" \
-  "$ROTO_EDICION_USING" R52 "R52a el gate de edición está en el USING"
+  "$ROTO_EDICION_USING" R53 "R53a el gate de edición está en el USING"
 correr "el gate de alta sacado del WITH CHECK" \
-  "$ROTO_ALTA_SIN_GATE" R52 "R52a el gate de alta no está en el WITH CHECK"
+  "$ROTO_ALTA_SIN_GATE" R53 "R53a el gate de alta no está en el WITH CHECK"
 correr "el CHECK de coherencia borrado" \
   "alter table comprobantes_recibidos drop constraint comprobante_movimiento_coherente;" \
-  R52 "R52a falta el CHECK comprobante_movimiento_coherente"
+  R53 "R53a falta el CHECK comprobante_movimiento_coherente"
 correr "confirmar_comprobante como SECURITY DEFINER (se saltea el RLS)" \
   "alter function confirmar_comprobante(uuid,uuid,numeric,text,text,date) security definer;" \
-  R52 "R52a una puerta de mutación es SECURITY DEFINER"
+  R53 "R53a una puerta de mutación es SECURITY DEFINER"
 correr "comprobantes_huerfanos como SECURITY INVOKER" \
   "alter function comprobantes_huerfanos() security invoker;" \
-  R52 "R52a comprobantes_huerfanos no es DEFINER"
+  R53 "R53a comprobantes_huerfanos no es DEFINER"
 correr "registrar_comprobante grantada a anon" \
   "grant execute on function registrar_comprobante(text,text,text,integer,text) to anon;" \
-  R52 "R52a anon ejecuta"
+  R53 "R53a anon ejecuta"
 correr "confirmar toma lo que leyó la IA, no lo revisado (nunca auto-guarda)" \
-  "$ROTO_CORREGIDO" R52 "R52b el egreso no tomó los valores revisados"
+  "$ROTO_CORREGIDO" R53 "R53b el egreso no tomó los valores revisados"
 correr "confirmar acepta una venta (la rama del ingreso es R2)" \
-  "$ROTO_VENTA" R52 "R52b una venta se confirmó"
+  "$ROTO_VENTA" R53 "R53b una venta se confirmó"
 
 exit $fallas
