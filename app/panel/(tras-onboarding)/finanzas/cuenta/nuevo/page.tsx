@@ -28,7 +28,7 @@ export default async function PaginaNuevoFiado({
 
   const sesion = await obtenerSesion();
   if (!featureHabilitada(sesion, "finanzas")) {
-    return <BloqueoPlan funcion="Finanzas" />;
+    return <BloqueoPlan funcion="Contable" />;
   }
 
   const params = await searchParams;

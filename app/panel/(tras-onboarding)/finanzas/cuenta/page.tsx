@@ -17,7 +17,7 @@ export const metadata: Metadata = { title: "Cuenta corriente" };
 export default async function PaginaCuentaCorriente() {
   const sesion = await obtenerSesion();
   if (!featureHabilitada(sesion, "finanzas")) {
-    return <BloqueoPlan funcion="Finanzas" />;
+    return <BloqueoPlan funcion="Contable" />;
   }
 
   const suspendido = await panelSuspendido();
@@ -39,7 +39,7 @@ export default async function PaginaCuentaCorriente() {
 
   return (
     <div>
-      <CabeceraSeccion titulo="Finanzas">
+      <CabeceraSeccion titulo="Contable">
         {suspendido ? (
           <AccionBloqueada etiqueta="+ Registrar fiado" />
         ) : (

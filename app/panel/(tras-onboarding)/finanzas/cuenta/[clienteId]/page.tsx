@@ -19,7 +19,7 @@ export default async function PaginaCuentaCliente({ params }: Props) {
   const { clienteId } = await params;
   const sesion = await obtenerSesion();
   if (!featureHabilitada(sesion, "finanzas")) {
-    return <BloqueoPlan funcion="Finanzas" />;
+    return <BloqueoPlan funcion="Contable" />;
   }
 
   const suspendido = await panelSuspendido();

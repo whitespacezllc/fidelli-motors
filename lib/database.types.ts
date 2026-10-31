@@ -471,6 +471,89 @@ export type Database = {
           },
         ]
       }
+      comprobantes_recibidos: {
+        Row: {
+          bytes: number
+          confirmado_at: string | null
+          created_at: string
+          direccion: string
+          egreso_id: string | null
+          estado: string
+          extraido: Json
+          id: string
+          ingreso_id: string | null
+          lubricentro_id: string
+          mime: string
+          motivo_descarte: string | null
+          nombre: string
+          ruta: string
+          usuario_id: string
+        }
+        Insert: {
+          bytes: number
+          confirmado_at?: string | null
+          created_at?: string
+          direccion?: string
+          egreso_id?: string | null
+          estado?: string
+          extraido?: Json
+          id?: string
+          ingreso_id?: string | null
+          lubricentro_id: string
+          mime: string
+          motivo_descarte?: string | null
+          nombre: string
+          ruta: string
+          usuario_id: string
+        }
+        Update: {
+          bytes?: number
+          confirmado_at?: string | null
+          created_at?: string
+          direccion?: string
+          egreso_id?: string | null
+          estado?: string
+          extraido?: Json
+          id?: string
+          ingreso_id?: string | null
+          lubricentro_id?: string
+          mime?: string
+          motivo_descarte?: string | null
+          nombre?: string
+          ruta?: string
+          usuario_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comprobantes_recibidos_egreso_id_fkey"
+            columns: ["egreso_id"]
+            isOneToOne: false
+            referencedRelation: "egresos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comprobantes_recibidos_ingreso_id_fkey"
+            columns: ["ingreso_id"]
+            isOneToOne: false
+            referencedRelation: "ingresos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comprobantes_recibidos_lubricentro_id_fkey"
+            columns: ["lubricentro_id"]
+            isOneToOne: false
+            referencedRelation: "lubricentros"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comprobantes_recibidos_usuario_id_fkey"
+            columns: ["usuario_id"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       config_experiencia: {
         Row: {
           campos_visibles: Json
@@ -4287,6 +4370,18 @@ export type Database = {
       completar_onboarding: { Args: never; Returns: Json }
       completar_templates_caja: { Args: never; Returns: number }
       completar_templates_neumaticos: { Args: never; Returns: number }
+      comprobantes_huerfanos: { Args: never; Returns: string[] }
+      confirmar_comprobante: {
+        Args: {
+          p_concepto: string
+          p_fecha?: string
+          p_id: string
+          p_medio?: string
+          p_monto: number
+          p_sucursal_id: string
+        }
+        Returns: string
+      }
       confirmar_diseno: { Args: never; Returns: Json }
       contactado_fidelli: {
         Args: { p_lubricentro_id: string }
@@ -4390,6 +4485,10 @@ export type Database = {
         }[]
       }
       desbloquear_service: { Args: { p_service_id: string }; Returns: string }
+      descartar_comprobante: {
+        Args: { p_id: string; p_motivo: string }
+        Returns: undefined
+      }
       dias_de_aviso: { Args: never; Returns: number }
       dias_de_gracia: { Args: never; Returns: number }
       dias_de_gracia_restantes: {
@@ -4623,6 +4722,10 @@ export type Database = {
           p_sucursal_id: string
         }
         Returns: string
+      }
+      guardar_extraccion_comprobante: {
+        Args: { p_extraido: Json; p_id: string }
+        Returns: undefined
       }
       guardar_ingreso: {
         Args: {
@@ -4911,6 +5014,16 @@ export type Database = {
           p_sucursal_id?: string
         }
         Returns: number
+      }
+      registrar_comprobante: {
+        Args: {
+          p_bytes: number
+          p_direccion?: string
+          p_mime: string
+          p_nombre: string
+          p_ruta: string
+        }
+        Returns: string
       }
       registrar_contacto_pauta: {
         Args: {

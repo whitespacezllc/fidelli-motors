@@ -29,7 +29,7 @@ export type ResultadoIngreso = ResultadoMovimiento;
 
 function traducir(error: { code?: string; message?: string }, que: "ingreso" | "egreso"): string {
   if (error.code === "42501") {
-    return "Finanzas no está activo en tu cuenta. Escribinos si lo querés activar.";
+    return "Contable no está activo en tu cuenta. Escribinos si lo querés activar.";
   }
   if (/sin_concepto/.test(error.message ?? "")) {
     return `Escribí qué ${que === "ingreso" ? "entró" : "salió"}, aunque sea en dos palabras.`;
@@ -168,7 +168,7 @@ export type DatosDeuda = {
 function traducirCuenta(error: { code?: string; message?: string }): string {
   const m = error.message ?? "";
   if (error.code === "42501") {
-    return "Finanzas no está activo en tu cuenta. Escribinos si lo querés activar.";
+    return "Contable no está activo en tu cuenta. Escribinos si lo querés activar.";
   }
   if (/deuda_sin_concepto/.test(m)) return "Escribí de qué es el fiado, aunque sea en dos palabras.";
   if (/deuda_monto_invalido/.test(m)) return "Revisá el monto: tiene que ser mayor a 0.";

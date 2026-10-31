@@ -15,7 +15,7 @@ import { TabsFinanzas } from "@/components/finanzas/tabs-finanzas";
 import { GraficoCaja } from "@/components/finanzas/grafico-caja";
 import { BotonExportar } from "@/components/panel/boton-exportar";
 
-export const metadata: Metadata = { title: "Finanzas" };
+export const metadata: Metadata = { title: "Contable" };
 
 const POR_PAGINA = 50;
 
@@ -31,7 +31,7 @@ export default async function PaginaFinanzas({
 }) {
   const sesion = await obtenerSesion();
   if (!featureHabilitada(sesion, "finanzas")) {
-    return <BloqueoPlan funcion="Finanzas" />;
+    return <BloqueoPlan funcion="Contable" />;
   }
 
   const params = await searchParams;
@@ -103,7 +103,7 @@ export default async function PaginaFinanzas({
 
   return (
     <div>
-      <CabeceraSeccion titulo="Finanzas">
+      <CabeceraSeccion titulo="Contable">
         <div className="flex flex-wrap items-center gap-2.5">
           {/* Exportar lee, así que va aun suspendido. */}
           <BotonExportar url="/panel/finanzas/exportar" cantidad={total} filtrando={false} />
@@ -111,6 +111,9 @@ export default async function PaginaFinanzas({
             <AccionBloqueada etiqueta="+ Nuevo ingreso" />
           ) : (
             <>
+              <Link href="/panel/finanzas/comprobantes" className={clasesBoton("secundario", "md")}>
+                + Desde comprobante
+              </Link>
               <Link href="/panel/finanzas/nuevo-egreso" className={clasesBoton("secundario", "md")}>
                 + Egreso
               </Link>

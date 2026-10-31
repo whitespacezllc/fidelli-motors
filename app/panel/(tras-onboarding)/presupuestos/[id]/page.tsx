@@ -192,7 +192,7 @@ export default async function PaginaPresupuesto({ params }: Props) {
       {tieneFinanzas && (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-line bg-surface/60 px-4 py-3 print:hidden">
           <div>
-            <p className="font-brand text-ui font-bold text-ink">Finanzas</p>
+            <p className="font-brand text-ui font-bold text-ink">Contable</p>
             <p className="text-label text-ink-60">
               {yaCobrado
                 ? "Este presupuesto ya figura como cobrado."
