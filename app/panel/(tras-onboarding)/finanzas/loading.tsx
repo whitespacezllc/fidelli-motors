@@ -5,7 +5,7 @@ import { Cabecera, Esqueleto, FilaGris, ListaGris } from "@/components/ui/esquel
 export default function CargandoFinanzas() {
   return (
     <Esqueleto>
-      <Cabecera titulo="Finanzas" derecha={["h-11 w-40 rounded-md"]} />
+      <Cabecera titulo="Contable" derecha={["h-11 w-40 rounded-md"]} />
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
         {[0, 1, 2].map((i) => (
           <div key={i} className="surface-card px-5 py-4">

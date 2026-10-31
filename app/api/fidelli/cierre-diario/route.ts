@@ -124,6 +124,27 @@ export async function GET(request: Request) {
     }
   }
 
+  // ---------- Los comprobantes sin fila útil se barren ----------
+  // Mismo molde que los adjuntos: la subida que no validó y el archivo de
+  // un comprobante descartado (los de uno sin_revisar o confirmado se
+  // conservan). Excluye lo subido en el último día.
+  let comprobantesBarridos: number | null = 0;
+  const { data: compHuerfanos, error: errorComp } = await admin.rpc("comprobantes_huerfanos");
+  if (errorComp) {
+    comprobantesBarridos = null;
+    console.error(`[fidelli/cierre-diario] no se pudieron listar los comprobantes sin fila: ${errorComp.message}`);
+  } else if (compHuerfanos && compHuerfanos.length > 0) {
+    const { data: borrados, error: errorBarrido } = await admin.storage
+      .from("comprobantes")
+      .remove(compHuerfanos);
+    if (errorBarrido) {
+      comprobantesBarridos = null;
+      console.error(`[fidelli/cierre-diario] no se pudieron barrer los comprobantes sin fila: ${errorBarrido.message}`);
+    } else {
+      comprobantesBarridos = borrados?.length ?? 0;
+    }
+  }
+
   // El tipo de cambio: el del día, o el último conocido como 'repetido'.
   let tc = await cotizacionOficial();
   if (!tc) {
@@ -165,7 +186,7 @@ export async function GET(request: Request) {
   ]);
 
   console.log(
-    `[fidelli/cierre-diario] ${fecha}: ${resultado} · tc venta ${tc.venta} (${tc.fuente}) · ${count ?? 0} tenants · ${calcosVencidos ?? "?"} pedidos de calcos vencidos · ${adjuntosBarridos ?? "?"} adjuntos sin fila barridos`,
+    `[fidelli/cierre-diario] ${fecha}: ${resultado} · tc venta ${tc.venta} (${tc.fuente}) · ${count ?? 0} tenants · ${calcosVencidos ?? "?"} pedidos de calcos vencidos · ${adjuntosBarridos ?? "?"} adjuntos sin fila barridos · ${comprobantesBarridos ?? "?"} comprobantes sin fila barridos`,
   );
 
   return NextResponse.json({
@@ -175,6 +196,7 @@ export async function GET(request: Request) {
     tenants: count ?? 0,
     calcos_vencidos: errorCalcos ? null : (calcosVencidos ?? 0),
     adjuntos_barridos: adjuntosBarridos,
+    comprobantes_barridos: comprobantesBarridos,
     snapshot: dia,
   });
 }

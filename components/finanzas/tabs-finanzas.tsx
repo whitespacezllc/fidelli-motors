@@ -10,7 +10,7 @@ const TABS = [
 
 export function TabsFinanzas({ activa }: { activa: "dia" | "cuenta" }) {
   return (
-    <nav className="mb-4 flex flex-wrap gap-1" aria-label="Vistas de Finanzas">
+    <nav className="mb-4 flex flex-wrap gap-1" aria-label="Vistas de Contable">
       {TABS.map((t) => {
         const esActiva = t.clave === activa;
         return (

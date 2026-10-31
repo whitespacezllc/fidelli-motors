@@ -56,7 +56,7 @@ export function esModuloPago(f: string): f is ModuloPago {
 /** Cómo se nombra el módulo en la interfaz, cuando hay que nombrarlo. */
 export const ETIQUETA_MODULO: Record<ModuloPago, string> = {
   neumaticos: "Módulo Gomería",
-  finanzas: "Módulo Finanzas",
+  finanzas: "Módulo Contable",
 };
 
 export const LIMITES_PLAN = ["sucursales"] as const;
@@ -73,7 +73,7 @@ export const ETIQUETA_FEATURE: Record<FeaturePlan, string> = {
   pagina_premium: "Página premium",
   neumaticos: "Gomería — módulo pago",
   caja: "Service de caja automática",
-  finanzas: "Finanzas — módulo pago",
+  finanzas: "Contable — módulo pago",
 };
 
 /**

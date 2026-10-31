@@ -72,7 +72,7 @@ const GRUPOS: {
       { href: "/panel/presupuestos", nombre: "Presupuestos", feature: "presupuestos", Icono: IconoPresupuesto },
       // El módulo Finanzas: add-on pago, solo aparece con el módulo
       // prendido — igual que Neumáticos. "El día" es el título interno.
-      { href: "/panel/finanzas", nombre: "Finanzas", feature: "finanzas", Icono: IconoFinanzas },
+      { href: "/panel/finanzas", nombre: "Contable", feature: "finanzas", Icono: IconoFinanzas },
     ],
   },
   {

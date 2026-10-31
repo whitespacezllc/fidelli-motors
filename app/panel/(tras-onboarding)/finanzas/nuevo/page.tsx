@@ -25,7 +25,7 @@ export default async function PaginaNuevoIngreso() {
 
   const sesion = await obtenerSesion();
   if (!featureHabilitada(sesion, "finanzas")) {
-    return <BloqueoPlan funcion="Finanzas" />;
+    return <BloqueoPlan funcion="Contable" />;
   }
 
   const supabase = await createClient();
